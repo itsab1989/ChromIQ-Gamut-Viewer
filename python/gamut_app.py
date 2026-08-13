@@ -1,6 +1,6 @@
 """Measured Gamut Viewer — a small desktop app, and a fitting study.
 
-    python gamut_app.py                 # then use "Open measurement…"
+    python gamut_app.py                 # then use "Open a measured chart…"
     python gamut_app.py chart.ti3       # or start with a file
 
 Two jobs at once. On its own it is a usable little tool: open the ``.ti3`` that
@@ -103,6 +103,52 @@ def _wrapped(label: QLabel, width: int = _TEXT_WIDTH) -> QLabel:
     return label
 
 
+#: Every term this window uses that a beginner might not know. Principle: if a
+#: word appears on screen, it is explained here in plain language, with what it
+#: means FOR YOU rather than what it means in a textbook.
+GLOSSARY = [
+    ("Gamut",
+     "The full set of colours something can manage. Your printer has one, your "
+     "screen has one, and your eyes have one. When an image asks for a colour "
+     "outside the gamut, the nearest available colour is printed instead — "
+     "which is why a gamut that is too small shows up as flat, muddy skies and "
+     "greens that all look the same."),
+    ("Measured chart (.ti3)",
+     "The file ArgyllCMS saves when you read a printed test chart with a "
+     "spectrophotometer. It holds two things for every patch: the colour you "
+     "asked the printer for, and the colour that actually came out. That pair "
+     "is what lets this window draw the real edge of your printer rather than "
+     "a smoothed guess."),
+    ("Patch",
+     "One small square of colour on a printed test chart. A typical chart has "
+     "several hundred to a couple of thousand of them."),
+    ("ICC profile",
+     "A file that describes how a particular printer, paper and ink behave "
+     "together, so your applications can print predictable colour. It is a "
+     "model built from measurements — which is why what a profile promises "
+     "and what the paper actually did are worth comparing."),
+    ("Coverage",
+     "How much of one gamut fits inside another, as a percentage. It is not "
+     "the same in both directions: paper A can hold nearly all of paper B "
+     "while B holds only part of A. Both numbers are shown, because which one "
+     "matters depends on which way you are moving an image."),
+    ("How much colour it holds",
+     "A single number for the size of a gamut. Useful for comparing two "
+     "papers measured the same way; not meaningful on its own, and not "
+     "comparable between different measurement setups. ArgyllCMS reports the "
+     "same quantity."),
+    ("D50 and D65",
+     "Two standard kinds of daylight. Colour only means anything relative to "
+     "the light you view it under, so measurements name their light. Printed "
+     "work is judged under D50; screens under D65."),
+    ("sRGB, Adobe RGB, ProPhoto RGB",
+     "Standard sets of colours that images are stored in. sRGB is what most "
+     "photographs and most screens assume, and it is smaller than a good "
+     "photo printer — so comparing your paper against it tells you whether an "
+     "sRGB workflow is throwing away ink you have already paid for."),
+]
+
+
 class GamutApp(QMainWindow):
     """One window: measurements on the left, the gamut on the right."""
 
@@ -175,49 +221,62 @@ class GamutApp(QMainWindow):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(12)
 
-        title = QLabel("Measured gamut", col)
+        title = QLabel("What your printer can print", col)
         f = QFont(); f.setPointSize(19); f.setWeight(QFont.Weight.DemiBold)
         title.setFont(f)
         v.addWidget(title)
-        sub = QLabel("The colours your printer actually put on paper — built "
-                     "from the patches you measured, not from a profile.", col)
+        sub = QLabel(
+            "Every colour your printer actually put on paper, worked out from "
+            "the patches you measured. This is what the printer really did, on "
+            "that paper, on that day — not what a profile predicts it can do.",
+            col)
         sub.setObjectName("hint"); _wrapped(sub)
         v.addWidget(sub)
 
         # --- the measurements -------------------------------------------------
-        g_files = QGroupBox("Measurements", col)
+        g_files = QGroupBox("Your measured chart", col)
         fv = QVBoxLayout(g_files)
-        self._open_btn = QPushButton("Open measurement…", g_files)
+        self._open_btn = QPushButton("Open a measured chart…", g_files)
         self._open_btn.clicked.connect(self._on_open)
         fv.addWidget(self._open_btn)
         self._slot_labels = []
         for i in range(2):
-            lab = QLabel("— empty —", g_files)
+            lab = QLabel("", g_files)
             lab.setObjectName("slot"); _wrapped(lab)
             fv.addWidget(lab)
             self._slot_labels.append(lab)
-        self._clear_btn = QPushButton("Clear", g_files)
+        self._clear_btn = QPushButton("Close these charts", g_files)
         self._clear_btn.setObjectName("secondary")
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setEnabled(False)
         fv.addWidget(self._clear_btn)
-        hint = QLabel("Open a second one to compare two papers.", g_files)
+        hint = QLabel(
+            "Open the .ti3 file ArgyllCMS saved when you measured a printed "
+            "chart — or simply drag it onto this window. Open a second one and "
+            "both are drawn together, so you can see which paper holds more "
+            "colour and exactly where they differ.", g_files)
         hint.setObjectName("hint"); _wrapped(hint)
         fv.addWidget(hint)
         v.addWidget(g_files)
 
         # --- how it is built --------------------------------------------------
-        g_build = QGroupBox("How the shape is built", col)
+        g_build = QGroupBox("How the shape is worked out", col)
         bv = QVBoxLayout(g_build)
         self._mode = QComboBox(g_build)
-        self._mode.addItem("Follow the device boundary", "device")
-        self._mode.addItem("Convex hull (over-states it)", "hull")
+        self._mode.addItem("Follow the real edge", "device")
+        self._mode.addItem("Wrap it in a simple skin", "hull")
         self._mode.currentIndexChanged.connect(self._rebuild)
         bv.addWidget(self._mode)
         mode_hint = QLabel(
-            "A printer's gamut is dented, especially in the deep blues. Using "
-            "the device values you asked for keeps those dents; a convex hull "
-            "bridges over them and claims more colour than you have.", g_build)
+            "Follow the real edge is the one to use. The edge of what a printer "
+            "can print is not smooth — it has real "
+            "dents in it, most noticeably in the deep blues. The recommended "
+            "setting keeps those dents, because it also reads the colour "
+            "values you asked the printer for, which every measured chart "
+            "stores alongside the results. The simpler setting stretches a "
+            "skin over the whole thing, which looks tidier but claims more "
+            "colour than your printer really has. Switch between them to see "
+            "the difference.", g_build)
         mode_hint.setObjectName("hint"); _wrapped(mode_hint)
         bv.addWidget(mode_hint)
         v.addWidget(g_build)
@@ -226,11 +285,11 @@ class GamutApp(QMainWindow):
         g_cmp = QGroupBox("Compare with", col)
         cvv = QVBoxLayout(g_cmp)
         self._compare = QComboBox(g_cmp)
-        self._compare.addItem("Nothing — just this measurement", None)
+        self._compare.addItem("Nothing — my chart alone", None)
         for _name in REFERENCE_SPACES:
             self._compare.addItem(_name, ("space", _name))
         self._compare.addItem("An ICC profile on my computer…", ("icc", None))
-        self._compare.addItem("Every colour the eye can see", ("visible", None))
+        self._compare.addItem("Everything the eye can see", ("visible", None))
         self._compare.currentIndexChanged.connect(self._on_compare_changed)
         cvv.addWidget(self._compare)
         self._compare_note = QLabel("", g_cmp)
@@ -248,29 +307,32 @@ class GamutApp(QMainWindow):
         v.addWidget(g_cmp)
 
         # --- colour science ---------------------------------------------------
-        g_cs = QGroupBox("Reference", col)
+        g_cs = QGroupBox("What the colours are measured against", col)
         cv = QVBoxLayout(g_cs)
         self._white = QComboBox(g_cs)
-        self._white.addItem("D50 — print measurement", "D50")
-        self._white.addItem("D65 — display measurement", "D65")
+        self._white.addItem("Daylight D50 — for print", "D50")
+        self._white.addItem("Daylight D65 — for screens", "D65")
         self._white.currentIndexChanged.connect(self._rebuild)
         cv.addWidget(self._white)
-        self._relative = QCheckBox("Measure against the paper's own white", g_cs)
+        self._relative = QCheckBox("Judge each paper against its own white", g_cs)
         self._relative.stateChanged.connect(self._rebuild)
         cv.addWidget(self._relative)
         rel_hint = QLabel(
-            "On, two papers of different brightness can be compared fairly — "
-            "this is what a relative-colorimetric profile does. Off, you see "
-            "the absolute numbers the instrument reported.", g_cs)
+            "Papers are not equally bright — a warm rag paper starts off duller "
+            "than a bright glossy one. Tick this and each paper is judged "
+            "against its own white, so two papers can be compared fairly on "
+            "shape rather than on brightness. This is what happens anyway when "
+            "you print with a normal profile. Leave it unticked to see the raw "
+            "numbers your instrument reported.", g_cs)
         rel_hint.setObjectName("hint"); _wrapped(rel_hint)
         cv.addWidget(rel_hint)
         v.addWidget(g_cs)
 
         # --- appearance -------------------------------------------------------
-        g_look = QGroupBox("Appearance", col)
+        g_look = QGroupBox("How it looks", col)
         lv = QVBoxLayout(g_look)
         orow = QHBoxLayout()
-        orow.addWidget(QLabel("Opacity", g_look))
+        orow.addWidget(QLabel("See-through", g_look))
         self._opacity = QSlider(Qt.Orientation.Horizontal, g_look)
         self._opacity.setRange(15, 100); self._opacity.setValue(85)
         self._opacity.sliderReleased.connect(self._redraw)
@@ -282,38 +344,45 @@ class GamutApp(QMainWindow):
         orow.addWidget(self._opacity_lbl)
         lv.addLayout(orow)
         self._aspect = QComboBox(g_look)
-        self._aspect.addItem("True proportions (equal Lab units)", "data")
+        self._aspect.addItem("True proportions", "data")
         self._aspect.addItem("Even up the box", "cube")
         self._aspect.currentIndexChanged.connect(self._redraw)
         lv.addWidget(self._aspect)
         aspect_hint = QLabel(
-            "True proportions keeps one Lab unit the same length on every "
-            "axis, which is what makes the shape and its volume honest — "
-            "lightness spans 100 while colour spans nearly 200, so the box is "
-            "wide and flat. Evening it up is easier to look at and no longer "
-            "to scale.", g_look)
+            "To scale, one step of colour difference is drawn the same length "
+            "whichever direction it goes in, which is what makes the shape and "
+            "the amount below honest. Printers have roughly twice as much "
+            "range in colour as they do from black to white, so the true shape "
+            "really is wide and flat — that is your printer, not a drawing "
+            "error. Evening up the box is easier on the eye but no longer to "
+            "scale.", g_look)
         aspect_hint.setObjectName("hint"); _wrapped(aspect_hint)
         lv.addWidget(aspect_hint)
-        self._points = QCheckBox("Show the measured patches", g_look)
+        self._points = QCheckBox("Show every patch I measured", g_look)
         self._points.stateChanged.connect(self._redraw)
         lv.addWidget(self._points)
         v.addWidget(g_look)
 
         # --- the number -------------------------------------------------------
-        g_vol = QGroupBox("Gamut volume", col)
+        g_vol = QGroupBox("How much colour it holds", col)
         vv = QVBoxLayout(g_vol)
         self._volume = QLabel("—", g_vol); self._volume.setObjectName("volume")
         vv.addWidget(self._volume)
         self._coverage = QLabel("", g_vol)
         self._coverage.setObjectName("hint"); _wrapped(self._coverage)
         vv.addWidget(self._coverage)
-        self._volume_hint = QLabel("cubic Lab units", g_vol)
+        self._volume_hint = QLabel(
+            "Open a chart to see how much colour it holds.", g_vol)
         self._volume_hint.setObjectName("hint"); _wrapped(self._volume_hint)
         vv.addWidget(self._volume_hint)
         v.addWidget(g_vol)
 
         v.addStretch(1)
-        self._save = QPushButton("Save as a web page…", col)
+        self._glossary_btn = QPushButton("What do these words mean?", col)
+        self._glossary_btn.setObjectName("secondary")
+        self._glossary_btn.clicked.connect(self._on_glossary)
+        v.addWidget(self._glossary_btn)
+        self._save = QPushButton("Save this view as a web page…", col)
         self._save.setObjectName("secondary")
         self._save.clicked.connect(self._on_save)
         self._save.setEnabled(False)
@@ -321,6 +390,21 @@ class GamutApp(QMainWindow):
         return col
 
     # ------------------------------------------------------------------ actions
+    def _on_glossary(self) -> None:
+        """Explain every word this window uses, in plain language.
+
+        Shown on demand rather than crammed into the controls, so the panel
+        stays readable while nobody is ever stuck on a word they did not
+        choose to learn.
+        """
+        body = "".join(
+            f"<p><b>{term}</b><br>{text}</p>" for term, text in GLOSSARY)
+        box = QMessageBox(self)
+        box.setWindowTitle("What do these words mean?")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText("<div style='max-width:34em'>" + body + "</div>")
+        box.exec()
+
     def _on_compare_changed(self) -> None:
         """Build whatever the user chose to compare against, and say what it is.
 
@@ -372,7 +456,9 @@ class GamutApp(QMainWindow):
     def _on_open(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Open a measurement", "",
-            "Measured charts (*.ti3);;All files (*)")
+            "Measured charts and profiles (*.ti3 *.icc *.icm);;"
+            "Measured charts (*.ti3);;ICC profiles (*.icc *.icm);;"
+            "All files (*)")
         for p in paths:
             self._load(Path(p))
 
@@ -415,6 +501,13 @@ class GamutApp(QMainWindow):
             "network — the viewer travels inside the page.")
 
     def _load(self, path: Path) -> None:
+        # An ICC profile is not a measurement, so it goes to the comparison
+        # slot rather than the chart slots -- but it arrives through the same
+        # button and the same drag, because that is where someone with a file
+        # in their hand will try to put it.
+        if path.suffix.lower() in (".icc", ".icm"):
+            self._load_profile_as_comparison(path)
+            return
         if len(self._slots) >= 2:
             self._slots.pop(0)                 # newest two win
         try:
@@ -428,9 +521,29 @@ class GamutApp(QMainWindow):
                 "it yet.")
             return
         self._slots.append((path, g, m))
+        self._warn_if_too_few_patches(path, m)
         self._refresh_slot_labels()
         self._clear_btn.setEnabled(True)
         self._save.setEnabled(True)
+        self._redraw()
+
+    def _load_profile_as_comparison(self, path: Path) -> None:
+        """Show an ICC profile as the thing to compare against."""
+        try:
+            g = icc_gamut(path, white_point=self._white.currentData())
+        except Exception as exc:      # noqa: BLE001 — always explain
+            QMessageBox.warning(
+                self, "This profile could not be used",
+                f"{path.name}\n\n{exc}")
+            return
+        self._reference = (path.stem, g)
+        self._compare.blockSignals(True)
+        self._compare.setCurrentIndex(
+            self._compare.findData(("icc", None)))
+        self._compare.blockSignals(False)
+        self._compare_note.setText(
+            f"Comparing against {path.stem} — the colours this profile says "
+            "are available.")
         self._redraw()
 
     def _build_one(self, path: Path):
@@ -439,6 +552,37 @@ class GamutApp(QMainWindow):
         g = build_gamut(m.lab, drive, input_space="lab",
                         white_point=self._white.currentData())
         return g, m
+
+    #: Below this many patches a measured chart cannot describe the edge of a
+    #: printer in any useful way: the shape collapses towards a flat sliver and
+    #: two different small charts look alike. Chosen because a chart that even
+    #: samples each of the three channels at 4 levels is 64 patches, and real
+    #: profiling charts start in the hundreds.
+    TOO_FEW_PATCHES = 60
+
+    def _warn_if_too_few_patches(self, path: Path, m) -> None:
+        """Say plainly when a chart is too small to mean anything.
+
+        Drawing a gamut from a handful of patches produces a shape that looks
+        plausible and is not: it is the hull of a few dots, not the edge of a
+        printer. Two such charts look alike whatever printer made them, which
+        is exactly how this went unnoticed. Better to say so than to let
+        somebody compare two meaningless shapes and believe the answer.
+        """
+        if m.n_patches >= self.TOO_FEW_PATCHES:
+            return
+        patches = "1 patch" if m.n_patches == 1 else f"{m.n_patches} patches"
+        QMessageBox.information(
+            self, "This chart is very small",
+            f"{path.name} holds only {patches}.\n\n"
+            "That is too few to show what a printer can really print. The "
+            "shape drawn from it is the outline of a handful of dots rather "
+            "than the edge of your printer, and two small charts will look "
+            "much the same however different the printers were.\n\n"
+            "It is still drawn, in case that is what you wanted — a partly "
+            "measured chart, or a small verification chart, will look like "
+            "this. For a true picture, open a full profiling measurement: "
+            "those usually hold several hundred patches or more.")
 
     def _rebuild(self) -> None:
         """A setting that changes the shape — rebuild every loaded measurement."""
@@ -461,10 +605,17 @@ class GamutApp(QMainWindow):
         for i, lab in enumerate(self._slot_labels):
             if i < len(self._slots):
                 path, _g, m = self._slots[i]
-                lab.setText(f"● {path.stem}\n   {m.n_patches} patches"
-                            + (f", {m.instrument}" if m.instrument else ""))
+                patches = ("1 patch" if m.n_patches == 1
+                           else f"{m.n_patches} patches")
+                measured = (f", measured with your {m.instrument}"
+                            if m.instrument else "")
+                lab.setText(f"● {path.stem}\n   {patches}{measured}")
+                lab.setVisible(True)
             else:
-                lab.setText("— empty —")
+                # Nothing to say about a slot that holds nothing: an empty
+                # placeholder under a real chart reads as if something failed.
+                lab.setText("")
+                lab.setVisible(False)
 
     # ------------------------------------------------------------------ drawing
     def _show_placeholder(self) -> None:
@@ -524,16 +675,20 @@ class GamutApp(QMainWindow):
             self._coverage.setText("")
             return
         self._coverage.setText(
-            f"{100 * ab:.1f}% of {a_name} fits inside {b_name}.\n"
-            f"{100 * ba:.1f}% of {b_name} fits inside {a_name}.")
+            f"{100 * ab:.1f}% of what {a_name} can print also fits inside "
+            f"{b_name}.\n"
+            f"{100 * ba:.1f}% of {b_name} fits inside {a_name}.\n"
+            "The two numbers differ because fitting inside is not the same "
+            "question in both directions.")
 
     def _update_volume(self) -> None:
         if len(self._slots) == 1:
             g = self._slots[0][1]
             self._volume.setText(f"{g.volume:,.0f}")
             self._volume_hint.setText(
-                "cubic Lab units — the same measure ArgyllCMS reports. "
-                "Comparable between charts measured the same way.")
+                "This is the same measure ArgyllCMS reports. It is useful for "
+                "comparing two papers measured the same way — on its own the "
+                "number does not mean much.")
         else:
             (_, a, _), (_, b, _) = self._slots
             self._volume.setText(f"{a.volume:,.0f}  ·  {b.volume:,.0f}")
@@ -541,7 +696,8 @@ class GamutApp(QMainWindow):
             which = (self._slots[0][0].stem if a.volume > b.volume
                      else self._slots[1][0].stem)
             self._volume_hint.setText(
-                f"{which} holds {100 * (big / small - 1):.1f}% more colour.")
+                f"{which} holds {100 * (big / small - 1):.1f}% more colour "
+                "than the other one.")
 
 
 def main(argv=None) -> int:

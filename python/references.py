@@ -157,5 +157,20 @@ def icc_gamut(path, *, white_point: str = "D50", steps: int = 12,
     # Pillow's 8-bit LAB: L 0..255 -> 0..100, a/b 0..255 with 128 as zero.
     lab = np.column_stack([raw[:, 0] * 100.0 / 255.0, raw[:, 1] - 128.0,
                            raw[:, 2] - 128.0])
+
+    # REFUSE A CLIPPED ANSWER RATHER THAN DRAW A WRONG ONE. Pillow's Lab is
+    # eight bits per channel, so a* and b* cannot leave -128..127. A profile
+    # whose colours reach those ends has been squashed into the byte range, and
+    # the "gamut" that comes back is the shape of the encoding rather than the
+    # shape of the profile -- on a real printer profile that inflated the
+    # volume roughly sevenfold. A confident wrong answer is worse than none.
+    at_edge = ((np.abs(lab[:, 1] + 128.0) < 0.5) | (np.abs(lab[:, 1] - 127.0) < 0.5)
+               | (np.abs(lab[:, 2] + 128.0) < 0.5) | (np.abs(lab[:, 2] - 127.0) < 0.5))
+    if at_edge.mean() > 0.02:
+        raise ValueError(
+            f"{path.name} cannot be read accurately here. Its colours run past "
+            "what this reader can represent, so the shape would be wrong -- "
+            "and wrong in the flattering direction. Compare against a measured "
+            "chart, or one of the built-in colour spaces, instead.")
     return build_gamut(lab, grid.astype(float) / 255.0, input_space="lab",
                        white_point=white_point)
