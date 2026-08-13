@@ -49,7 +49,7 @@ from typing import Literal
 
 import numpy as np
 
-__all__ = ["Gamut", "build_gamut", "coverage", "mesh_volume", "outside_of", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
+__all__ = ["Gamut", "build_gamut", "coverage", "mesh_volume", "outside_of", "slice_at", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
            "lab_to_lch_cartesian", "WHITE_POINTS"]
 
 Space = Literal["xyz", "lab"]
@@ -346,6 +346,51 @@ def _device_cube_surface(drive_values, pts, xyz):
             "no populated faces of the device cube — drive_values must include "
             "patches at the extremes of each channel (the faces of the RGB cube)")
     return (np.vstack(verts_out), np.vstack(faces_out), np.vstack(xyz_out))
+
+
+def slice_at(gamut, lightness: float, steps: int = 180) -> np.ndarray:
+    """The outline of *gamut* at one lightness, as points around a*/b*.
+
+    A 3D shape is honest and hard to read: two overlapping blobs hide each
+    other, and depth on a flat screen is guesswork. A horizontal cut through
+    both at the same lightness turns the comparison into two flat outlines,
+    where "this one reaches further into the cyans" is simply visible.
+
+    Found by asking, for each direction around the hue circle, how far the
+    gamut reaches before leaving it — a bisection on the containment test,
+    which needs no assumption that the shape is convex, star-shaped or smooth.
+    Returns an (N, 2) array of a*/b* points, empty when the gamut does not
+    reach that lightness at all.
+    """
+    from scipy.spatial import Delaunay
+
+    v = np.asarray(gamut.vertices if hasattr(gamut, "vertices") else gamut, float)
+    if len(v) < 4:
+        raise ValueError("a gamut needs at least 4 vertices to be sliced")
+    if not (v[:, 0].min() <= lightness <= v[:, 0].max()):
+        return np.empty((0, 2))
+    hull = Delaunay(v)
+
+    # The centre of the slice: the mid-grey axis, which every real gamut
+    # contains at any lightness it reaches.
+    if hull.find_simplex(np.array([[lightness, 0.0, 0.0]])) < 0:
+        return np.empty((0, 2))
+
+    reach = float(np.hypot(v[:, 1], v[:, 2]).max()) * 1.05
+    angles = np.linspace(0, 2 * np.pi, steps, endpoint=False)
+    out = np.empty((steps, 2))
+    for i, ang in enumerate(angles):
+        direction = np.array([np.cos(ang), np.sin(ang)])
+        lo, hi = 0.0, reach
+        for _ in range(24):                     # ~1e-5 of the reach
+            mid = (lo + hi) / 2.0
+            point = np.array([[lightness, *(direction * mid)]])
+            if hull.find_simplex(point) >= 0:
+                lo = mid
+            else:
+                hi = mid
+        out[i] = direction * lo
+    return out
 
 
 def outside_of(inner, outer) -> np.ndarray:

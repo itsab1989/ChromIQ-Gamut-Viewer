@@ -220,6 +220,59 @@ def _patch_cloud(lab, name: str):
         name=f"{name} — patches", showlegend=True, hoverinfo="name")
 
 
+#: Colours for the outlines in a slice, in the order gamuts are given.
+_SLICE_COLOURS = ("#e8175d", "#3aa8d0", "#f2c744", "#6bd07a")
+
+
+def write_slice_html(gamuts, out: Path, lightness: float, title: str) -> Path:
+    """A flat cross-section through every gamut at one lightness.
+
+    Two 3D shapes hide each other and depth on a flat screen is guesswork; two
+    outlines on a flat chart are simply readable. Colour runs left to right and
+    front to back exactly as it does in the 3D view, so the two pictures agree.
+    """
+    import plotly.graph_objects as go
+
+    from gamutview import slice_at
+
+    fig = go.Figure()
+    empty = []
+    for i, (name, g) in enumerate(gamuts):
+        try:
+            ring = slice_at(g, lightness)
+        except Exception:      # noqa: BLE001 — one bad shape must not blank the view
+            ring = []
+        if not len(ring):
+            empty.append(name)
+            continue
+        closed = np.vstack([ring, ring[:1]])       # join the ends
+        fig.add_trace(go.Scatter(
+            x=closed[:, 0], y=closed[:, 1], mode="lines",
+            line=dict(color=_SLICE_COLOURS[i % len(_SLICE_COLOURS)], width=3),
+            name=name, fill="toself", opacity=0.35))
+    note = ""
+    if empty:
+        which = empty[0] if len(empty) == 1 else " and ".join(empty)
+        note = (f"  —  {which} does not reach this lightness"
+                if len(empty) == 1 else
+                f"  —  {which} do not reach this lightness")
+    fig.add_trace(go.Scatter(x=[0], y=[0], mode="markers",
+                             marker=dict(color="#888", size=5, symbol="x"),
+                             name="neutral grey", hoverinfo="name"))
+    fig.update_layout(
+        title=f"{title}  ·  lightness L* = {lightness:.0f}{note}",
+        xaxis=dict(title="a*   green ← → red", zeroline=True,
+                   zerolinecolor="#3a4150", gridcolor="#262b34",
+                   scaleanchor="y", scaleratio=1),
+        yaxis=dict(title="b*   blue ← → yellow", zeroline=True,
+                   zerolinecolor="#3a4150", gridcolor="#262b34"),
+        paper_bgcolor="#111318", plot_bgcolor="#15181e", font_color="#e8ecf2",
+        legend=dict(orientation="h", y=-0.12),
+        margin=dict(l=0, r=0, t=54, b=0))
+    fig.write_html(str(out), include_plotlyjs="inline", full_html=True)
+    return out
+
+
 def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
                points: bool = False, patches=None,
                aspect: str = "data", styles=None, lost=None) -> Path:

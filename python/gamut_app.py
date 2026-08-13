@@ -41,7 +41,7 @@ from gamutview import build_gamut, coverage, outside_of
 from gamutview import xyz_to_lab
 from references import REFERENCE_SPACES, icc_gamut, reference_gamut
 from spectral import optimal_colour_solid
-from ti3gamut import read_ti3, write_html
+from ti3gamut import read_ti3, write_html, write_slice_html
 
 # Dark, close to ChromIQ's own, so the fit is judged on layout rather than on
 # a colour scheme that would never ship.
@@ -523,23 +523,57 @@ class GamutApp(QMainWindow):
         aspect_hint.setObjectName("hint"); _wrapped(aspect_hint)
         lv.addWidget(aspect_hint)
         self._style_mine = QComboBox(g_look)
+        self._style_second = QComboBox(g_look)
         self._style_other = QComboBox(g_look)
-        for combo, label in ((self._style_mine, "My chart"),
-                             (self._style_other, "The comparison")):
+        self._style_combos = (
+            (self._style_mine, "First chart"),
+            (self._style_second, "Second chart"),
+            (self._style_other, "The comparison"),
+        )
+        for combo, label in self._style_combos:
             combo.addItem(f"{label}: solid", "solid")
             combo.addItem(f"{label}: solid with its mesh", "solid+mesh")
             combo.addItem(f"{label}: outline only", "mesh")
             combo.currentIndexChanged.connect(self._redraw)
+            combo.setVisible(False)
             lv.addWidget(combo)
-        self._style_other.setCurrentIndex(2)     # cage, so your chart shows through
+        # An outer shape starts as a cage so whatever is inside stays visible.
+        self._style_second.setCurrentIndex(2)
+        self._style_other.setCurrentIndex(2)
         style_hint = WrappedLabel(
-            "A solid shape hides whatever is inside it. Drawing the comparison "
-            "as an outline instead lets you see your own chart sitting inside "
-            "it — which is the only way to look at your printer inside sRGB, "
-            "or inside everything the eye can see, and still see your printer.",
-            g_look)
+            "Each shape on screen is drawn its own way. A solid shape hides "
+            "whatever is inside it, so the outer one starts as an outline — "
+            "which is the only way to look at your printer sitting inside "
+            "sRGB, or inside everything the eye can see, and still see your "
+            "printer. Swap them round when the other one is the shape you want "
+            "to look into.", g_look)
         style_hint.setObjectName("hint")
         lv.addWidget(style_hint)
+        self._slice_on = QCheckBox("Slice it at one lightness", g_look)
+        self._slice_on.stateChanged.connect(self._redraw)
+        lv.addWidget(self._slice_on)
+        srow = QHBoxLayout()
+        srow.addWidget(QLabel("Lightness", g_look))
+        self._slice_at = QSlider(Qt.Orientation.Horizontal, g_look)
+        self._slice_at.setRange(0, 100)
+        self._slice_at.setValue(50)
+        self._slice_at.valueChanged.connect(
+            lambda v: self._slice_lbl.setText(f"L* {v}"))
+        self._slice_at.sliderReleased.connect(self._redraw)
+        srow.addWidget(self._slice_at, 1)
+        self._slice_lbl = QLabel("L* 50", g_look)
+        self._slice_lbl.setFixedWidth(46)
+        srow.addWidget(self._slice_lbl)
+        lv.addLayout(srow)
+        slice_hint = WrappedLabel(
+            "Cuts straight through every shape at the lightness you choose and "
+            "draws the result flat, looking down. Two shapes in 3D hide each "
+            "other and depth is hard to judge on a screen; two outlines side by "
+            "side are simply readable — which one reaches further into the "
+            "cyans at this lightness is a glance rather than a guess. Move the "
+            "slider from dark to light to see how the shape changes.", g_look)
+        slice_hint.setObjectName("hint")
+        lv.addWidget(slice_hint)
         self._detail = QComboBox(g_look)
         self._detail.addItem("Detail: normal", 20)
         self._detail.addItem("Detail: fine (slower to draw)", 32)
@@ -864,10 +898,23 @@ class GamutApp(QMainWindow):
         self._refresh_slot_labels()
         self._redraw()
 
+    def _refresh_style_controls(self) -> None:
+        """Show a style control only when the shape it governs is on screen.
+
+        A control for something that does not exist is worse than no control:
+        it invites a change that does nothing and leaves somebody wondering
+        what they did wrong.
+        """
+        have = (len(self._slots) >= 1, len(self._slots) >= 2,
+                self._reference is not None)
+        for (combo, _label), show in zip(self._style_combos, have):
+            combo.setVisible(show)
+
     def _refresh_slot_labels(self) -> None:
         # "both" only when there really are two; a button that says the wrong
         # number is a small lie that makes people distrust the rest.
         self._clear_btn.setVisible(len(self._slots) == 2)
+        self._refresh_style_controls()
         for i, row in enumerate(self._slot_rows):
             row.setVisible(i < len(self._slots))
         for i, lab in enumerate(self._slot_labels):
@@ -915,8 +962,18 @@ class GamutApp(QMainWindow):
     def _redraw(self) -> None:
         if not self._slots:
             return
+        # The comparison can change without any chart changing, so the style
+        # controls are refreshed here rather than only when charts are opened.
+        self._refresh_style_controls()
         gamuts, clouds, styles, lost = self._scene_contents()
         out = self._tmp / "scene.html"
+        if self._slice_on.isChecked():
+            write_slice_html(gamuts, out, float(self._slice_at.value()),
+                             self._scene_title())
+            self._view.setUrl(QUrl.fromLocalFile(str(out)))
+            self._update_volume()
+            self._update_coverage()
+            return
         write_html(gamuts, out, self._scene_title(),
                    opacity=self._opacity.value() / 100.0,
                    points=self._points.isChecked(), patches=clouds,
@@ -934,7 +991,9 @@ class GamutApp(QMainWindow):
         """
         gamuts = [(p.stem, g) for p, g, _m in self._slots]
         clouds = [m.lab for _p, _g, m in self._slots]
-        styles = [self._style_mine.currentData()] * len(self._slots)
+        per_chart = (self._style_mine.currentData(),
+                     self._style_second.currentData())
+        styles = [per_chart[i] for i in range(len(self._slots))]
         # Marking what is out of reach needs something to be out of reach OF,
         # so it only applies when a comparison is loaded, and only to the
         # charts -- painting the comparison by its own reach says nothing.
@@ -945,8 +1004,15 @@ class GamutApp(QMainWindow):
             against = self._slots[1][1]
         lost = None
         if self._show_lost.isChecked() and against is not None:
+            # Only the charts being judged get painted. Painting the shape that
+            # is doing the judging against itself would colour it entirely
+            # "kept", which says nothing and looks like a bug.
+            judged = len(self._slots) if self._reference is not None else 1
             lost = []
-            for _p, g, _m in self._slots:
+            for i, (_p, g, _m) in enumerate(self._slots):
+                if i >= judged:
+                    lost.append(None)
+                    continue
                 try:
                     lost.append(outside_of(g, against))
                 except Exception:      # noqa: BLE001 — a view must not crash
