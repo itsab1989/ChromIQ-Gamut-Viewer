@@ -27,7 +27,7 @@ from pathlib import Path
 
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import QRect, Qt, QUrl
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel,
@@ -67,19 +67,30 @@ QLabel#slot { color: #9fb3c8; }
 """
 
 
-def _wrapped(label: QLabel) -> QLabel:
-    """Let a word-wrapped label claim the height it actually needs.
+#: Inside width of the control column, in pixels: the column is 310 wide, a
+#: group box eats ~24 of it and its layout another ~16. Labels are measured
+#: against this, so their height is right the first time.
+_TEXT_WIDTH = 262
 
-    In a fixed-width column a wrapping QLabel reports a single line's height
-    unless its vertical policy says otherwise, so whatever sits below it gets
-    drawn over the top. Setting MinimumExpanding and seeding the minimum from
-    heightForWidth fixes it for every label at once, rather than hard-coding
-    heights that break in another language.
+
+def _wrapped(label: QLabel, width: int = _TEXT_WIDTH) -> QLabel:
+    """Let a word-wrapped label claim the height its text really needs.
+
+    A wrapping QLabel in a fixed-width column reports one line's height unless
+    it is told otherwise, so whatever sits below it is drawn over the top and
+    the last lines vanish. Asking the font metrics to lay the text out at the
+    column's real width gives the exact height, however many lines that turns
+    out to be -- which matters because these strings are meant to explain
+    things properly rather than fit a guessed two lines, and because a
+    translation is never the same length as the English.
     """
     label.setWordWrap(True)
     label.setSizePolicy(QSizePolicy.Policy.Preferred,
                         QSizePolicy.Policy.MinimumExpanding)
-    label.setMinimumHeight(label.fontMetrics().height() * 2)
+    rect = label.fontMetrics().boundingRect(
+        QRect(0, 0, width, 10_000),
+        int(Qt.TextFlag.TextWordWrap), label.text())
+    label.setMinimumHeight(rect.height() + 4)
     return label
 
 
