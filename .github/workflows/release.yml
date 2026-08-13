@@ -30,8 +30,13 @@ jobs:
           - label: Linux x86_64
             runner: ubuntu-22.04
             asset: GamutViewer-Linux-x86_64
+          # 24.04, NOT 22.04: PyQt6 and PyQt6-WebEngine publish their arm64
+          # wheels as manylinux_2_39, which needs glibc 2.39. Ubuntu 22.04 has
+          # 2.35, so pip finds nothing installable, falls back to building Qt
+          # from source, and the job dies in "Install dependencies". The x86_64
+          # wheels are manylinux_2_34 and are happy on 22.04.
           - label: Linux aarch64
-            runner: ubuntu-22.04-arm
+            runner: ubuntu-24.04-arm
             asset: GamutViewer-Linux-aarch64
     steps:
       - uses: actions/checkout@v4
