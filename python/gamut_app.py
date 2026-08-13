@@ -27,12 +27,14 @@ from pathlib import Path
 
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
-from PyQt6.QtCore import QRect, QStandardPaths, Qt, QUrl
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import QRect, QSize, QStandardPaths, Qt, QUrl
+from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel,
                              QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider,
-                             QListView, QSizePolicy, QVBoxLayout, QWidget)
+                             QDialogButtonBox, QListView, QSizeGrip,
+                             QSizePolicy, QStyle,
+                             QToolButton, QVBoxLayout, QWidget)
 
 from version import APP_NAME, __version__
 from gamutview import build_gamut, coverage
@@ -74,6 +76,81 @@ QScrollBar::handle:vertical { background: #2a2f3a; border-radius: 5px;
 QScrollBar::handle:vertical:hover { background: #3a4150; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 """
+
+
+#: The three navigation buttons in Qt's file dialog, and the standard icon
+#: each one should show.
+_NAV_BUTTONS = {
+    "backButton": QStyle.StandardPixmap.SP_ArrowBack,
+    "forwardButton": QStyle.StandardPixmap.SP_ArrowForward,
+    "toParentButton": QStyle.StandardPixmap.SP_FileDialogToParent,
+}
+_NAV_BTN_SIZE = QSize(28, 28)
+_NAV_ARROW_SIZE = QSize(16, 16)
+
+
+def _nav_icon(icon: QIcon, color: QColor) -> QIcon:
+    """Repaint a standard arrow in *color*, centred on a button-sized canvas.
+
+    Qt draws its dialog's back, forward and up arrows in a colour chosen for a
+    light toolbar. On the dark toolbar this app uses they are all but
+    invisible, so each is recoloured. The arrow is then centred on a canvas the
+    size of the button, because Qt puts an icon at the button's top-left
+    corner and an off-centre arrow looks like a mistake.
+    """
+    raw = icon.pixmap(_NAV_ARROW_SIZE)
+    tinted = QPixmap(raw.size())
+    tinted.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(tinted)
+    painter.drawPixmap(0, 0, raw)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(tinted.rect(), color)
+    painter.end()
+
+    canvas = QPixmap(_NAV_BTN_SIZE)
+    canvas.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(canvas)
+    painter.drawPixmap((_NAV_BTN_SIZE.width() - _NAV_ARROW_SIZE.width()) // 2,
+                       (_NAV_BTN_SIZE.height() - _NAV_ARROW_SIZE.height()) // 2,
+                       tinted)
+    painter.end()
+    return QIcon(canvas)
+
+
+def _style_dialog_toolbar(dlg) -> None:
+    """Make the dialog's own controls readable on this app's dark background."""
+    style = dlg.style()
+    for name, pixmap in _NAV_BUTTONS.items():
+        button = dlg.findChild(QToolButton, name)
+        if button is None:
+            continue
+        button.setIcon(_nav_icon(style.standardIcon(pixmap), QColor("#e0e0e0")))
+        button.setIconSize(_NAV_BTN_SIZE)
+        button.setFixedSize(_NAV_BTN_SIZE)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+    grip = dlg.findChild(QSizeGrip)
+    if grip is not None:
+        grip.hide()
+
+    # THE LOUD BUTTON MUST BE THE ONE YOU MEAN TO PRESS. This app paints every
+    # push button in its accent colour, which in a file dialog lands on Cancel
+    # -- so the way out shouted and Open sat there grey. Accept takes the
+    # accent, Reject takes the quiet treatment, which is the same order of
+    # emphasis the rest of the window uses.
+    boxes = dlg.findChildren(QDialogButtonBox)
+    for box in boxes:
+        accept = box.button(QDialogButtonBox.StandardButton.Open) or \
+            box.button(QDialogButtonBox.StandardButton.Save) or \
+            box.button(QDialogButtonBox.StandardButton.Ok)
+        reject = box.button(QDialogButtonBox.StandardButton.Cancel)
+        if accept is not None:
+            accept.setObjectName("")
+        if reject is not None:
+            reject.setObjectName("secondary")
+        for button in (accept, reject):
+            if button is not None:
+                button.style().unpolish(button)
+                button.style().polish(button)
 
 
 def _sidebar_urls(*extra) -> list:
@@ -544,6 +621,7 @@ class GamutApp(QMainWindow):
             widest = max((metrics.horizontalAdvance(Path(u.toLocalFile()).name)
                           for u in dlg.sidebarUrls()), default=0)
             sidebar.setMinimumWidth(widest + 62)   # room for icon and padding
+        _style_dialog_toolbar(dlg)
         return dlg
 
     def _on_open(self) -> None:
