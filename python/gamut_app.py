@@ -35,7 +35,10 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QSizePolicy, QVBoxLayout, QWidget)
 
 from version import APP_NAME, __version__
-from gamutview import build_gamut
+from gamutview import build_gamut, coverage
+from gamutview import xyz_to_lab
+from references import REFERENCE_SPACES, icc_gamut, reference_gamut
+from spectral import optimal_colour_solid
 from ti3gamut import read_ti3, write_html
 
 # Dark, close to ChromIQ's own, so the fit is judged on layout rather than on
@@ -118,7 +121,8 @@ class GamutApp(QMainWindow):
         self.resize(min(1280, room.width() - 40), min(840, room.height() - 60))
         self.move(room.center().x() - self.width() // 2,
                   room.top() + max(0, (room.height() - self.height()) // 2))
-        self._slots: list[tuple[Path, object]] = []      # (path, Gamut)
+        self._slots: list[tuple[Path, object]] = []      # (path, Gamut, Measurement)
+        self._reference: tuple[str, object] | None = None   # (name, Gamut)
         self._tmp = Path(tempfile.mkdtemp(prefix="gamutview-"))
 
         central = QWidget(self)
@@ -218,6 +222,31 @@ class GamutApp(QMainWindow):
         bv.addWidget(mode_hint)
         v.addWidget(g_build)
 
+        # --- what to compare against -----------------------------------------
+        g_cmp = QGroupBox("Compare with", col)
+        cvv = QVBoxLayout(g_cmp)
+        self._compare = QComboBox(g_cmp)
+        self._compare.addItem("Nothing — just this measurement", None)
+        for _name in REFERENCE_SPACES:
+            self._compare.addItem(_name, ("space", _name))
+        self._compare.addItem("An ICC profile on my computer…", ("icc", None))
+        self._compare.addItem("Every colour the eye can see", ("visible", None))
+        self._compare.currentIndexChanged.connect(self._on_compare_changed)
+        cvv.addWidget(self._compare)
+        self._compare_note = QLabel("", g_cmp)
+        self._compare_note.setObjectName("hint"); _wrapped(self._compare_note)
+        cvv.addWidget(self._compare_note)
+        cmp_hint = QLabel(
+            "Comparing with a second measurement asks which of two papers can "
+            "print more. Comparing with a standard space asks whether the "
+            "images people send you will survive on this paper. Comparing with "
+            "every visible colour asks how much of what your eyes can see this "
+            "paper can hold at all. They are three different questions and the "
+            "answers are not interchangeable.", g_cmp)
+        cmp_hint.setObjectName("hint"); _wrapped(cmp_hint)
+        cvv.addWidget(cmp_hint)
+        v.addWidget(g_cmp)
+
         # --- colour science ---------------------------------------------------
         g_cs = QGroupBox("Reference", col)
         cv = QVBoxLayout(g_cs)
@@ -275,6 +304,9 @@ class GamutApp(QMainWindow):
         vv = QVBoxLayout(g_vol)
         self._volume = QLabel("—", g_vol); self._volume.setObjectName("volume")
         vv.addWidget(self._volume)
+        self._coverage = QLabel("", g_vol)
+        self._coverage.setObjectName("hint"); _wrapped(self._coverage)
+        vv.addWidget(self._coverage)
         self._volume_hint = QLabel("cubic Lab units", g_vol)
         self._volume_hint.setObjectName("hint"); _wrapped(self._volume_hint)
         vv.addWidget(self._volume_hint)
@@ -289,6 +321,54 @@ class GamutApp(QMainWindow):
         return col
 
     # ------------------------------------------------------------------ actions
+    def _on_compare_changed(self) -> None:
+        """Build whatever the user chose to compare against, and say what it is.
+
+        Every branch either produces a gamut or explains in plain words why it
+        could not, and puts the combo box back to "Nothing" so the screen never
+        claims a comparison that is not there.
+        """
+        choice = self._compare.currentData()
+        self._reference = None
+        self._compare_note.setText("")
+        try:
+            if choice is None:
+                pass
+            elif choice[0] == "space":
+                name = choice[1]
+                self._reference = (name, reference_gamut(
+                    name, white_point=self._white.currentData()))
+                self._compare_note.setText(REFERENCE_SPACES[name]["note"])
+            elif choice[0] == "icc":
+                path, _ = QFileDialog.getOpenFileName(
+                    self, "Choose an ICC profile", "",
+                    "ICC profiles (*.icc *.icm);;All files (*)")
+                if not path:
+                    self._compare.setCurrentIndex(0)
+                    return
+                self._reference = (Path(path).stem, icc_gamut(
+                    path, white_point=self._white.currentData()))
+                self._compare_note.setText(
+                    "The gamut this profile describes, asked of the profile "
+                    "itself.")
+            elif choice[0] == "visible":
+                v, _f = optimal_colour_solid(
+                    "D50" if self._white.currentData() == "D50" else "D65", 48)
+                lab = xyz_to_lab(v, self._white.currentData())
+                self._reference = ("Every visible colour",
+                                   build_gamut(lab, input_space="lab",
+                                               white_point=self._white.currentData()))
+                self._compare_note.setText(
+                    "Every colour a printed surface could possibly show under "
+                    "this light. No printer comes close, and that is normal.")
+        except Exception as exc:      # noqa: BLE001 — always explain, never crash
+            QMessageBox.warning(
+                self, "That comparison could not be prepared", str(exc))
+            self._reference = None
+            self._compare.setCurrentIndex(0)
+            return
+        self._redraw()
+
     def _on_open(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Open a measurement", "",
@@ -402,6 +482,9 @@ class GamutApp(QMainWindow):
             return
         gamuts = [(p.stem, g) for p, g, _m in self._slots]
         clouds = [m.lab for _p, _g, m in self._slots]
+        if self._reference is not None:
+            gamuts.append(self._reference)
+            clouds.append(None)
         out = self._tmp / "scene.html"
         write_html(gamuts, out, self._scene_title(),
                    opacity=self._opacity.value() / 100.0,
@@ -409,11 +492,40 @@ class GamutApp(QMainWindow):
                    aspect=self._aspect.currentData())
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
         self._update_volume()
+        self._update_coverage()
 
     def _scene_title(self) -> str:
         ref = ("the paper's own white" if self._relative.isChecked()
                else f"{self._white.currentData()} absolute")
         return f"Measured gamut — against {ref}"
+
+    def _update_coverage(self) -> None:
+        """Both directions, always — one number would hide the difference.
+
+        Coverage is not symmetric: a paper can hold nearly all of what a
+        smaller one shows while the smaller one holds only part of it. Which
+        way round matters is exactly what decides whether an image will survive
+        the swap, so both are shown and each is named.
+        """
+        pair = None
+        if self._reference is not None and self._slots:
+            pair = ((self._slots[0][0].stem, self._slots[0][1]), self._reference)
+        elif len(self._slots) == 2:
+            pair = ((self._slots[0][0].stem, self._slots[0][1]),
+                    (self._slots[1][0].stem, self._slots[1][1]))
+        if pair is None:
+            self._coverage.setText("")
+            return
+        (a_name, a), (b_name, b) = pair
+        try:
+            ab, _ = coverage(a.vertices, b.vertices)
+            ba, _ = coverage(b.vertices, a.vertices)
+        except Exception:      # noqa: BLE001 — a readout must never crash a view
+            self._coverage.setText("")
+            return
+        self._coverage.setText(
+            f"{100 * ab:.1f}% of {a_name} fits inside {b_name}.\n"
+            f"{100 * ba:.1f}% of {b_name} fits inside {a_name}.")
 
     def _update_volume(self) -> None:
         if len(self._slots) == 1:
