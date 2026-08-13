@@ -29,6 +29,8 @@ with Bradford rather than by pretending the whites are the same.
 """
 from __future__ import annotations
 
+import pathlib
+
 import numpy as np
 
 from gamutview import (WHITE_POINTS, _bradford_adapt, _as_white_point,
@@ -103,74 +105,105 @@ def reference_gamut(name: str, *, white_point: str = "D50", steps: int = 8):
                        white_point=white_point)
 
 
-def icc_gamut(path, *, white_point: str = "D50", steps: int = 12,
-              intent: int = 1):
-    """The gamut of any ICC profile, by asking the profile itself.
+def _find_iccgamut() -> "str | None":
+    """Where ArgyllCMS keeps iccgamut, if it is installed."""
+    import shutil
+    found = shutil.which("iccgamut")
+    if found:
+        return found
+    for guess in ("/Applications/Argyll/bin/iccgamut",
+                  "/usr/local/bin/iccgamut", "/opt/homebrew/bin/iccgamut",
+                  r"C:\Argyll\bin\iccgamut.exe"):
+        if pathlib.Path(guess).is_file():
+            return guess
+    return None
 
-    Sends an evenly spaced RGB cube through the profile to Lab and builds the
-    boundary from the faces of that cube — the same construction as everything
-    else here, so the numbers stay comparable.
 
-    *intent* is a Little-CMS rendering intent: 0 perceptual, 1 relative
-    colorimetric (the default, and the right one for asking "what can this
-    profile actually reach"), 2 saturation, 3 absolute colorimetric.
+def _read_gam(path) -> "tuple[np.ndarray, np.ndarray]":
+    """Vertices and triangles from an ArgyllCMS ``.gam`` surface file.
 
-    Needs ``littlecms`` (``pip install littlecms``) or ``Pillow`` with LittleCMS
-    support, which is how Pillow is normally built.
+    A ``.gam`` is CGATS text with two tables: the Lab position of every vertex,
+    then the three vertex numbers of every triangle. Both are read here rather
+    than only the vertices, because the triangles are what make the surface
+    follow the profile's real, dented boundary instead of a hull thrown over
+    the points.
     """
-    from pathlib import Path
+    text = pathlib.Path(path).read_text(errors="replace")
+    blocks = []
+    rest = text
+    while "BEGIN_DATA_FORMAT" in rest:
+        head, rest = rest.split("BEGIN_DATA_FORMAT", 1)
+        fmt, rest = rest.split("END_DATA_FORMAT", 1)
+        body, rest = rest.split("BEGIN_DATA", 1)[1].split("END_DATA", 1)
+        blocks.append((fmt.split(), [l.split() for l in body.strip().splitlines()
+                                     if l.strip()]))
+    if len(blocks) < 2:
+        raise ValueError("this .gam file has no vertex and triangle tables")
+    (vfmt, vrows), (ffmt, frows) = blocks[0], blocks[1]
+    li, ai, bi = (vfmt.index("LAB_L"), vfmt.index("LAB_A"), vfmt.index("LAB_B"))
+    verts = np.array([[float(r[li]), float(r[ai]), float(r[bi])] for r in vrows])
+    faces = np.array([[int(r[0]), int(r[1]), int(r[2])] for r in frows], dtype=int)
+    return verts, faces
 
-    path = Path(path)
+
+def icc_gamut(path, *, white_point: str = "D50", intent: str = "r", **_ignored):
+    """The gamut of any ICC profile, computed by ArgyllCMS itself.
+
+    Asks ``iccgamut`` — the same tool ChromIQ uses — rather than pushing a grid
+    through the profile here. That matters for accuracy: an eight-bit Lab
+    round-trip clips a* and b* at ±128, which on a real printer profile
+    inflated the answer roughly sevenfold. ArgyllCMS returns the surface it
+    computed, in full precision, with its triangles, so the shape has the
+    profile's real dents in it.
+
+    *intent* is passed to ``iccgamut -i``: "r" relative colorimetric (the
+    default, and the right one for "what can this profile actually reach"),
+    "a" absolute, "p" perceptual, "s" saturation.
+
+    The profile is copied to a temporary folder first, because ``iccgamut``
+    writes its result beside its input and nothing should appear uninvited in
+    somebody's project folder.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    path = pathlib.Path(path)
     if not path.is_file():
         raise ValueError(f"no such profile: {path}")
 
-    try:
-        from PIL import Image, ImageCms
-    except ImportError as exc:                      # pragma: no cover
+    tool = _find_iccgamut()
+    if tool is None:
         raise ValueError(
-            "reading an ICC profile needs Pillow — pip install Pillow") from exc
+            "Reading an ICC profile needs ArgyllCMS, which does not appear to "
+            "be installed. It is the same free toolkit that measured your "
+            "chart in the first place — install it, or compare against one of "
+            "the built-in colour spaces instead.")
 
-    try:
-        src = ImageCms.getOpenProfile(str(path))
-    except Exception as exc:
-        raise ValueError(f"{path.name} could not be read as an ICC profile: "
-                         f"{exc}") from exc
+    with tempfile.TemporaryDirectory(prefix="iccgamut-") as tmp:
+        work = pathlib.Path(tmp) / path.name
+        shutil.copy2(path, work)
+        try:
+            done = subprocess.run(
+                [tool, "-i", intent, str(work)],
+                capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError(
+                f"{path.name} took too long to read and was given up on") from exc
+        gam = work.with_suffix(".gam")
+        if done.returncode != 0 or not gam.is_file():
+            detail = (done.stderr or done.stdout or "").strip().splitlines()
+            why = detail[-1] if detail else f"exit code {done.returncode}"
+            raise ValueError(
+                f"{path.name} could not be read as a colour profile: {why}. "
+                "CMYK and device-link profiles are not supported here.")
+        verts, faces = _read_gam(gam)
 
-    n_ch = len(ImageCms.getProfileInfo(src)) and 3   # RGB profiles only, for now
-    g = np.linspace(0, 255, steps).astype(np.uint8)
-    r, gg, b = np.meshgrid(g, g, g, indexing="ij")
-    grid = np.stack([r.ravel(), gg.ravel(), b.ravel()], axis=-1).astype(np.uint8)
-
-    img = Image.frombytes("RGB", (len(grid), 1), grid.tobytes())
-    lab_profile = ImageCms.createProfile("LAB", 5000 if white_point == "D50"
-                                         else 6500)
-    try:
-        xform = ImageCms.buildTransform(src, lab_profile, "RGB", "LAB",
-                                        renderingIntent=intent)
-        out = ImageCms.applyTransform(img, xform)
-    except Exception as exc:
-        raise ValueError(
-            f"{path.name} is not an RGB profile this can use ({exc}). CMYK and "
-            "device-link profiles are not supported yet.") from exc
-
-    raw = np.frombuffer(out.tobytes(), dtype=np.uint8).reshape(-1, 3).astype(float)
-    # Pillow's 8-bit LAB: L 0..255 -> 0..100, a/b 0..255 with 128 as zero.
-    lab = np.column_stack([raw[:, 0] * 100.0 / 255.0, raw[:, 1] - 128.0,
-                           raw[:, 2] - 128.0])
-
-    # REFUSE A CLIPPED ANSWER RATHER THAN DRAW A WRONG ONE. Pillow's Lab is
-    # eight bits per channel, so a* and b* cannot leave -128..127. A profile
-    # whose colours reach those ends has been squashed into the byte range, and
-    # the "gamut" that comes back is the shape of the encoding rather than the
-    # shape of the profile -- on a real printer profile that inflated the
-    # volume roughly sevenfold. A confident wrong answer is worse than none.
-    at_edge = ((np.abs(lab[:, 1] + 128.0) < 0.5) | (np.abs(lab[:, 1] - 127.0) < 0.5)
-               | (np.abs(lab[:, 2] + 128.0) < 0.5) | (np.abs(lab[:, 2] - 127.0) < 0.5))
-    if at_edge.mean() > 0.02:
-        raise ValueError(
-            f"{path.name} cannot be read accurately here. Its colours run past "
-            "what this reader can represent, so the shape would be wrong -- "
-            "and wrong in the flattering direction. Compare against a measured "
-            "chart, or one of the built-in colour spaces, instead.")
-    return build_gamut(lab, grid.astype(float) / 255.0, input_space="lab",
-                       white_point=white_point)
+    if len(verts) < 4:
+        raise ValueError(f"{path.name} describes no usable volume")
+    from scipy.spatial import ConvexHull
+    from gamutview import Gamut, lab_to_xyz, xyz_to_srgb
+    return Gamut(vertices=verts, faces=faces,
+                 colors=xyz_to_srgb(lab_to_xyz(verts, white_point), white_point),
+                 volume=float(ConvexHull(verts).volume),
+                 space="lab", mode="icc-profile")

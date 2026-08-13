@@ -27,12 +27,12 @@ from pathlib import Path
 
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
-from PyQt6.QtCore import QRect, Qt, QUrl
+from PyQt6.QtCore import QRect, QStandardPaths, Qt, QUrl
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel,
                              QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider,
-                             QSizePolicy, QVBoxLayout, QWidget)
+                             QListView, QSizePolicy, QVBoxLayout, QWidget)
 
 from version import APP_NAME, __version__
 from gamutview import build_gamut, coverage
@@ -74,6 +74,35 @@ QScrollBar::handle:vertical { background: #2a2f3a; border-radius: 5px;
 QScrollBar::handle:vertical:hover { background: #3a4150; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 """
+
+
+def _sidebar_urls(*extra) -> list:
+    """Folders worth one click in the file dialog.
+
+    The OS-correct, localized standard folders rather than hard-coded English
+    paths under home, so this reads "Schreibtisch" on a German Mac and lands in
+    the right place on Windows. ChromIQ's working folder is included because
+    that is where the charts this app reads actually live, and so is the folder
+    you last opened something from, since the second file usually sits beside
+    the first. Anything that does not exist is dropped rather than shown as a
+    dead entry.
+    """
+    SL = QStandardPaths.StandardLocation
+    candidates = []
+    for loc in (SL.DesktopLocation, SL.PicturesLocation,
+                SL.DownloadLocation, SL.DocumentsLocation):
+        where = QStandardPaths.writableLocation(loc)
+        if where:
+            candidates.append(Path(where))
+    candidates.append(Path.home() / "ChromIQ")
+    candidates.extend(Path(e) for e in extra if e)
+    seen, urls = set(), []
+    for c in candidates:
+        key = str(c)
+        if key not in seen and c.exists():
+            seen.add(key)
+            urls.append(QUrl.fromLocalFile(key))
+    return urls
 
 
 class WrappedLabel(QLabel):
@@ -194,6 +223,8 @@ class GamutApp(QMainWindow):
         self._slots: list[tuple[Path, object]] = []      # (path, Gamut, Measurement)
         self._reference: tuple[str, object] | None = None   # (name, Gamut)
         self._tmp = Path(tempfile.mkdtemp(prefix="gamutview-"))
+        #: Where the last file came from, so the next dialog opens there.
+        self._last_folder = ""
 
         central = QWidget(self)
         row = QHBoxLayout(central)
@@ -449,12 +480,15 @@ class GamutApp(QMainWindow):
                     name, white_point=self._white.currentData()))
                 self._compare_note.setText(REFERENCE_SPACES[name]["note"])
             elif choice[0] == "icc":
-                path, _ = QFileDialog.getOpenFileName(
-                    self, "Choose an ICC profile", "",
+                dlg = self._file_dialog(
+                    "Choose an ICC profile to compare against",
+                    QFileDialog.FileMode.ExistingFile,
                     "ICC profiles (*.icc *.icm);;All files (*)")
-                if not path:
+                if not dlg.exec():
                     self._compare.setCurrentIndex(0)
                     return
+                path = dlg.selectedFiles()[0]
+                self._last_folder = str(Path(path).parent)
                 self._reference = (Path(path).stem, icc_gamut(
                     path, white_point=self._white.currentData()))
                 self._compare_note.setText(
@@ -478,14 +512,51 @@ class GamutApp(QMainWindow):
             return
         self._redraw()
 
+    def _file_dialog(self, title: str, mode, name_filter: str,
+                     preselect: str = "") -> QFileDialog:
+        """A file dialog with useful places already in its sidebar.
+
+        Qt's own dialog rather than the operating system's, because only that
+        one lets the shortcuts down the left be set — which is the difference
+        between finding a chart in one click and hunting for it.
+        """
+        dlg = QFileDialog(self, title)
+        dlg.setOption(QFileDialog.Option.DontUseNativeDialog)
+        dlg.setFileMode(mode)
+        dlg.setNameFilter(name_filter)
+        dlg.setSidebarUrls(_sidebar_urls(self._last_folder))
+        if preselect:
+            dlg.selectFile(preselect)
+        if self._last_folder:
+            dlg.setDirectory(self._last_folder)
+        # Qt opens its own dialog small, and the shortcuts down the left get
+        # the leftovers -- so folder names like "Downloads" arrive truncated,
+        # which defeats the point of having them. Give the dialog a sensible
+        # size (within the screen, as the main window is) and the sidebar
+        # enough width for the longest name actually in it.
+        screen = QApplication.primaryScreen()
+        room = screen.availableGeometry() if screen is not None else None
+        if room is not None:
+            dlg.resize(min(1000, room.width() - 80), min(640, room.height() - 120))
+        sidebar = dlg.findChild(QListView, "sidebar")
+        if sidebar is not None:
+            metrics = sidebar.fontMetrics()
+            widest = max((metrics.horizontalAdvance(Path(u.toLocalFile()).name)
+                          for u in dlg.sidebarUrls()), default=0)
+            sidebar.setMinimumWidth(widest + 62)   # room for icon and padding
+        return dlg
+
     def _on_open(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, "Open a measurement", "",
+        dlg = self._file_dialog(
+            "Open a measured chart or a profile",
+            QFileDialog.FileMode.ExistingFiles,
             "Measured charts and profiles (*.ti3 *.icc *.icm);;"
             "Measured charts (*.ti3);;ICC profiles (*.icc *.icm);;"
             "All files (*)")
-        for p in paths:
-            self._load(Path(p))
+        if dlg.exec():
+            for chosen in dlg.selectedFiles():
+                self._last_folder = str(Path(chosen).parent)
+                self._load(Path(chosen))
 
     def _on_clear(self) -> None:
         self._slots.clear()
@@ -506,11 +577,14 @@ class GamutApp(QMainWindow):
         if not self._slots:
             return
         default = self._slots[0][0].with_name(self._slots[0][0].stem + "-gamut.html")
-        target, _ = QFileDialog.getSaveFileName(
-            self, "Save the gamut as a web page", str(default),
-            "Web page (*.html)")
-        if not target:
+        dlg = self._file_dialog("Save this view as a web page",
+                                QFileDialog.FileMode.AnyFile,
+                                "Web page (*.html)", str(default))
+        dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dlg.setDefaultSuffix("html")
+        if not dlg.exec():
             return
+        target = dlg.selectedFiles()[0]
         try:
             write_html([(p.stem, g) for p, g in self._slots], Path(target),
                        self._scene_title(),
