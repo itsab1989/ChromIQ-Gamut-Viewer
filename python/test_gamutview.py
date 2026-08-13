@@ -85,14 +85,16 @@ def test_device_cube_mode_uses_the_faces_of_the_cube():
     assert g.volume > 0
 
 
-def test_device_cube_reports_a_smaller_or_equal_volume_than_the_hull():
-    """The point of mode 2: a hull cannot be smaller than the real boundary."""
+def test_device_cube_reports_a_smaller_volume_than_the_hull():
+    """The point of mode 2: a hull cannot be smaller than the real boundary,
+    and the number must follow the shape. This test used to assert the two
+    volumes were EQUAL, which is what a hull-only measurement gave — the dents
+    were drawn and then not counted."""
     rgb, xyz = rgb_cube(6)
     hull = build_gamut(xyz, white_point="D65")
     cube = build_gamut(xyz, rgb, white_point="D65")
-    # Both report the hull volume; what differs is the surface that is drawn.
-    assert cube.volume == pytest.approx(hull.volume)
-    assert len(cube.vertices) > len(hull.vertices)     # the dents are kept
+    assert cube.volume < hull.volume                   # the dents cost something
+    assert len(cube.vertices) > len(hull.vertices)     # and are kept
 
 
 def test_a_failed_reading_does_not_take_the_gamut_with_it():
