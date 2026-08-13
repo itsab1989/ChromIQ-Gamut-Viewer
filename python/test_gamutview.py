@@ -138,3 +138,27 @@ def test_unknown_white_point_lists_the_known_ones():
     _, xyz = rgb_cube(4)
     with pytest.raises(ValueError, match="D50"):
         build_gamut(xyz, white_point="D99")
+
+
+def test_coverage_is_asymmetric_and_reproducible():
+    """The number people actually want when comparing two papers, and the
+    reason one number is not enough: a small gamut sits entirely inside a large
+    one (100%), while the large one only partly fits in the small (well under).
+    Reporting a single "similarity" would hide exactly that."""
+    from gamutview import coverage
+    _, big = rgb_cube(5)
+    big_lab = xyz_to_lab(big, "D65")
+    small_lab = big_lab * 0.5 + np.array([50.0, 0.0, 0.0]) * 0.5   # shrunk inwards
+    inside, se = coverage(small_lab, big_lab)
+    assert inside > 0.99, inside
+    outside, _ = coverage(big_lab, small_lab)
+    assert outside < 0.60, outside
+    assert se < 0.01                                   # honest precision
+    assert coverage(small_lab, big_lab)[0] == inside   # same seed, same answer
+
+
+def test_coverage_refuses_a_gamut_with_no_volume():
+    from gamutview import coverage
+    _, cube = rgb_cube(4)
+    with pytest.raises(ValueError):
+        coverage(np.zeros((3, 3)), xyz_to_lab(cube, "D65"))

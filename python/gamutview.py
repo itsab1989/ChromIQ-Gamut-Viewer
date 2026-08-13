@@ -49,7 +49,7 @@ from typing import Literal
 
 import numpy as np
 
-__all__ = ["Gamut", "build_gamut", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
+__all__ = ["Gamut", "build_gamut", "coverage", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
            "lab_to_lch_cartesian", "WHITE_POINTS"]
 
 Space = Literal["xyz", "lab"]
@@ -315,3 +315,51 @@ def _device_cube_surface(drive_values, pts, xyz):
             "no populated faces of the device cube — drive_values must include "
             "patches at the extremes of each channel (the faces of the RGB cube)")
     return (np.vstack(verts_out), np.vstack(faces_out), np.vstack(xyz_out))
+
+
+def coverage(inner, outer, *, samples: int = 60_000, seed: int = 20260814
+             ) -> tuple[float, float]:
+    """How much of *inner* fits inside *outer*, as a fraction and its error.
+
+    Returns ``(fraction, standard_error)``. This is the number people actually
+    want when comparing two papers, and **it is not symmetric**: a glossy paper
+    might hold 96% of what a matte one can show while the matte holds only 71%
+    of the glossy. Reporting one number for "how similar are these" hides
+    exactly the asymmetry that decides which paper to use.
+
+    Measured by sampling points uniformly inside *inner*'s hull and counting how
+    many fall inside *outer*'s. The seed is fixed, so the same pair of gamuts
+    always gives the same answer — a figure that wobbles between runs is worse
+    than useless when someone is comparing papers. The standard error is
+    returned rather than hidden: at 60,000 samples it is around 0.2 percentage
+    points, so quoting more than one decimal place would be false precision.
+    """
+    from scipy.spatial import ConvexHull, Delaunay
+
+    a = np.asarray(inner.vertices if hasattr(inner, "vertices") else inner, float)
+    b = np.asarray(outer.vertices if hasattr(outer, "vertices") else outer, float)
+    if len(a) < 4 or len(b) < 4:
+        raise ValueError("both gamuts need at least 4 vertices to have a volume")
+
+    inner_hull = Delaunay(a)
+    outer_hull = Delaunay(b)
+    rng = np.random.default_rng(seed)
+    lo, hi = a.min(axis=0), a.max(axis=0)
+
+    kept = covered = tried = 0
+    # Rejection-sample inside the bounding box until enough land in `inner`.
+    # Batched, because one point at a time through Delaunay is glacial.
+    while kept < samples and tried < samples * 200:
+        batch = rng.uniform(lo, hi, size=(min(samples, 20_000), 3))
+        tried += len(batch)
+        in_inner = batch[inner_hull.find_simplex(batch) >= 0]
+        if not len(in_inner):
+            continue
+        take = in_inner[:samples - kept]
+        kept += len(take)
+        covered += int((outer_hull.find_simplex(take) >= 0).sum())
+    if not kept:
+        raise ValueError("could not sample inside the inner gamut — it may be "
+                         "degenerate (flat, a line, or a single point)")
+    p = covered / kept
+    return p, float(np.sqrt(max(p * (1.0 - p), 1e-12) / kept))
