@@ -74,12 +74,18 @@ def _rgb_to_xyz_matrix(primaries, white) -> np.ndarray:
     return m * scale
 
 
-def reference_gamut(name: str, *, white_point: str = "D50", steps: int = 8):
+def reference_gamut(name: str, *, white_point: str = "D50", steps: int = 20):
     """The gamut of a standard RGB working space, in Lab under *white_point*.
 
     Built as the six faces of its own RGB cube — the same construction used for
     a printer's measured gamut — so the two are directly comparable rather than
     one being a hull and the other a boundary.
+
+    *steps* is how finely each cube face is sampled. The default of 20 is where
+    the volume stops changing: measured on sRGB, 8 steps under-states it by
+    0.5% and looks visibly faceted, 20 is within 0.04% of a 32-step build, and
+    every one of them takes hundredths of a second. Coarser is not faster in
+    any way anybody would notice; it is only wrong and ugly.
     """
     try:
         spec = REFERENCE_SPACES[name]

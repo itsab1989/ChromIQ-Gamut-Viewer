@@ -591,7 +591,7 @@ class GamutApp(QMainWindow):
                     "itself.")
             elif choice[0] == "visible":
                 v, _f = optimal_colour_solid(
-                    "D50" if self._white.currentData() == "D50" else "D65", 48)
+                    "D50" if self._white.currentData() == "D50" else "D65", 72)
                 lab = xyz_to_lab(v, self._white.currentData())
                 self._reference = ("Every visible colour",
                                    build_gamut(lab, input_space="lab",
