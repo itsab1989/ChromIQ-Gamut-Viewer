@@ -31,7 +31,7 @@ from PyQt6.QtCore import QRect, Qt, QUrl
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel,
-                             QMainWindow, QMessageBox, QPushButton, QSlider,
+                             QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider,
                              QSizePolicy, QVBoxLayout, QWidget)
 
 from version import APP_NAME, __version__
@@ -64,6 +64,12 @@ QSlider::handle:horizontal { width: 13px; margin: -5px 0; border-radius: 7px;
 QLabel#hint { color: #7b828e; font-size: 11px; }
 QLabel#volume { font-size: 21px; font-weight: 600; color: #e8ecf2; }
 QLabel#slot { color: #9fb3c8; }
+QScrollArea { border: none; background: #111318; }
+QScrollBar:vertical { background: #111318; width: 10px; margin: 0; }
+QScrollBar::handle:vertical { background: #2a2f3a; border-radius: 5px;
+                              min-height: 30px; }
+QScrollBar::handle:vertical:hover { background: #3a4150; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 """
 
 
@@ -100,7 +106,18 @@ class GamutApp(QMainWindow):
     def __init__(self, initial: "list[Path] | None" = None) -> None:
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} {__version__}")
-        self.resize(1280, 840)
+        # NEVER OPEN BIGGER THAN THE SCREEN. A window that starts off the
+        # bottom of a laptop display hides its own buttons and cannot always
+        # be dragged back (Sebastian, 2026-08-14). Ask the screen how much
+        # room there actually is -- availableGeometry already excludes the
+        # menu bar and the dock -- and take the smaller of that and a
+        # comfortable size, leaving a small margin so the frame is grabbable.
+        screen = QApplication.primaryScreen()
+        room = (screen.availableGeometry() if screen is not None
+                else QRect(0, 0, 1280, 840))
+        self.resize(min(1280, room.width() - 40), min(840, room.height() - 60))
+        self.move(room.center().x() - self.width() // 2,
+                  room.top() + max(0, (room.height() - self.height()) // 2))
         self._slots: list[tuple[Path, object]] = []      # (path, Gamut)
         self._tmp = Path(tempfile.mkdtemp(prefix="gamutview-"))
 
@@ -108,7 +125,16 @@ class GamutApp(QMainWindow):
         row = QHBoxLayout(central)
         row.setContentsMargins(14, 14, 14, 14)
         row.setSpacing(14)
-        row.addWidget(self._build_controls(), 0)
+        # The column scrolls: its help text is as long as it needs to be, and
+        # on a short screen that is taller than the window. Scrolling keeps
+        # every control reachable instead of trimming the explanations.
+        controls = QScrollArea(central)
+        controls.setWidget(self._build_controls())
+        controls.setWidgetResizable(True)
+        controls.setFixedWidth(330)
+        controls.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        row.addWidget(controls, 0)
 
         self._view = QWebEngineView(central)
         self._view.setMinimumWidth(560)
