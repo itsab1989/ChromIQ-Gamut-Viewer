@@ -162,3 +162,46 @@ def test_coverage_refuses_a_gamut_with_no_volume():
     _, cube = rgb_cube(4)
     with pytest.raises(ValueError):
         coverage(np.zeros((3, 3)), xyz_to_lab(cube, "D65"))
+
+
+def test_mesh_volume_against_shapes_whose_answer_is_known():
+    """Checked against arithmetic, not against itself: a cube of side 2 holds 8,
+    and a finely sampled unit sphere approaches 4/3 pi from below (a hull of
+    points ON the sphere is inscribed, so slightly smaller)."""
+    from scipy.spatial import ConvexHull
+
+    from gamutview import mesh_volume
+    cube = np.array([[x, y, z] for x in (0., 2.) for y in (0., 2.)
+                     for z in (0., 2.)])
+    assert mesh_volume(cube, ConvexHull(cube).simplices) == pytest.approx(8.0)
+
+    pts = np.random.default_rng(0).normal(size=(2000, 3))
+    pts /= np.linalg.norm(pts, axis=1, keepdims=True)
+    got = mesh_volume(pts, ConvexHull(pts).simplices)
+    assert 0.985 * (4 / 3 * np.pi) < got < (4 / 3 * np.pi)
+
+
+def test_the_dented_shape_reports_less_than_a_skin_around_it():
+    """The whole point of the two modes: a boundary with dents in it holds less
+    colour than a skin stretched over the same points. Reporting the skin's
+    volume beside the dented picture would credit a printer with colour it
+    cannot print."""
+    rgb, xyz = rgb_cube(6)
+    dented = build_gamut(xyz, rgb, white_point="D65")
+    skin = build_gamut(xyz, white_point="D65")
+    assert dented.volume < skin.volume
+    assert dented.volume > skin.volume * 0.5      # dented, not broken
+
+
+def test_orientation_is_fixed_here_not_assumed_of_the_caller():
+    """The device-cube faces are triangulated independently, so their windings
+    disagree. Summing signed volumes without orienting them first cancels part
+    of the shape away — it once gave a third of the true answer."""
+    from gamutview import mesh_volume
+    rgb, xyz = rgb_cube(5)
+    g = build_gamut(xyz, rgb, white_point="D65")
+    naive = abs(float(np.einsum(
+        "ij,ij->i",
+        g.vertices[g.faces[:, 0]],
+        np.cross(g.vertices[g.faces[:, 1]], g.vertices[g.faces[:, 2]])).sum()) / 6)
+    assert mesh_volume(g.vertices, g.faces) > naive * 1.5

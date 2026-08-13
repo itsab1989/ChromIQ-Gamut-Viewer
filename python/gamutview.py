@@ -49,7 +49,7 @@ from typing import Literal
 
 import numpy as np
 
-__all__ = ["Gamut", "build_gamut", "coverage", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
+__all__ = ["Gamut", "build_gamut", "coverage", "mesh_volume", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
            "lab_to_lch_cartesian", "WHITE_POINTS"]
 
 Space = Literal["xyz", "lab"]
@@ -191,6 +191,34 @@ class Gamut:
         return lab_to_lch_cartesian(self.vertices)
 
 
+def mesh_volume(vertices, faces) -> float:
+    """Volume actually enclosed by a closed triangle mesh.
+
+    The divergence theorem summed over triangles, which is exact for any closed
+    surface, convex or not. This is what lets the number agree with the
+    picture: a printer's real boundary is dented, and those dents enclose less
+    than a skin stretched over the whole thing.
+
+    Each triangle is oriented outward from the mesh centroid first. Without
+    that the answer is meaningless -- the six faces of the device cube are
+    triangulated independently, so their windings disagree and the signed
+    volumes partly cancel. Getting this wrong once produced a figure three
+    times too small, which is why the orientation is done here rather than
+    assumed of the caller.
+    """
+    v = np.asarray(vertices, dtype=float)
+    f = np.asarray(faces, dtype=int)
+    if len(f) == 0 or len(v) < 4:
+        return 0.0
+    centre = v.mean(axis=0)
+    a, b, c = v[f[:, 0]] - centre, v[f[:, 1]] - centre, v[f[:, 2]] - centre
+    signed = np.einsum("ij,ij->i", a, np.cross(b, c)) / 6.0
+    # Flip whichever triangles face inward, then sum: |signed| is the volume of
+    # the tetrahedron from the centroid to that triangle, and for a closed
+    # surface those tile the interior exactly once.
+    return float(np.abs(signed).sum())
+
+
 def _finite_rows(*arrays):
     """Drop any row that is NaN or infinite in any of *arrays*, together."""
     keep = np.ones(len(arrays[0]), dtype=bool)
@@ -269,6 +297,9 @@ def build_gamut(colors, drive_values=None, *, space: Space = "lab",
         dv, pts_u, xyz_u = drive_values[first], pts[first], xyz[first]
         verts, faces, v_xyz = _device_cube_surface(dv, pts_u, xyz_u)
         mode = "device-cube"
+        # The drawn surface is closed but not convex, so what it encloses --
+        # not what a hull around it would -- is what this printer can print.
+        volume = mesh_volume(verts, faces)
 
     return Gamut(vertices=verts, faces=faces,
                  colors=xyz_to_srgb(v_xyz, white_point),
