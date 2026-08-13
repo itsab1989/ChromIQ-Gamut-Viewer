@@ -36,6 +36,22 @@ colour space, any ICC profile, or the boundary of what the eye can see.
   surface can show under a chosen light, so a gamut can be judged against
   human vision rather than only against another piece of paper.
 
+- **See *where* you lose colour, not just how much.** Tick **Show me what the
+  comparison cannot print** and your chart is painted red wherever the colour
+  is out of the other one's reach, grey where it is fine. A percentage tells
+  you how much you lose; this tells you which colours, so you can decide
+  whether it matters for the pictures you actually print.
+
+- **Slice it at one lightness.** Two shapes in 3D hide each other and depth is
+  hard to judge on a screen. Cut through them at the lightness you choose and
+  they become two flat outlines side by side, where "this paper reaches
+  further into the cyans" is a glance rather than a guess.
+
+- **Draw each shape its own way.** Solid, solid with its mesh, or outline only
+  — separately for your first chart, your second, and the comparison. An outer
+  shape drawn as an outline is the only way to look at your printer sitting
+  inside sRGB and still see your printer.
+
 - **A page you can keep or send.** Save the view as one self-contained HTML
   file. The viewer travels inside the page, so it opens in any browser with no
   network, now or in five years.
