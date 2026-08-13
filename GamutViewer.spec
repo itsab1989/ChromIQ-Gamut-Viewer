@@ -20,7 +20,8 @@ a = Analysis(
     ["python/gamut_app.py"],
     pathex=["python"],
     binaries=_we_binaries + _wew_binaries + _pl_binaries + _sp_binaries,
-    datas=_we_datas + _wew_datas + _pl_datas + _sp_datas,
+    datas=(_we_datas + _wew_datas + _pl_datas + _sp_datas
+           + [("assets/icon.png", "assets")]),
     hiddenimports=(_we_hidden + _wew_hidden + _pl_hidden + _sp_hidden
                    + ["gamutview", "ti3gamut", "version"]),
     hookspath=[], hooksconfig={}, runtime_hooks=[],
@@ -34,6 +35,8 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True,
+    icon=("assets/icon.icns" if sys.platform == "darwin"
+          else "assets/icon.ico" if sys.platform == "win32" else None),
     name="GamutViewer", debug=False, bootloader_ignore_signals=False,
     strip=False, upx=False, console=False,
     disable_windowed_traceback=False, argv_emulation=False,
@@ -44,6 +47,7 @@ coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas,
 
 if sys.platform == "darwin":
     app = BUNDLE(coll, name="Measured Gamut Viewer.app",
+                 icon="assets/icon.icns",
                  bundle_identifier="io.github.itsab1989.gamutviewer",
                  info_plist={
                      "CFBundleShortVersionString": "1.0.0",

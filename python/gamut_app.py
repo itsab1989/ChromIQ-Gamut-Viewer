@@ -491,6 +491,24 @@ class GamutApp(QMainWindow):
             "scale.", g_look)
         aspect_hint.setObjectName("hint"); _wrapped(aspect_hint)
         lv.addWidget(aspect_hint)
+        self._style_mine = QComboBox(g_look)
+        self._style_other = QComboBox(g_look)
+        for combo, label in ((self._style_mine, "My chart"),
+                             (self._style_other, "The comparison")):
+            combo.addItem(f"{label}: solid", "solid")
+            combo.addItem(f"{label}: solid with its mesh", "solid+mesh")
+            combo.addItem(f"{label}: outline only", "mesh")
+            combo.currentIndexChanged.connect(self._redraw)
+            lv.addWidget(combo)
+        self._style_other.setCurrentIndex(2)     # cage, so your chart shows through
+        style_hint = WrappedLabel(
+            "A solid shape hides whatever is inside it. Drawing the comparison "
+            "as an outline instead lets you see your own chart sitting inside "
+            "it — which is the only way to look at your printer inside sRGB, "
+            "or inside everything the eye can see, and still see your printer.",
+            g_look)
+        style_hint.setObjectName("hint")
+        lv.addWidget(style_hint)
         self._points = QCheckBox("Show every patch I measured", g_look)
         self._points.stateChanged.connect(self._redraw)
         lv.addWidget(self._points)
@@ -664,11 +682,11 @@ class GamutApp(QMainWindow):
             return
         target = dlg.selectedFiles()[0]
         try:
-            write_html([(p.stem, g) for p, g in self._slots], Path(target),
-                       self._scene_title(),
+            gamuts, clouds, styles = self._scene_contents()
+            write_html(gamuts, Path(target), self._scene_title(),
                        opacity=self._opacity.value() / 100.0,
                        points=self._points.isChecked(), patches=clouds,
-                   aspect=self._aspect.currentData())
+                       aspect=self._aspect.currentData(), styles=styles)
         except OSError as exc:
             QMessageBox.warning(self, "That could not be saved", str(exc))
             return
@@ -826,19 +844,31 @@ class GamutApp(QMainWindow):
     def _redraw(self) -> None:
         if not self._slots:
             return
-        gamuts = [(p.stem, g) for p, g, _m in self._slots]
-        clouds = [m.lab for _p, _g, m in self._slots]
-        if self._reference is not None:
-            gamuts.append(self._reference)
-            clouds.append(None)
+        gamuts, clouds, styles = self._scene_contents()
         out = self._tmp / "scene.html"
         write_html(gamuts, out, self._scene_title(),
                    opacity=self._opacity.value() / 100.0,
                    points=self._points.isChecked(), patches=clouds,
-                   aspect=self._aspect.currentData())
+                   aspect=self._aspect.currentData(), styles=styles)
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
         self._update_volume()
         self._update_coverage()
+
+    def _scene_contents(self):
+        """What goes into the picture: the shapes, their patches, their styles.
+
+        One place, used by both the live view and the saved page, so a saved
+        page is exactly what was on screen. Keeping two copies of this is how
+        the save route came to be broken while the view looked fine.
+        """
+        gamuts = [(p.stem, g) for p, g, _m in self._slots]
+        clouds = [m.lab for _p, _g, m in self._slots]
+        styles = [self._style_mine.currentData()] * len(self._slots)
+        if self._reference is not None:
+            gamuts.append(self._reference)
+            clouds.append(None)
+            styles.append(self._style_other.currentData())
+        return gamuts, clouds, styles
 
     def _scene_title(self) -> str:
         ref = ("the paper's own white" if self._relative.isChecked()
@@ -901,6 +931,13 @@ def main(argv=None) -> int:
         print(f"{APP_NAME} {__version__}")
         return 0
     app = QApplication(argv)
+    # The icon lives beside the code in development and beside the executable
+    # once frozen, so both places are tried rather than one assumed.
+    for candidate in (Path(__file__).resolve().parent.parent / "assets" / "icon.png",
+                      Path(getattr(sys, "_MEIPASS", ".")) / "assets" / "icon.png"):
+        if candidate.is_file():
+            app.setWindowIcon(QIcon(str(candidate)))
+            break
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(__version__)
     app.setStyleSheet(_QSS)

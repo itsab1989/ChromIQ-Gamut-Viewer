@@ -142,6 +142,36 @@ def read_ti3(path: Path, white_point: str = "D50",
                        instrument=instrument, n_patches=len(rows))
 
 
+def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0):
+    """The triangle edges of a gamut, as a wire cage.
+
+    A solid shape hides whatever is inside it. Drawn as a cage instead, an
+    outer gamut can be seen through: which is the only way to look at a
+    printer sitting inside sRGB, or inside everything the eye can see, and
+    still see the printer. Every edge is drawn once — a triangle mesh shares
+    each edge between two triangles, and drawing both doubles the work for an
+    identical picture.
+    """
+    import plotly.graph_objects as go
+    v = gamut.cylindrical() if gamut.space == "lab" else gamut.vertices
+    f = gamut.faces
+    seen = set()
+    xs, ys, zs = [], [], []
+    for tri in f:
+        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            key = (a, b) if a < b else (b, a)
+            if key in seen:
+                continue
+            seen.add(key)
+            xs += [v[a, 0], v[b, 0], None]
+            ys += [v[a, 1], v[b, 1], None]
+            zs += [v[a, 2], v[b, 2], None]
+    return go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
+                        line=dict(color=colour, width=width),
+                        name=f"{name} (outline)", showlegend=True,
+                        hoverinfo="name")
+
+
 def _mesh(gamut, name: str, opacity: float, wireframe: bool):
     """One Plotly mesh for a gamut, painted with its own colours."""
     import plotly.graph_objects as go
@@ -172,7 +202,7 @@ def _patch_cloud(lab, name: str):
 
 def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
                points: bool = False, patches=None,
-               aspect: str = "data") -> Path:
+               aspect: str = "data", styles=None) -> Path:
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -184,7 +214,12 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
     fig = go.Figure()
     base = opacity if opacity is not None else (1.0 if len(gamuts) == 1 else 0.55)
     for i, (name, g) in enumerate(gamuts):
-        fig.add_trace(_mesh(g, name, opacity=base, wireframe=i > 0))
+        how = (styles[i] if styles is not None and i < len(styles) else "solid")
+        if how in ("solid", "solid+mesh"):
+            fig.add_trace(_mesh(g, name, opacity=base, wireframe=False))
+        if how in ("mesh", "solid+mesh"):
+            fig.add_trace(_edges(g, name,
+                                 width=1.0 if how == "mesh" else 0.7))
         if points and patches is not None and i < len(patches):
             fig.add_trace(_patch_cloud(patches[i], name))
     fig.update_layout(
