@@ -46,3 +46,11 @@ python python/ti3gamut.py yourchart.ti3 --open
 Built on the MIT-licensed [Yet Another Color Gamut
 Visualizer](https://github.com/QiuJueqin/Yet-Another-Color-Gamut-Visualizer) by
 Qiu Jueqin, ported to Python and extended.
+
+---
+
+<p align="center">
+  <a href="https://ko-fi.com/itsab1989"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support this on Ko-fi" height="36"></a>
+  <br>
+  <sub>The Measured Gamut Viewer is free and always will be. If it's useful to you, a coffee is a kind way to say thanks — completely optional, and it stays fully featured either way.</sub>
+</p>

@@ -115,3 +115,9 @@ it opens anywhere with no network.
 | **Gamut volume** | Cubic Lab units, the same measure ArgyllCMS reports |
 
 Runs on macOS, Windows and Linux — every dependency ships wheels for all three.
+
+<p align="center">
+  <a href="https://ko-fi.com/itsab1989"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support this on Ko-fi" height="36"></a>
+  <br>
+  <sub>The Measured Gamut Viewer is free and always will be. If it's useful to you, a coffee is a kind way to say thanks — completely optional, and it stays fully featured either way.</sub>
+</p>

@@ -1,5 +1,11 @@
 # Descriptions
 
+<p align="center">
+  <a href="https://ko-fi.com/itsab1989"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support this on Ko-fi" height="36"></a>
+  <br>
+  <sub>The Measured Gamut Viewer is free and always will be. If it's useful to you, a coffee is a kind way to say thanks — completely optional, and it stays fully featured either way.</sub>
+</p>
+
 This tool helps to visualize color volume by constructing a 3D gamut given point cloud of color values. Please see [gamutview.m](gamutview.m) for more detailed descriptions.
 
 
