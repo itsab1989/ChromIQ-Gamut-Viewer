@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QToolButton, QVBoxLayout, QWidget)
 
 from version import APP_NAME, __version__
-from gamutview import build_gamut, coverage
+from gamutview import build_gamut, coverage, outside_of
 from gamutview import xyz_to_lab
 from references import REFERENCE_SPACES, icc_gamut, reference_gamut
 from spectral import optimal_colour_solid
@@ -89,16 +89,25 @@ _NAV_BTN_SIZE = QSize(28, 28)
 _NAV_ARROW_SIZE = QSize(16, 16)
 
 
-def _nav_icon(icon: QIcon, color: QColor) -> QIcon:
+def _nav_icon(icon: QIcon, color: QColor, dpr: float = 1.0) -> QIcon:
     """Repaint a standard arrow in *color*, centred on a button-sized canvas.
 
     Qt draws its dialog's back, forward and up arrows in a colour chosen for a
     light toolbar. On the dark toolbar this app uses they are all but
     invisible, so each is recoloured. The arrow is then centred on a canvas the
-    size of the button, because Qt puts an icon at the button's top-left
-    corner and an off-centre arrow looks like a mistake.
+    size of the button, because Qt puts an icon at the button's top-left corner
+    and an off-centre arrow looks like a mistake.
+
+    EVERYTHING IS DRAWN AT THE SCREEN'S REAL RESOLUTION. A Retina display packs
+    two device pixels into every point, so a 28-point button needs a 56-pixel
+    image; handing it 28 pixels and letting Qt stretch them is what makes an
+    icon look soft and blocky. Each pixmap is created at *dpr* times the size
+    and then told what its ratio is, so Qt draws it at one image pixel per
+    screen pixel. On a non-Retina display the ratio is 1 and this is exactly
+    the plain behaviour.
     """
-    raw = icon.pixmap(_NAV_ARROW_SIZE)
+    arrow_px = _NAV_ARROW_SIZE * dpr
+    raw = icon.pixmap(arrow_px)
     tinted = QPixmap(raw.size())
     tinted.fill(Qt.GlobalColor.transparent)
     painter = QPainter(tinted)
@@ -107,24 +116,26 @@ def _nav_icon(icon: QIcon, color: QColor) -> QIcon:
     painter.fillRect(tinted.rect(), color)
     painter.end()
 
-    canvas = QPixmap(_NAV_BTN_SIZE)
+    canvas = QPixmap(_NAV_BTN_SIZE * dpr)
     canvas.fill(Qt.GlobalColor.transparent)
     painter = QPainter(canvas)
-    painter.drawPixmap((_NAV_BTN_SIZE.width() - _NAV_ARROW_SIZE.width()) // 2,
-                       (_NAV_BTN_SIZE.height() - _NAV_ARROW_SIZE.height()) // 2,
-                       tinted)
+    painter.drawPixmap((canvas.width() - tinted.width()) // 2,
+                       (canvas.height() - tinted.height()) // 2, tinted)
     painter.end()
+    canvas.setDevicePixelRatio(dpr)
     return QIcon(canvas)
 
 
 def _style_dialog_toolbar(dlg) -> None:
     """Make the dialog's own controls readable on this app's dark background."""
     style = dlg.style()
+    dpr = dlg.devicePixelRatioF() or 1.0
     for name, pixmap in _NAV_BUTTONS.items():
         button = dlg.findChild(QToolButton, name)
         if button is None:
             continue
-        button.setIcon(_nav_icon(style.standardIcon(pixmap), QColor("#e0e0e0")))
+        button.setIcon(_nav_icon(style.standardIcon(pixmap), QColor("#e0e0e0"),
+                                 dpr))
         button.setIconSize(_NAV_BTN_SIZE)
         button.setFixedSize(_NAV_BTN_SIZE)
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
@@ -371,22 +382,42 @@ class GamutApp(QMainWindow):
         self._open_btn = QPushButton("Open a measured chart…", g_files)
         self._open_btn.clicked.connect(self._on_open)
         fv.addWidget(self._open_btn)
+        # One row per open chart, each with its own way out. A single "close
+        # everything" button meant a second chart could not be put back without
+        # reopening the first, which is the wrong shape for comparing things.
         self._slot_labels = []
+        self._slot_rows = []
         for i in range(2):
-            lab = WrappedLabel("", g_files)
-            lab.setObjectName("slot"); _wrapped(lab)
-            fv.addWidget(lab)
+            row = QWidget(g_files)
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            lab = WrappedLabel("", row)
+            lab.setObjectName("slot")
+            rl.addWidget(lab, 1)
+            shut = QPushButton("Close", row)
+            shut.setObjectName("secondary")
+            shut.setFixedWidth(64)
+            shut.clicked.connect(lambda _checked=False, which=i:
+                                 self._close_one(which))
+            rl.addWidget(shut, 0)
+            row.setVisible(False)
+            fv.addWidget(row)
             self._slot_labels.append(lab)
-        self._clear_btn = QPushButton("Close these charts", g_files)
+            self._slot_rows.append(row)
+        self._clear_btn = QPushButton("Close both charts", g_files)
         self._clear_btn.setObjectName("secondary")
         self._clear_btn.clicked.connect(self._on_clear)
-        self._clear_btn.setEnabled(False)
+        self._clear_btn.setVisible(False)
         fv.addWidget(self._clear_btn)
         hint = WrappedLabel(
             "Open the .ti3 file ArgyllCMS saved when you measured a printed "
             "chart — or simply drag it onto this window. Open a second one and "
             "both are drawn together, so you can see which paper holds more "
-            "colour and exactly where they differ.", g_files)
+            "colour and exactly where they differ.\n\n"
+            "You can open an ICC profile (.icc or .icm) the same way. A "
+            "profile is not a measurement, so it goes into Compare with "
+            "below rather than here — it is what your printer is described "
+            "as being able to do, next to what it actually did.", g_files)
         hint.setObjectName("hint"); _wrapped(hint)
         fv.addWidget(hint)
         v.addWidget(g_files)
@@ -509,6 +540,32 @@ class GamutApp(QMainWindow):
             g_look)
         style_hint.setObjectName("hint")
         lv.addWidget(style_hint)
+        self._detail = QComboBox(g_look)
+        self._detail.addItem("Detail: normal", 20)
+        self._detail.addItem("Detail: fine (slower to draw)", 32)
+        self._detail.addItem("Detail: rough (quickest)", 10)
+        self._detail.currentIndexChanged.connect(self._on_compare_changed)
+        lv.addWidget(self._detail)
+        detail_hint = WrappedLabel(
+            "How finely the shape you compare against is built. Normal is "
+            "accurate to within a twentieth of a percent and draws in about a "
+            "second; fine is smoother to look at; rough is there for a slow "
+            "computer. Your own measured chart is not affected — its detail "
+            "comes from how many patches you measured.", g_look)
+        detail_hint.setObjectName("hint")
+        lv.addWidget(detail_hint)
+        self._show_lost = QCheckBox("Show me what the comparison cannot print",
+                                    g_look)
+        self._show_lost.stateChanged.connect(self._redraw)
+        lv.addWidget(self._show_lost)
+        lost_hint = WrappedLabel(
+            "Paints your chart by what the thing you are comparing against "
+            "cannot reproduce: red where the colour is out of its reach, grey "
+            "where it is fine. A percentage tells you how much you lose; this "
+            "tells you which colours, so you can decide whether it matters for "
+            "the pictures you actually print.", g_look)
+        lost_hint.setObjectName("hint")
+        lv.addWidget(lost_hint)
         self._points = QCheckBox("Show every patch I measured", g_look)
         self._points.stateChanged.connect(self._redraw)
         lv.addWidget(self._points)
@@ -572,7 +629,8 @@ class GamutApp(QMainWindow):
             elif choice[0] == "space":
                 name = choice[1]
                 self._reference = (name, reference_gamut(
-                    name, white_point=self._white.currentData()))
+                    name, white_point=self._white.currentData(),
+                    steps=self._detail.currentData()))
                 self._compare_note.setText(REFERENCE_SPACES[name]["note"])
             elif choice[0] == "icc":
                 dlg = self._file_dialog(
@@ -591,7 +649,8 @@ class GamutApp(QMainWindow):
                     "itself.")
             elif choice[0] == "visible":
                 v, _f = optimal_colour_solid(
-                    "D50" if self._white.currentData() == "D50" else "D65", 72)
+                    "D50" if self._white.currentData() == "D50" else "D65",
+                    max(24, self._detail.currentData() * 3))
                 lab = xyz_to_lab(v, self._white.currentData())
                 self._reference = ("Every visible colour",
                                    build_gamut(lab, input_space="lab",
@@ -654,13 +713,23 @@ class GamutApp(QMainWindow):
                 self._last_folder = str(Path(chosen).parent)
                 self._load(Path(chosen))
 
+    def _close_one(self, which: int) -> None:
+        """Close just this chart and leave the other one where it is."""
+        if 0 <= which < len(self._slots):
+            del self._slots[which]
+        self._refresh_slot_labels()
+        if self._slots:
+            self._redraw()
+        else:
+            self._on_clear()
+
     def _on_clear(self) -> None:
         self._slots.clear()
         self._refresh_slot_labels()
         self._show_placeholder()
         self._volume.setText("—")
         self._volume_hint.setText("cubic Lab units")
-        self._clear_btn.setEnabled(False)
+        self._clear_btn.setVisible(False)
         self._save.setEnabled(False)
 
     def _on_save(self) -> None:
@@ -682,11 +751,11 @@ class GamutApp(QMainWindow):
             return
         target = dlg.selectedFiles()[0]
         try:
-            gamuts, clouds, styles = self._scene_contents()
+            gamuts, clouds, styles, lost = self._scene_contents()
             write_html(gamuts, Path(target), self._scene_title(),
                        opacity=self._opacity.value() / 100.0,
                        points=self._points.isChecked(), patches=clouds,
-                       aspect=self._aspect.currentData(), styles=styles)
+                       aspect=self._aspect.currentData(), styles=styles, lost=lost)
         except OSError as exc:
             QMessageBox.warning(self, "That could not be saved", str(exc))
             return
@@ -718,7 +787,6 @@ class GamutApp(QMainWindow):
         self._slots.append((path, g, m))
         self._warn_if_too_few_patches(path, m)
         self._refresh_slot_labels()
-        self._clear_btn.setEnabled(True)
         self._save.setEnabled(True)
         self._redraw()
 
@@ -797,6 +865,11 @@ class GamutApp(QMainWindow):
         self._redraw()
 
     def _refresh_slot_labels(self) -> None:
+        # "both" only when there really are two; a button that says the wrong
+        # number is a small lie that makes people distrust the rest.
+        self._clear_btn.setVisible(len(self._slots) == 2)
+        for i, row in enumerate(self._slot_rows):
+            row.setVisible(i < len(self._slots))
         for i, lab in enumerate(self._slot_labels):
             if i < len(self._slots):
                 path, _g, m = self._slots[i]
@@ -805,12 +878,10 @@ class GamutApp(QMainWindow):
                 measured = (f", measured with your {m.instrument}"
                             if m.instrument else "")
                 lab.setText(f"● {path.stem}\n   {patches}{measured}")
-                lab.setVisible(True)
             else:
                 # Nothing to say about a slot that holds nothing: an empty
                 # placeholder under a real chart reads as if something failed.
                 lab.setText("")
-                lab.setVisible(False)
 
     # ------------------------------------------------------------------ drawing
     def _show_placeholder(self) -> None:
@@ -844,12 +915,12 @@ class GamutApp(QMainWindow):
     def _redraw(self) -> None:
         if not self._slots:
             return
-        gamuts, clouds, styles = self._scene_contents()
+        gamuts, clouds, styles, lost = self._scene_contents()
         out = self._tmp / "scene.html"
         write_html(gamuts, out, self._scene_title(),
                    opacity=self._opacity.value() / 100.0,
                    points=self._points.isChecked(), patches=clouds,
-                   aspect=self._aspect.currentData(), styles=styles)
+                   aspect=self._aspect.currentData(), styles=styles, lost=lost)
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
         self._update_volume()
         self._update_coverage()
@@ -864,11 +935,29 @@ class GamutApp(QMainWindow):
         gamuts = [(p.stem, g) for p, g, _m in self._slots]
         clouds = [m.lab for _p, _g, m in self._slots]
         styles = [self._style_mine.currentData()] * len(self._slots)
+        # Marking what is out of reach needs something to be out of reach OF,
+        # so it only applies when a comparison is loaded, and only to the
+        # charts -- painting the comparison by its own reach says nothing.
+        against = None
+        if self._reference is not None:
+            against = self._reference[1]
+        elif len(self._slots) == 2:
+            against = self._slots[1][1]
+        lost = None
+        if self._show_lost.isChecked() and against is not None:
+            lost = []
+            for _p, g, _m in self._slots:
+                try:
+                    lost.append(outside_of(g, against))
+                except Exception:      # noqa: BLE001 — a view must not crash
+                    lost.append(None)
         if self._reference is not None:
             gamuts.append(self._reference)
             clouds.append(None)
             styles.append(self._style_other.currentData())
-        return gamuts, clouds, styles
+            if lost is not None:
+                lost.append(None)
+        return gamuts, clouds, styles, lost
 
     def _scene_title(self) -> str:
         ref = ("the paper's own white" if self._relative.isChecked()

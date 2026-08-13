@@ -172,6 +172,26 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0):
                         hoverinfo="name")
 
 
+#: Colour used for the part of a gamut that the comparison cannot reach. A
+#: warm red against the muted grey of the reachable part, so the eye goes
+#: straight to what is lost without needing the legend.
+_LOST = "rgb(232,23,93)"
+_KEPT = "rgb(105,112,126)"
+
+
+def _mesh_lost(gamut, name: str, opacity: float, lost) -> "list":
+    """The gamut painted by what the comparison cannot reproduce."""
+    import plotly.graph_objects as go
+    v = gamut.cylindrical() if gamut.space == "lab" else gamut.vertices
+    colours = [_LOST if bad else _KEPT for bad in lost]
+    return go.Mesh3d(
+        x=v[:, 0], y=v[:, 1], z=v[:, 2],
+        i=gamut.faces[:, 0], j=gamut.faces[:, 1], k=gamut.faces[:, 2],
+        vertexcolor=colours, opacity=opacity, flatshading=False,
+        name=f"{name} — red is out of reach", showlegend=True,
+        hoverinfo="name")
+
+
 def _mesh(gamut, name: str, opacity: float, wireframe: bool):
     """One Plotly mesh for a gamut, painted with its own colours."""
     import plotly.graph_objects as go
@@ -202,7 +222,7 @@ def _patch_cloud(lab, name: str):
 
 def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
                points: bool = False, patches=None,
-               aspect: str = "data", styles=None) -> Path:
+               aspect: str = "data", styles=None, lost=None) -> Path:
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -215,7 +235,10 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
     base = opacity if opacity is not None else (1.0 if len(gamuts) == 1 else 0.55)
     for i, (name, g) in enumerate(gamuts):
         how = (styles[i] if styles is not None and i < len(styles) else "solid")
-        if how in ("solid", "solid+mesh"):
+        marked = lost[i] if lost is not None and i < len(lost) else None
+        if marked is not None:
+            fig.add_trace(_mesh_lost(g, name, base, marked))
+        elif how in ("solid", "solid+mesh"):
             fig.add_trace(_mesh(g, name, opacity=base, wireframe=False))
         if how in ("mesh", "solid+mesh"):
             fig.add_trace(_edges(g, name,

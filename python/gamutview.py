@@ -49,7 +49,7 @@ from typing import Literal
 
 import numpy as np
 
-__all__ = ["Gamut", "build_gamut", "coverage", "mesh_volume", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
+__all__ = ["Gamut", "build_gamut", "coverage", "mesh_volume", "outside_of", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
            "lab_to_lch_cartesian", "WHITE_POINTS"]
 
 Space = Literal["xyz", "lab"]
@@ -346,6 +346,24 @@ def _device_cube_surface(drive_values, pts, xyz):
             "no populated faces of the device cube — drive_values must include "
             "patches at the extremes of each channel (the faces of the RGB cube)")
     return (np.vstack(verts_out), np.vstack(faces_out), np.vstack(xyz_out))
+
+
+def outside_of(inner, outer) -> np.ndarray:
+    """Which points of *inner* fall outside *outer*: a boolean per vertex.
+
+    Turns "77.6% fits" into "and here is the 22.4% that does not". A percentage
+    tells somebody how much colour they lose; this tells them WHICH colours, so
+    they can judge whether it matters for the pictures they actually print --
+    losing deep cyans matters to a landscape photographer and not at all to
+    somebody printing skin tones.
+    """
+    from scipy.spatial import Delaunay
+
+    a = np.asarray(inner.vertices if hasattr(inner, "vertices") else inner, float)
+    b = np.asarray(outer.vertices if hasattr(outer, "vertices") else outer, float)
+    if len(b) < 4:
+        raise ValueError("the gamut to test against needs at least 4 vertices")
+    return Delaunay(b).find_simplex(a) < 0
 
 
 def coverage(inner, outer, *, samples: int = 60_000, seed: int = 20260814
