@@ -80,3 +80,38 @@ python demo.py --show            # matplotlib window instead
 * The spectral helpers (`spectra2colors`, the visible-spectrum data) are not
   ported. They are the interesting next piece if the visible-locus overlay is
   ever wanted.
+
+## The demo app
+
+```bash
+pip install PyQt6 PyQt6-WebEngine numpy scipy plotly
+python gamut_app.py                 # then "Open measurement…"
+python gamut_app.py chart.ti3       # or start with a file
+```
+
+Open the `.ti3` ArgyllCMS wrote when you read a printed chart and see the gamut
+those patches enclose, in 3D, in its own colours, with its volume. Open a second
+one and both are drawn together with the difference stated in per cent.
+
+There is a command-line version too, if you only want the picture:
+
+```bash
+python ti3gamut.py chart.ti3 --open
+python ti3gamut.py glossy.ti3 matte.ti3 --relative
+```
+
+It writes one self-contained HTML file — the viewer travels inside the page, so
+it opens anywhere with no network.
+
+### The controls, and why each one is there
+
+| Control | What it decides |
+|---|---|
+| **How the shape is built** | Follow the device boundary (keeps the printer's real dents) or convex hull (bridges over them and claims more colour than you have) |
+| **Reference: D50 / D65** | Which white point Lab is computed under. D50 for print, D65 for displays |
+| **Measure against the paper's own white** | On, two papers of different brightness compare fairly — what a relative-colorimetric profile does. Off, the absolute numbers the instrument reported |
+| **Opacity** | So an inner gamut stays visible under an outer one |
+| **Show the measured patches** | Every patch as a dot, so you can see where the chart sampled densely and where the boundary is guesswork |
+| **Gamut volume** | Cubic Lab units, the same measure ArgyllCMS reports |
+
+Runs on macOS, Windows and Linux — every dependency ships wheels for all three.
