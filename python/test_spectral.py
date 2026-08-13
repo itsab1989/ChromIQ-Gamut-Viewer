@@ -52,9 +52,16 @@ def test_a_real_printer_gamut_lies_inside_it():
     v, _ = spectral.optimal_colour_solid("D50", steps=32)
     inside = Delaunay(v)
     rng = np.random.default_rng(3)
-    lab = np.column_stack([rng.uniform(8, 96, 500),
-                           rng.uniform(-60, 60, 500),
-                           rng.uniform(-60, 60, 500)])
+    # Chroma has to taper towards black and white: the solid is widest in the
+    # mid tones and closes to a point at either end, so a uniform Lab box is
+    # NOT a plausible printer and would poke outside near L* 8 and 96. Scaling
+    # the radius by how far the lightness is from either end models a real
+    # printer's shape and is the honest thing to assert.
+    ell = rng.uniform(8, 96, 500)
+    taper = np.sin(np.pi * ell / 100.0)          # 0 at both ends, 1 mid-tone
+    ang = rng.uniform(0, 2 * np.pi, 500)
+    rad = rng.uniform(0, 55, 500) * taper
+    lab = np.column_stack([ell, rad * np.cos(ang), rad * np.sin(ang)])
     assert (inside.find_simplex(lab_to_xyz(lab, "D50")) >= 0).all()
 
 
