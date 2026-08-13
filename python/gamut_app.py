@@ -47,7 +47,7 @@ QGroupBox { border: 1px solid #2a2f3a; border-radius: 6px; margin-top: 10px;
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px;
                    color: #9fb3c8; }
 QPushButton { background: #e8175d; color: #fff; border: none; border-radius: 5px;
-              padding: 7px 12px; font-weight: 600; }
+              padding: 7px 12px; font-weight: 600; min-height: 20px; }
 QPushButton:hover { background: #ff2e73; }
 QPushButton:disabled { background: #333842; color: #7b828e; }
 QPushButton#secondary { background: #232833; color: #e8ecf2; font-weight: 500; }
@@ -108,10 +108,23 @@ class GamutApp(QMainWindow):
         fl.addWidget(self._view)
         row.addWidget(frame, 1)
         self.setCentralWidget(central)
+        self.setAcceptDrops(True)      # drop a .ti3 anywhere on the window
         self._show_placeholder()
 
         for p in (initial or []):
             self._load(Path(p))
+
+    # ------------------------------------------------------------ drag & drop
+    def dragEnterEvent(self, event) -> None:    # noqa: N802 (Qt naming)
+        """Accept a dragged file, so opening one needs no dialog at all."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:         # noqa: N802 (Qt naming)
+        for url in event.mimeData().urls():
+            if url.isLocalFile():
+                self._load(Path(url.toLocalFile()))
+        event.acceptProposedAction()
 
     # ---------------------------------------------------------------- controls
     def _build_controls(self) -> QWidget:
@@ -202,6 +215,19 @@ class GamutApp(QMainWindow):
             lambda x: self._opacity_lbl.setText(f"{x}%"))
         orow.addWidget(self._opacity_lbl)
         lv.addLayout(orow)
+        self._aspect = QComboBox(g_look)
+        self._aspect.addItem("True proportions (equal Lab units)", "data")
+        self._aspect.addItem("Even up the box", "cube")
+        self._aspect.currentIndexChanged.connect(self._redraw)
+        lv.addWidget(self._aspect)
+        aspect_hint = QLabel(
+            "True proportions keeps one Lab unit the same length on every "
+            "axis, which is what makes the shape and its volume honest — "
+            "lightness spans 100 while colour spans nearly 200, so the box is "
+            "wide and flat. Evening it up is easier to look at and no longer "
+            "to scale.", g_look)
+        aspect_hint.setObjectName("hint"); _wrapped(aspect_hint)
+        lv.addWidget(aspect_hint)
         self._points = QCheckBox("Show the measured patches", g_look)
         self._points.stateChanged.connect(self._redraw)
         lv.addWidget(self._points)
@@ -261,7 +287,8 @@ class GamutApp(QMainWindow):
             write_html([(p.stem, g) for p, g in self._slots], Path(target),
                        self._scene_title(),
                        opacity=self._opacity.value() / 100.0,
-                       points=self._points.isChecked(), patches=clouds)
+                       points=self._points.isChecked(), patches=clouds,
+                   aspect=self._aspect.currentData())
         except OSError as exc:
             QMessageBox.warning(self, "That could not be saved", str(exc))
             return
@@ -341,7 +368,8 @@ class GamutApp(QMainWindow):
         out = self._tmp / "scene.html"
         write_html(gamuts, out, self._scene_title(),
                    opacity=self._opacity.value() / 100.0,
-                   points=self._points.isChecked(), patches=clouds)
+                   points=self._points.isChecked(), patches=clouds,
+                   aspect=self._aspect.currentData())
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
         self._update_volume()
 

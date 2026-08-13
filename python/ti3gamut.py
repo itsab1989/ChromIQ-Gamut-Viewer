@@ -171,7 +171,8 @@ def _patch_cloud(lab, name: str):
 
 
 def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
-               points: bool = False, patches=None) -> Path:
+               points: bool = False, patches=None,
+               aspect: str = "data") -> Path:
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -190,7 +191,7 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
         title=title,
         scene=dict(
             xaxis_title="a*  (chroma →)", yaxis_title="b*", zaxis_title="L*",
-            aspectmode="data",
+            aspectmode=aspect,
             xaxis=dict(backgroundcolor="#181a1f", gridcolor="#333"),
             yaxis=dict(backgroundcolor="#181a1f", gridcolor="#333"),
             zaxis=dict(backgroundcolor="#181a1f", gridcolor="#333"),
