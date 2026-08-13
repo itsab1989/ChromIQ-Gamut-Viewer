@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QMainWindow, QMessageBox, QPushButton, QSlider,
                              QSizePolicy, QVBoxLayout, QWidget)
 
+from version import APP_NAME, __version__
 from gamutview import build_gamut
 from ti3gamut import read_ti3, write_html
 
@@ -87,7 +88,7 @@ class GamutApp(QMainWindow):
 
     def __init__(self, initial: "list[Path] | None" = None) -> None:
         super().__init__()
-        self.setWindowTitle("Measured Gamut Viewer")
+        self.setWindowTitle(f"{APP_NAME} {__version__}")
         self.resize(1280, 840)
         self._slots: list[tuple[Path, object]] = []      # (path, Gamut)
         self._tmp = Path(tempfile.mkdtemp(prefix="gamutview-"))
@@ -368,8 +369,12 @@ class GamutApp(QMainWindow):
 
 def main(argv=None) -> int:
     argv = list(sys.argv if argv is None else argv)
+    if "--version" in argv:
+        print(f"{APP_NAME} {__version__}")
+        return 0
     app = QApplication(argv)
-    app.setApplicationName("Measured Gamut Viewer")
+    app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(__version__)
     app.setStyleSheet(_QSS)
     files = [Path(a) for a in argv[1:] if not a.startswith("-")]
     win = GamutApp(files)
