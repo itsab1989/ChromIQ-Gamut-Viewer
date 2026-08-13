@@ -76,30 +76,54 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 """
 
 
-#: Inside width of the control column, in pixels: the column is 310 wide, a
-#: group box eats ~24 of it and its layout another ~16. Labels are measured
-#: against this, so their height is right the first time.
-_TEXT_WIDTH = 262
+class WrappedLabel(QLabel):
+    """A word-wrapped label that always claims the height its text needs.
 
+    Measuring once when the label is built is not enough, and "sometimes cut
+    off" is the symptom: the real width changes when the scroll bar appears or
+    disappears, when the window is resized, when the text is replaced, and on
+    another machine with another font. Each time, a height measured against a
+    guessed width is the wrong height and the last lines disappear behind
+    whatever sits below.
 
-def _wrapped(label: QLabel, width: int = _TEXT_WIDTH) -> QLabel:
-    """Let a word-wrapped label claim the height its text really needs.
-
-    A wrapping QLabel in a fixed-width column reports one line's height unless
-    it is told otherwise, so whatever sits below it is drawn over the top and
-    the last lines vanish. Asking the font metrics to lay the text out at the
-    column's real width gives the exact height, however many lines that turns
-    out to be -- which matters because these strings are meant to explain
-    things properly rather than fit a guessed two lines, and because a
-    translation is never the same length as the English.
+    So the height is recomputed from the width the label actually has, every
+    time either of them changes. Nothing is guessed and nothing is hard-coded,
+    which also means a translation twice the length of the English still fits.
     """
+
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__(text, parent)
+        self.setWordWrap(True)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred,
+                           QSizePolicy.Policy.MinimumExpanding)
+        self._refit()
+
+    def _refit(self) -> None:
+        width = max(60, self.width())
+        rect = self.fontMetrics().boundingRect(
+            QRect(0, 0, width, 10_000),
+            int(Qt.TextFlag.TextWordWrap), self.text())
+        needed = rect.height() + 4
+        if needed != self.minimumHeight():
+            self.setMinimumHeight(needed)
+            self.updateGeometry()
+
+    def resizeEvent(self, event) -> None:      # noqa: N802 (Qt naming)
+        super().resizeEvent(event)
+        self._refit()
+
+    def setText(self, text: str) -> None:      # noqa: N802 (Qt naming)
+        super().setText(text)
+        self._refit()
+
+
+def _wrapped(label: QLabel, width: int = 0) -> QLabel:
+    """Kept so existing calls read the same; the label refits itself now."""
     label.setWordWrap(True)
     label.setSizePolicy(QSizePolicy.Policy.Preferred,
                         QSizePolicy.Policy.MinimumExpanding)
-    rect = label.fontMetrics().boundingRect(
-        QRect(0, 0, width, 10_000),
-        int(Qt.TextFlag.TextWordWrap), label.text())
-    label.setMinimumHeight(rect.height() + 4)
+    if isinstance(label, WrappedLabel):
+        label._refit()
     return label
 
 
@@ -225,7 +249,7 @@ class GamutApp(QMainWindow):
         f = QFont(); f.setPointSize(19); f.setWeight(QFont.Weight.DemiBold)
         title.setFont(f)
         v.addWidget(title)
-        sub = QLabel(
+        sub = WrappedLabel(
             "Every colour your printer actually put on paper, worked out from "
             "the patches you measured. This is what the printer really did, on "
             "that paper, on that day — not what a profile predicts it can do.",
@@ -241,7 +265,7 @@ class GamutApp(QMainWindow):
         fv.addWidget(self._open_btn)
         self._slot_labels = []
         for i in range(2):
-            lab = QLabel("", g_files)
+            lab = WrappedLabel("", g_files)
             lab.setObjectName("slot"); _wrapped(lab)
             fv.addWidget(lab)
             self._slot_labels.append(lab)
@@ -250,7 +274,7 @@ class GamutApp(QMainWindow):
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setEnabled(False)
         fv.addWidget(self._clear_btn)
-        hint = QLabel(
+        hint = WrappedLabel(
             "Open the .ti3 file ArgyllCMS saved when you measured a printed "
             "chart — or simply drag it onto this window. Open a second one and "
             "both are drawn together, so you can see which paper holds more "
@@ -267,7 +291,7 @@ class GamutApp(QMainWindow):
         self._mode.addItem("Wrap it in a simple skin", "hull")
         self._mode.currentIndexChanged.connect(self._rebuild)
         bv.addWidget(self._mode)
-        mode_hint = QLabel(
+        mode_hint = WrappedLabel(
             "Follow the real edge is the one to use. The edge of what a printer "
             "can print is not smooth — it has real "
             "dents in it, most noticeably in the deep blues. The recommended "
@@ -292,10 +316,10 @@ class GamutApp(QMainWindow):
         self._compare.addItem("Everything the eye can see", ("visible", None))
         self._compare.currentIndexChanged.connect(self._on_compare_changed)
         cvv.addWidget(self._compare)
-        self._compare_note = QLabel("", g_cmp)
+        self._compare_note = WrappedLabel("", g_cmp)
         self._compare_note.setObjectName("hint"); _wrapped(self._compare_note)
         cvv.addWidget(self._compare_note)
-        cmp_hint = QLabel(
+        cmp_hint = WrappedLabel(
             "Comparing with a second measurement asks which of two papers can "
             "print more. Comparing with a standard space asks whether the "
             "images people send you will survive on this paper. Comparing with "
@@ -317,7 +341,7 @@ class GamutApp(QMainWindow):
         self._relative = QCheckBox("Judge each paper against its own white", g_cs)
         self._relative.stateChanged.connect(self._rebuild)
         cv.addWidget(self._relative)
-        rel_hint = QLabel(
+        rel_hint = WrappedLabel(
             "Papers are not equally bright — a warm rag paper starts off duller "
             "than a bright glossy one. Tick this and each paper is judged "
             "against its own white, so two papers can be compared fairly on "
@@ -335,12 +359,13 @@ class GamutApp(QMainWindow):
         orow.addWidget(QLabel("See-through", g_look))
         self._opacity = QSlider(Qt.Orientation.Horizontal, g_look)
         self._opacity.setRange(15, 100); self._opacity.setValue(85)
-        self._opacity.sliderReleased.connect(self._redraw)
+        self._opacity.valueChanged.connect(self._on_opacity_changed)
         orow.addWidget(self._opacity, 1)
         self._opacity_lbl = QLabel("85%", g_look)
         self._opacity_lbl.setFixedWidth(38)
         self._opacity.valueChanged.connect(
             lambda x: self._opacity_lbl.setText(f"{x}%"))
+        self._opacity_live = True
         orow.addWidget(self._opacity_lbl)
         lv.addLayout(orow)
         self._aspect = QComboBox(g_look)
@@ -348,7 +373,7 @@ class GamutApp(QMainWindow):
         self._aspect.addItem("Even up the box", "cube")
         self._aspect.currentIndexChanged.connect(self._redraw)
         lv.addWidget(self._aspect)
-        aspect_hint = QLabel(
+        aspect_hint = WrappedLabel(
             "To scale, one step of colour difference is drawn the same length "
             "whichever direction it goes in, which is what makes the shape and "
             "the amount below honest. Printers have roughly twice as much "
@@ -368,10 +393,10 @@ class GamutApp(QMainWindow):
         vv = QVBoxLayout(g_vol)
         self._volume = QLabel("—", g_vol); self._volume.setObjectName("volume")
         vv.addWidget(self._volume)
-        self._coverage = QLabel("", g_vol)
+        self._coverage = WrappedLabel("", g_vol)
         self._coverage.setObjectName("hint"); _wrapped(self._coverage)
         vv.addWidget(self._coverage)
-        self._volume_hint = QLabel(
+        self._volume_hint = WrappedLabel(
             "Open a chart to see how much colour it holds.", g_vol)
         self._volume_hint.setObjectName("hint"); _wrapped(self._volume_hint)
         vv.addWidget(self._volume_hint)
@@ -627,6 +652,24 @@ class GamutApp(QMainWindow):
             "<div style='font-size:44px'>◱</div>"
             "<p>Open a measured chart — a <b>.ti3</b> file — to see the gamut "
             "it encloses.</p></div></body></html>")
+
+    def _on_opacity_changed(self, value: int) -> None:
+        """Change how see-through the shapes are, live, as the slider moves.
+
+        Rebuilding the whole page for each step would take long enough that the
+        picture only caught up after letting go, which is not what a slider is
+        for. Plotly can restyle a scene that is already on screen, so the
+        change is pushed straight into the page: the shapes fade as you drag,
+        the camera stays exactly where you put it, and nothing is recomputed.
+        """
+        page = self._view.page()
+        if page is None or not self._slots:
+            return
+        page.runJavaScript(
+            "(function(){var d=document.getElementsByClassName("
+            "'plotly-graph-div')[0];"
+            f"if(d&&window.Plotly)Plotly.restyle(d,{{opacity:{value / 100.0}}});"
+            "})();")
 
     def _redraw(self) -> None:
         if not self._slots:
