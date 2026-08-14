@@ -37,7 +37,7 @@ def test_it_records_what_was_logged(log_module):
     log_module.get_logger("test").info("a distinctive line")
     for handler in logging.getLogger("gamutview").handlers:
         handler.flush()
-    assert "a distinctive line" in log_module.log_path().read_text()
+    assert "a distinctive line" in log_module.log_path().read_text(encoding="utf-8")
 
 
 def test_it_cannot_grow_without_limit(log_module):

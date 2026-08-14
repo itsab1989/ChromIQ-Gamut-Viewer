@@ -657,10 +657,10 @@ def test_the_engine_reaches_a_three_d_page_and_not_the_flat_one(tmp_path):
                 tilt=dict(mode="off", speed=6.0, range=40.0))
 
     solid = write_html([("chart", g)], tmp_path / "a.html", "t", spin=spin)
-    assert "cqSpin" in solid.read_text()
+    assert "cqSpin" in solid.read_text(encoding="utf-8")
 
     flat = write_slice_html([("chart", g)], tmp_path / "b.html", 50.0, "t")
-    assert "cqSpin" not in flat.read_text()
+    assert "cqSpin" not in flat.read_text(encoding="utf-8")
 
 
 def test_both_rooms_are_handed_to_the_engine(tmp_path):
@@ -675,7 +675,7 @@ def test_both_rooms_are_handed_to_the_engine(tmp_path):
         pages, tmp_path / "c.html",
         spin=dict(on=True, turn=dict(mode="round", speed=8.0, range=60.0),
                   tilt=dict(mode="round", speed=6.0, range=40.0)))
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "cqSpin" in text
     assert '"ids": ["scene0", "scene1"]' in text
 
