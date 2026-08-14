@@ -1,5 +1,87 @@
 # Changelog
 
+## v2.0.0
+
+### ✨ New
+
+- **Films: MP4 (H.264), MP4 (H.265) and WebM (VP9)** join WebP, GIF and APNG
+  when saving the turning view. A film is markedly smaller for the same
+  sharpness — about half an animated WebP for H.264, nearer a third for the
+  other two, measured on this application's own view — and **WebM (VP9) is the
+  only moving kind that can be see-through**, which is what a web page wants.
+  A copy of ffmpeg travels with the application, so there is nothing to
+  install; **Where ffmpeg is…** points at your own if you keep one. Only the
+  formats a build can really write are offered, and the rest say why.
+
+- **Viewer and export styling**, a section of its own in the left-hand column.
+  What is behind the shape, what the three walls are, and what colour the
+  lettering and the grid lines come out — with ready-made **looks** named for
+  where the picture is going (*For a white document*, *For a dark slide*,
+  *Cut out for a light page*), and the window's own dark and light among them.
+
+- **Live preview.** With it ticked the view in front of you *is* the picture
+  that will be saved, so setting one up is a matter of looking at it rather
+  than imagining it — and it doubles as a way to have the application itself
+  look how you like. It is remembered for next time.
+
+- **Looks you save yourself**, under a name, as one small file each, kept
+  beside ChromIQ's own presets and with the same three buttons: save, remove,
+  open the folder. Sharing one is sending somebody a file. **Removing never
+  deletes** — it moves the file into an `old` folder with the date on it.
+
+- **A picture of the result in the Save window**, made by the export's own
+  steps so it cannot disagree with the file. See-through is shown on chequers,
+  which is the one thing no window can show directly.
+
+- **Colour pickers that belong to this application** rather than the system's
+  floating palette, each with a see-through setting and the colours already in
+  the picture ready to hand.
+
+### 🐞 Fixed
+
+- **The Quality slider never reached a moving picture.** Every animated WebP
+  was written at whatever the library felt like — 80 — which put a visible
+  shimmer on the surface as it turned. It is now shown for moving pictures and
+  films alike, and for a film it becomes the encoder's own quality, so the same
+  number means the same picture whichever you choose.
+
+- **See-through was silently solid.** A copy of the screen has no see-through
+  in it, so asking for it politely and grabbing gave back a picture in whatever
+  colour happened to be behind it. Each frame is now taken twice, on white and
+  on black, and the difference *is* the transparency — exact, including the
+  soft edges.
+
+- **The lettering kept the screen's colour whatever it landed on**, so saving
+  on a white background gave pale grey on white and the scale could not be
+  read at all. It now follows the background it is actually on.
+
+- **The percentage sat below the middle of the progress bar** — three pixels
+  at ordinary resolution and five on a high-resolution screen — because Qt
+  centres it on the whole widget, margin and all, rather than on the coloured
+  bar.
+
+- **The progress bar reached 100% with the file not yet written.** Taking the
+  frames is most of the job for a film and rather less for a WebP; the bar now
+  covers both parts and never claims to be finished before it is.
+
+- **Writing the file no longer blocks the window.** It happens on a thread of
+  its own, and a film can be stopped part way because the encoder is a separate
+  program. This was the last thing here that could look like a hang.
+
+- **A long moving picture no longer costs hundreds of megabytes of memory.**
+  Frames are finished and handed on as they are taken rather than kept.
+
+- An APNG is saved as `.png`, which every viewer opens, rather than `.apng`,
+  which few do.
+
+### 📖 Documentation
+
+- A single sharp loop at the top of the README, and **six more with every
+  setting behind each** on [docs/MOTION.md](docs/MOTION.md) — re-exported at
+  full quality, keeping every frame.
+- [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md) says what travels with a release
+  and under what terms, including why ffmpeg is run as a separate program.
+
 ## v1.9.6
 
 ### 🐞 Fixed

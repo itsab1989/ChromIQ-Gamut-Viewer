@@ -4110,7 +4110,7 @@ class GamutApp(QMainWindow):
             frame.width * 4, QImage.Format.Format_RGBA8888))
         return shot
 
-    def _finish_writing(self, writer, progress) -> Path:
+    def _finish_writing(self, writer, progress, reached: int = 78) -> Path:
         """Let the file be written without the window going dead.
 
         THIS IS THE STEP THAT USED TO LOOK LIKE A HANG. The frames are taken
@@ -4135,10 +4135,19 @@ class GamutApp(QMainWindow):
             except BaseException as exc:                  # noqa: BLE001
                 outcome["trouble"] = exc
 
-        # THE BAR GOES TO "BUSY" HERE, on purpose. Nobody can say how far
-        # through an encoder is, and a bar frozen at 100% is a worse lie than
-        # one that admits it is simply working.
-        progress.setRange(0, 0)
+        # THE BAR CREEPS ON RATHER THAN JUMPING TO THE END. Nobody can say how
+        # far through an encoder really is, so the rest of the bar is filled at
+        # a steady rate that reaches the end at about the time this usually
+        # takes — and simply waits there if it takes longer. It never claims to
+        # be finished before it is.
+        import threading
+        import time as _time
+
+        started = _time.time()
+        # Measured on this application's own exports: writing an animated WebP
+        # of a few hundred frames takes a handful of seconds, and a film has
+        # almost nothing left to do because the encoder kept up.
+        expected = 0.4 if writer.can_stop_while_writing else 6.0
         progress.setLabelText(
             "Writing the file…\nThis is the part that takes a moment."
             if writer.can_stop_while_writing else
@@ -4155,10 +4164,12 @@ class GamutApp(QMainWindow):
                     and writer.can_stop_while_writing):
                 asked_to_stop = True
                 writer.cancel()
+            along = min(1.0, (_time.time() - started) / max(0.1, expected))
+            progress.setValue(int(reached + (99 - reached) * along))
             QApplication.processEvents()
             _time.sleep(0.02)
         thread.join()
-        progress.setRange(0, 1)
+        progress.setValue(100)
         if asked_to_stop:
             raise Stopped("stopped while the file was being written")
         if "trouble" in outcome:
@@ -4264,8 +4275,16 @@ class GamutApp(QMainWindow):
         # rather than something of our own because it pumps the event queue
         # itself: the window keeps painting, and the shape can be seen moving
         # through the frames as they are taken.
-        progress = QProgressDialog("Taking the frames…", "Stop",
-                                   0, len(angles), self)
+        # THE BAR COVERS THE WHOLE JOB, not just the frames. Counting only the
+        # frames put it at 100% the moment the last one was taken — with a
+        # good few seconds of writing still to come, which is a bar saying
+        # "finished" while nothing is finished. Taking the frames is most of
+        # the work for a film, because the encoder keeps up as they arrive,
+        # and rather less than that for a WebP, which cannot start until it
+        # has them all. So the frames fill the bar to there, and the writing
+        # has the rest.
+        frames_reach = 96 if codec else 78
+        progress = QProgressDialog("Taking the frames…", "Stop", 0, 100, self)
         progress.setWindowTitle("Saving a moving picture")
         # ROOM BETWEEN THE BAR AND THE BUTTON. Qt lays a progress dialog out
         # tightly enough that the two touch, which reads as one broken control
@@ -4311,7 +4330,7 @@ class GamutApp(QMainWindow):
                 taken += 1
                 progress.setLabelText(
                     f"Taking the frames… {number} of {len(angles)}")
-                progress.setValue(number)
+                progress.setValue(int(frames_reach * number / len(angles)))
         except BaseException:
             writer.cancel()
             raise
@@ -4336,7 +4355,7 @@ class GamutApp(QMainWindow):
             progress.close()
             raise ValueError("no frames could be taken")
         try:
-            made = self._finish_writing(writer, progress)
+            made = self._finish_writing(writer, progress, frames_reach)
         finally:
             progress.close()
         return made

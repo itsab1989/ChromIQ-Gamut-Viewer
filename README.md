@@ -11,8 +11,14 @@ since last month, and does my ICC profile actually describe what came off the
 printer?
 
 <p align="center">
-  <img src="docs/screenshots/hero.webp" width="880" alt="Two measured papers drawn together in one window, with the controls and the figures beside them">
+  <img src="docs/screenshots/hero-turning.webp" width="880"
+       alt="A measured printer gamut turning gently, showing the dents and bulges of its real surface from every side">
 </p>
+
+<p align="center"><sub>A real measured gamut, turning. Made by the
+application itself — <b>Turn it by itself</b>, then <b>Save this view as a
+picture…</b>. <a href="docs/MOTION.md">Six more, with the settings behind
+each →</a></sub></p>
 
 <p align="center">
   <a href="https://ko-fi.com/itsab1989"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support this on Ko-fi" height="36"></a>
@@ -429,26 +435,46 @@ you about it on startup, because most people never need it.
 
 ### It moves, and you can take the movement with you
 
-<p align="center">
-  <img src="docs/screenshots/23-cage-and-points.webp" width="420"
-       alt="A wireframe gamut rocking, with every measured patch as a coloured point">
-  <img src="docs/screenshots/20-what-srgb-cannot-reach.webp" width="420"
-       alt="A gamut swinging with the colours sRGB cannot reach picked out">
-</p>
-
 Depth is hard to judge on a flat screen — a dent in the deep blues and a
 shadow look alike in a still picture. **Turn it by itself** sets the shape
-moving, left and right or up and down, and **Save this view as a picture…**
-writes that movement out as a file you can drop into a forum post.
+moving, left and right, up and down, or both at once, and **Save this view as
+a picture…** writes that movement out as a file you can drop into a forum
+post, a document or a chat window.
 
-On the left, the surface as an outline with all 1168 measured patches floating
-in it — what a measured gamut actually is. On the right, the same paper
-against sRGB with everything sRGB cannot reproduce picked out.
-
-**[Four more, with the settings behind each one →](docs/MOTION.md)**
+Six kinds of file, in two families. **WebP, GIF and APNG** are pictures that
+move: they start on their own and repeat for ever with nothing to press —
+which is exactly what the loop at the top of this page is. **MP4 (H.264),
+MP4 (H.265) and WebM (VP9)** are films: about half the size for the same
+sharpness, with a play button. The films are made by ffmpeg, and a copy comes
+with the application, so there is nothing to install.
 
 The loop closes exactly — the file holds one complete journey fitted into the
 seconds you chose — so it never jumps as it comes round.
+
+**[Six more loops, with every setting behind each one →](docs/MOTION.md)**
+
+### Everything around the shape is yours
+
+**Viewer and export styling**, in the left-hand column, decides what a saved
+picture looks like: what is behind the shape, what the three walls are, and
+what colour the lettering and the grid lines come out. There are ready-made
+looks named for where the picture is going — *For a white document*, *For a
+dark slide*, *Cut out for a light page* — and the window's own dark and light
+are two of them.
+
+Tick **Live preview** and the view in front of you *is* the picture that will
+be saved, so setting one up is a matter of looking at it rather than
+imagining it. That also makes it a way to have the application itself look
+how you like.
+
+Looks you build yourself are saved under a name, as one small file each, in
+the same folder ChromIQ keeps its own presets in — so sharing one is sending
+somebody a file, and using one they sent is putting it in that folder.
+Removing one never deletes it; it moves into an `old` folder with the date on
+it.
+
+*(There is [one dressed for a white document](docs/MOTION.md#dressed-for-a-white-page)
+on the loops page, so this one stays light to load.)*
 
 ### A picture with nothing around it
 

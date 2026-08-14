@@ -1,22 +1,27 @@
-# It moves — six loops
+# It moves — six loops, and one film
 
 Every one of these was made by the application itself: **Turn it by itself**
 to set the movement, then **Save this view as a picture… → A moving picture**.
 Nothing here was recorded another way, and every setting behind them is one
-you have.
+you have. Each caption says exactly which.
 
-They are on their own page because they come to about ten megabytes together,
-and a README that loads them on every visit is a slow README. Two of them live
-there; all six live here.
+They live on their own page because they come to about thirty megabytes
+together, and a README that loads all of that on every visit is a slow
+README. The one at the top of the README is the hero; these are the rest.
 
-Depth is genuinely hard to judge on a flat screen — a dent in the deep blues
-and a shadow look alike in a still picture. That is what these are for.
+**Why loops at all.** Depth is genuinely hard to judge on a flat screen — a
+dent in the deep blues and a shadow look exactly alike in a still picture.
+Half a turn settles it in a second.
+
+**They close exactly.** The file holds one complete journey — once round for a
+full turn, once there and back for a swing — fitted into the seconds you
+asked for. That is what stops a loop jumping every time it comes round.
 
 ---
 
 ## The cage, with every patch that made it
 
-<p align="center"><img src="screenshots/23-cage-and-points.webp" width="760"
+<p align="center"><img src="screenshots/m1-cage-and-points.webp" width="820"
 alt="A wireframe gamut rocking gently, with every measured patch shown as a
 coloured point inside and on it"></p>
 
@@ -27,77 +32,124 @@ of them. Watch the points near the edge — those are the ones deciding the
 shape.
 
 **How:** First shape → *outline only*, **Show every patch I measured** on.
-Left and right *back and forth* 70° at speed 11, up and down *back and forth*
-30° at speed 7.
+Left and right *back and forth* 74° at speed 10, up and down *back and forth*
+30° at speed 6. Seven seconds, 25 a second.
 
-## A slow turn, in its true colours
-
-<p align="center"><img src="screenshots/19-turning.webp" width="760"
-alt="A measured gamut turning slowly through a full circle"></p>
-
-The whole way round, once, in the colours the paper actually produced.
-
-**How:** Left and right → *all the way round* at speed 8. 8 seconds.
-
-## The solid with its mesh, and its patches
-
-<p align="center"><img src="screenshots/21-patches-and-mesh.webp" width="760"
-alt="A solid gamut with its triangle mesh and measured patches, rocking on two
-axes"></p>
-
-The same shape filled in, with the mesh over it and the patches on top — so
-you can see the surface and the evidence for it at once.
-
-**How:** First shape → *solid with its mesh*, patches on, both axes swinging.
-
-## Over the top and under the floor
-
-<p align="center"><img src="screenshots/22-over-the-top.webp" width="760"
-alt="A gamut tipping steeply so the top and the underside come into view,
-painted by lightness"></p>
-
-A tilt-led swing of 110°, painted by lightness rather than by colour. This is
-the view a turntable never gives you: the flat lid near white, and how the
-shape closes in towards black underneath.
-
-**How:** Up and down → *back and forth* 110° at speed 12, left and right a
-gentle 30°. **How the shapes are coloured** → *By lightness*.
+---
 
 ## What sRGB cannot reach
 
-<p align="center"><img src="screenshots/20-what-srgb-cannot-reach.webp"
-width="760" alt="A measured gamut with the colours sRGB cannot reproduce
-picked out in red, swinging on two axes"></p>
+<p align="center"><img src="screenshots/m2-what-srgb-cannot-reach.webp" width="820"
+alt="A printer gamut turning through a full circle with the colours sRGB
+cannot reproduce picked out on its surface"></p>
 
-The paper against sRGB, with everything sRGB cannot reproduce picked out. The
-red regions are the answer to "will my images survive on this paper".
+The same paper, compared against sRGB, with every part of its surface that
+sRGB cannot reproduce marked on it. A full turn, because the answer is
+different on every side — this printer beats sRGB comfortably in the cyans and
+loses to it in the deep blues, and one still picture can only ever show you
+one of those.
 
-**How:** **Compare with** → *sRGB*, **Show what the comparison cannot print**
-on.
+**How:** *Compare with* → **sRGB**. Left and right *all the way round* at
+speed 8, up and down *back and forth* 20° at speed 5. Eight seconds.
 
-## Two papers, one inside the other
+---
 
-<p align="center"><img src="screenshots/24-two-papers.webp" width="760"
-alt="A glossy paper's gamut turning with a matte paper's outline around it"></p>
+## Right over the top
 
-Glossy solid, matte as an outline around it, turning together. Which paper
-holds more colour, and exactly where.
+<p align="center"><img src="screenshots/m3-over-the-top.webp" width="820"
+alt="A gamut tipping steeply up and down so the view passes over its top
+face"></p>
 
-**How:** open both, second shape → *outline only*, left and right *all the way
-round*.
+Mostly up and down rather than round. A printer gamut is about twice as wide
+in colour as it is tall in lightness, so from a low eye it reads as a flat
+sheet — this tips the view right over the top of it, which is the one angle
+that shows how the lightest colours close in to white.
+
+**How:** Left and right *back and forth* 30° at speed 5, up and down *back and
+forth* 78° at speed 11. Seven seconds.
+
+---
+
+## One paper inside another
+
+<p align="center"><img src="screenshots/m4-one-paper-inside-another.webp" width="820"
+alt="A solid glossy gamut turning inside the wireframe outline of a matte
+one"></p>
+
+Two papers at once — and drawn deliberately this way round. The glossy paper
+holds more colour than the matte, so drawing *both* as solids means the bigger
+one simply swallows the smaller and all anybody sees is the outer shell. The
+one on the outside is an **outline**, so the paper inside stays visible and
+the gap between them is the answer you came for.
+
+**How:** Open both. First shape → *outline only*, second shape → *solid*.
+Left and right *all the way round* at speed 8, up and down *back and forth*
+24° at speed 5. Eight seconds.
+
+---
+
+## Dressed for a white page
+
+<p align="center"><img src="screenshots/m5-dressed-for-a-document.webp" width="820"
+alt="The same gamut turning on a white background with dark lettering, ready
+for a printed document"></p>
+
+The same shape, dressed for somewhere else entirely. Nothing about the
+measurement changed — only what is behind it, what the three walls are, and
+what colour the numbers and grid lines come out.
+
+**How:** **Viewer and export styling** → *How it should look* → **For a white
+document**. With **Live preview** ticked the window itself looked like this
+while it was set up, which is the point of it: the lettering following the
+background is not a setting anybody should have to think about, and on a white
+page the screen's pale grey is very nearly invisible.
+
+---
+
+## And the same thing as a film
+
+<p align="center"><img src="screenshots/m6-as-a-film-poster.webp" width="820"
+alt="A still frame from the film version of the turning gamut"></p>
+
+**[▶ Play the film (MP4, 1.4 MB)](screenshots/m6-as-a-film.mp4)**
+
+Exactly the same loop, saved as an **MP4 (H.264)** instead of a WebP. The
+picture above is one frame of it, because a film does not play by itself in a
+README the way a moving picture does — and that is the whole trade.
+
+A film is markedly smaller: this one is **1.4 MB against about 6 MB** for the
+same frames as a WebP, because a film stores what changed rather than every
+frame. Choose one for anything long or large, or for anywhere with a player.
+Choose a moving picture for anywhere it has to start on its own with nothing
+to press.
+
+**H.265** is smaller again, on devices from about 2016 onwards. **WebM (VP9)**
+is the only moving kind here that can be see-through, which is what you want
+for a web page.
+
+**How:** *Kind of file* → **MP4 (H.264)**, quality 93. The films are made by
+ffmpeg, and a copy travels with the application — there is nothing to install.
 
 ---
 
 ## Making your own
 
-1. Open a measurement or a profile.
-2. Tick **Turn it by itself** and set **Left and right** and **Up and down** —
-   *back and forth* keeps the shape facing you, *all the way round* carries it
-   through a circle.
-3. **Save this view as a picture… → A moving picture**, choose WebP, how long
-   and how large.
+1. **Turn it by itself** in the left-hand column — set left and right, up and
+   down, or both. *Back and forth* over a modest sweep usually reads better
+   than a full turn: the eye follows one part of the surface instead of
+   losing it round the back.
+2. **Viewer and export styling** — pick where the picture is going. With
+   **Live preview** on, the window shows you the answer straight away.
+3. **Save this view as a picture… → A moving picture**, then choose the kind
+   of file, how wide, how long and how smooth. The line under the button says
+   how large the file will be before you make it.
 
-The loop always joins up exactly: the file holds one complete journey fitted
-into the seconds you asked for, whatever the speed slider says. A moving
-picture is copied from the window, so the window's size is as large as it can
-be.
+The **How fast** slider in the main window does not change the saved file at
+all — it only changes what you are watching. The file always holds exactly one
+complete journey fitted into the seconds you asked for, and that is precisely
+what lets it join up perfectly. If a saved loop looks too quick, ask for more
+seconds.
+
+If a surface seems to shimmer as it turns, raise **Quality** to 95 or so. The
+encoder makes a slightly different job of each frame, and a large smooth
+surface is exactly where the eye notices that.
