@@ -12,3 +12,11 @@ pillow>=10.0
 # still open and the file dialog simply does not offer those two.
 pillow-heif>=0.16
 pillow-jxl-plugin>=1.2
+# Films: MP4 (H.264 and H.265) and WebM are written by ffmpeg, which this
+# brings along as a ready-made program for every platform. Optional at
+# runtime -- without it every file still opens, every still picture is still
+# saved, and WebP, GIF and APNG moving pictures are still made; only the two
+# film formats are greyed out. It is RUN as a separate program, never linked
+# into this one, which is also what keeps the licences apart: see
+# docs/THIRD-PARTY.md.
+imageio-ffmpeg>=0.5

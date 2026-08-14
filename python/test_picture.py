@@ -215,3 +215,59 @@ def test_how_long_decides_the_export_not_how_fast():
     # the angles span one cycle either way -- the speed never appears
     import inspect
     assert "speed" not in inspect.signature(picture.turn_angles).parameters
+
+
+# --------------------------------------------------------------------------
+# Getting see-through back out of a copy of the screen
+# --------------------------------------------------------------------------
+
+def _mix(colour, alpha, ground):
+    """What a painter would put on screen for this colour over this ground."""
+    import numpy as np
+    colour = np.asarray(colour, dtype=float)
+    ground = np.asarray(ground, dtype=float)
+    return np.round(colour * alpha + ground * (1 - alpha)).astype("uint8")
+
+
+def test_a_see_through_picture_is_recovered_exactly_from_two_grounds():
+    """The claim: draw it on white, draw it on black, and the difference is
+    the see-through. Checked against colours and coverages whose answer is
+    known in advance rather than against another run of the same code."""
+    import numpy as np
+
+    wanted = [((255, 0, 0), 1.0), ((0, 128, 255), 0.5), ((255, 255, 255), 0.25),
+              ((0, 0, 0), 0.75), ((90, 200, 40), 0.0)]
+    on_white = np.zeros((1, len(wanted), 3), dtype="uint8")
+    on_black = np.zeros((1, len(wanted), 3), dtype="uint8")
+    for i, (colour, alpha) in enumerate(wanted):
+        on_white[0, i] = _mix(colour, alpha, (255, 255, 255))
+        on_black[0, i] = _mix(colour, alpha, (0, 0, 0))
+
+    got = picture.alpha_from_two_grounds(on_white, on_black)
+    for i, (colour, alpha) in enumerate(wanted):
+        assert abs(int(got[0, i, 3]) - round(alpha * 255)) <= 2, (
+            f"alpha wrong for {colour} at {alpha}")
+        if alpha > 0.2:                       # below that the colour is moot
+            for channel in range(3):
+                assert abs(int(got[0, i, channel]) - colour[channel]) <= 4, (
+                    f"colour wrong for {colour} at {alpha}")
+
+
+def test_where_nothing_is_drawn_comes_back_completely_clear():
+    import numpy as np
+
+    on_white = np.full((4, 4, 3), 255, dtype="uint8")
+    on_black = np.zeros((4, 4, 3), dtype="uint8")
+    got = picture.alpha_from_two_grounds(on_white, on_black)
+    assert (got[..., 3] == 0).all()
+
+
+def test_where_the_shape_is_solid_nothing_is_taken_away():
+    """A solid surface must not come back faintly see-through, or a saved loop
+    would look washed out everywhere it was strongest."""
+    import numpy as np
+
+    same = np.full((4, 4, 3), 40, dtype="uint8")
+    got = picture.alpha_from_two_grounds(same, same)
+    assert (got[..., 3] == 255).all()
+    assert (got[..., 0] == 40).all()

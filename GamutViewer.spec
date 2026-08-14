@@ -22,8 +22,14 @@ a = Analysis(
     binaries=_we_binaries + _wew_binaries + _pl_binaries + _sp_binaries,
     datas=(_we_datas + _wew_datas + _pl_datas + _sp_datas
            + [("assets/icon.png", "assets")]),
+    # imageio_ffmpeg IS NAMED HERE ON PURPOSE. It is imported inside a
+    # try/except in movie.py -- so that running from the source without it
+    # still works -- and the ffmpeg program itself is package data rather than
+    # an import. PyInstaller's own hook collects the program once the package
+    # is in the graph; naming it is what puts it there.
     hiddenimports=(_we_hidden + _wew_hidden + _pl_hidden + _sp_hidden
-                   + ["gamutview", "ti3gamut", "version"]),
+                   + ["gamutview", "ti3gamut", "version", "movie",
+                      "imageio_ffmpeg", "imageio_ffmpeg.binaries"]),
     hookspath=[], hooksconfig={}, runtime_hooks=[],
     # Nothing here needs a plotting backend, a notebook or a test runner.
     excludes=["matplotlib", "tkinter", "IPython", "notebook", "pytest",

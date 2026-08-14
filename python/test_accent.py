@@ -78,3 +78,83 @@ def test_the_window_repaints_its_icons_whenever_it_repaints_itself():
     source = inspect.getsource(gamut_app.GamutApp._apply_mode)
     assert "_recolour_hints" in source, \
         "_apply_mode no longer repaints the ⓘ icons"
+
+
+# --------------------------------------------------------------------------
+# The percentage inside the progress bar
+# --------------------------------------------------------------------------
+
+def _rows_of(bar):
+    """Where the coloured bar is, and where the digits are — from the picture.
+
+    Read out of the pixels rather than out of the stylesheet, because the
+    stylesheet was exactly what everybody kept adjusting while the number went
+    on sitting in the wrong place.
+    """
+    import numpy as np
+    from PyQt6.QtGui import QImage
+
+    image = bar.grab().toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+    wide, tall = image.width(), image.height()
+    raw = image.bits()
+    raw.setsize(tall * image.bytesPerLine())
+    pixels = np.frombuffer(raw, np.uint8).reshape(
+        tall, image.bytesPerLine() // 4, 4)[:, :wide, :3].astype(int)
+    # The filled part of the bar, found at the far left where it always is.
+    edge = pixels[:, 6, :]
+    filled = [y for y in range(tall)
+              if edge[y][0] > 150 and edge[y][2] > 60 and edge[y][1] < 120]
+    # The digits: rows across the middle that are not one flat colour.
+    band = pixels[:, int(wide * 0.40): int(wide * 0.60), :]
+    ink = [y for y in range(tall)
+           if (band[y].max(axis=0) - band[y].min(axis=0)).max() > 60]
+    return filled, ink
+
+
+def _prepared(app, cls):
+    from PyQt6.QtGui import QFont
+    import gamut_app
+
+    app.setFont(QFont("Helvetica Neue", 13))
+    app.setStyleSheet(gamut_app.stylesheet("Dark", "Magenta"))
+    bar = cls()
+    bar.setRange(0, 100)
+    bar.setValue(73)
+    bar.resize(320, 40)
+    bar.show()
+    app.processEvents()
+    return bar
+
+
+def test_the_percentage_sits_on_the_middle_of_the_bar(app):
+    """THE BAR IS NOT THE WIDGET. The stylesheet gives it a margin so it does
+    not touch the label above or the button below, and Qt centres the number on
+    the widget, margin and all — which put it three pixels low, and five on a
+    high-resolution screen. Measured against the coloured bar, which is the
+    thing anybody looking at it is comparing against."""
+    import gamut_app
+
+    bar = _prepared(app, gamut_app.CentredProgressBar)
+    filled, ink = _rows_of(bar)
+    assert filled, "the coloured bar was not found in the picture at all"
+    assert ink, "the percentage was not found in the picture at all"
+    middle = (filled[0] + filled[-1]) / 2
+    centre = (ink[0] + ink[-1]) / 2
+    assert abs(centre - middle) <= 1.0, (
+        f"the number sits {centre - middle:+.1f} px from the middle of the bar")
+
+
+def test_qt_left_to_itself_really_does_put_it_in_the_wrong_place(app):
+    """The other half of the pair: without this the test above could pass
+    against a bar that never needed fixing, and would quietly stop meaning
+    anything the day somebody removed the fix."""
+    from PyQt6.QtWidgets import QProgressBar
+
+    bar = _prepared(app, QProgressBar)
+    filled, ink = _rows_of(bar)
+    assert filled and ink
+    middle = (filled[0] + filled[-1]) / 2
+    centre = (ink[0] + ink[-1]) / 2
+    assert centre - middle > 1.0, (
+        "Qt now centres this correctly on its own — if that is really so, "
+        "CentredProgressBar can go, and this test with it")

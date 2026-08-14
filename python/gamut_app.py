@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import math
 
+import movie
 import picture
 from imagegamut import readable_extensions
 
@@ -57,15 +58,16 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order
 from PyQt6.QtCore import (QEvent, QRect, QSettings, QSize, QStandardPaths, Qt,
                           QTimer, QUrl, pyqtSignal)
 from PyQt6.QtGui import (QColor, QDesktopServices, QFont, QFontMetrics,
-                         QIcon, QLinearGradient,
-                         QPainter,
+                         QIcon, QImage, QLinearGradient,
+                         QPainter, QPalette,
                          QPen, QPixmap)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel, QLayout,
                              QDialog, QMainWindow, QPushButton, QScrollArea, QSlider,
-                             QColorDialog, QDialogButtonBox, QListView, QProgressDialog,
+                             QColorDialog, QDialogButtonBox, QListView,
+                             QProgressBar, QProgressDialog,
                              QSizeGrip, QSpinBox,
-                             QSizePolicy, QStyle,
+                             QSizePolicy, QStyle, QStyleOptionProgressBar,
                              QButtonGroup, QGridLayout, QRadioButton, QToolButton,
                              QVBoxLayout,
                              QWidget)
@@ -252,6 +254,14 @@ QPushButton#secondary {{ background: {c["second"]}; color: {c["text"]};
                         border: 1px solid {c["line_soft"]};
                         padding: 6px 11px; font-weight: 500; }}
 QPushButton#secondary:hover {{ background: {c["second_hover"]}; }}
+/* A BUTTON THE SIZE OF ITS GLYPH. #secondary carries 11 pixels of padding
+   each side, which on a 26-pixel button leaves four for the character —
+   so the +, the − and the … were all clipped. This is the same button with
+   the padding taken out and a floor under the width instead. */
+QPushButton#glyph {{ background: {c["second"]}; color: {c["text"]};
+                    border: 1px solid {c["line_soft"]};
+                    padding: 0; min-width: 26px; font-weight: 600; }}
+QPushButton#glyph:hover {{ background: {c["second_hover"]}; }}
 QPushButton#closer {{ background: transparent; color: {c["faint"]};
                      border: none; border-radius: 11px; padding: 0;
                      font-size: 17px; font-weight: 500; min-height: 0; }}
@@ -831,9 +841,731 @@ class Masthead(QWidget):
 
 
 
+def pick_colour(parent, current: str, title: str, clearable: bool = True):
+    """Choose a colour — in this application's own window, not the system's.
+
+    WHY NOT THE SYSTEM'S. The one macOS opens is a floating palette that keeps
+    its own state, ignores the colours already in the picture, wears none of
+    this application's styling, and on some machines hides behind the window
+    that asked for it. Qt's own is a plain dialog that behaves like every other
+    dialog here, and it can be given the two things the system one will not:
+    the colours already in use as a starting point, and a see-through setting.
+
+    Returns ``#rrggbb``, ``rgba(r,g,b,a)`` when it is partly see-through, or
+    None when nothing was chosen.
+    """
+    was = QColor(current) if current else QColor("#ffffff")
+    if not was.isValid():
+        was = QColor("#ffffff")
+    dialog = QColorDialog(was, parent)
+    dialog.setWindowTitle(title)
+    # Qt's own rather than the system's, for the reasons above — the same
+    # choice the file dialogs here make, and for the same reason.
+    dialog.setOption(QColorDialog.ColorDialogOption.DontUseNativeDialog, True)
+    if clearable:
+        # SEE-THROUGH IS A COLOUR CHOICE TOO. Without this the only way to
+        # make one part of the picture see-through was to leave the picker and
+        # find a different control, which is a strange thing to have to do
+        # while choosing a colour.
+        dialog.setOption(QColorDialog.ColorDialogOption.ShowAlphaChannel, True)
+    # The colours already in the picture, ready to hand: matching the shape or
+    # the page it is going on is the commonest thing anybody wants here, and
+    # hunting for the same grey twice is how two panels end up almost matching.
+    for slot, colour in enumerate(("#ffffff", "#efebe6", "#f7f4ef", "#d0ccc6",
+                                   "#8a8a8a", "#262626", "#141414", "#111111",
+                                   "#22211f", "#e6e6e6")):
+        if slot < QColorDialog.customCount():
+            QColorDialog.setCustomColor(slot, QColor(colour))
+    if not dialog.exec():
+        return None
+    picked = dialog.currentColor()
+    if not picked.isValid():
+        return None
+    if clearable and picked.alpha() < 255:
+        return (f"rgba({picked.red()},{picked.green()},{picked.blue()},"
+                f"{picked.alpha() / 255:.3f})")
+    return picked.name()
+
+
+def _chequerboard(across: int, down: int, square: int = 9):
+    """The grey chequers that say "nothing is here", as a Pillow image.
+
+    The convention every picture editor uses for see-through, and worth
+    following exactly: somebody who has met it once knows immediately that the
+    squares are not part of their picture. Made small and pale so it never
+    competes with the shape sitting on it.
+    """
+    from PIL import Image, ImageDraw
+
+    board = Image.new("RGBA", (max(1, across), max(1, down)), (255, 255, 255, 255))
+    draw = ImageDraw.Draw(board)
+    for y in range(0, down, square):
+        for x in range(0, across, square):
+            if (x // square + y // square) % 2:
+                draw.rectangle([x, y, x + square - 1, y + square - 1],
+                               fill=(214, 214, 214, 255))
+    return board
+
+
+class CentredProgressBar(QProgressBar):
+    """A progress bar whose percentage sits on the middle of the bar.
+
+    TWO THINGS WERE WRONG, and only one of them was the one being nudged.
+
+    THE BAR IS NOT THE WIDGET. The stylesheet gives it a margin — six pixels
+    above and twelve below, so it does not touch the label over it or the Stop
+    button under it — and Qt then centres the number on the *widget*, margins
+    and all. The middle of the widget is several pixels below the middle of the
+    coloured bar, so the figure sat low. No amount of adjusting the padding
+    could fix that, because the padding was never what was wrong.
+
+    AND QT CENTRES ON THE FONT, NOT ON THE TEXT. The font box reaches from the
+    top of a capital to the bottom of a descender, and "73%" has no descender,
+    so the ink lands off-centre inside its own box by another half-pixel — a
+    whole one on a high-resolution screen.
+
+    So: the bar is drawn by the style as usual, and the number is placed on the
+    middle of the ink, on the middle of the **groove**. Right at any size, on
+    any screen, in any font.
+    """
+
+    def _groove(self):
+        """The coloured bar itself, without the margin around it."""
+        option = QStyleOptionProgressBar()
+        self.initStyleOption(option)
+        rect = self.style().subElementRect(
+            QStyle.SubElement.SE_ProgressBarGroove, option, self)
+        return rect if rect.isValid() and rect.height() > 0 else self.rect()
+
+    def paintEvent(self, _event) -> None:
+        option = QStyleOptionProgressBar()
+        self.initStyleOption(option)
+        wanted = option.text
+        show = self.isTextVisible() and bool(wanted)
+        option.textVisible = False          # the style draws groove and chunk
+        painter = QPainter(self)
+        self.style().drawControl(QStyle.ControlElement.CE_ProgressBar,
+                                 option, painter, self)
+        if not show:
+            return
+        groove = self._groove()
+        metrics = painter.fontMetrics()
+        ink = metrics.tightBoundingRect(wanted)
+        across = groove.left() + (groove.width()
+                                  - metrics.horizontalAdvance(wanted)) / 2.0
+        # tightBoundingRect is measured up from the baseline, so its height is
+        # the ink alone; putting half of it below the middle of the groove puts
+        # the middle of the ink on the middle of the bar.
+        baseline = groove.top() + (groove.height() + ink.height()) / 2.0
+        painter.setPen(option.palette.color(QPalette.ColorRole.Text))
+        painter.drawText(int(round(across)), int(round(baseline)), wanted)
+
+    def ink_offset(self) -> float:
+        """How far the number sits from the middle of the bar, for a test.
+
+        Positive is low, negative is high, and zero is the point of all this.
+        """
+        groove = self._groove()
+        metrics = QFontMetrics(self.font())
+        ink = metrics.tightBoundingRect(self.text())
+        baseline = groove.top() + (groove.height() + ink.height()) / 2.0
+        return ((baseline - ink.height() / 2.0)
+                - (groove.top() + groove.height() / 2.0))
+
+
 class Stopped(Exception):
     """The person stopped it. Not a fault, and never reported as one."""
 
+
+class LookSection(QGroupBox):
+    """Everything around the shape: background, walls, lettering, grid lines.
+
+    NAMED FOR THE TWO THINGS IT GOVERNS. These choices decide what a saved
+    picture looks like, and — with Live preview ticked — what this window looks
+    like as well, because they are the same thing rather than two settings that
+    have to be kept in step.
+
+    IN THE WINDOW RATHER THAN IN THE SAVE DIALOG, and that is the whole point.
+    These choices used to live inside the window that opens when you press
+    Save, where you could not see what any of them did until the file was
+    written and opened. Here they sit beside the picture, and with "Show it in
+    the window too" ticked the view in front of you IS the picture that will be
+    saved — so setting one up is a matter of looking at it rather than of
+    imagining it.
+
+    That also makes it a way to have the application itself look how you like:
+    the view is not a preview of a separate thing, it is the thing.
+    """
+
+    def __init__(self, parent, on_change=None) -> None:
+        super().__init__("Viewer and export styling", parent)
+        self._parent = parent
+        self._on_change = on_change
+        self._settling = False
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 6, 8, 8)
+        outer.setSpacing(8)
+        rows = QGridLayout()
+        rows.setHorizontalSpacing(8)
+        rows.setVerticalSpacing(8)
+        rows.setColumnStretch(0, 1)
+        self._rows = rows
+        line = 0
+
+        # ONE CHOICE THAT SETS THE OTHER SIX. Background, walls, lettering and
+        # grid lines all depend on each other — a white background wants dark
+        # lettering, a see-through one wants lettering picked for a page that
+        # is not on this screen — and getting four of them right by trial is
+        # not a reasonable thing to ask of anybody. Each of these is one answer
+        # that works, named for where the picture is going.
+        self._look = NoScrollComboBox(self)
+        # LET IT SHRINK RATHER THAN CLIP. A combo asks for room for its
+        # longest entry, and next to three buttons in a narrow column that is
+        # room it may not get — at which point Qt cuts the text off mid-word
+        # instead of giving way. Naming a short minimum lets the layout squeeze
+        # it, and the list itself still opens at full width.
+        self._look.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self._look.setMinimumContentsLength(8)
+        self._look.currentIndexChanged.connect(self._apply_look)
+        # THE SAME THREE BUTTONS AS THE PRESETS ON CHROMIQ'S OWN MANUAL TABS,
+        # in the same order and doing the same things: save what is set now,
+        # take one off the list, and open the folder they live in. Somebody who
+        # knows one knows the other.
+        look_holder = QWidget(self)
+        look_row = QHBoxLayout(look_holder)
+        look_row.setContentsMargins(0, 0, 0, 0)
+        look_row.setSpacing(6)
+        look_row.addWidget(self._look, 1)
+        self._look_save = QPushButton("+", self)
+        self._look_save.setObjectName("glyph")
+        self._look_save.setFixedWidth(26)
+        self._look_save.setToolTip("Save what is set now as a look of your own")
+        self._look_save.clicked.connect(self._save_look)
+        look_row.addWidget(self._look_save)
+        self._look_remove = QPushButton("−", self)
+        self._look_remove.setObjectName("glyph")
+        self._look_remove.setFixedWidth(26)
+        self._look_remove.setToolTip("Take the chosen look off the list")
+        self._look_remove.clicked.connect(self._remove_look)
+        look_row.addWidget(self._look_remove)
+        self._look_folder = QPushButton("…", self)
+        self._look_folder.setObjectName("glyph")
+        self._look_folder.setFixedWidth(26)
+        self._look_folder.setToolTip(
+            "Open the folder your saved looks are kept in, for copying one to "
+            "somebody else or putting one they sent you in")
+        self._look_folder.clicked.connect(self._open_looks_folder)
+        look_row.addWidget(self._look_folder)
+        self._fill_looks()
+        line = self._row(rows, line, "How it should look", look_holder, Hint(
+            "A whole set of choices at once — what is behind the shape, what "
+            "the three walls are, and what colour the lettering and the grid "
+            "lines come out — picked to go together.\n\n"
+            "They are named for WHERE THE PICTURE IS GOING, because that is "
+            "the question you actually have.\n\n"
+            "FOR A WHITE DOCUMENT is the safe answer for a report, a letter "
+            "or anything printed: white behind and around, with dark lettering "
+            "that can be read on it.\n\n"
+            "FOR A PRINTED REPORT, WITH A SOFT BOX is the same with the three "
+            "walls a shade of grey, so the shape sits inside something instead "
+            "of floating on the page.\n\n"
+            "FOR A DARK SLIDE turns it round: black behind, light lettering.\n\n"
+            "CUT OUT leaves nothing behind the shape at all, so it takes on "
+            "whatever page you drop it onto. There are two, and the difference "
+            "is only the lettering — choose the one that matches the page it "
+            "is going on, because nothing here can see that page. Use a kind "
+            "of file that can hold see-through: PNG or WebP for a picture, "
+            "WebM for a film.\n\n"
+            "AS IT LOOKS ON SCREEN changes nothing at all, and is right when "
+            "the window already looks the way you want it.\n\n"
+            "None of this is a cage. Tick Adjust these myself to see exactly "
+            "what a look has set and change any of it; the chooser then simply "
+            "says My own settings.", self))
+        self._look_row = line - 1
+
+        self._look_why = WrappedLabel("", self)
+        self._look_why.setObjectName("hint")
+        rows.addWidget(self._look_why, line, 0, 1, 2)
+        self._look_why_row = line
+        line += 1
+
+        self._details = QCheckBox("Adjust these myself", self)
+        self._details.toggled.connect(self._refresh)
+        line = self._row(rows, line, "", self._details, Hint(
+            "Opens every one of the choices a look sets, so you can change any "
+            "of them on their own.\n\n"
+            "Worth opening if you need an exact colour — a house style, or the "
+            "precise grey of the page this is going on. Otherwise leaving it "
+            "closed is no loss: the looks above are the combinations that work, "
+            "and what you get is shown underneath either way.", self))
+        self._details_row = line - 1
+
+        self._background = NoScrollComboBox(self)
+        for key, label in picture.BACKGROUNDS:
+            self._background.addItem(label, key)
+        self._background.currentIndexChanged.connect(self._went_custom)
+        self._background_row = line
+        line = self._row(rows, line, "Behind the shape", self._background, Hint(
+            "What fills the space around the shape.\n\n"
+            "As it looks on screen keeps the dark or light background you are "
+            "looking at now. White suits a printed page or a document. Black "
+            "suits a slide.\n\n"
+            "SEE-THROUGH leaves nothing there at all, so the shape sits "
+            "directly on whatever page you drop it onto and takes that "
+            "background as its own. This is usually the one you want for a "
+            "document or a slide, and it needs a kind of file that can hold "
+            "it — PNG or WebP. Choose it with JPEG and this will say so "
+            "rather than quietly filling it with black.", self))
+
+        self._walls = NoScrollComboBox(self)
+        self._walls.addItem("The same as behind the shape", "same")
+        for key, label in picture.BACKGROUNDS:
+            self._walls.addItem(label, key)
+        self._walls.currentIndexChanged.connect(self._went_custom)
+        self._walls_label_row = line
+        line = self._row(rows, line, "The grid's walls", self._walls, Hint(
+            "The three panels the grid is drawn on, behind and beneath the "
+            "shape — separate from the page colour above, so you can have "
+            "them differ.\n\n"
+            "Leaving them the same as the background is usually right: the "
+            "picture then reads as one thing. Setting them apart is worth it "
+            "when you want the box to stand out a little from the page it is "
+            "sitting on, or to fade back so the shape carries the picture on "
+            "its own.\n\n"
+            "SEE-THROUGH here removes the panels as well, so the shape floats "
+            "with only the grid lines around it — and with the background "
+            "see-through too, nothing is left but the shape and its lines. "
+            "That is the version that drops cleanly onto any coloured page or "
+            "slide. It needs a kind of file that can hold see-through, which "
+            "PNG and WebP both can.\n\n"
+            "If you would rather have no grid at all, untick Show the box and "
+            "its grid in the main window before saving.", self))
+        self._walls_row = line - 1
+
+        self._wall_colour = QPushButton("Choose a colour…", self)
+        self._wall_colour.setObjectName("secondary")
+        self._wall_colour.clicked.connect(self._pick_wall_colour)
+        self._wall_chosen = "#202020"
+        line = self._row(rows, line, "Wall colour", self._wall_colour, Hint(
+            "Any colour you like on the three panels the grid sits on.", self))
+        self._wall_colour_row = line - 1
+
+        self._colour = QPushButton("Choose a colour…", self)
+        self._colour.setObjectName("secondary")
+        self._colour.clicked.connect(self._pick_colour)
+        self._chosen = "#ffffff"
+        line = self._row(rows, line, "Colour", self._colour, Hint(
+            "Any colour you like behind the shape — a house style, a slide "
+            "background, or the exact grey of the page it is going on.", self))
+        self._colour_row = line - 1
+
+        self._lettering = NoScrollComboBox(self)
+        for key, label in picture.INK_CHOICES:
+            self._lettering.addItem(label, key)
+        self._lettering.currentIndexChanged.connect(self._went_custom)
+        line = self._row(rows, line, "Lettering", self._lettering, Hint(
+            "The numbers up the sides of the box and the names of the three "
+            "axes — the part that says how big the shape actually is.\n\n"
+            "FOLLOW THE BACKGROUND is the one to leave it on. Whatever you "
+            "chose behind the shape is measured, and the lettering comes out "
+            "dark on a light background and light on a dark one, so it can "
+            "always be read.\n\n"
+            "It matters more than it sounds. On screen the lettering is a pale "
+            "grey, which is right on the dark window — and saving that same "
+            "picture on a white background gives pale grey on white, which is "
+            "very nearly invisible. Nothing about the picture looks broken; "
+            "the scale simply cannot be read.\n\n"
+            "Choose DARK or LIGHT yourself when you know where the picture is "
+            "going and it is not what you are looking at now — a see-through "
+            "picture is the usual case, because nobody here can know what page "
+            "you are about to drop it onto. Dark for a white document, light "
+            "for a dark slide.\n\n"
+            "A COLOUR OF MY OWN is there for a house style. It is worth "
+            "checking it against your background: anything close in brightness "
+            "to what is behind it will be hard to read however nice it looks.",
+            self))
+        self._lettering_row = line - 1
+
+        self._lettering_colour = QPushButton("Choose a colour…", self)
+        self._lettering_colour.setObjectName("secondary")
+        self._lettering_colour.clicked.connect(self._pick_lettering_colour)
+        self._lettering_chosen = "#22211f"
+        line = self._row(rows, line, "Lettering colour", self._lettering_colour,
+                         Hint("Any colour you like for the numbers and the "
+                              "axis names.", self))
+        self._lettering_colour_row = line - 1
+
+        self._gridlines = NoScrollComboBox(self)
+        for key, label in picture.INK_CHOICES:
+            self._gridlines.addItem(label, key)
+        self._gridlines.currentIndexChanged.connect(self._went_custom)
+        line = self._row(rows, line, "Grid lines", self._gridlines, Hint(
+            "The faint lines ruled across the three walls, which are what let "
+            "you see roughly where a part of the shape sits.\n\n"
+            "FOLLOW THE BACKGROUND keeps them a fifth of the way from the wall "
+            "colour towards the lettering — visible, and no louder than that. "
+            "That is deliberate: at full contrast the lines bunch together "
+            "where the walls meet and turn into a dark cage that shouts down "
+            "the shape it is only there to frame.\n\n"
+            "Set them DARK or LIGHT yourself if you want the box to stand out "
+            "more, or to fall further back. A colour of your own is there if "
+            "you want the box in a house colour.\n\n"
+            "If you would rather have no box at all — no walls, no lines, no "
+            "numbers, just the shape floating on the page — untick Show the "
+            "box and its grid in the main window before saving. That is often "
+            "the right answer for a picture going into a document.", self))
+        self._gridlines_row = line - 1
+
+        self._gridlines_colour = QPushButton("Choose a colour…", self)
+        self._gridlines_colour.setObjectName("secondary")
+        self._gridlines_colour.clicked.connect(self._pick_gridlines_colour)
+        self._gridlines_chosen = "#d0ccc6"
+        line = self._row(rows, line, "Grid colour", self._gridlines_colour,
+                         Hint("Any colour you like for the lines across the "
+                              "walls.", self))
+        self._gridlines_colour_row = line - 1
+
+
+        outer.addLayout(rows)
+
+        # THE VIEW IS THE PREVIEW. Without this the only way to find out what
+        # a look does was to save a file and open it; with it, everything above
+        # happens in front of you and can be adjusted until it is right.
+        self._live = QCheckBox("Live preview", self)
+        self._live.setChecked(True)
+        self._live.toggled.connect(self._changed)
+        live_row = QHBoxLayout()
+        live_row.setContentsMargins(0, 0, 0, 0)
+        live_row.setSpacing(6)
+        live_row.addWidget(self._live, 1)
+        live_row.addWidget(Hint(
+            "Puts everything chosen above straight onto the view in this "
+            "window, so what you are looking at is exactly what a saved "
+            "picture will hold — and stays that way while you work, rather "
+            "than only while a dialog is open.\n\n"
+            "Leave it ticked. It is the difference between choosing a "
+            "background and seeing one: colours that sound right together are "
+            "very often not, and nothing here has to be saved to find that "
+            "out.\n\n"
+            "It is also how you make the application look the way you want it "
+            "to. The view is not a preview of something else — it is the "
+            "thing — so a look you set up here is simply how the window is "
+            "from now on, and it is remembered when you next open it.\n\n"
+            "Untick it and the window goes back to its own dark or light "
+            "colours, while everything chosen here is still applied to the "
+            "file when you save it. The Save window shows a small picture of "
+            "the result either way, so nothing is hidden.\n\n"
+            "One thing cannot be shown here: SEE-THROUGH. There is no such "
+            "thing as a see-through window, so a cut-out look is drawn on "
+            "white while you work on it, and the small picture in the Save "
+            "window shows it properly, on chequers.", self), 0,
+            Qt.AlignmentFlag.AlignVCenter)
+        outer.addLayout(live_row)
+        self._refresh()
+
+    def _row(self, grid, line, label, control, hint):
+        """The name ABOVE its control, not beside it.
+
+        Measured: the left-hand column is 346 pixels wide, and this section
+        laid out the way the dialogs are — name, control, ⓘ, all in a row —
+        asked for 492. It did not shrink to fit; it was simply cut off, taking
+        the three small buttons beside the chooser off the edge with it.
+        Stacking the name over the control gives every one of them the whole
+        width, and the section now asks for less than the column has.
+        """
+        holder = QWidget(self)
+        stack = QVBoxLayout(holder)
+        stack.setContentsMargins(0, 0, 0, 0)
+        stack.setSpacing(2)
+        if label:
+            stack.addWidget(QLabel(label, holder))
+        stack.addWidget(control)
+        grid.addWidget(holder, line, 0)
+        grid.addWidget(hint, line, 1, Qt.AlignmentFlag.AlignVCenter)
+        hint.follow(control)
+        return line + 1
+
+    def _show_row(self, line: int, on: bool) -> None:
+        for column in range(2):
+            item = self._rows.itemAtPosition(line, column)
+            if item is not None and item.widget() is not None:
+                item.widget().setVisible(on)
+
+    def live(self) -> bool:
+        """Whether the window itself should wear this look."""
+        return self._live.isChecked()
+
+    def values(self) -> dict:
+        """The eight choices, as the export and the viewer both want them."""
+        return {
+            "background": self._background.currentData(),
+            "colour": self._chosen,
+            "walls": self._walls.currentData(),
+            "wall_colour": self._wall_chosen,
+            "lettering": self._lettering.currentData(),
+            "lettering_colour": self._lettering_chosen,
+            "gridlines": self._gridlines.currentData(),
+            "gridlines_colour": self._gridlines_chosen,
+        }
+
+    def restore(self, saved: dict) -> None:
+        """Put back what was set last time this application was open."""
+        self._settling = True
+        try:
+            for control, key in ((self._background, "background"),
+                                 (self._walls, "walls"),
+                                 (self._lettering, "lettering"),
+                                 (self._gridlines, "gridlines")):
+                at = control.findData(saved.get(key))
+                if at >= 0:
+                    control.setCurrentIndex(at)
+            for button, key, attribute in (
+                    (self._colour, "colour", "_chosen"),
+                    (self._wall_colour, "wall_colour", "_wall_chosen"),
+                    (self._lettering_colour, "lettering_colour",
+                     "_lettering_chosen"),
+                    (self._gridlines_colour, "gridlines_colour",
+                     "_gridlines_chosen")):
+                if saved.get(key):
+                    setattr(self, attribute, saved[key])
+                    button.setText(f"  {saved[key]}")
+            at = self._look.findData(saved.get("look", "screen"))
+            if at >= 0:
+                self._look.setCurrentIndex(at)
+            self._details.setChecked(bool(saved.get("details")))
+            self._live.setChecked(saved.get("live", True) not in (False, "false"))
+        finally:
+            self._settling = False
+        self._refresh()
+
+    def chosen_look(self) -> str:
+        return str(self._look.currentData() or "screen")
+
+    def details_open(self) -> bool:
+        return self._details.isChecked()
+
+    def _changed(self, *_a) -> None:
+        if self._on_change is not None and not self._settling:
+            self._on_change()
+
+    def _refresh(self, *_a) -> None:
+        open_up = self._details.isChecked()
+        for row in (self._background_row, self._walls_row,
+                    self._lettering_row, self._gridlines_row):
+            self._show_row(row, open_up)
+        self._show_row(self._colour_row, open_up
+                       and self._background.currentData() == "custom")
+        self._show_row(self._wall_colour_row, open_up
+                       and self._walls.currentData() == "custom")
+        self._show_row(self._lettering_colour_row, open_up
+                       and self._lettering.currentData() == "custom")
+        self._show_row(self._gridlines_colour_row, open_up
+                       and self._gridlines.currentData() == "custom")
+        key = self.chosen_look()
+        if key.startswith("mine:"):
+            import looks as _looks
+            entry = getattr(self, "_saved_looks", {}).get(key)
+            self._look_why.setText(_looks.describe(entry) if entry else "")
+        else:
+            self._look_why.setText(picture.look_because(key))
+        self._show_row(self._look_why_row, bool(self._look_why.text()))
+        self._changed()
+
+    def _fill_looks(self) -> None:
+        """The ready-made looks, then whatever this person has saved.
+
+        Read from the folder every time rather than once at startup, so a look
+        somebody sent you and dropped in appears as soon as you open this
+        window again — nothing to import, and nothing to restart.
+        """
+        import looks as _looks
+
+        keep = self._look.currentData() if self._look.count() else "screen"
+        self._look.blockSignals(True)
+        self._look.clear()
+        for key, label, _why, _values in picture.LOOKS:
+            if key == "custom":
+                continue                     # always last, after the saved ones
+            self._look.addItem(label, key)
+        self._saved_looks = {}
+        try:
+            mine = _looks.load_all()
+        except Exception as exc:             # noqa: BLE001 — never fatal
+            _log().warning("saved looks could not be read: %s", exc)
+            mine = []
+        for entry in mine:
+            key = f"mine:{entry['name']}"
+            self._saved_looks[key] = entry
+            self._look.addItem(f"{entry['name']} (yours)", key)
+        self._look.addItem("My own settings", "custom")
+        at = self._look.findData(keep)
+        self._look.setCurrentIndex(at if at >= 0 else 0)
+        self._look.blockSignals(False)
+        self._look_remove.setEnabled(
+            str(self._look.currentData() or "").startswith("mine:"))
+
+    def _save_look(self) -> None:
+        """Keep what is set now, under a name, as a file that can be shared."""
+        import looks as _looks
+
+        from PyQt6.QtWidgets import QInputDialog
+
+        suggested = ""
+        current = self._look.currentData()
+        if str(current or "").startswith("mine:"):
+            suggested = str(current)[5:]
+        name, said = QInputDialog.getText(
+            self, "Save this look",
+            "A name for it — something that says where you use it, such as\n"
+            "“Our white reports” or “Dark slides”:", text=suggested)
+        if not said or not name.strip():
+            return
+        values = self.choices()
+        try:
+            where = _looks.save(name.strip(), values)
+        except Exception as exc:             # noqa: BLE001 — always explain
+            Notice.warn(self, "That look could not be saved", str(exc))
+            return
+        self._fill_looks()
+        at = self._look.findData(f"mine:{_looks.safe_name(name.strip())}")
+        if at >= 0:
+            self._look.blockSignals(True)
+            self._look.setCurrentIndex(at)
+            self._look.blockSignals(False)
+            self._look_remove.setEnabled(True)
+        self._refresh()
+        Notice.say(self, "Saved",
+                   f"“{name.strip()}” is now in the list.\n\n"
+                   f"It is one file, here:\n{where}\n\n"
+                   "Send that file to somebody and they can drop it into the "
+                   "same folder on their computer to get the same look. The "
+                   "… button beside the list opens the folder.")
+
+    def _remove_look(self) -> None:
+        """Take a saved look off the list, keeping the file itself."""
+        import looks as _looks
+
+        key = str(self._look.currentData() or "")
+        if not key.startswith("mine:"):
+            return
+        name = key[5:]
+        if not Notice.ask(
+                self, f"Take “{name}” off the list?",
+                "It comes off the list of looks straight away.\n\n"
+                "The file itself is NOT deleted — it is moved into an “old” "
+                "folder beside the others, with today's date on it. If you "
+                "change your mind, or took the wrong one off, it is still "
+                "there and can be moved back.",
+                yes="Take it off", no="Keep it"):
+            return
+        try:
+            moved = _looks.remove(name)
+        except Exception as exc:             # noqa: BLE001 — always explain
+            Notice.warn(self, "That look could not be removed", str(exc))
+            return
+        self._fill_looks()
+        self._refresh()
+        Notice.say(self, "Taken off the list",
+                   f"“{name}” is no longer offered.\n\nThe file is kept, "
+                   f"here:\n{moved}")
+
+    def _open_looks_folder(self) -> None:
+        """Show the folder saved looks live in, for sharing one either way."""
+        import looks as _looks
+
+        where = _looks.folder()
+        try:
+            where.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            Notice.warn(self, "That folder could not be opened", str(exc))
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(where)))
+
+    def _apply_look(self, *_a) -> None:
+        """Set every background choice at once from the look that was picked.
+
+        NOTHING IS LOST BY TRYING ONE. A look only moves the controls below it,
+        every one of which can be moved back, and the picture underneath shows
+        the result straight away — so choosing one is a thing to experiment
+        with rather than a decision to weigh up.
+        """
+        key = str(self._look.currentData() or "")
+        self._look_remove.setEnabled(key.startswith("mine:"))
+        if key.startswith("mine:"):
+            entry = getattr(self, "_saved_looks", {}).get(key)
+            values = dict(entry["look"]) if entry else None
+        else:
+            values = picture.look(key)
+        if values is None:                  # "My own settings" — leave it be
+            self._refresh()
+            return
+        self._settling = True
+        try:
+            for control, name in ((self._background, "background"),
+                                  (self._walls, "walls"),
+                                  (self._lettering, "lettering"),
+                                  (self._gridlines, "gridlines")):
+                if name in values:
+                    at = control.findData(values[name])
+                    if at >= 0:
+                        control.setCurrentIndex(at)
+            for button, field, attribute in (
+                    (self._wall_colour, "wall_colour", "_wall_chosen"),
+                    (self._colour, "colour", "_chosen"),
+                    (self._lettering_colour, "lettering_colour",
+                     "_lettering_chosen"),
+                    (self._gridlines_colour, "gridlines_colour",
+                     "_gridlines_chosen")):
+                if field in values:
+                    setattr(self, attribute, values[field])
+                    button.setText(f"  {values[field]}")
+        finally:
+            self._settling = False
+        self._refresh()
+
+    def _went_custom(self, *_a) -> None:
+        """One of the details was changed by hand, so the look is now theirs."""
+        if getattr(self, "_settling", False):
+            return                          # this was a look being applied
+        at = self._look.findData("custom")
+        if at >= 0 and self._look.currentIndex() != at:
+            self._look.blockSignals(True)
+            self._look.setCurrentIndex(at)
+            self._look.blockSignals(False)
+        self._refresh()
+
+    def _pick_colour(self) -> None:
+        picked = pick_colour(self, self._chosen,
+                             "A colour behind the shape")
+        if picked:
+            self._chosen = picked
+            self._colour.setText(f"  {picked}")
+            self._went_custom()
+
+    def _pick_wall_colour(self) -> None:
+        picked = pick_colour(self, self._wall_chosen,
+                             "A colour for the grid's walls")
+        if picked:
+            self._wall_chosen = picked
+            self._wall_colour.setText(f"  {picked}")
+            self._went_custom()
+
+    def _pick_lettering_colour(self) -> None:
+        picked = pick_colour(self, self._lettering_chosen,
+                             "A colour for the numbers and names")
+        if picked:
+            self._lettering_chosen = picked
+            self._lettering_colour.setText(f"  {picked}")
+            self._went_custom()
+
+    def _pick_gridlines_colour(self) -> None:
+        picked = pick_colour(self, self._gridlines_chosen,
+                             "A colour for the lines on the walls")
+        if picked:
+            self._gridlines_chosen = picked
+            self._gridlines_colour.setText(f"  {picked}")
+            self._went_custom()
 
 class PictureDialog(QDialog):
     """Choosing what kind of picture to make.
@@ -861,7 +1593,8 @@ class PictureDialog(QDialog):
 
         self._kind = NoScrollComboBox(self)
         self._kind.addItem("A still picture", "still")
-        self._kind.addItem("A moving picture that turns and repeats", "moving")
+        self._kind.addItem("A moving picture or a film that turns and repeats",
+                           "moving")
         self._kind.currentIndexChanged.connect(self._refresh)
         line = self._row(rows, line, "What to make", self._kind, Hint(
             "A STILL is one picture: the shape exactly as it stands, at "
@@ -873,7 +1606,12 @@ class PictureDialog(QDialog):
             "still. It shows every side in the space one picture takes — which "
             "is the whole difficulty with a gamut on paper, where you only "
             "ever see one face of it.\n\n"
-            "The moving one is copied from this window as it is, so it comes "
+            "The same choice also makes a FILM — an MP4 or a WebM. A film is "
+            "much smaller for the same sharpness and is what you want for "
+            "anything long or large; a moving picture is what you want where "
+            "it has to start by itself with nothing to press. Both are made "
+            "the same way here, and Kind of file is where you say which.\n\n"
+            "Either way it is copied from this window as it is, so it comes "
             "out the size the window is. If you want something enormous and "
             "perfectly sharp, take a still.", self))
 
@@ -896,10 +1634,32 @@ class PictureDialog(QDialog):
             "save — an SVG of it would just be an ordinary picture in an SVG "
             "wrapper, thirty times the size and no sharper. Tick Slice it at "
             "one lightness if you want a drawing that scales.\n\n"
-            "For a moving picture, WebP carries full colour. GIF is offered "
-            "because some places still take nothing else, but a GIF holds "
-            "only 256 colours and it shows: the gradients across a gamut come "
-            "out in visible bands.", self))
+            "FOR A MOVING PICTURE there are two families here, and which you "
+            "want depends entirely on where it is going.\n\n"
+            "WEBP, GIF and APNG are pictures that happen to move. They drop "
+            "into a forum post, a README, a chat window or a document exactly "
+            "like a still, they start on their own and they repeat for ever "
+            "with no play button and nothing to press. WebP is the one to "
+            "choose: full colour, and a fraction of the size of the other two. "
+            "GIF is there because a few places still take nothing else, and it "
+            "holds only 256 colours — on a gamut, whose whole subject is "
+            "colour, the gradients come out in visible bands. APNG is "
+            "lossless and perfectly sharp, and several times larger than "
+            "WebP.\n\n"
+            "MP4 and WEBM are films. For the same sharpness they are markedly "
+            "smaller — about half the WebP for H.264, and nearer a third for "
+            "H.265 and VP9, measured on this application's own view. The trade "
+            "is that a film has a play button: "
+            "somewhere like a README it shows as a still with a triangle on "
+            "it, and it repeats only if the player is set to repeat.\n\n"
+            "MP4 (H.264) is the one everything plays — every phone, every "
+            "browser, every chat window, going back years. MP4 (H.265) is the "
+            "same picture in roughly half the file, and needs a device from "
+            "about 2016 onwards. WEBM (VP9) is for a web page, and it is the "
+            "only moving kind here that can be see-through.\n\n"
+            "The films are made by ffmpeg, which comes with this application. "
+            "If a line here says “not available here”, hold the pointer over "
+            "it and it will say why.", self))
 
         self._size = NoScrollComboBox(self)
         for key, label, width in picture.SIZES:
@@ -944,65 +1704,19 @@ class PictureDialog(QDialog):
             "fraction of the size. Below about 70 the smooth gradients across "
             "a gamut start to show blotches, which is exactly the thing the "
             "picture is meant to show. Lossless kinds ignore this entirely, "
-            "so it disappears when you choose one.", self))
+            "so it disappears when you choose one.\n\n"
+            "IT MATTERS MOST ON SOMETHING THAT MOVES. A surface that is "
+            "perfectly clean in a still can shimmer as it turns, because the "
+            "encoder makes a slightly different job of each frame and the eye "
+            "is very good at spotting that. If a saved loop looks like it is "
+            "crawling, this is the setting to raise — 95 or higher costs a "
+            "little size and stops it.\n\n"
+            "For a film it becomes the encoder's own quality setting rather "
+            "than a size, so the same number means the same picture whether "
+            "you choose H.264, H.265 or VP9. Each of the three needs a "
+            "different figure internally for that, which is done for you.",
+            self))
         self._quality_row = line - 1
-
-        self._background = NoScrollComboBox(self)
-        for key, label in picture.BACKGROUNDS:
-            self._background.addItem(label, key)
-        self._background.currentIndexChanged.connect(self._refresh)
-        line = self._row(rows, line, "Behind the shape", self._background, Hint(
-            "What fills the space around the shape.\n\n"
-            "As it looks on screen keeps the dark or light background you are "
-            "looking at now. White suits a printed page or a document. Black "
-            "suits a slide.\n\n"
-            "SEE-THROUGH leaves nothing there at all, so the shape sits "
-            "directly on whatever page you drop it onto and takes that "
-            "background as its own. This is usually the one you want for a "
-            "document or a slide, and it needs a kind of file that can hold "
-            "it — PNG or WebP. Choose it with JPEG and this will say so "
-            "rather than quietly filling it with black.", self))
-
-        self._walls = NoScrollComboBox(self)
-        self._walls.addItem("The same as behind the shape", "same")
-        for key, label in picture.BACKGROUNDS:
-            self._walls.addItem(label, key)
-        self._walls.currentIndexChanged.connect(self._refresh)
-        line = self._row(rows, line, "The grid's walls", self._walls, Hint(
-            "The three panels the grid is drawn on, behind and beneath the "
-            "shape — separate from the page colour above, so you can have "
-            "them differ.\n\n"
-            "Leaving them the same as the background is usually right: the "
-            "picture then reads as one thing. Setting them apart is worth it "
-            "when you want the box to stand out a little from the page it is "
-            "sitting on, or to fade back so the shape carries the picture on "
-            "its own.\n\n"
-            "SEE-THROUGH here removes the panels as well, so the shape floats "
-            "with only the grid lines around it — and with the background "
-            "see-through too, nothing is left but the shape and its lines. "
-            "That is the version that drops cleanly onto any coloured page or "
-            "slide. It needs a kind of file that can hold see-through, which "
-            "PNG and WebP both can.\n\n"
-            "If you would rather have no grid at all, untick Show the box and "
-            "its grid in the main window before saving.", self))
-        self._walls_row = line - 1
-
-        self._wall_colour = QPushButton("Choose a colour…", self)
-        self._wall_colour.setObjectName("secondary")
-        self._wall_colour.clicked.connect(self._pick_wall_colour)
-        self._wall_chosen = "#202020"
-        line = self._row(rows, line, "Wall colour", self._wall_colour, Hint(
-            "Any colour you like on the three panels the grid sits on.", self))
-        self._wall_colour_row = line - 1
-
-        self._colour = QPushButton("Choose a colour…", self)
-        self._colour.setObjectName("secondary")
-        self._colour.clicked.connect(self._pick_colour)
-        self._chosen = "#ffffff"
-        line = self._row(rows, line, "Colour", self._colour, Hint(
-            "Any colour you like behind the shape — a house style, a slide "
-            "background, or the exact grey of the page it is going on.", self))
-        self._colour_row = line - 1
 
         self._moving_size = NoScrollComboBox(self)
         self._moving_size.addItem("The size of the window", 0)
@@ -1087,6 +1801,27 @@ class PictureDialog(QDialog):
         self._fps_row = line - 1
 
         outer.addLayout(rows)
+
+        # WHAT IT WILL ACTUALLY LOOK LIKE. Every one of these choices changes
+        # the picture, and two of them change it in ways nothing on screen can
+        # show: a see-through background is not something the window can be
+        # made to display, and lettering chosen for somewhere else is by
+        # definition not lettering for here. Without this the only way to find
+        # out was to save the file and open it.
+        self._preview_label = QLabel("What you will get", self)
+        self._preview_label.setObjectName("hint")
+        outer.addWidget(self._preview_label)
+        self._preview = QLabel(self)
+        self._preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview.setMinimumHeight(150)
+        outer.addWidget(self._preview, 0, Qt.AlignmentFlag.AlignHCenter)
+        # Redrawing costs a copy of the window, so a slider being dragged waits
+        # until it stops rather than taking one for every pixel of travel.
+        self._preview_soon = QTimer(self)
+        self._preview_soon.setSingleShot(True)
+        self._preview_soon.setInterval(220)
+        self._preview_soon.timeout.connect(self._draw_preview)
+
         self._summary = WrappedLabel("", self)
         self._summary.setObjectName("hint")
         outer.addWidget(self._summary)
@@ -1114,22 +1849,6 @@ class PictureDialog(QDialog):
         hint.follow(control)
         return line + 1
 
-    def _pick_wall_colour(self) -> None:
-        picked = QColorDialog.getColor(QColor(self._wall_chosen), self,
-                                       "A colour for the grid's walls")
-        if picked.isValid():
-            self._wall_chosen = picked.name()
-            self._wall_colour.setText(f"  {self._wall_chosen}")
-            self._refresh()
-
-    def _pick_colour(self) -> None:
-        picked = QColorDialog.getColor(QColor(self._chosen), self,
-                                       "A colour behind the shape")
-        if picked.isValid():
-            self._chosen = picked.name()
-            self._colour.setText(f"  {self._chosen}")
-            self._refresh()
-
     def _show_row(self, line: int, on: bool) -> None:
         for column in range(3):
             item = self._rows.itemAtPosition(line, column)
@@ -1151,15 +1870,39 @@ class PictureDialog(QDialog):
             self._format.clear()
             for key, label in wanted:
                 self._format.addItem(label, key)
+            # A FORMAT THAT CANNOT BE MADE HERE IS SHOWN, NOT HIDDEN. Quietly
+            # dropping MP4 from the list would leave somebody looking for
+            # something they have every reason to expect and no way to find out
+            # why it is missing. Greyed out, with the reason a click away, at
+            # least answers the question.
+            model = self._format.model()
+            for row, (key, _label) in enumerate(wanted):
+                codec = picture.codec_for(key)
+                if codec and not movie.can_write(codec):
+                    item = model.item(row)
+                    if item is not None:
+                        item.setEnabled(False)
+                        item.setText(f"{_label}  — not available here")
+                        item.setToolTip(movie.why_not(codec) or "")
             self._format.blockSignals(False)
+            if not self._format.currentData() or self._format.currentIndex() < 0:
+                self._format.setCurrentIndex(0)
+            # Landing on a greyed row would leave Save doing nothing, so step
+            # off it to the first one that can actually be made.
+            while (self._format.currentIndex() < self._format.count() - 1
+                   and not self._format.model().item(
+                       self._format.currentIndex()).isEnabled()):
+                self._format.setCurrentIndex(self._format.currentIndex() + 1)
         fmt = self._format.currentData() or wanted[0][0]
         custom = self._size.currentData() == "custom"
         self._show_row(self._custom_row, custom and not moving)
-        self._show_row(self._quality_row, picture.is_lossy(fmt) and not moving)
-        self._show_row(self._colour_row,
-                       self._background.currentData() == "custom")
-        self._show_row(self._wall_colour_row,
-                       self._walls.currentData() == "custom")
+        # THE QUALITY SLIDER APPLIES TO MOVING PICTURES TOO, and it was hidden
+        # for them — so an animated WebP was written at whatever the library
+        # felt like, which is 80, and the surface shimmered as it turned. It
+        # means the same thing for a film, where it becomes the encoder's
+        # quality rather than a file size.
+        self._show_row(self._quality_row, picture.is_lossy(fmt))
+
         for line in (self._seconds_row, self._fps_row, self._moving_size_row):
             self._show_row(line, moving)
         self._show_row(self._moving_width_row,
@@ -1189,30 +1932,65 @@ class PictureDialog(QDialog):
             wide = picture.clamp_width(self._custom.value())
             tall = int(round(wide * view.height() / max(1, view.width())))
             frames = 1
-        self._summary.setText(picture.describe(wide, tall, fmt, frames,
-                                               self._quality.value()))
+        self._preview_soon.start()
+        said = picture.describe(wide, tall, fmt, frames, self._quality.value())
+        if moving and not movie.find_ffmpeg():
+            said += ("\n\nMP4 and WebM are greyed out because no ffmpeg was "
+                     "found. WebP needs nothing and makes an excellent moving "
+                     "picture; for the films, see “Where ffmpeg is…” in the "
+                     "left-hand column.")
+        self._summary.setText(said)
+
+    def _draw_preview(self) -> None:
+        """Show the scene exactly as it will be saved.
+
+        THE SAME CODE PATH AS THE EXPORT, deliberately: the preview asks the
+        parent window for one frame made the way a saved frame is made, so it
+        cannot drift away from what the file will hold. A preview that is a
+        second opinion is worse than none.
+        """
+        try:
+            shot = self._parent.preview_frame(self.choices())
+        except Exception as exc:                # noqa: BLE001 — never fatal
+            _log().debug("preview could not be drawn: %s", exc)
+            self._preview.clear()
+            self._preview_label.setText(
+                "What you will get — not available for this view")
+            return
+        if shot is None:
+            self._preview.clear()
+            return
+        self._preview.setPixmap(shot)
+        clear = self._background_choice() == "transparent"
+        self._preview_label.setText(
+            "What you will get — the chequers are what will be see-through"
+            if clear else "What you will get")
+
+    def _background_choice(self) -> str:
+        return self._parent.look_choices().get("background", "as-shown")
 
     def choices(self) -> dict:
-        return {
+        want = {
             "moving": self._kind.currentData() == "moving",
             "format": self._format.currentData(),
             "width": self._custom.value(),
             "quality": self._quality.value(),
-            "background": self._background.currentData(),
-            "colour": self._chosen,
             "seconds": self._seconds.value(),
             "fps": self._fps.currentData(),
             "moving_width": (self._moving_width.value()
                              if self._moving_size.currentData() == -1
                              else self._moving_size.currentData()),
-            "walls": self._walls.currentData(),
-            "wall_colour": self._wall_chosen,
         }
+        # THE LOOK COMES FROM THE WINDOW, not from here. It is chosen in the
+        # left-hand column, where it can be seen on the actual view rather
+        # than guessed at inside a dialog — so this simply asks for it.
+        want.update(self._parent.look_choices())
+        return want
 
 
 #: The two lists the dialog swaps between, kept beside it.
 STILL_KINDS = tuple((k, l) for k, l, _t, _q in picture.STILL_FORMATS)
-MOVING_KINDS = tuple((k, l) for k, l, _t in picture.MOVING_FORMATS)
+MOVING_KINDS = tuple((k, l) for k, l, _t, _e, _c in picture.MOVING_FORMATS)
 
 
 
@@ -1808,6 +2586,9 @@ class GamutApp(QMainWindow):
         import argyll as _argyll
         _argyll.set_folder(self._store.value("argyll_folder", "") or None)
         self._refresh_argyll()
+        movie.set_path(self._store.value("ffmpeg_path", "") or None)
+        self._refresh_ffmpeg()
+        self._restore_look()
         self._restore_everything()
         self._apply_space_availability()
         # Settle the turning controls: fill in the value labels and hide the
@@ -2768,6 +3549,13 @@ class GamutApp(QMainWindow):
         pv.addLayout(scheme_grid)
         v.addWidget(g_prefs)
 
+        # HOW A SAVED PICTURE LOOKS — and, with one box ticked, how this
+        # window looks too. Here rather than inside the Save dialog because
+        # every one of these choices is a thing to look at rather than a thing
+        # to imagine.
+        self._looks_panel = LookSection(col, self._on_look_changed)
+        v.addWidget(self._looks_panel)
+
         self._reset_btn = QPushButton("Start again with standard settings",
                                       col)
         self._reset_btn.setObjectName("secondary")
@@ -2817,6 +3605,43 @@ class GamutApp(QMainWindow):
         argyll_row.addWidget(argyll_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         v.addLayout(argyll_row)
 
+        # THE ENCODER, ON THE SAME FOOTING AS ARGYLLCMS: mentioned quietly for
+        # anybody who wonders, never nagged about. One copy travels with the
+        # application, so for most people this line only ever says so.
+        self._ffmpeg_label = WrappedLabel("", col)
+        self._ffmpeg_label.setObjectName("argyllStatus")
+        v.addWidget(self._ffmpeg_label)
+        ffmpeg_row = QHBoxLayout()
+        ffmpeg_row.setContentsMargins(0, 0, 0, 0)
+        ffmpeg_row.setSpacing(6)
+        self._ffmpeg_btn = QPushButton("Where ffmpeg is…", col)
+        self._ffmpeg_btn.setObjectName("secondary")
+        self._ffmpeg_btn.clicked.connect(self._on_choose_ffmpeg)
+        ffmpeg_row.addWidget(self._ffmpeg_btn, 1)
+        ffmpeg_hint = Hint(
+            "ffmpeg is the free program that writes films. It is used for "
+            "exactly one thing here: saving the turning view as an MP4 or a "
+            "WebM.\n\n"
+            "You almost certainly do not need to do anything. A copy travels "
+            "with this application, so the films work straight out of the box, "
+            "and the line above says which one is being used.\n\n"
+            "Nothing else needs it. Every file still opens, every still "
+            "picture is still saved, and WebP, GIF and APNG moving pictures "
+            "are made here without it — so if it is missing, nothing is broken "
+            "and the two film formats are simply greyed out.\n\n"
+            "This button is for two cases. If you keep your own build and "
+            "would rather it were used, point at it. And if the copy that "
+            "came with the application is not there — some ways of installing "
+            "leave it out, and a few Linux builds are made without H.265 — "
+            "point at one that has what you want. Press it and choose the "
+            "ffmpeg program itself, not a folder.\n\n"
+            "It runs on your computer and nothing is ever sent anywhere. If "
+            "you do not have one, the button offers the download page — it is "
+            "free, and there is a build for every system.", col)
+        ffmpeg_hint.setObjectName("hint_ffmpeg_hint")
+        ffmpeg_row.addWidget(ffmpeg_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        v.addLayout(ffmpeg_row)
+
         self._update_btn = QPushButton("Check for a newer version…", col)
         self._update_btn.setObjectName("secondary")
         self._update_btn.clicked.connect(lambda: self._check_updates(asked=True))
@@ -2846,11 +3671,15 @@ class GamutApp(QMainWindow):
             "no network whatever. You can still ask whenever you like, with "
             "the button just above.", col)
         update_hint.setObjectName("hint_update_hint")
-        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
-        _r.setSpacing(6)
-        _r.addWidget(self._auto_update, 1)
-        _r.addWidget(update_hint, 0, Qt.AlignmentFlag.AlignVCenter)
-        v.addLayout(_r)
+        # THE ONLY TICKBOX IN A COLUMN OF BUTTONS, so it goes at the end
+        # rather than in the middle of them: sitting between two buttons it
+        # read as a stray control that had lost its group.
+        self._auto_update_row = QHBoxLayout()
+        self._auto_update_row.setContentsMargins(0, 0, 0, 0)
+        self._auto_update_row.setSpacing(6)
+        self._auto_update_row.addWidget(self._auto_update, 1)
+        self._auto_update_row.addWidget(update_hint, 0,
+                                        Qt.AlignmentFlag.AlignVCenter)
         self._picture = QPushButton("Save this view as a picture…", col)
         self._picture.setObjectName("secondary")
         self._picture.clicked.connect(self._on_picture)
@@ -2916,6 +3745,7 @@ class GamutApp(QMainWindow):
         # the groups built so far and left the rest as they were, which looks
         # exactly like a bug in the ones it missed.
         self._tighten_groups(col)
+        v.addLayout(self._auto_update_row)
         return col
 
 
@@ -2972,12 +3802,16 @@ class GamutApp(QMainWindow):
             slicing=self._slice_on.isChecked(),
             lightness=float(self._slice_at.value()),
             moving=want["moving"])
+        # THE EXTENSION IS NOT ALWAYS THE CHOICE. H.264 and H.265 both live in
+        # an .mp4, VP9 in a .webm, and an APNG is a .png — so it comes from one
+        # place rather than from whichever name the list happened to use.
+        suffix = picture.extension_for(want["format"])
         chooser = self._file_dialog("Where should the picture go?",
                                     QFileDialog.FileMode.AnyFile,
-                                    f"Picture (*.{want['format']})", suggested,
-                                    profiles=False)
+                                    f"{'Film' if picture.is_film(want['format']) else 'Picture'}"
+                                    f" (*.{suffix})", suggested, profiles=False)
         chooser.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
-        chooser.setDefaultSuffix(want["format"])
+        chooser.setDefaultSuffix(suffix)
         if not chooser.exec():
             return
         target = picture.next_free(Path(chooser.selectedFiles()[0]))
@@ -2993,6 +3827,10 @@ class GamutApp(QMainWindow):
                        "Nothing was written. The view is exactly as it was, "
                        "and you can start again whenever you like.")
             return
+        except movie.NoEncoder as why:
+            _log().info("no encoder for %s: %s", want["format"], why)
+            Notice.warn(self, "That kind of film cannot be made here", str(why))
+            return
         except Exception as exc:            # noqa: BLE001 — always explain
             _log().warning("could not save %s: %s", target.name, exc)
             Notice.warn(self, "That picture could not be saved", str(exc))
@@ -3001,7 +3839,12 @@ class GamutApp(QMainWindow):
             made.stat().st_size if made.exists() else 0))
         Notice.say(self, "Saved",
                    f"Written to\n{made}\n\n"
-                   f"{picture.human_size(made.stat().st_size)}.")
+                   f"{picture.human_size(made.stat().st_size)}."
+                   + ("\n\nIt is a film, so it opens with a play button rather "
+                      "than showing straight away. It repeats when the player "
+                      "is set to repeat — a moving picture such as WebP loops "
+                      "by itself, and that is the difference between the two."
+                      if picture.is_film(want["format"]) else ""))
 
     def _background_for(self, want, which: str = "background") -> "str | None":
         """A chosen colour, or None to leave that part as it looks on screen."""
@@ -3078,6 +3921,250 @@ class GamutApp(QMainWindow):
             target.write_bytes(base64.b64decode(payload))
         return target
 
+    def _page_backgrounds(self, want) -> dict:
+        """What the page has to be told so the picture gets the background asked.
+
+        The page colour and the three panels the grid is drawn on are separate
+        properties, and both have to be said: clearing the first alone leaves a
+        solid box floating in nothing.
+        """
+        paper = self._background_for(want)
+        walls = self._background_for(want, "walls")
+        changes: dict = {}
+        if paper is not None:
+            changes["paper_bgcolor"] = paper
+            changes["plot_bgcolor"] = paper
+        if walls is not None:
+            for axis in ("xaxis", "yaxis", "zaxis"):
+                changes[f"scene.{axis}.backgroundcolor"] = walls
+
+        # THE LETTERING HAS TO BE READABLE ON WHATEVER IT LANDS ON. The numbers
+        # and names round the box are drawn in the colour the window is using,
+        # and saving on a white background with the dark theme's pale grey left
+        # a picture whose scale could not be read at all — while nothing about
+        # it looked broken, which is why it went unnoticed.
+        #
+        # What they sit on is the WALLS where there are walls, and the page
+        # otherwise; that is the surface behind the text, so that is what
+        # decides it.
+        behind = walls if walls not in (None, "rgba(0,0,0,0)") else paper
+        ink = self._ink_choice(want, "lettering", behind)
+        if ink is not None:
+            changes["font.color"] = ink
+            changes["title.font.color"] = picture.mix(
+                behind or ink, ink, 0.62) if behind else ink
+            changes["legend.font.color"] = ink
+            for axis in ("xaxis", "yaxis", "zaxis"):
+                changes[f"scene.{axis}.color"] = ink
+        lines = self._ink_choice(want, "gridlines", behind, grid=True)
+        if lines is not None:
+            for axis in ("xaxis", "yaxis", "zaxis"):
+                changes[f"scene.{axis}.gridcolor"] = lines
+                changes[f"scene.{axis}.zerolinecolor"] = lines
+        return changes
+
+    def _ink_choice(self, want, which: str, behind, grid: bool = False):
+        """The colour asked for the lettering or the grid lines, or None.
+
+        None means "leave it exactly as it looks on screen", which is both the
+        answer when nothing was chosen and the right answer for a see-through
+        background — nobody here knows what page that picture is going onto,
+        so guessing would be worse than leaving it.
+        """
+        choice = want.get(which, "follow")
+        if choice == "custom":
+            return want.get(f"{which}_colour", picture.DARK_INK)
+        if choice == "dark":
+            return picture.mix("#ffffff", picture.DARK_INK, 1.0) if not grid \
+                else picture.grid_for("#ffffff")
+        if choice == "light":
+            return picture.LIGHT_INK if not grid else picture.grid_for("#111111")
+        if choice != "follow" or behind in (None, "rgba(0,0,0,0)"):
+            return None
+        return picture.grid_for(behind) if grid else picture.ink_for(behind)
+
+    def _set_page_backgrounds(self, changes: dict, restore: bool = False) -> None:
+        """Put the chosen background on the live page, or take it off again.
+
+        A MOVING PICTURE HAD NONE OF THIS. The background choices reached the
+        still route only, so asking for white, or for see-through, and then
+        saving a loop gave back whatever was on screen — quietly, which is the
+        worst way to be wrong.
+        """
+        import json
+
+        if not changes:
+            return
+        want = {k: None for k in changes} if restore else changes
+        self._run_js_now(
+            "(function(){var d=document.getElementsByClassName("
+            "'plotly-graph-div')[0];"
+            f"if(d)Plotly.relayout(d,{json.dumps(want)});}})()")
+
+    def look_choices(self) -> dict:
+        """The styling chosen in the left-hand column, for saving a picture."""
+        return self._looks_panel.values()
+
+    def _on_look_changed(self) -> None:
+        """Put the chosen look on the view, or take it off again.
+
+        THE VIEW IS THE PREVIEW, so this runs on every change rather than only
+        when something is saved. It is a relayout of the page that is already
+        drawn — no rebuilding, no re-reading of anything — so it is quick
+        enough to sit under a colour picker being dragged.
+        """
+        # The section settles itself as it is built, which happens before the
+        # window has finished putting itself together — so there is a moment
+        # when this is called and there is nothing yet to call it on.
+        panel = getattr(self, "_looks_panel", None)
+        if panel is None or getattr(self, "_view", None) is None:
+            return
+        self._set_page_backgrounds(self._page_view())
+        self._remember_look()
+
+    def _page_view(self) -> dict:
+        """What the page should be wearing right now.
+
+        ALWAYS SOMETHING EXPLICIT, never "put it back to the default". Asking
+        Plotly to forget a colour does not return it to what this application
+        set — it returns it to Plotly's own default, which is white. So
+        unticking Show it in the window too turned the window white instead of
+        returning it to its own dark, and every export left it that way after
+        it finished. The window's two schemes are written down as looks
+        precisely so there is something exact to go back TO.
+        """
+        panel = getattr(self, "_looks_panel", None)
+        if panel is not None and panel.live():
+            want = panel.values()
+        else:
+            want = (picture.LIGHT_THEME if getattr(self, "_appearance", "dark")
+                    == "light" else picture.DARK_THEME)
+        wanted = self._page_backgrounds(want)
+        # SEE-THROUGH CANNOT BE SHOWN IN A WINDOW, so on screen it stands in as
+        # white — which is what a cut-out picture is nearly always going onto.
+        # The small picture in the Save window shows the real thing, on
+        # chequers, and says so.
+        return {k: ("#ffffff" if v == "rgba(0,0,0,0)" else v)
+                for k, v in wanted.items()}
+
+    def _remember_look(self) -> None:
+        """Keep the look for next time, like every other setting here."""
+        if getattr(self, "_store", None) is None:
+            return
+        try:
+            kept = dict(self._looks_panel.values())
+            kept["look"] = self._looks_panel.chosen_look()
+            kept["details"] = self._looks_panel.details_open()
+            kept["live"] = self._looks_panel.live()
+            self._store.setValue("picture_look", json.dumps(kept))
+        except Exception as exc:                 # noqa: BLE001 — never fatal
+            _log().debug("the look could not be remembered: %s", exc)
+
+    def _restore_look(self) -> None:
+        saved = self._store.value("picture_look", "")
+        if not saved:
+            return
+        try:
+            self._looks_panel.restore(json.loads(saved))
+        except Exception as exc:                 # noqa: BLE001
+            _log().debug("the saved look could not be read: %s", exc)
+
+    def preview_frame(self, want, across: int = 340):
+        """One frame of the scene as it would be saved, small, for the dialog.
+
+        Made by the export's own steps -- the same backgrounds, the same
+        lettering, and for a see-through picture the same arithmetic over two
+        grounds -- so what is shown is what will be written rather than an
+        artist's impression of it.
+        """
+        from PIL import Image
+
+        changes = self._page_backgrounds(want)
+        see_through = self._background_for(want) == "rgba(0,0,0,0)"
+        try:
+            if see_through:
+                pale = {k: ("#ffffff" if v == "rgba(0,0,0,0)" else v)
+                        for k, v in changes.items()}
+                dark = {k: ("#000000" if v == "rgba(0,0,0,0)" else v)
+                        for k, v in changes.items()}
+                for key in ("paper_bgcolor", "plot_bgcolor"):
+                    pale.setdefault(key, "#ffffff")
+                    dark.setdefault(key, "#000000")
+                self._set_page_backgrounds(pale)
+                on_white = Image.fromqpixmap(self._view.grab()).convert("RGB")
+                self._set_page_backgrounds(dark)
+                on_black = Image.fromqpixmap(self._view.grab()).convert("RGB")
+                frame = Image.fromarray(picture.alpha_from_two_grounds(
+                    np.asarray(on_white), np.asarray(on_black)), "RGBA")
+            else:
+                self._set_page_backgrounds(changes)
+                frame = Image.fromqpixmap(self._view.grab()).convert("RGBA")
+        finally:
+            self._set_page_backgrounds(self._page_view())
+        tall = max(1, int(round(across * frame.height / max(1, frame.width))))
+        frame = frame.resize((across, tall), Image.LANCZOS)
+        if see_through:
+            frame = Image.alpha_composite(_chequerboard(across, tall), frame)
+        shot = QPixmap.fromImage(QImage(
+            frame.convert("RGBA").tobytes(), frame.width, frame.height,
+            frame.width * 4, QImage.Format.Format_RGBA8888))
+        return shot
+
+    def _finish_writing(self, writer, progress) -> Path:
+        """Let the file be written without the window going dead.
+
+        THIS IS THE STEP THAT USED TO LOOK LIKE A HANG. The frames are taken
+        smoothly and the window answers throughout that part; then everything
+        stopped for several seconds while the file was put together, with no
+        bar moving and no way to tell it apart from a crash.
+
+        So the writing happens on a thread of its own and the window keeps
+        painting. A film can also be abandoned part way, because the encoder is
+        a separate program that can simply be stopped; the picture kinds cannot
+        be, and the dialog says so rather than offering a button that does
+        nothing.
+        """
+        import threading
+        import time as _time
+
+        outcome: dict = {}
+
+        def work():
+            try:
+                outcome["made"] = writer.finish()
+            except BaseException as exc:                  # noqa: BLE001
+                outcome["trouble"] = exc
+
+        # THE BAR GOES TO "BUSY" HERE, on purpose. Nobody can say how far
+        # through an encoder is, and a bar frozen at 100% is a worse lie than
+        # one that admits it is simply working.
+        progress.setRange(0, 0)
+        progress.setLabelText(
+            "Writing the file…\nThis is the part that takes a moment."
+            if writer.can_stop_while_writing else
+            "Writing the file…\nThis last step cannot be stopped part way.")
+        progress.setCancelButtonText("Stop" if writer.can_stop_while_writing
+                                     else "Working…")
+        QApplication.processEvents()
+
+        thread = threading.Thread(target=work, daemon=True)
+        thread.start()
+        asked_to_stop = False
+        while thread.is_alive():
+            if (not asked_to_stop and progress.wasCanceled()
+                    and writer.can_stop_while_writing):
+                asked_to_stop = True
+                writer.cancel()
+            QApplication.processEvents()
+            _time.sleep(0.02)
+        thread.join()
+        progress.setRange(0, 1)
+        if asked_to_stop:
+            raise Stopped("stopped while the file was being written")
+        if "trouble" in outcome:
+            raise outcome["trouble"]
+        return outcome["made"]
+
     def _save_moving(self, target: Path, want) -> Path:
         """A loop that turns, grabbed frame by frame from the live view.
 
@@ -3087,7 +4174,16 @@ class GamutApp(QMainWindow):
         a minute and a half instead of a few seconds. Stepping also makes the
         loop close exactly, which is what stops it jerking once every time
         round.
+
+        EACH FRAME IS FINISHED AS IT IS TAKEN -- brought down to the size asked
+        for, given its background, and handed to the writer -- rather than kept
+        and dealt with at the end. For a film that means the encoding runs
+        alongside the grabbing and nothing is held at all; for the picture
+        kinds it means what is kept is the small version rather than the full
+        screen, which is the difference between forty megabytes and four
+        hundred for a long loop.
         """
+        import movie
         from PIL import Image
 
         mode = self._turn_mode.currentData()
@@ -3104,6 +4200,59 @@ class GamutApp(QMainWindow):
         tilts = (picture.turn_angles(count, tilt_mode,
                                      float(self._tilt_sweep.value()))
                  if tilt_mode != "off" else [0.0] * count)
+        # HOW BIG THE PICTURE WILL BE IS SETTLED BEFORE ANYTHING IS TAKEN.
+        # A film's size cannot change part way through -- the encoder is told
+        # once, at the start -- so it is worked out from one grab up front and
+        # every frame is brought to exactly that.
+        shot = self._view.grab()
+        wide, tall = shot.width(), shot.height()
+        asked = int(want.get("moving_width") or 0)
+        if 0 < asked < wide:
+            tall = int(round(tall * asked / wide))
+            wide = asked
+        fmt = want["format"]
+        codec = picture.codec_for(fmt)
+        if codec:
+            wide, tall = movie.even(wide), movie.even(tall)
+        paper = self._background_for(want)
+        see_through = paper == "rgba(0,0,0,0)"
+        writer = movie.writer_for(fmt, target, wide, tall, want["fps"],
+                                  want["quality"], transparent=see_through,
+                                  codec=codec)
+        # THE PAGE IS TOLD FIRST, and the frames are grabbed with it already
+        # wearing the background asked for.
+        changes = self._page_backgrounds(want)
+        # SEE-THROUGH IS NOT A COLOUR THE PAGE CAN BE GIVEN. A copy of the
+        # screen has no see-through in it — the graphics card has already put
+        # everything on a solid ground — so asking politely and grabbing gave
+        # back a picture that was quietly solid. Instead each frame is taken
+        # twice, once on white and once on black, and the two are subtracted:
+        # see picture.alpha_from_two_grounds, which is exact rather than a
+        # trick and gets the soft edges right.
+        pale = dark = None
+        if see_through:
+            pale = {k: ("#ffffff" if v == "rgba(0,0,0,0)" else v)
+                    for k, v in changes.items()}
+            dark = {k: ("#000000" if v == "rgba(0,0,0,0)" else v)
+                    for k, v in changes.items()}
+            # Anything the person left as it looks on screen is opaque, and
+            # must stay opaque in both passes or it would come out ghosted.
+            for key in ("paper_bgcolor", "plot_bgcolor"):
+                pale.setdefault(key, "#ffffff")
+                dark.setdefault(key, "#000000")
+            self._set_page_backgrounds(pale)
+        else:
+            self._set_page_backgrounds(changes)
+        # A SOLID COLOUR IS STILL LAID UNDERNEATH as well, because the page
+        # answers with the colour but the grab can come back with an alpha
+        # channel of its own; compositing on a flat ground of exactly the
+        # colour asked for makes the two agree whatever the platform does.
+        flat = None
+        if paper and not see_through:
+            colour = QColor(paper)
+            flat = Image.new("RGBA", (wide, tall),
+                             (colour.red(), colour.green(), colour.blue(), 255))
+
         was_on = self._spin_on.isChecked()
         self._spin_on.setChecked(False)     # we are driving it ourselves
         QApplication.processEvents()
@@ -3122,12 +4271,15 @@ class GamutApp(QMainWindow):
         # tightly enough that the two touch, which reads as one broken control
         # rather than two.
         progress.setMinimumWidth(360)
+        # AND THE NUMBER IN THE MIDDLE OF THE BAR, which Qt does not manage on
+        # its own — see CentredProgressBar.
+        progress.setBar(CentredProgressBar(progress))
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setAutoClose(False)
         progress.setAutoReset(False)
         progress.setValue(0)
-        frames, previous, tilted, stopped = [], 0.0, 0.0, False
+        taken, previous, tilted, stopped = 0, 0.0, 0.0, False
         try:
             for number, (angle, lift) in enumerate(zip(angles, tilts), start=1):
                 if progress.wasCanceled():
@@ -3136,53 +4288,58 @@ class GamutApp(QMainWindow):
                 self._run_js_now("if(window.cqSpin)window.cqSpin.nudge("
                                  f"{angle - previous},{lift - tilted});")
                 previous, tilted = angle, lift
-                shot = self._view.grab()
-                frames.append(Image.fromqpixmap(shot).convert("RGBA"))
+                if see_through:
+                    # The same frame on two grounds, subtracted. The shape does
+                    # not move between the two — it is being stepped by hand,
+                    # not left to turn — so the only difference between them is
+                    # the ground, which is what makes the arithmetic exact.
+                    on_white = Image.fromqpixmap(self._view.grab()).convert("RGB")
+                    self._set_page_backgrounds(dark)
+                    on_black = Image.fromqpixmap(self._view.grab()).convert("RGB")
+                    self._set_page_backgrounds(pale)
+                    frame = Image.fromarray(picture.alpha_from_two_grounds(
+                        np.asarray(on_white), np.asarray(on_black)), "RGBA")
+                else:
+                    frame = Image.fromqpixmap(self._view.grab()).convert("RGBA")
+                # SMALLER IF ASKED, never larger: this is a copy of the screen,
+                # and no amount of enlarging puts back detail it never had.
+                if frame.size != (wide, tall):
+                    frame = frame.resize((wide, tall), Image.LANCZOS)
+                if flat is not None:
+                    frame = Image.alpha_composite(flat, frame)
+                writer.add(frame)
+                taken += 1
                 progress.setLabelText(
                     f"Taking the frames… {number} of {len(angles)}")
                 progress.setValue(number)
+        except BaseException:
+            writer.cancel()
+            raise
         finally:
             # PUT IT BACK. Whatever happens, the view returns to where it was:
-            # an export must not quietly leave the shape facing elsewhere.
+            # an export must not quietly leave the shape facing elsewhere, nor
+            # wearing the background somebody picked for a file.
             self._run_js_now(f"if(window.cqSpin)window.cqSpin.nudge("
                              f"{-previous},{-tilted});")
+            self._set_page_backgrounds(self._page_view())
             self._spin_on.setChecked(was_on)
             QApplication.processEvents()
         if stopped:
-            progress.close()
             # NOTHING IS WRITTEN. Stopping half way through would otherwise
             # leave a file holding part of a journey, which loops badly and
             # looks like a fault rather than a choice.
+            writer.cancel()
+            progress.close()
             raise Stopped("stopped before the picture was finished")
-        if not frames:
+        if not taken:
+            writer.cancel()
             progress.close()
             raise ValueError("no frames could be taken")
-        progress.setLabelText("Putting the picture together…")
-        progress.setValue(len(angles))
-        QApplication.processEvents()
-        # SMALLER IF ASKED, never larger: this is a copy of the screen, and no
-        # amount of enlarging puts back detail the screen never had.
-        asked = int(want.get("moving_width") or 0)
-        if 0 < asked < frames[0].width:
-            tall = int(round(frames[0].height * asked / frames[0].width))
-            frames = [f.resize((asked, tall), Image.LANCZOS) for f in frames]
-        paper = self._background_for(want)
-        if paper and paper != "rgba(0,0,0,0)":
-            colour = QColor(paper)
-            flat = [Image.new("RGBA", f.size,
-                              (colour.red(), colour.green(), colour.blue(), 255))
-                    for f in frames]
-            frames = [Image.alpha_composite(b, f) for b, f in zip(flat, frames)]
-        gap = int(round(1000.0 / max(1, want["fps"])))
-        first, rest = frames[0], frames[1:]
-        if want["format"] == "gif":
-            first = first.convert("P", palette=Image.Palette.ADAPTIVE)
-            rest = [f.convert("P", palette=Image.Palette.ADAPTIVE) for f in rest]
-        first.save(target, save_all=True, append_images=rest, loop=0,
-                   duration=gap, format={"webp": "WEBP", "gif": "GIF",
-                                         "apng": "PNG"}[want["format"]])
-        progress.close()
-        return target
+        try:
+            made = self._finish_writing(writer, progress)
+        finally:
+            progress.close()
+        return made
 
     def _run_js_now(self, script: str, seconds: float = 2.0) -> None:
         """Run it and WAIT until the page has actually done it.
@@ -3390,7 +4547,17 @@ class GamutApp(QMainWindow):
                 self._attach_in_layout(box.layout(), box)
 
     def _attach_in_layout(self, layout, box) -> None:
-        """One layout, and every layout nested inside it."""
+        """One layout, and every layout nested inside it.
+
+        A GRID IS LEFT ALONE. This exists to pair an ⓘ with the control above
+        it in a column of stacked widgets, where nothing says which belongs to
+        which. In a grid every hint has already been put in its own column
+        beside its own control on purpose, so there is nothing to work out —
+        and trying to rearrange one asks a grid for a method only a box layout
+        has.
+        """
+        if isinstance(layout, QGridLayout):
+            return
         i = 0
         while i < layout.count():
             item = layout.itemAt(i)
@@ -4300,6 +5467,71 @@ class GamutApp(QMainWindow):
         Notice.say(self, "That is where it will look",
                    f"ArgyllCMS will be used from:\n{chosen}\n\n"
                    "Every file type can be opened now.")
+
+    def _look_after_appearance(self) -> None:
+        """Dark or light was switched, so the page follows — unless a look of
+        the person's own is being shown, which is theirs and stays put."""
+        if getattr(self, "_looks_panel", None) is not None:
+            self._set_page_backgrounds(self._page_view())
+
+    def _refresh_ffmpeg(self) -> None:
+        """Say where the encoder stands, without making it sound like a fault."""
+        movie.forget()
+        got = movie.status()
+        self._ffmpeg_label.setText(movie.summary())
+        self._ffmpeg_btn.setText("Where ffmpeg is…" if got["found"]
+                                 else "Find or get ffmpeg…")
+        self._ffmpeg_label.setToolTip(got["path"] or "")
+
+    def _on_choose_ffmpeg(self) -> None:
+        """Point the viewer at an ffmpeg, or at the page to download one from.
+
+        A FILE, NOT A FOLDER, and that is the difference from the ArgyllCMS
+        button beside it: ArgyllCMS is a folder of many tools, while this is
+        one program. Asking for the right thing is worth more than making the
+        two buttons look alike.
+        """
+        got = movie.status()
+        if not got["found"]:
+            wanted = Notice.ask(
+                self, "No ffmpeg was found",
+                "Nothing is broken. Every file still opens, still pictures "
+                "still save, and WebP, GIF and APNG moving pictures are made "
+                "here without it. Only the MP4 and WebM films need it.\n\n"
+                "A copy normally travels with this application. If it is not "
+                "there, it is free and every system has a build.\n\n"
+                "If you already have one and it simply lives somewhere "
+                "unusual, choose the ffmpeg program itself instead.",
+                yes="Open the download page", no="Choose the program…")
+            if wanted:
+                QDesktopServices.openUrl(QUrl(movie.DOWNLOAD_URL))
+                return
+        start = str(Path(got["path"]).parent) if got["path"] else str(Path.home())
+        chooser = self._file_dialog("Choose the ffmpeg program",
+                                    QFileDialog.FileMode.ExistingFile,
+                                    "Every program (*)", profiles=False)
+        chooser.setDirectory(start)
+        if not chooser.exec():
+            return
+        chosen = chooser.selectedFiles()[0]
+        if not movie.looks_like_ffmpeg(chosen):
+            # TURNED DOWN NOW rather than at the end of a two-minute export,
+            # which is where the mistake would otherwise surface.
+            Notice.warn(
+                self, "That is not an ffmpeg",
+                f"This does not answer as ffmpeg does:\n{chosen}\n\n"
+                "The one to choose is the program called ffmpeg itself — not "
+                "ffplay, not ffprobe, and not the folder it sits in.\n\n"
+                "Nothing has been changed.")
+            return
+        self._store.setValue("ffmpeg_path", chosen)
+        movie.set_path(chosen)
+        self._refresh_ffmpeg()
+        kinds = ", ".join(movie.CODEC_NAMES[c]
+                          for c in movie.status()["codecs"]) or "none"
+        Notice.say(self, "That is the one it will use",
+                   f"Films will be made with:\n{chosen}\n\n"
+                   f"It can write: {kinds}.")
 
     def _axis_controls(self, group, into, name: str, why: str,
                        speed_default: int, sweep_default: int,
