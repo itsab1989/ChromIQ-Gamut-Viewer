@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.9.1
+
+### 🐞 Fixed
+
+- **Saving a moving picture no longer looks like a hang.** Taking a hundred
+  and sixty frames keeps the window busy for a quarter of a minute, and the
+  shape stood still throughout — so the application appeared to have stopped
+  responding, with a spinning cursor and nothing happening.
+- **It now says what it is doing** — *Taking the frames… 62 of 160*, then
+  *Putting the picture together…* — and the shape can be seen moving through
+  the frames as they are taken. Measured: the window answers 238 times during
+  an eighteen-second export, with no gap longer than 0.17 s.
+- **It can be stopped.** Press **Stop** and nothing is written at all — a file
+  holding half a journey would loop badly and look like a fault — and the view
+  goes back to exactly where it was, to the sixth decimal.
+
 ## v1.9.0
 
 ### ✨ What's new

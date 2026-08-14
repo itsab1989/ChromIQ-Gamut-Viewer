@@ -63,7 +63,8 @@ from PyQt6.QtGui import (QColor, QDesktopServices, QFont, QFontMetrics,
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel, QLayout,
                              QDialog, QMainWindow, QPushButton, QScrollArea, QSlider,
-                             QColorDialog, QDialogButtonBox, QListView, QSizeGrip, QSpinBox,
+                             QColorDialog, QDialogButtonBox, QListView, QProgressDialog,
+                             QSizeGrip, QSpinBox,
                              QSizePolicy, QStyle,
                              QButtonGroup, QGridLayout, QRadioButton, QToolButton,
                              QVBoxLayout,
@@ -811,6 +812,10 @@ class Masthead(QWidget):
         lay.addLayout(inner)
         lay.addWidget(SpectrumStripe(self))
 
+
+
+class Stopped(Exception):
+    """The person stopped it. Not a fault, and never reported as one."""
 
 
 class PictureDialog(QDialog):
@@ -2964,6 +2969,12 @@ class GamutApp(QMainWindow):
                 made = self._save_moving(target, want)
             else:
                 made = self._save_still(target, want)
+        except Stopped:
+            _log().info("picture stopped before it was finished")
+            Notice.say(self, "Stopped",
+                       "Nothing was written. The view is exactly as it was, "
+                       "and you can start again whenever you like.")
+            return
         except Exception as exc:            # noqa: BLE001 — always explain
             _log().warning("could not save %s: %s", target.name, exc)
             Notice.warn(self, "That picture could not be saved", str(exc))
@@ -3078,14 +3089,36 @@ class GamutApp(QMainWindow):
         was_on = self._spin_on.isChecked()
         self._spin_on.setChecked(False)     # we are driving it ourselves
         QApplication.processEvents()
-        frames, previous, tilted = [], 0.0, 0.0
+        # SAY WHAT IS HAPPENING, AND LET IT BE STOPPED. Taking a hundred and
+        # sixty frames keeps the window busy for a quarter of a minute, and
+        # the shape stands still throughout because it is being stepped rather
+        # than left to turn -- so without this the application looks as though
+        # it has hung, which is exactly how it looked. QProgressDialog is used
+        # rather than something of our own because it pumps the event queue
+        # itself: the window keeps painting, and the shape can be seen moving
+        # through the frames as they are taken.
+        progress = QProgressDialog("Taking the frames…", "Stop",
+                                   0, len(angles), self)
+        progress.setWindowTitle("Saving a moving picture")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setValue(0)
+        frames, previous, tilted, stopped = [], 0.0, 0.0, False
         try:
-            for angle, lift in zip(angles, tilts):
+            for number, (angle, lift) in enumerate(zip(angles, tilts), start=1):
+                if progress.wasCanceled():
+                    stopped = True
+                    break
                 self._run_js_now("if(window.cqSpin)window.cqSpin.nudge("
                                  f"{angle - previous},{lift - tilted});")
                 previous, tilted = angle, lift
                 shot = self._view.grab()
                 frames.append(Image.fromqpixmap(shot).convert("RGBA"))
+                progress.setLabelText(
+                    f"Taking the frames… {number} of {len(angles)}")
+                progress.setValue(number)
         finally:
             # PUT IT BACK. Whatever happens, the view returns to where it was:
             # an export must not quietly leave the shape facing elsewhere.
@@ -3093,8 +3126,18 @@ class GamutApp(QMainWindow):
                              f"{-previous},{-tilted});")
             self._spin_on.setChecked(was_on)
             QApplication.processEvents()
+        if stopped:
+            progress.close()
+            # NOTHING IS WRITTEN. Stopping half way through would otherwise
+            # leave a file holding part of a journey, which loops badly and
+            # looks like a fault rather than a choice.
+            raise Stopped("stopped before the picture was finished")
         if not frames:
+            progress.close()
             raise ValueError("no frames could be taken")
+        progress.setLabelText("Putting the picture together…")
+        progress.setValue(len(angles))
+        QApplication.processEvents()
         # SMALLER IF ASKED, never larger: this is a copy of the screen, and no
         # amount of enlarging puts back detail the screen never had.
         asked = int(want.get("moving_width") or 0)
@@ -3116,6 +3159,7 @@ class GamutApp(QMainWindow):
         first.save(target, save_all=True, append_images=rest, loop=0,
                    duration=gap, format={"webp": "WEBP", "gif": "GIF",
                                          "apng": "PNG"}[want["format"]])
+        progress.close()
         return target
 
     def _run_js_now(self, script: str, seconds: float = 2.0) -> None:
