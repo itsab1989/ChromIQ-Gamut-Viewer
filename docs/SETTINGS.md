@@ -1,0 +1,153 @@
+# Every setting, and what it decides
+
+Written for whoever brings this into another application — ChromIQ or anything
+else. Each entry gives the control as the user sees it, the value it produces,
+where that value goes, and the reasoning behind the default, because a default
+without a reason is just somebody's habit.
+
+Nothing here is stored in a project file. The appearance settings are kept in
+the platform's own settings store (`QSettings("MeasuredGamutViewer",
+"MeasuredGamutViewer")`); everything else lives for the length of the session,
+because it describes how you are looking at something rather than what you
+have.
+
+---
+
+## 1. What is on screen
+
+### Your measured chart — up to two
+| | |
+|---|---|
+| **Control** | "Open a measured chart…", drag-and-drop, or a path on the command line |
+| **Accepts** | `.ti3` (a measured chart), `.icc` / `.icm` (a profile) |
+| **Produces** | `Measurement(name, device, lab, instrument, n_patches)` |
+| **Where it goes** | `ti3gamut.read_ti3()` → `gamutview.build_gamut()` |
+
+A profile is not a measurement, so it is routed to the comparison slot instead
+of the chart slots. Two charts is the limit on purpose: a third would need a
+third colour, a third coverage figure and a third row of controls, and nobody
+has yet wanted one.
+
+**A chart under 60 patches is called out.** Below that the shape is the outline
+of a handful of dots rather than the edge of a printer, and any two small
+charts look alike. The threshold is `GamutApp.TOO_FEW_PATCHES`; 60 was chosen
+because an even 4-level sampling of three channels is 64, and real profiling
+charts start in the hundreds. It warns and still draws, because a partial or
+verification chart is a legitimate thing to look at.
+
+### Compare with
+| Option | What it answers |
+|---|---|
+| Nothing | — |
+| A second measured chart | Which of two papers can print more |
+| sRGB, Adobe RGB (1998), Display P3, ProPhoto RGB, Rec.2020 | Whether the images people send you will survive on this paper |
+| An ICC profile from disk | How this paper compares with the profile a client sent |
+| Everything the eye can see | How much of visible colour this paper holds at all |
+
+These are three different questions and the answers are not interchangeable —
+the interface says so, because "compare" invites the assumption that they are.
+
+---
+
+## 2. How the shape is worked out
+
+| Value | Meaning |
+|---|---|
+| `"device"` *(default)* | Six faces of the device cube, mapped through the measurement |
+| `"hull"` | Convex hull of the measured cloud |
+
+Passed as `build_gamut(colors, drive_values)` versus `build_gamut(colors)`.
+
+The default follows the printer's real, dented boundary; the hull bridges over
+the concavities and over-states the gamut. Measured on a real chart: the hull
+claims **8.5% more colour** than the boundary encloses. `"device"` needs the
+device values, which every `.ti3` carries alongside the measurements.
+
+---
+
+## 3. What the colours are measured against
+
+| Control | Values | Default | Goes to |
+|---|---|---|---|
+| White point | `"D50"`, `"D65"` | `"D50"` | `white_point=` on every conversion |
+| Judge against the paper's own white | on / off | off | `relative=` on `read_ti3` |
+
+D50 is the ICC connection-space illuminant and what print measurement uses; D65
+is for display work. **Inside ChromIQ this should not be a control at all** —
+the application already knows a printed chart was measured under D50, and a
+combo box only invites a wrong answer.
+
+The relative option normalises to the brightest patch, so papers of different
+brightness compare on shape rather than brightness. **Inside ChromIQ it should
+follow the rendering intent already chosen** rather than being a second switch
+that can contradict it.
+
+---
+
+## 4. How it looks
+
+| Control | Values | Default | Live? |
+|---|---|---|---|
+| Appearance | `"light"`, `"dark"` | `"dark"` | stored |
+| Accent | Magenta, Teal, Amber, Violet, Slate | Magenta | stored |
+| How the shapes are coloured | `"true"`, `"solid"`, `"lightness"`, `"chroma"` | `"true"` | stored |
+| Depth (shading) | 0–100 | 35 | **yes** — restyled in place |
+| See-through (opacity) | 15–100 | 100 | **yes** — restyled in place |
+| Proportions | `"data"`, `"cube"` | `"data"` | redraw |
+| Detail | 10 / 20 / 32 steps | 20 | redraw |
+| Draw each shape as | `"solid"`, `"solid+mesh"`, `"mesh"` | chart solid, others outline | redraw |
+| Show every patch I measured | on / off | off | redraw |
+| Show what the comparison cannot print | on / off | off | redraw |
+| Slice it at one lightness | on / off, plus L\* 0–100 | off, 50 | redraw |
+
+Notes worth carrying over:
+
+* **Opacity defaults to fully opaque.** Any transparency blends the shape with
+  what is behind it, which darkens colours on a dark background and washes them
+  out on a light one — one value cannot flatter both.
+* **Depth and opacity are restyled in the page**, not re-rendered. Rebuilding
+  for every step of a slider means the picture only catches up when you let go,
+  which is not what a slider is for.
+* **Proportions default to true scale.** One unit of colour difference is the
+  same length on every axis, which is what makes the shape and the volume
+  honest. A printer has roughly twice the range in colour that it has from
+  black to white, so the true shape really is wide and flat.
+* **Detail 20 is where the volume stops changing** — 8 steps under-states sRGB
+  by 0.5%, 20 is within 0.04% of a 32-step build, and all of them take
+  hundredths of a second. It only affects the shape being compared against; a
+  measured chart's detail comes from how many patches were measured, and
+  pretending otherwise would be inventing data.
+* **Three separate radio groups.** Radio buttons sharing a parent are one
+  exclusive group in Qt, so appearance, accent and shape-colour each need their
+  own `QButtonGroup` or picking one silently unchecks another.
+
+---
+
+## 5. What is reported
+
+| Readout | Source | Units |
+|---|---|---|
+| How much colour it holds | `Gamut.volume` | cubic Lab units, as ArgyllCMS reports |
+| Coverage, both directions | `gamutview.coverage()` | per cent, ±0.2 |
+
+**Coverage is never shown as one number.** It is not symmetric: a paper can
+hold nearly all of what a smaller one shows while the smaller holds only part
+of it, and which direction matters is exactly what decides whether an image
+survives being moved between papers.
+
+The volume is the enclosed volume of the surface actually drawn, so it changes
+when the shape does. A fixed seed and a stated margin of error mean the same
+pair of gamuts always gives the same answer.
+
+---
+
+## 6. If this goes into ChromIQ
+
+Two controls should disappear: the white point (the app knows) and the
+relative-white switch (it should follow the rendering intent). One should
+probably be added: which run's measurement to show, since ChromIQ already
+knows about runs and this does not.
+
+The open questions — a `scipy` dependency across six frozen targets, whether to
+emit a `.gam` for `viewgam` rather than carry a second 3D renderer, and where
+it should live — are in issue #1.
