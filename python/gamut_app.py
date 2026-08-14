@@ -494,6 +494,43 @@ class WrappedLabel(QLabel):
         self._refit()
 
 
+class NoScrollComboBox(QComboBox):
+    """A combo box that ignores the wheel unless it has been clicked into.
+
+    Scrolling a long column of settings should scroll the column. If a combo
+    box under the pointer takes the wheel instead, a setting changes without
+    anybody choosing it -- and in a window where every control redraws the
+    picture, that is a silent change of what you are looking at.
+
+    Focus is the test, not the pointer: once it has been clicked into, the
+    wheel is clearly meant for it. The same rule ChromIQ uses.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, event) -> None:        # noqa: N802 (Qt naming)
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
+class NoScrollSlider(QSlider):
+    """A slider with the same rule, for the same reason."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, event) -> None:        # noqa: N802 (Qt naming)
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
 class SpectrumStripe(QWidget):
     """A thin full-width band of the five ChromIQ tab hues, painted as equal
     blocks -- the same stripe ChromIQ's masthead and chart-design windows use.
@@ -1158,7 +1195,7 @@ class GamutApp(QMainWindow):
         # --- how it is built --------------------------------------------------
         g_build = QGroupBox("How the shape is worked out", col)
         bv = QVBoxLayout(g_build)
-        self._mode = QComboBox(g_build)
+        self._mode = NoScrollComboBox(g_build)
         self._mode.addItem("Follow the real edge", "device")
         self._mode.addItem("Wrap it in a simple skin", "hull")
         self._mode.currentIndexChanged.connect(self._rebuild)
@@ -1183,7 +1220,7 @@ class GamutApp(QMainWindow):
         # --- what to compare against -----------------------------------------
         g_cmp = QGroupBox("Compare with", col)
         cvv = QVBoxLayout(g_cmp)
-        self._compare = QComboBox(g_cmp)
+        self._compare = NoScrollComboBox(g_cmp)
         self._compare.addItem("Nothing — my chart alone", None)
         for _name in REFERENCE_SPACES:
             self._compare.addItem(_name, ("space", _name))
@@ -1211,7 +1248,7 @@ class GamutApp(QMainWindow):
         # --- colour science ---------------------------------------------------
         g_cs = QGroupBox("What the colours are measured against", col)
         cv = QVBoxLayout(g_cs)
-        self._white = QComboBox(g_cs)
+        self._white = NoScrollComboBox(g_cs)
         self._white.addItem("Daylight D50 — for print", "D50")
         self._white.addItem("Daylight D65 — for screens", "D65")
         self._white.currentIndexChanged.connect(self._on_white_changed)
@@ -1233,7 +1270,7 @@ class GamutApp(QMainWindow):
         cv.addLayout(_r)
 
         cv.addWidget(QLabel("Draw it in", g_cs))
-        self._space = QComboBox(g_cs)
+        self._space = NoScrollComboBox(g_cs)
         self._space.addItem("CIELAB — for print", "lab")
         self._space.addItem("CIELUV — for displays", "luv")
         self._space.addItem("CIE XYZ — the raw measurement", "xyz")
@@ -1267,7 +1304,7 @@ class GamutApp(QMainWindow):
         # --- appearance -------------------------------------------------------
         g_look = QGroupBox("How it looks", col)
         lv = QVBoxLayout(g_look)
-        self._target = QComboBox(g_look)
+        self._target = NoScrollComboBox(g_look)
         self._target.addItem("Set this for: all shapes together", "all")
         self._target.addItem("Set this for: the first chart", 0)
         self._target.addItem("Set this for: the second chart", 1)
@@ -1289,7 +1326,7 @@ class GamutApp(QMainWindow):
         lv.addLayout(_r)
         orow = QHBoxLayout()
         orow.addWidget(QLabel("See-through", g_look))
-        self._opacity = QSlider(Qt.Orientation.Horizontal, g_look)
+        self._opacity = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         # FULLY OPAQUE BY DEFAULT. Any transparency blends the shape with
         # whatever is behind it -- which darkens colours on a dark background
         # and washes them out on a light one, so the same setting flattered one
@@ -1307,7 +1344,7 @@ class GamutApp(QMainWindow):
         self._opacity_live = True
         orow.addWidget(self._opacity_lbl)
         lv.addLayout(orow)
-        self._aspect = QComboBox(g_look)
+        self._aspect = NoScrollComboBox(g_look)
         self._aspect.addItem("True proportions", "data")
         self._aspect.addItem("Even up the box", "cube")
         self._aspect.currentIndexChanged.connect(self._redraw)
@@ -1325,9 +1362,9 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._aspect, 1)
         _r.addWidget(aspect_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
-        self._style_mine = QComboBox(g_look)
-        self._style_second = QComboBox(g_look)
-        self._style_other = QComboBox(g_look)
+        self._style_mine = NoScrollComboBox(g_look)
+        self._style_second = NoScrollComboBox(g_look)
+        self._style_other = NoScrollComboBox(g_look)
         self._style_combos = (
             (self._style_mine, "First chart"),
             (self._style_second, "Second chart"),
@@ -1363,7 +1400,7 @@ class GamutApp(QMainWindow):
         lv.addWidget(self._slice_on)
         srow = QHBoxLayout()
         srow.addWidget(QLabel("Lightness", g_look))
-        self._slice_at = QSlider(Qt.Orientation.Horizontal, g_look)
+        self._slice_at = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._slice_at.setRange(0, 100)
         self._slice_at.setValue(50)
         self._slice_at.valueChanged.connect(
@@ -1385,7 +1422,7 @@ class GamutApp(QMainWindow):
         lv.addWidget(slice_hint)
         drow = QHBoxLayout()
         drow.addWidget(QLabel("Depth", g_look))
-        self._depth = QSlider(Qt.Orientation.Horizontal, g_look)
+        self._depth = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._depth.setRange(0, 100)
         self._depth.setValue(35)
         self._depth.valueChanged.connect(self._on_depth_changed)
@@ -1420,7 +1457,7 @@ class GamutApp(QMainWindow):
             cap.setObjectName("hint")
             rl.addWidget(cap)
             hb = QHBoxLayout()
-            slider = QSlider(Qt.Orientation.Horizontal, row)
+            slider = NoScrollSlider(Qt.Orientation.Horizontal, row)
             slider.setRange(0, 100)
             slider.setValue(int(round((start - lo) / (hi - lo) * 100)))
             value_lbl = QLabel(f"{start:.2f}", row)
@@ -1453,7 +1490,7 @@ class GamutApp(QMainWindow):
         self._paint_group = QButtonGroup(self)
         self._paint_radios = {}
         paint_grid = QGridLayout()
-        paint_grid.setContentsMargins(0, 0, 0, 0)
+        paint_grid.setContentsMargins(0, 0, 0, 10)
         # Real space between the rows. Without it the grid was handed one
         # pixel less than the buttons are tall and they touched.
         paint_grid.setVerticalSpacing(6)
@@ -1503,7 +1540,7 @@ class GamutApp(QMainWindow):
         self._rings_on.stateChanged.connect(
             lambda: self._after_shape_setting("rings"))
         rrow.addWidget(self._rings_on)
-        self._rings = QSlider(Qt.Orientation.Horizontal, g_look)
+        self._rings = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._rings.setRange(1, 20)
         self._rings.setValue(6)
         self._rings.valueChanged.connect(
@@ -1526,7 +1563,7 @@ class GamutApp(QMainWindow):
         lv.addWidget(rings_hint)
         detrow = QHBoxLayout()
         detrow.addWidget(QLabel("Detail", g_look))
-        self._detail = QSlider(Qt.Orientation.Horizontal, g_look)
+        self._detail = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._detail.setRange(6, 40)
         self._detail.setValue(20)
         self._detail.valueChanged.connect(
@@ -1667,12 +1704,18 @@ class GamutApp(QMainWindow):
         # and they are preferences about the window, not about the subject.
         g_prefs = QGroupBox("This window", col)
         pv = QVBoxLayout(g_prefs)
+        # One rhythm for the whole group: every label sits the same distance
+        # above its choices, and every set the same distance below the one
+        # before. Left to itself each row inherited a different gap and the
+        # three sets read as three unrelated blocks.
+        pv.setSpacing(4)
+        pv.setContentsMargins(8, 6, 8, 8)
         # The label sits above its choices, the same shape as Accent and the
         # shape-colour set below it -- three groups laid out three different
         # ways is three things to parse instead of one.
         pv.addWidget(QLabel("Appearance", g_prefs))
         theme_row = QHBoxLayout()
-        theme_row.setContentsMargins(0, 0, 0, 0)
+        theme_row.setContentsMargins(0, 0, 0, 10)
         # EACH SET NEEDS ITS OWN GROUP. Radio buttons sharing a parent are one
         # exclusive group in Qt, so choosing an accent silently unchecked the
         # appearance -- both sets looked empty and neither could be read off the
@@ -1696,7 +1739,7 @@ class GamutApp(QMainWindow):
         # strip.
         pv.addWidget(QLabel("Accent", g_prefs))
         scheme_grid = QGridLayout()
-        scheme_grid.setContentsMargins(0, 0, 0, 0)
+        scheme_grid.setContentsMargins(0, 0, 0, 10)
         scheme_grid.setHorizontalSpacing(4)
         scheme_grid.setVerticalSpacing(6)
         self._scheme_group = QButtonGroup(self)

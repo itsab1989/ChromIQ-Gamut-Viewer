@@ -811,7 +811,16 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
     # picture can never be read against the wrong labels.
     _axes = AXES[_axes_space]
     fig.update_layout(
-        title=title,
+        # A caption, not a headline. Plotly's default title is large and
+        # centred, which made a line of explanatory text the loudest thing on
+        # the page -- louder than the shape it describes. Small, dimmed, set
+        # in the same monospace the figures below use, and moved to the left
+        # so it reads as a label on the picture rather than a banner over it.
+        title=dict(
+            text=title,
+            x=0.0, xanchor="left", y=0.985, yanchor="top",
+            font=dict(size=12, color=c["axis"],
+                      family='Menlo, Consolas, "Courier New", monospace')),
         scene=dict(
             xaxis_title=_axes["x"], yaxis_title=_axes["y"],
             zaxis_title=_axes["z"],
