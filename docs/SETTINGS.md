@@ -411,3 +411,32 @@ not `ValueError`, and a test written for the case found it.
 into pytest's `tmp_path` and closes its handlers afterwards, so no file is
 written outside the test's own folder and Windows can still delete it. The
 whole suite, 85 tests, runs in about 5 seconds.
+
+### Two rooms, and tinting into the accent
+
+| Control | Values | Default | Appears when |
+|---|---|---|---|
+| Show them in two rooms, side by side | on / off | off | there are two shapes to show |
+| Keep both rooms pointing the same way | on / off | **on** | side by side is on |
+| How the shapes are coloured → In the accent colours | radio | off | always |
+
+**Both scenes live in ONE page.** Two separate pages cannot share a camera,
+and a side-by-side comparison whose halves face different ways compares
+nothing. The linking is ChromIQ's own `cqLinkCameras`
+(`workflow/patch_cube.py`), including the two things that make it work: the
+live camera during a drag is *not* the one in `layout.scene.camera`, and only
+the view being driven may lead — or the two push each other back and forth
+for ever.
+
+**Each scene is given its own full domain** with no legend gutter, so the
+shape sits in the middle of its own half instead of drifting toward the
+divider.
+
+**The accent tint keeps lightness and replaces hue**, capped at 0.92 so the
+gamut's white tip stays tinted instead of blowing out to white, and near-greys
+(saturation under 0.15) are left grey. The bands are ChromIQ's `_THEME_ACCENTS`
+verbatim, so a gamut tinted in either application looks like the same picture.
+
+**A control that can do nothing is not offered.** Side by side needs two
+shapes; the camera link needs side by side. Their ⓘ appear and disappear with
+them.

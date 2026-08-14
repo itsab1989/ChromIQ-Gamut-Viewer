@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.2.0
+
+### ✨ What's new
+
+- **Two rooms, side by side.** Overlaying two shapes shows where one reaches
+  past the other; it does not let you judge either on its own, because the
+  one in front hides the one behind. Tick **Show them in two rooms, side by
+  side** and each gets its own scene.
+- **Their cameras stay together** by default, so you are always comparing the
+  same face of both. Untick **Keep both rooms pointing the same way** to move
+  each on its own.
+- **In the accent colours** — a new way to paint the shape, tinting it into
+  the accent family while keeping every point's own lightness, so the shape
+  still reads as a shape. The same idea, and the same hue bands, as ChromIQ's
+  own theme-coloured gamut viewer.
+- **Every setting in "This window" now has its ⓘ** as well.
+
 ## v1.1.0
 
 ### ✨ What's new
