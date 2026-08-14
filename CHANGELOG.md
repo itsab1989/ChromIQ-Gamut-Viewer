@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.8.0
+
+### ✨ What's new
+
+- **Open a picture and see whether it will print.** A photograph can now be
+  one of the shapes: open it beside a paper you have measured and the readouts
+  answer the question people actually have — how much of this image the paper
+  can reproduce, and, picked out on the shape itself, exactly which colours it
+  cannot.
+- **It is the colours in the picture, not the space it was saved in.** A real
+  photograph uses a small part of what its file could hold. Measured on this
+  application's own test pictures: a warm sunset comes to **19% of sRGB**, a
+  misty morning to **8%** — and both print almost perfectly, at 98% and 99.9%,
+  where an image using all of sRGB would lose a third of its colours.
+- **Nearly every picture format**: JPEG, PNG, TIFF, WebP, AVIF, **HEIC** —
+  what every iPhone photograph is — **JPEG XL**, BMP, GIF, JPEG 2000 and more.
+  Seventy-three file endings on a normal installation, and the list is asked
+  of the machine rather than written down, so nothing is offered that would
+  fail and nothing that works is hidden.
+- **A picture's own colour profile is used** when it carries one. When it does
+  not, sRGB is assumed — the usual convention — and the line under the name
+  says so, because an assumption that changes the answer should never be made
+  quietly.
+- See-through pixels are ignored, since a pixel nobody can see is not a colour
+  the picture shows.
+
+### 🐞 Fixed
+
+- A picture is never described as printing anything: the coverage line says
+  what it *holds*. "What this photograph can print" was simply wrong.
+
 ## v1.7.1
 
 ### ✨ What's new

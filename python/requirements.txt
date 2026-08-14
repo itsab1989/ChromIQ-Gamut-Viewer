@@ -6,3 +6,9 @@ PyQt6-WebEngine>=6.6
 # Only for saving a MOVING picture: it writes the animated WebP,
 # GIF and APNG. Nothing else here needs it.
 pillow>=10.0
+# Pictures: Pillow reads JPEG, PNG, TIFF, WebP, AVIF and more on its own.
+# These two add the formats it does not: HEIC (every iPhone photograph)
+# and JPEG XL. Both are optional at runtime -- without them the rest
+# still open and the file dialog simply does not offer those two.
+pillow-heif>=0.16
+pillow-jxl-plugin>=1.2

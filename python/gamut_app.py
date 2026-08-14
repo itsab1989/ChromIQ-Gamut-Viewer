@@ -24,6 +24,10 @@ from __future__ import annotations
 import math
 
 import picture
+from imagegamut import readable_extensions
+
+#: Worked out once: which picture formats this machine can actually open.
+IMAGE_EXTENSIONS = tuple(readable_extensions())
 
 import csv
 import json
@@ -1798,6 +1802,7 @@ class GamutApp(QMainWindow):
         # One row per open chart, each with its own way out. A single "close
         # everything" button meant a second chart could not be put back without
         # reopening the first, which is the wrong shape for comparing things.
+        self._image_facts: dict = {}
         self._slot_labels = []
         self._slot_rows = []
         for i in range(2):
@@ -1828,7 +1833,8 @@ class GamutApp(QMainWindow):
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setVisible(False)
         hint = Hint(
-            "Two kinds of file can go here, and you can start with either.\n\n"
+            "Three kinds of file can go here, and you can start with any of "
+            "them.\n\n"
             "A MEASUREMENT is the .ti3 file ArgyllCMS saves once you have read "
             "a printed chart with your instrument. The chart is the sheet of "
             "patches you printed; the measurement is what your instrument made "
@@ -1846,10 +1852,21 @@ class GamutApp(QMainWindow):
             "profile against the measurement it was built from, which is the "
             "comparison that shows you whether the profile is telling the "
             "truth.\n\n"
+            "A PICTURE — a photograph or anything else you can open — shows "
+            "the colours that are actually in it. Open one beside a paper and "
+            "the readouts answer the question people really have: will this "
+            "image survive on that paper, and which of its colours will not "
+            "make it? Tick Show what the comparison cannot print and the ones "
+            "that fall outside are picked out on the shape.\n\n"
+            "A picture is read through its own colour profile when it carries "
+            "one. When it does not, sRGB is assumed — the usual convention, "
+            "right far more often than not — and the line under the name says "
+            "so, because an assumption that changes the answer should never "
+            "be made quietly.\n\n"
             "Each one always says underneath which kind it is, because "
-            "mistaking the two is the one confusion this window exists to "
-            "clear up. A third shape can join them through Compare with, "
-            "below.", g_files)
+            "mistaking them is the one confusion this window exists to clear "
+            "up. A third shape can join them through Compare with, below.",
+            g_files)
         hint.setObjectName("hint_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
         _r.setSpacing(6)
@@ -2830,6 +2847,13 @@ class GamutApp(QMainWindow):
 
 
     # ------------------------------------------------------------- pictures
+    def _is_picture(self, name: str) -> bool:
+        """Whether a shape on screen came from a picture rather than a printer."""
+        for path, _g, _m in self._slots:
+            if path.stem == name:
+                return str(path) in self._image_facts
+        return False
+
     def _readout_text(self) -> str:
         """Everything the readouts are showing, as plain text.
 
@@ -3753,13 +3777,19 @@ class GamutApp(QMainWindow):
         return dlg
 
     def _on_open(self) -> None:
+        # ASKED OF THE LIBRARY, not listed by hand: the picture formats that
+        # can be opened depend on what is installed, so offering a fixed list
+        # would either promise something that fails or hide something that
+        # works.
+        pictures = " ".join(f"*{e}" for e in IMAGE_EXTENSIONS)
         dlg = self._file_dialog(
-            "Open a measured chart or a profile",
+            "Open a measurement, a profile or a picture",
             QFileDialog.FileMode.ExistingFiles,
             "Everything this can open "
-            "(*.ti3 *.cxf *.mxf *.txt *.icc *.icm *.gam);;"
-            "Measured charts (*.ti3 *.cxf *.mxf *.txt);;"
+            f"(*.ti3 *.cxf *.mxf *.txt *.icc *.icm *.gam {pictures});;"
+            "Measurements (*.ti3 *.cxf *.mxf *.txt);;"
             "ICC profiles (*.icc *.icm);;"
+            f"Pictures ({pictures});;"
             "ArgyllCMS gamut files (*.gam);;All files (*)")
         if dlg.exec():
             for chosen in dlg.selectedFiles():
@@ -3887,10 +3917,18 @@ class GamutApp(QMainWindow):
         it -- everything downstream treats that None as "this one was not
         measured" rather than assuming a chart.
         """
-        if path.suffix.lower() in (".icc", ".icm", ".gam"):
-            reader = gam_gamut if path.suffix.lower() == ".gam" else icc_gamut
+        suffix = path.suffix.lower()
+        if suffix in (".icc", ".icm", ".gam"):
+            reader = gam_gamut if suffix == ".gam" else icc_gamut
             return reader(path, white_point=self._white.currentData(),
                           space=self._space.currentData()), None
+        if suffix in IMAGE_EXTENSIONS:
+            from imagegamut import image_gamut
+            built, facts = image_gamut(
+                path, white_point=self._white.currentData(),
+                space=self._space.currentData())
+            self._image_facts[str(path)] = facts
+            return built, None
         m = read_measurement(path, self._white.currentData(),
                              self._relative.isChecked())
         drive = None if self._mode.currentData() == "hull" else m.device
@@ -4366,13 +4404,22 @@ class GamutApp(QMainWindow):
             if i < len(self._slots):
                 path, _g, m = self._slots[i]
                 if m is None:
-                    # NEVER CALL A PROFILE A MEASUREMENT. Telling the two apart
-                    # is what this application is for, so the line under the
-                    # name says which one you are looking at.
-                    patches = ("an ICC profile — what it describes"
-                               if path.suffix.lower() in (".icc", ".icm")
-                               else "a gamut file — the surface it holds")
-                    measured = ", not a measurement"
+                    # NEVER CALL A PROFILE OR A PICTURE A MEASUREMENT. Telling
+                    # them apart is what this application is for, so the line
+                    # under the name says which one you are looking at.
+                    suffix = path.suffix.lower()
+                    facts = self._image_facts.get(str(path))
+                    if facts is not None:
+                        patches = (f"a picture — {facts['colours']:,} colours "
+                                   f"in {facts['pixels']:,} pixels")
+                        measured = (", read with its own profile"
+                                    if facts["profile"] else ", read as sRGB")
+                    elif suffix in (".icc", ".icm"):
+                        patches = "an ICC profile — what it describes"
+                        measured = ", not a measurement"
+                    else:
+                        patches = "a gamut file — the surface it holds"
+                        measured = ", not a measurement"
                 else:
                     patches = ("1 patch" if m.n_patches == 1
                                else f"{m.n_patches} patches")
@@ -4824,8 +4871,13 @@ class GamutApp(QMainWindow):
             self._coverage.setText("")
             self._pair_box.setVisible(False)
             return
+        # A PICTURE DOES NOT PRINT ANYTHING. "What X can print" is right for
+        # a paper or a profile and simply wrong for a photograph, which only
+        # holds colours -- and getting that backwards is the sort of sentence
+        # that makes somebody distrust the number beside it.
+        holds = "holds" if self._is_picture(a_name) else "can print"
         self._coverage.setText(
-            f"{100 * ab:.1f}% of what {a_name} can print also fits inside "
+            f"{100 * ab:.1f}% of what {a_name} {holds} also fits inside "
             f"{b_name}.\n"
             f"{100 * ba:.1f}% of {b_name} fits inside {a_name}.\n"
             "The two numbers differ because fitting inside is not the same "
