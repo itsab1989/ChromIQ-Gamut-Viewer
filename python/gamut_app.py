@@ -27,14 +27,16 @@ from pathlib import Path
 
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
-from PyQt6.QtCore import QRect, QSize, QStandardPaths, Qt, QUrl
+from PyQt6.QtCore import (QRect, QSettings, QSize, QStandardPaths, Qt,
+                          QUrl)
 from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel,
                              QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider,
                              QDialogButtonBox, QListView, QSizeGrip,
                              QSizePolicy, QStyle,
-                             QToolButton, QVBoxLayout, QWidget)
+                             QRadioButton, QToolButton, QVBoxLayout,
+                             QWidget)
 
 from version import APP_NAME, __version__
 from gamutview import build_gamut, coverage, outside_of
@@ -45,37 +47,83 @@ from ti3gamut import read_ti3, write_html, write_slice_html
 
 # Dark, close to ChromIQ's own, so the fit is judged on layout rather than on
 # a colour scheme that would never ship.
-_QSS = """
-QWidget { background: #111318; color: #e8ecf2; font-size: 13px; }
-QGroupBox { border: 1px solid #2a2f3a; border-radius: 6px; margin-top: 10px;
-            padding: 10px 8px 8px 8px; }
-QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px;
-                   color: #9fb3c8; }
-QPushButton { background: #e8175d; color: #fff; border: none; border-radius: 5px;
-              padding: 7px 12px; font-weight: 600; min-height: 20px; }
-QPushButton:hover { background: #ff2e73; }
-QPushButton:disabled { background: #333842; color: #7b828e; }
-QPushButton#secondary { background: #232833; color: #e8ecf2; font-weight: 500; }
-QPushButton#secondary:hover { background: #2e3440; }
-QComboBox { background: #1a1e26; border: 1px solid #2a2f3a; border-radius: 5px;
-            padding: 5px 8px; }
-QComboBox QAbstractItemView { background: #1a1e26; selection-background-color: #e8175d; }
-QCheckBox::indicator { width: 15px; height: 15px; border-radius: 3px;
-                       border: 1px solid #3a4150; background: #1a1e26; }
-QCheckBox::indicator:checked { background: #e8175d; border-color: #e8175d; }
-QSlider::groove:horizontal { height: 4px; background: #2a2f3a; border-radius: 2px; }
-QSlider::handle:horizontal { width: 13px; margin: -5px 0; border-radius: 7px;
-                             background: #e8175d; }
-QLabel#hint { color: #7b828e; font-size: 11px; }
-QLabel#volume { font-size: 21px; font-weight: 600; color: #e8ecf2; }
-QLabel#slot { color: #9fb3c8; }
-QScrollArea { border: none; background: #111318; }
-QScrollBar:vertical { background: #111318; width: 10px; margin: 0; }
-QScrollBar::handle:vertical { background: #2a2f3a; border-radius: 5px;
-                              min-height: 30px; }
-QScrollBar::handle:vertical:hover { background: #3a4150; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+#: Every colour the window uses, once per appearance. Two palettes rather than
+#: two stylesheets: the shapes are identical, only the paint differs, so a new
+#: control cannot end up styled in one mode and forgotten in the other.
+PALETTES = {
+    "dark": dict(
+        bg="#111318", panel="#1a1e26", line="#2a2f3a", line_soft="#3a4150",
+        text="#e8ecf2", dim="#9fb3c8", faint="#7b828e",
+        accent="#e8175d", accent_hot="#ff2e73", on_accent="#ffffff",
+        second="#232833", second_hover="#2e3440",
+        plot_bg="#15181e", grid="#262b34", arrow="#e0e0e0",
+        kept="rgb(105,112,126)"),
+    "light": dict(
+        bg="#f7f7f5", panel="#ffffff", line="#d9d9d4", line_soft="#c4c4be",
+        text="#1c1b18", dim="#4a4a44", faint="#6f6f68",
+        accent="#e8175d", accent_hot="#c9134f", on_accent="#ffffff",
+        second="#ececE7", second_hover="#e0e0da",
+        plot_bg="#ffffff", grid="#e4e4de", arrow="#1c1b18",
+        kept="rgb(176,180,188)"),
+}
+
+
+def stylesheet(mode: str) -> str:
+    """The whole window's styling, painted from one palette."""
+    c = PALETTES["light" if mode == "light" else "dark"]
+    return f"""
+QWidget {{ background: {c["bg"]}; color: {c["text"]}; font-size: 13px; }}
+QGroupBox {{ border: 1px solid {c["line"]}; border-radius: 6px; margin-top: 10px;
+            padding: 10px 8px 8px 8px; }}
+QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px;
+                   color: {c["dim"]}; }}
+QPushButton {{ background: {c["accent"]}; color: {c["on_accent"]}; border: none;
+              border-radius: 5px; padding: 7px 12px; font-weight: 600;
+              min-height: 20px; }}
+QPushButton:hover {{ background: {c["accent_hot"]}; }}
+QPushButton:disabled {{ background: {c["second"]}; color: {c["faint"]}; }}
+QPushButton#secondary {{ background: {c["second"]}; color: {c["text"]};
+                        font-weight: 500; }}
+QPushButton#secondary:hover {{ background: {c["second_hover"]}; }}
+QComboBox {{ background: {c["panel"]}; border: 1px solid {c["line"]};
+            border-radius: 5px; padding: 5px 8px; }}
+QComboBox QAbstractItemView {{ background: {c["panel"]};
+                              selection-background-color: {c["accent"]}; }}
+QCheckBox::indicator {{ width: 15px; height: 15px; border-radius: 3px;
+                       border: 1px solid {c["line_soft"]};
+                       background: {c["panel"]}; }}
+QCheckBox::indicator:checked {{ background: {c["accent"]};
+                               border-color: {c["accent"]}; }}
+QSlider::groove:horizontal {{ height: 4px; background: {c["line"]};
+                             border-radius: 2px; }}
+QSlider::handle:horizontal {{ width: 13px; margin: -5px 0; border-radius: 7px;
+                             background: {c["accent"]}; }}
+/* A radio has to be round, and in Qt that means the radius must be half of
+   the WHOLE box -- content plus both borders. 14 + 1 + 1 = 16, so 8. Thicken
+   the border to draw a ring and the box grows to 22 while the radius stays 8,
+   which is how a circle turns into a rounded square. The checked state keeps
+   the same 1px border and simply fills. */
+QRadioButton {{ spacing: 7px; }}
+QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 8px;
+                          border: 1px solid {c["line_soft"]};
+                          background: {c["panel"]}; }}
+QRadioButton::indicator:checked {{ background: {c["accent"]};
+                                  border: 1px solid {c["accent"]}; }}
+QRadioButton::indicator:hover {{ border: 1px solid {c["accent"]}; }}
+QLabel#hint {{ color: {c["faint"]}; font-size: 11px; }}
+QLabel#volume {{ font-size: 21px; font-weight: 600; color: {c["text"]}; }}
+QLabel#slot {{ color: {c["dim"]}; }}
+QScrollArea {{ border: none; background: {c["bg"]}; }}
+QScrollBar:vertical {{ background: {c["bg"]}; width: 10px; margin: 0; }}
+QScrollBar::handle:vertical {{ background: {c["line"]}; border-radius: 5px;
+                              min-height: 30px; }}
+QScrollBar::handle:vertical:hover {{ background: {c["line_soft"]}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 """
+
+
+#: Kept so existing references still work; the dark palette is the default.
+_QSS = stylesheet("dark")
 
 
 #: The three navigation buttons in Qt's file dialog, and the standard icon
@@ -126,16 +174,21 @@ def _nav_icon(icon: QIcon, color: QColor, dpr: float = 1.0) -> QIcon:
     return QIcon(canvas)
 
 
-def _style_dialog_toolbar(dlg) -> None:
-    """Make the dialog's own controls readable on this app's dark background."""
+def _style_dialog_toolbar(dlg, arrow_colour: str = "#e0e0e0") -> None:
+    """Make the dialog's own controls readable on whichever background is set.
+
+    A light arrow vanishes on a pale toolbar just as surely as a dark one
+    vanishes on a dark toolbar, so the colour follows the appearance instead
+    of being fixed.
+    """
     style = dlg.style()
     dpr = dlg.devicePixelRatioF() or 1.0
     for name, pixmap in _NAV_BUTTONS.items():
         button = dlg.findChild(QToolButton, name)
         if button is None:
             continue
-        button.setIcon(_nav_icon(style.standardIcon(pixmap), QColor("#e0e0e0"),
-                                 dpr))
+        button.setIcon(_nav_icon(style.standardIcon(pixmap),
+                                 QColor(arrow_colour), dpr))
         button.setIconSize(_NAV_BTN_SIZE)
         button.setFixedSize(_NAV_BTN_SIZE)
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
@@ -313,6 +366,14 @@ class GamutApp(QMainWindow):
         self._tmp = Path(tempfile.mkdtemp(prefix="gamutview-"))
         #: Where the last file came from, so the next dialog opens there.
         self._last_folder = ""
+        #: Renders so far, so each one gets a URL the view has not seen.
+        self._render_count = 0
+        #: Light or dark. Remembered between runs, because an appearance you
+        #: have to set again every time is not really a setting.
+        self._store = QSettings("MeasuredGamutViewer", "MeasuredGamutViewer")
+        self._appearance = str(self._store.value("appearance", "dark"))
+        if self._appearance not in PALETTES:
+            self._appearance = "dark"
 
         central = QWidget(self)
         row = QHBoxLayout(central)
@@ -337,15 +398,14 @@ class GamutApp(QMainWindow):
         # page it shows are told to be the same dark as the rest of the window.
         self._view.setStyleSheet("background: #111318;")
         self._view.page().setBackgroundColor(QColor("#111318"))
-        frame = QFrame(central)
-        frame.setStyleSheet("border: 1px solid #2a2f3a; border-radius: 8px;"
-                    "background: #111318;")
+        frame = self._frame = QFrame(central)
         fl = QVBoxLayout(frame)
         fl.setContentsMargins(1, 1, 1, 1)
         fl.addWidget(self._view)
         row.addWidget(frame, 1)
         self.setCentralWidget(central)
         self.setAcceptDrops(True)      # drop a .ti3 anywhere on the window
+        self._apply_mode()
         self._show_placeholder()
 
         for p in (initial or []):
@@ -375,6 +435,23 @@ class GamutApp(QMainWindow):
         f = QFont(); f.setPointSize(19); f.setWeight(QFont.Weight.DemiBold)
         title.setFont(f)
         v.addWidget(title)
+        # Two radio buttons rather than one button that toggles: a toggle has
+        # to name the mode you are NOT in, which reads as a statement about the
+        # current state and is read wrongly about half the time. Radios show
+        # both choices and which one is active, and cannot be misread.
+        theme_row = QHBoxLayout()
+        theme_row.addWidget(QLabel("Appearance", col))
+        theme_row.addStretch(1)
+        self._theme_light = QRadioButton("Light", col)
+        self._theme_dark = QRadioButton("Dark", col)
+        for radio in (self._theme_light, self._theme_dark):
+            theme_row.addWidget(radio)
+        self._theme_light.toggled.connect(
+            lambda on: self._set_appearance("light") if on else None)
+        self._theme_dark.toggled.connect(
+            lambda on: self._set_appearance("dark") if on else None)
+        v.addLayout(theme_row)
+
         sub = WrappedLabel(
             "Every colour your printer actually put on paper, worked out from "
             "the patches you measured. This is what the printer really did, on "
@@ -504,10 +581,15 @@ class GamutApp(QMainWindow):
         orow = QHBoxLayout()
         orow.addWidget(QLabel("See-through", g_look))
         self._opacity = QSlider(Qt.Orientation.Horizontal, g_look)
-        self._opacity.setRange(15, 100); self._opacity.setValue(85)
+        # FULLY OPAQUE BY DEFAULT. Any transparency blends the shape with
+        # whatever is behind it -- which darkens colours on a dark background
+        # and washes them out on a light one, so the same setting flattered one
+        # appearance and spoiled the other. Solid shows the measured colours as
+        # they are; the slider is there for looking inside two shapes at once.
+        self._opacity.setRange(15, 100); self._opacity.setValue(100)
         self._opacity.valueChanged.connect(self._on_opacity_changed)
         orow.addWidget(self._opacity, 1)
-        self._opacity_lbl = QLabel("85%", g_look)
+        self._opacity_lbl = QLabel("100%", g_look)
         self._opacity_lbl.setFixedWidth(38)
         self._opacity.valueChanged.connect(
             lambda x: self._opacity_lbl.setText(f"{x}%"))
@@ -639,6 +721,43 @@ class GamutApp(QMainWindow):
         return col
 
     # ------------------------------------------------------------------ actions
+    def _set_appearance(self, which: str) -> None:
+        """Switch to light or dark, and remember it for next time."""
+        if which == self._appearance:
+            return
+        self._appearance = which
+        self._store.setValue("appearance", which)
+        self._apply_mode()
+        if self._slots:
+            self._redraw()          # the scene is repainted to match
+
+    def _apply_mode(self) -> None:
+        """Repaint the whole window, and say what the button will do next.
+
+        The button names the mode it will switch TO, not the one you are in:
+        a button that says "Dark" while the window is already dark reads as a
+        statement rather than an action.
+        """
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(stylesheet(self._appearance))
+        radio = (self._theme_light if self._appearance == "light"
+                 else self._theme_dark)
+        if not radio.isChecked():
+            radio.blockSignals(True)
+            radio.setChecked(True)
+            radio.blockSignals(False)
+        colour = PALETTES[self._appearance]["bg"]
+        self._view.setStyleSheet(f"background: {colour};")
+        page = self._view.page()
+        if page is not None:
+            page.setBackgroundColor(QColor(colour))
+        self._frame.setStyleSheet(
+            f"border: 1px solid {PALETTES[self._appearance]['line']};"
+            f"border-radius: 8px; background: {colour};")
+        if not self._slots:
+            self._show_placeholder()
+
     def _on_glossary(self) -> None:
         """Explain every word this window uses, in plain language.
 
@@ -739,7 +858,7 @@ class GamutApp(QMainWindow):
             widest = max((metrics.horizontalAdvance(Path(u.toLocalFile()).name)
                           for u in dlg.sidebarUrls()), default=0)
             sidebar.setMinimumWidth(widest + 62)   # room for icon and padding
-        _style_dialog_toolbar(dlg)
+        _style_dialog_toolbar(dlg, PALETTES[self._appearance]["arrow"])
         return dlg
 
     def _on_open(self) -> None:
@@ -796,7 +915,8 @@ class GamutApp(QMainWindow):
             write_html(gamuts, Path(target), self._scene_title(),
                        opacity=self._opacity.value() / 100.0,
                        points=self._points.isChecked(), patches=clouds,
-                       aspect=self._aspect.currentData(), styles=styles, lost=lost)
+                       aspect=self._aspect.currentData(), styles=styles, lost=lost,
+                   mode=self._appearance)
         except OSError as exc:
             QMessageBox.warning(self, "That could not be saved", str(exc))
             return
@@ -939,8 +1059,9 @@ class GamutApp(QMainWindow):
 
     # ------------------------------------------------------------------ drawing
     def _show_placeholder(self) -> None:
+        c = PALETTES[self._appearance]
         self._view.setHtml(
-            "<html><body style='background:#111318;color:#7b828e;"
+            "<html><body style='background:" + c["bg"] + ";color:" + c["faint"] + ";"
             "font:14px -apple-system,Segoe UI,sans-serif;display:flex;"
             "align-items:center;justify-content:center;height:100%;margin:0'>"
             "<div style='text-align:center;max-width:32em'>"
@@ -973,10 +1094,16 @@ class GamutApp(QMainWindow):
         # controls are refreshed here rather than only when charts are opened.
         self._refresh_style_controls()
         gamuts, clouds, styles, lost = self._scene_contents()
-        out = self._tmp / "scene.html"
+        # A NEW FILE EVERY TIME. Writing to one name and loading the same URL
+        # let the web view serve its cached copy, so switching to light left
+        # the scene dark -- the page had been rewritten and never re-read.
+        # Counting up sidesteps caching entirely, and the old ones go with the
+        # temporary folder when the app closes.
+        self._render_count += 1
+        out = self._tmp / f"scene-{self._render_count}.html"
         if self._slice_on.isChecked():
             write_slice_html(gamuts, out, float(self._slice_at.value()),
-                             self._scene_title())
+                             self._scene_title(), mode=self._appearance)
             self._view.setUrl(QUrl.fromLocalFile(str(out)))
             self._update_volume()
             self._update_coverage()
@@ -984,7 +1111,8 @@ class GamutApp(QMainWindow):
         write_html(gamuts, out, self._scene_title(),
                    opacity=self._opacity.value() / 100.0,
                    points=self._points.isChecked(), patches=clouds,
-                   aspect=self._aspect.currentData(), styles=styles, lost=lost)
+                   aspect=self._aspect.currentData(), styles=styles, lost=lost,
+                   mode=self._appearance)
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
         self._update_volume()
         self._update_coverage()

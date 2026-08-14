@@ -179,15 +179,19 @@ _LOST = "rgb(232,23,93)"
 _KEPT = "rgb(105,112,126)"
 
 
-def _mesh_lost(gamut, name: str, opacity: float, lost) -> "list":
+def _mesh_lost(gamut, name: str, opacity: float, lost,
+               kept: str = _KEPT) -> "list":
     """The gamut painted by what the comparison cannot reproduce."""
     import plotly.graph_objects as go
     v = gamut.cylindrical() if gamut.space == "lab" else gamut.vertices
-    colours = [_LOST if bad else _KEPT for bad in lost]
+    colours = [_LOST if bad else kept for bad in lost]
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=gamut.faces[:, 0], j=gamut.faces[:, 1], k=gamut.faces[:, 2],
         vertexcolor=colours, opacity=opacity, flatshading=False,
+        lighting=dict(ambient=0.88, diffuse=0.35, specular=0.02,
+                      roughness=0.9, fresnel=0.02),
+        lightposition=dict(x=0, y=0, z=2000),
         name=f"{name} — red is out of reach", showlegend=True,
         hoverinfo="name")
 
@@ -203,6 +207,9 @@ def _mesh(gamut, name: str, opacity: float, wireframe: bool):
         i=gamut.faces[:, 0], j=gamut.faces[:, 1], k=gamut.faces[:, 2],
         vertexcolor=colours, opacity=opacity, name=name, showlegend=True,
         flatshading=False, hoverinfo="name",
+        lighting=dict(ambient=0.88, diffuse=0.35, specular=0.02,
+                      roughness=0.9, fresnel=0.02),
+        lightposition=dict(x=0, y=0, z=2000),
         contour=dict(show=wireframe, color="#888", width=2),
     )
 
@@ -227,12 +234,25 @@ _SLICE_COLOURS = ("#e8175d", "#3aa8d0", "#f2c744", "#6bd07a")
 #: The page's own background. Plotly draws its plot on whatever the page is,
 #: and a plain HTML page is white -- which shows as a bright frame around a
 #: dark scene, and as a white flash every time the view reloads.
+#: The scene's own colours, per appearance. Passed in rather than looked up,
+#: so the page and the window around it can never disagree about which mode it
+#: is showing.
+SCENE_COLOURS = {
+    "dark": dict(page="#111318", plot="#15181e", grid="#262b34",
+                 text="#e8ecf2", axis="#3a4150", kept="rgb(105,112,126)",
+                 wire="#9aa3b2"),
+    "light": dict(page="#f7f7f5", plot="#ffffff", grid="#e4e4de",
+                  text="#1c1b18", axis="#c4c4be", kept="rgb(176,180,188)",
+                  wire="#6f6f68"),
+}
+
 _PAGE_BACKGROUND = "#111318"
 
 
-def _write_dark_html(fig, out: Path) -> Path:
-    """Write the figure as a self-contained page whose paper is dark too."""
+def _write_dark_html(fig, out: Path, mode: str = "dark") -> Path:
+    """Write the figure as a self-contained page whose paper matches the app."""
     html = fig.to_html(include_plotlyjs="inline", full_html=True)
+    _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]
     style = (f"<style>html,body{{background:{_PAGE_BACKGROUND};margin:0;"
              f"padding:0;overflow:hidden;}}</style>")
     if "</head>" in html:
@@ -243,7 +263,8 @@ def _write_dark_html(fig, out: Path) -> Path:
     return Path(out)
 
 
-def write_slice_html(gamuts, out: Path, lightness: float, title: str) -> Path:
+def write_slice_html(gamuts, out: Path, lightness: float, title: str,
+                     mode: str = "dark") -> Path:
     """A flat cross-section through every gamut at one lightness.
 
     Two 3D shapes hide each other and depth on a flat screen is guesswork; two
@@ -254,6 +275,7 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str) -> Path:
 
     from gamutview import slice_at
 
+    c = SCENE_COLOURS["light" if mode == "light" else "dark"]
     fig = go.Figure()
     empty = []
     for i, (name, g) in enumerate(gamuts):
@@ -276,25 +298,26 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str) -> Path:
                 if len(empty) == 1 else
                 f"  —  {which} do not reach this lightness")
     fig.add_trace(go.Scatter(x=[0], y=[0], mode="markers",
-                             marker=dict(color="#888", size=5, symbol="x"),
+                             marker=dict(color=c["wire"], size=5, symbol="x"),
                              name="neutral grey", hoverinfo="name"))
     fig.update_layout(
         title=f"{title}  ·  lightness L* = {lightness:.0f}{note}",
         xaxis=dict(title="a*   green ← → red", zeroline=True,
-                   zerolinecolor="#3a4150", gridcolor="#262b34",
+                   zerolinecolor=c["axis"], gridcolor=c["grid"],
                    scaleanchor="y", scaleratio=1),
         yaxis=dict(title="b*   blue ← → yellow", zeroline=True,
-                   zerolinecolor="#3a4150", gridcolor="#262b34"),
-        paper_bgcolor="#111318", plot_bgcolor="#15181e", font_color="#e8ecf2",
+                   zerolinecolor=c["axis"], gridcolor=c["grid"]),
+        paper_bgcolor=c["page"], plot_bgcolor=c["plot"], font_color=c["text"],
         legend=dict(orientation="h", y=-0.12),
         margin=dict(l=0, r=0, t=54, b=0))
-    _write_dark_html(fig, out)
+    _write_dark_html(fig, out, mode)
     return out
 
 
 def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
                points: bool = False, patches=None,
-               aspect: str = "data", styles=None, lost=None) -> Path:
+               aspect: str = "data", styles=None, lost=None,
+               mode: str = "dark") -> Path:
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -303,17 +326,18 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
     left the boundary to guesswork.
     """
     import plotly.graph_objects as go
+    c = SCENE_COLOURS["light" if mode == "light" else "dark"]
     fig = go.Figure()
     base = opacity if opacity is not None else (1.0 if len(gamuts) == 1 else 0.55)
     for i, (name, g) in enumerate(gamuts):
         how = (styles[i] if styles is not None and i < len(styles) else "solid")
         marked = lost[i] if lost is not None and i < len(lost) else None
         if marked is not None:
-            fig.add_trace(_mesh_lost(g, name, base, marked))
+            fig.add_trace(_mesh_lost(g, name, base, marked, c["kept"]))
         elif how in ("solid", "solid+mesh"):
             fig.add_trace(_mesh(g, name, opacity=base, wireframe=False))
         if how in ("mesh", "solid+mesh"):
-            fig.add_trace(_edges(g, name,
+            fig.add_trace(_edges(g, name, colour=c["wire"],
                                  width=1.0 if how == "mesh" else 0.7))
         if points and patches is not None and i < len(patches):
             fig.add_trace(_patch_cloud(patches[i], name))
@@ -328,16 +352,16 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
             # quarter shows the whole shape at once; anybody who wants a
             # closer look can still scroll in.
             camera=dict(eye=dict(x=1.55, y=1.55, z=1.05)),
-            xaxis=dict(backgroundcolor="#181a1f", gridcolor="#333"),
-            yaxis=dict(backgroundcolor="#181a1f", gridcolor="#333"),
-            zaxis=dict(backgroundcolor="#181a1f", gridcolor="#333"),
+            xaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"]),
+            yaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"]),
+            zaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"]),
         ),
-        paper_bgcolor="#111318", font_color="#e8ecf2",
+        paper_bgcolor=c["page"], font_color=c["text"],
         legend=dict(orientation="h", y=-0.02),
         margin=dict(l=0, r=0, t=54, b=0),
     )
     # include_plotlyjs="inline" is the whole point: no CDN, no network, ever.
-    _write_dark_html(fig, out)
+    _write_dark_html(fig, out, mode)
     return out
 
 
