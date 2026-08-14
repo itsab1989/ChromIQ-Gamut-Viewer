@@ -430,25 +430,25 @@ you about it on startup, because most people never need it.
 ### It moves, and you can take the movement with you
 
 <p align="center">
-  <img src="docs/screenshots/19-turning.webp" width="420"
-       alt="A measured gamut turning slowly on its own">
+  <img src="docs/screenshots/23-cage-and-points.webp" width="420"
+       alt="A wireframe gamut rocking, with every measured patch as a coloured point">
   <img src="docs/screenshots/20-what-srgb-cannot-reach.webp" width="420"
-       alt="The same gamut turning, with the colours sRGB cannot reach picked out">
+       alt="A gamut swinging with the colours sRGB cannot reach picked out">
 </p>
 
-Depth is genuinely hard to judge on a flat screen — a dent in the deep blues
-and a shadow look alike in a still picture. **Turn it by itself** sets the
-shape moving, left and right or up and down, and **Save this view as a
-picture…** writes the movement out as a file you can drop into a forum post
-the same way as a photograph. Both loops above were made by that button, and every setting behind them is
-one you have: **Turn it by itself** on, **Left and right → back and forth** at
-95° and speed 14, **Up and down → back and forth** at 38° and speed 9, then
-**A moving picture**, WebP, 6 seconds, 25 frames a second. Partial swings on
-both axes rather than a full turn, so the shape keeps facing you while showing
-every side of itself.
+Depth is hard to judge on a flat screen — a dent in the deep blues and a
+shadow look alike in a still picture. **Turn it by itself** sets the shape
+moving, left and right or up and down, and **Save this view as a picture…**
+writes that movement out as a file you can drop into a forum post.
 
-The loop closes exactly — the last frame is one step from the first, measured
-— so it never jumps as it comes round.
+On the left, the surface as an outline with all 1168 measured patches floating
+in it — what a measured gamut actually is. On the right, the same paper
+against sRGB with everything sRGB cannot reproduce picked out.
+
+**[Four more, with the settings behind each one →](docs/MOTION.md)**
+
+The loop closes exactly — the file holds one complete journey fitted into the
+seconds you chose — so it never jumps as it comes round.
 
 ### A picture with nothing around it
 

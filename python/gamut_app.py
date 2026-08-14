@@ -238,9 +238,13 @@ QPushButton:disabled {{ background: {c["second"]}; color: {c["faint"]}; }}
 /* The bar that fills while a moving picture is made. Left alone it is drawn
    in the operating system's own blue, which is the one colour in the window
    that answers to nothing the user chose. */
+/* The number sits high unless the bar is given one fixed height and no
+   padding of its own: Qt centres the text in the content box, and a box that
+   is taller than it says leaves the figure riding above the middle. */
 QProgressBar {{ background: {c["second"]}; border: 1px solid {c["line_soft"]};
                border-radius: 5px; text-align: center; color: {c["text"]};
-               min-height: 18px; margin: 4px 0 10px 0; }}
+               padding: 0; min-height: 20px; max-height: 20px;
+               margin: 6px 0 12px 0; }}
 QProgressBar::chunk {{ background: {c["accent"]}; border-radius: 4px; }}
 QProgressDialog {{ background: {c["bg"]}; }}
 QProgressDialog QLabel {{ color: {c["text"]}; }}
