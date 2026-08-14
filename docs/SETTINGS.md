@@ -5,11 +5,19 @@ else. Each entry gives the control as the user sees it, the value it produces,
 where that value goes, and the reasoning behind the default, because a default
 without a reason is just somebody's habit.
 
-Nothing here is stored in a project file. The appearance settings are kept in
-the platform's own settings store (`QSettings("MeasuredGamutViewer",
-"MeasuredGamutViewer")`); everything else lives for the length of the session,
-because it describes how you are looking at something rather than what you
-have.
+**Everything here is remembered.** Every control writes its value the moment it
+is moved — not on quit — so a crash or a force-quit cannot lose a setting
+somebody just chose. They come back on the next start. Nothing is stored in a
+project file; it all lives in the platform's own settings store,
+`QSettings("MeasuredGamutViewer", "MeasuredGamutViewer")`.
+
+**"Start again with standard settings"** puts every one of them back, after
+asking, and says plainly that open charts stay open and no file is touched.
+
+The list lives in one place, `GamutApp._persisted()`, as
+`(key, widget, kind, default)`. That is deliberate: a control added to the
+window and forgotten there would silently stop being remembered, and nobody
+would find out until they restarted.
 
 ---
 
@@ -72,10 +80,32 @@ device values, which every `.ti3` carries alongside the measurements.
 | White point | `"D50"`, `"D65"` | `"D50"` | `white_point=` on every conversion |
 | Judge against the paper's own white | on / off | off | `relative=` on `read_ti3` |
 
-D50 is the ICC connection-space illuminant and what print measurement uses; D65
-is for display work. **Inside ChromIQ this should not be a control at all** —
-the application already knows a printed chart was measured under D50, and a
-combo box only invites a wrong answer.
+D50 is the ICC connection-space illuminant and what print measurement normally
+uses; D65 is for display work.
+
+### A correction worth reading before removing this control
+
+An earlier version of this note said the white point should not be a control
+inside ChromIQ, because "the application already knows a printed chart was
+measured under D50". That was too strong, and Sebastian was right to question
+it. What the files actually show:
+
+* **A `.ti3` records no illuminant or observer field.** Checked across several
+  real measurements: there is `TARGET_INSTRUMENT`, `DEVCALSTD`, `COLOR_REP`
+  and the spectral range — and nothing saying which illuminant the `XYZ_*`
+  columns were computed under.
+* **It is a choice, not a constant.** ArgyllCMS lets the observer be selected
+  (`chartread -Q`), and measurement modes M0/M1/M2 differ in how they treat
+  ultraviolet, which changes the result on optically brightened papers.
+* **The spectra are usually in the file.** These charts carry `SPECTRAL_BANDS`
+  with the per-band readings, which means XYZ can be recomputed under any
+  illuminant rather than trusted from the `XYZ_*` columns.
+
+So the honest position is the opposite of what was written first: the white
+point is a **real** variable, and the best version of this feature would
+compute XYZ from the spectra under a stated illuminant rather than reading
+pre-computed columns and hoping. The `spectral.py` module already does exactly
+that conversion for the visible-colour solid, so the machinery exists.
 
 The relative option normalises to the brightest patch, so papers of different
 brightness compare on shape rather than brightness. **Inside ChromIQ it should
@@ -92,9 +122,15 @@ that can contradict it.
 | Accent | Magenta, Teal, Amber, Violet, Slate | Magenta | stored |
 | How the shapes are coloured | `"true"`, `"solid"`, `"lightness"`, `"chroma"` | `"true"` | stored |
 | Depth (shading) | 0–100 | 35 | **yes** — restyled in place |
+| Set the lighting myself | on / off | off | — |
+| ├ Ambient | 0.0–1.0 | 0.80 | **yes** |
+| ├ Diffuse | 0.0–1.0 | 0.36 | **yes** |
+| ├ Specular | 0.0–2.0 | 0.08 | **yes** |
+| ├ Roughness | 0.0–1.0 | 0.78 | **yes** |
+| └ Fresnel | 0.0–5.0 | 0.06 | **yes** |
 | See-through (opacity) | 15–100 | 100 | **yes** — restyled in place |
 | Proportions | `"data"`, `"cube"` | `"data"` | redraw |
-| Detail | 10 / 20 / 32 steps | 20 | redraw |
+| Detail | 6–40 steps | 20 | redraw |
 | Draw each shape as | `"solid"`, `"solid+mesh"`, `"mesh"` | chart solid, others outline | redraw |
 | Show every patch I measured | on / off | off | redraw |
 | Show what the comparison cannot print | on / off | off | redraw |
@@ -120,6 +156,13 @@ Notes worth carrying over:
 * **Three separate radio groups.** Radio buttons sharing a parent are one
   exclusive group in Qt, so appearance, accent and shape-colour each need their
   own `QButtonGroup` or picking one silently unchecks another.
+* **The five lighting numbers are what Plotly's `mesh3d.lighting` takes.**
+  Depth drives all five from one slider for everyday use; ticking "Set the
+  lighting myself" reveals them and disables Depth, rather than leaving two
+  controls fighting over the same values.
+* **Reset must write before it reads.** Setting the widgets back and then
+  restoring from the store re-read the values being reset, so the sliders
+  quietly returned to where they had just been moved from.
 
 ---
 

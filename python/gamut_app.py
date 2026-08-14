@@ -82,6 +82,18 @@ PALETTES = {
 }
 
 
+#: The five things Plotly's 3D lighting actually takes, with the range each one
+#: accepts and a plain-language name. Exposed individually behind "Set the
+#: lighting myself" for anybody who wants to dial in a particular look; the
+#: Depth slider drives all five together for everybody else.
+LIGHT_CONTROLS = (
+    ("ambient", "Ambient — light from everywhere", 0.0, 1.0, 0.80),
+    ("diffuse", "Diffuse — light the surface scatters", 0.0, 1.0, 0.36),
+    ("specular", "Specular — the shiny highlight", 0.0, 2.0, 0.08),
+    ("roughness", "Roughness — how soft that highlight is", 0.0, 1.0, 0.78),
+    ("fresnel", "Fresnel — glow around the edges", 0.0, 5.0, 0.06),
+)
+
 #: How the shapes in the picture are coloured. Each answers a different
 #: question, which is why this is a choice rather than a preference.
 PAINTS = (
@@ -451,8 +463,16 @@ class GamutApp(QMainWindow):
         row.addWidget(frame, 1)
         self.setCentralWidget(central)
         self.setAcceptDrops(True)      # drop a .ti3 anywhere on the window
+        self._restore_everything()
         self._apply_mode()
         self._show_placeholder()
+        # Anything the user moves is written straight away, so a crash or a
+        # force-quit cannot lose a setting they just chose.
+        for _key, widget, kind, _default in self._persisted():
+            signal = (widget.valueChanged if kind == "slider"
+                      else widget.stateChanged if kind == "check"
+                      else widget.currentIndexChanged)
+            signal.connect(lambda *_a: self._remember_everything())
 
         for p in (initial or []):
             self._load(Path(p))
@@ -485,9 +505,12 @@ class GamutApp(QMainWindow):
         # to name the mode you are NOT in, which reads as a statement about the
         # current state and is read wrongly about half the time. Radios show
         # both choices and which one is active, and cannot be misread.
+        # The label sits above its choices, the same shape as Accent and the
+        # shape-colour set below it -- three groups laid out three different
+        # ways is three things to parse instead of one.
+        v.addWidget(QLabel("Appearance", col))
         theme_row = QHBoxLayout()
-        theme_row.addWidget(QLabel("Appearance", col))
-        theme_row.addStretch(1)
+        theme_row.setContentsMargins(0, 0, 0, 0)
         # EACH SET NEEDS ITS OWN GROUP. Radio buttons sharing a parent are one
         # exclusive group in Qt, so choosing an accent silently unchecked the
         # appearance -- both sets looked empty and neither could be read off the
@@ -498,6 +521,7 @@ class GamutApp(QMainWindow):
         for radio in (self._theme_light, self._theme_dark):
             self._theme_group.addButton(radio)
             theme_row.addWidget(radio)
+        theme_row.addStretch(1)
         self._theme_light.toggled.connect(
             lambda on: self._set_appearance("light") if on else None)
         self._theme_dark.toggled.connect(
@@ -756,6 +780,48 @@ class GamutApp(QMainWindow):
         depth_hint.setObjectName("hint")
         lv.addWidget(depth_hint)
 
+        self._manual_light = QCheckBox("Set the lighting myself", g_look)
+        self._manual_light.stateChanged.connect(self._on_manual_light)
+        lv.addWidget(self._manual_light)
+        self._light_rows = []
+        self._light_sliders = {}
+        for key, label, lo, hi, start in LIGHT_CONTROLS:
+            row = QWidget(g_look)
+            rl = QVBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(1)
+            cap = QLabel(label, row)
+            cap.setObjectName("hint")
+            rl.addWidget(cap)
+            hb = QHBoxLayout()
+            slider = QSlider(Qt.Orientation.Horizontal, row)
+            slider.setRange(0, 100)
+            slider.setValue(int(round((start - lo) / (hi - lo) * 100)))
+            value_lbl = QLabel(f"{start:.2f}", row)
+            value_lbl.setFixedWidth(46)
+            slider.valueChanged.connect(
+                lambda v, k=key, lo=lo, hi=hi, lbl=value_lbl:
+                self._on_light_changed(k, lo + (hi - lo) * v / 100.0, lbl))
+            hb.addWidget(slider, 1)
+            hb.addWidget(value_lbl)
+            rl.addLayout(hb)
+            row.setVisible(False)
+            lv.addWidget(row)
+            self._light_rows.append(row)
+            self._light_sliders[key] = (slider, lo, hi)
+        light_hint = WrappedLabel(
+            "These are the five numbers the 3D view actually takes. Ambient is "
+            "light arriving from every direction, so more of it flattens the "
+            "shape and shows its colours plainly. Diffuse is light the surface "
+            "scatters, which is what makes a curve look curved. Specular is "
+            "the shiny highlight and roughness decides how soft that highlight "
+            "is. Fresnel adds a glow around the edges. Every one of them moves "
+            "the picture as you drag.", g_look)
+        light_hint.setObjectName("hint")
+        light_hint.setVisible(False)
+        lv.addWidget(light_hint)
+        self._light_rows.append(light_hint)
+
         v_paint = QLabel("How the shapes are coloured", g_look)
         lv.addWidget(v_paint)
         self._paint_group = QButtonGroup(self)
@@ -778,12 +844,19 @@ class GamutApp(QMainWindow):
             "so the shape itself is what you see.", g_look)
         paint_hint.setObjectName("hint")
         lv.addWidget(paint_hint)
-        self._detail = QComboBox(g_look)
-        self._detail.addItem("Detail: normal", 20)
-        self._detail.addItem("Detail: fine (slower to draw)", 32)
-        self._detail.addItem("Detail: rough (quickest)", 10)
-        self._detail.currentIndexChanged.connect(self._on_compare_changed)
-        lv.addWidget(self._detail)
+        detrow = QHBoxLayout()
+        detrow.addWidget(QLabel("Detail", g_look))
+        self._detail = QSlider(Qt.Orientation.Horizontal, g_look)
+        self._detail.setRange(6, 40)
+        self._detail.setValue(20)
+        self._detail.valueChanged.connect(
+            lambda v: self._detail_lbl.setText(f"{v} steps"))
+        self._detail.sliderReleased.connect(self._on_compare_changed)
+        detrow.addWidget(self._detail, 1)
+        self._detail_lbl = QLabel("20 steps", g_look)
+        self._detail_lbl.setFixedWidth(64)
+        detrow.addWidget(self._detail_lbl)
+        lv.addLayout(detrow)
         detail_hint = WrappedLabel(
             "How finely the shape you compare against is built. Normal is "
             "accurate to within a twentieth of a percent and draws in about a "
@@ -824,6 +897,11 @@ class GamutApp(QMainWindow):
         v.addWidget(g_vol)
 
         v.addStretch(1)
+        self._reset_btn = QPushButton("Start again with standard settings",
+                                      col)
+        self._reset_btn.setObjectName("secondary")
+        self._reset_btn.clicked.connect(self._reset_defaults)
+        v.addWidget(self._reset_btn)
         self._glossary_btn = QPushButton("What do these words mean?", col)
         self._glossary_btn.setObjectName("secondary")
         self._glossary_btn.clicked.connect(self._on_glossary)
@@ -845,6 +923,115 @@ class GamutApp(QMainWindow):
         self._apply_mode()
         if self._slots:
             self._redraw()          # the scene is repainted to match
+
+    def _persisted(self):
+        """Every control worth remembering, as (key, widget, kind, default).
+
+        One table rather than a save call sprinkled through twenty handlers:
+        a control added to the window and forgotten here would silently stop
+        being remembered, and nobody would notice until they restarted.
+        """
+        return (
+            ("opacity", self._opacity, "slider", 100),
+            ("depth", self._depth, "slider", 35),
+            ("detail", self._detail, "slider", 20),
+            ("slice_at", self._slice_at, "slider", 50),
+            ("slice_on", self._slice_on, "check", False),
+            ("points", self._points, "check", False),
+            ("show_lost", self._show_lost, "check", False),
+            ("relative", self._relative, "check", False),
+            ("manual_light", self._manual_light, "check", False),
+            ("aspect", self._aspect, "combo", "data"),
+            ("white", self._white, "combo", "D50"),
+            ("shape_mode", self._mode, "combo", "device"),
+            ("style_first", self._style_mine, "combo", "solid"),
+            ("style_second", self._style_second, "combo", "mesh"),
+            ("style_other", self._style_other, "combo", "mesh"),
+        ) + tuple(
+            (f"light_{key}", self._light_sliders[key][0], "slider",
+             int(round((start - lo) / (hi - lo) * 100)))
+            for key, _label, lo, hi, start in LIGHT_CONTROLS)
+
+    def _remember_everything(self) -> None:
+        """Write the current state of every remembered control."""
+        for key, widget, kind, _default in self._persisted():
+            if kind == "slider":
+                self._store.setValue(key, widget.value())
+            elif kind == "check":
+                self._store.setValue(key, widget.isChecked())
+            else:
+                self._store.setValue(key, widget.currentData())
+        self._store.setValue("appearance", self._appearance)
+        self._store.setValue("scheme", self._scheme)
+        self._store.setValue("paint", self._paint)
+
+    def _restore_everything(self) -> None:
+        """Put every remembered control back where it was left.
+
+        Signals are blocked while restoring so that setting fifteen controls
+        does not trigger fifteen redraws of a window that has nothing in it
+        yet; one redraw happens when a chart is opened.
+        """
+        for key, widget, kind, default in self._persisted():
+            raw = self._store.value(key, default)
+            widget.blockSignals(True)
+            try:
+                if kind == "slider":
+                    widget.setValue(int(raw))
+                elif kind == "check":
+                    widget.setChecked(raw in (True, "true", "True", 1, "1"))
+                else:
+                    index = widget.findData(raw)
+                    if index >= 0:
+                        widget.setCurrentIndex(index)
+            except (TypeError, ValueError):
+                pass          # a stored value we cannot use: keep the default
+            finally:
+                widget.blockSignals(False)
+        self._sync_slider_labels()
+        self._on_manual_light()
+
+    def _sync_slider_labels(self) -> None:
+        """Every label that mirrors a slider, told what its slider now says."""
+        self._opacity_lbl.setText(f"{self._opacity.value()}%")
+        self._depth_lbl.setText(f"{self._depth.value()}%")
+        self._detail_lbl.setText(f"{self._detail.value()} steps")
+        self._slice_lbl.setText(f"L* {self._slice_at.value()}")
+
+    def _reset_defaults(self) -> None:
+        """Put every setting back to its starting value, after asking."""
+        answer = QMessageBox.question(
+            self, "Start again with the standard settings?",
+            "Every setting in this window goes back to how it started: the "
+            "appearance, the accent colour, how the shapes are drawn and "
+            "coloured, the lighting, and everything else.\n\n"
+            "The charts you have open stay open, and no file of yours is "
+            "touched.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        for key, widget, kind, default in self._persisted():
+            widget.blockSignals(True)
+            if kind == "slider":
+                widget.setValue(int(default))
+            elif kind == "check":
+                widget.setChecked(bool(default))
+            else:
+                index = widget.findData(default)
+                if index >= 0:
+                    widget.setCurrentIndex(index)
+            widget.blockSignals(False)
+        self._appearance, self._scheme, self._paint = "dark", "Magenta", "true"
+        # Write the fresh values out BEFORE anything reads them back. Restoring
+        # first re-read the store, which still held what was being reset, so
+        # the sliders quietly went back to where they had just been moved from.
+        self._remember_everything()
+        self._sync_slider_labels()
+        self._on_manual_light()
+        self._apply_mode()
+        if self._slots:
+            self._redraw()
 
     def _set_paint(self, which: str) -> None:
         """Change how the shapes themselves are coloured, and remember it."""
@@ -932,7 +1119,7 @@ class GamutApp(QMainWindow):
                 name = choice[1]
                 self._reference = (name, reference_gamut(
                     name, white_point=self._white.currentData(),
-                    steps=self._detail.currentData()))
+                    steps=self._detail.value()))
                 self._compare_note.setText(REFERENCE_SPACES[name]["note"])
             elif choice[0] == "icc":
                 dlg = self._file_dialog(
@@ -952,7 +1139,7 @@ class GamutApp(QMainWindow):
             elif choice[0] == "visible":
                 v, _f = optimal_colour_solid(
                     "D50" if self._white.currentData() == "D50" else "D65",
-                    max(24, self._detail.currentData() * 3))
+                    max(24, self._detail.value() * 3))
                 lab = xyz_to_lab(v, self._white.currentData())
                 self._reference = ("Every visible colour",
                                    build_gamut(lab, input_space="lab",
@@ -1212,6 +1399,51 @@ class GamutApp(QMainWindow):
             "<p>Open a measured chart — a <b>.ti3</b> file — to see the gamut "
             "it encloses.</p></div></body></html>")
 
+    def _on_manual_light(self) -> None:
+        """Show or hide the five individual lighting controls.
+
+        The Depth slider is the everyday way in: one number for how shaded the
+        surface is. These are the same lighting underneath, taken apart for
+        anybody who wants a particular look — so turning them on turns Depth
+        off rather than having two controls quietly fight each other.
+        """
+        manual = self._manual_light.isChecked()
+        for row in self._light_rows:
+            row.setVisible(manual)
+        self._depth.setEnabled(not manual)
+        self._depth_lbl.setEnabled(not manual)
+        if manual:
+            self._push_lighting(self._manual_lighting())
+        else:
+            self._on_depth_changed(self._depth.value())
+
+    def _manual_lighting(self) -> dict:
+        """The five values as the sliders currently stand."""
+        out = {}
+        for key, (slider, lo, hi) in self._light_sliders.items():
+            out[key] = lo + (hi - lo) * slider.value() / 100.0
+        return out
+
+    def _on_light_changed(self, key: str, value: float, label) -> None:
+        label.setText(f"{value:.2f}")
+        if self._manual_light.isChecked():
+            self._push_lighting(self._manual_lighting())
+
+    def _push_lighting(self, values: dict) -> None:
+        """Send a lighting dictionary into the scene already on screen."""
+        page = self._view.page()
+        if page is None or not self._slots:
+            return
+        body = ",".join(f"'{k}':{v}" for k, v in values.items())
+        page.runJavaScript(
+            "(function(){var el=document.getElementsByClassName("
+            "'plotly-graph-div')[0];"
+            "if(!el||!window.Plotly||!el.data)return;"
+            "var idx=[];for(var i=0;i<el.data.length;i++)"
+            "if(el.data[i].type==='mesh3d')idx.push(i);"
+            f"if(idx.length)Plotly.restyle(el,{{lighting:{{{body}}}}},idx);"
+            "})();")
+
     def _on_depth_changed(self, value: int) -> None:
         """Change the shading live, without rebuilding the picture.
 
@@ -1220,23 +1452,11 @@ class GamutApp(QMainWindow):
         where you put it, and nothing is recomputed.
         """
         self._depth_lbl.setText(f"{value}%")
-        page = self._view.page()
-        if page is None or not self._slots:
-            return
         d = max(0.0, min(1.0, value / 100.0))
-        lighting = (f"{{'ambient':{0.95 - 0.45 * d},"
-                    f"'diffuse':{0.10 + 0.75 * d},"
-                    f"'specular':{0.02 + 0.18 * d},"
-                    f"'roughness':{0.95 - 0.5 * d},"
-                    f"'fresnel':{0.02 + 0.1 * d}}}")
-        page.runJavaScript(
-            "(function(){var el=document.getElementsByClassName("
-            "'plotly-graph-div')[0];"
-            "if(!el||!window.Plotly||!el.data)return;"
-            "var idx=[];for(var i=0;i<el.data.length;i++)"
-            "if(el.data[i].type==='mesh3d')idx.push(i);"
-            f"if(idx.length)Plotly.restyle(el,{{lighting:{lighting}}},idx);"
-            "})();")
+        self._push_lighting(dict(
+            ambient=0.95 - 0.45 * d, diffuse=0.10 + 0.75 * d,
+            specular=0.02 + 0.18 * d, roughness=0.95 - 0.5 * d,
+            fresnel=0.02 + 0.1 * d))
 
     def _on_opacity_changed(self, value: int) -> None:
         """Change how see-through the shapes are, live, as the slider moves.
