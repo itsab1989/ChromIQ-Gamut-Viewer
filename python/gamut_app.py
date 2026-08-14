@@ -1715,7 +1715,12 @@ class GamutApp(QMainWindow):
             "other and depth is hard to judge on a screen; two outlines side by "
             "side are simply readable — which one reaches further into the "
             "cyans at this lightness is a glance rather than a guess. Move the "
-            "slider from dark to light to see how the shape changes.", g_look)
+            "slider from dark to light to see how the shape changes.\n\n"
+            "Two shapes are drawn over each other here, which is usually what "
+            "you want for a cut. If you would rather have them apart, tick "
+            "Show them in two rooms, side by side as well and each gets its "
+            "own half — both on one shared scale, so a smaller gamut still "
+            "looks smaller.", g_look)
         slice_hint.setObjectName("hint_slice_hint")
         lv.addWidget(slice_hint)
         drow = QHBoxLayout()
@@ -1956,9 +1961,14 @@ class GamutApp(QMainWindow):
             "Tick this and each gets a room of its own, side by side. The "
             "question changes from \"where do they differ\" to \"what does "
             "each of these actually look like\", and both are worth asking.\n\n"
-            "It needs two shapes to show — a second chart, or a chart and "
+            "It needs two shapes to show — a second file, or one file and "
             "something to compare it with — so it does nothing until you have "
-            "them.", g_look)
+            "them.\n\n"
+            "It works on the flat cross-section too. Tick Slice it at one "
+            "lightness as well and you get the two cuts next to each other, "
+            "drawn on one shared scale so their sizes can honestly be "
+            "compared — which is the whole reason to put them side by side "
+            "rather than on top of one another.", g_look)
         side_hint.setObjectName("hint_side_hint")
         lv.addWidget(side_hint)
 
@@ -1985,8 +1995,14 @@ class GamutApp(QMainWindow):
             "Untick it to move each one on its own — useful when you want to "
             "look into the shadows of one while keeping the other where it "
             "is.\n\n"
+            "On the flat cross-section it does the matching thing: zoom or "
+            "drag one cut and the other follows, so both always show the same "
+            "patch of colour. Without that you could be looking closely at the "
+            "reds on one side and at everything on the other, and the two "
+            "shapes would appear wildly different sizes for no reason at "
+            "all.\n\n"
             "Either way, nothing about your measurements changes. This only "
-            "moves the camera.", g_look)
+            "moves the view.", g_look)
         link_hint.setObjectName("hint_link_hint")
         _lr.addWidget(link_hint)
 
@@ -3815,8 +3831,11 @@ class GamutApp(QMainWindow):
         self._render_count += 1
         out = self._tmp / f"scene-{self._render_count}.html"
         if self._slice_on.isChecked():
-            write_slice_html(gamuts, out, float(self._slice_at.value()),
-                             self._scene_title(), mode=self._appearance)
+            if self._side_by_side.isChecked() and len(gamuts) >= 2:
+                self._write_two_slices(gamuts, out)
+            else:
+                write_slice_html(gamuts, out, float(self._slice_at.value()),
+                                 self._scene_title(), mode=self._appearance)
             self._view.setUrl(QUrl.fromLocalFile(str(out)))
             self._update_volume()
             self._update_coverage()
@@ -3833,6 +3852,29 @@ class GamutApp(QMainWindow):
         self._update_volume()
         self._update_coverage()
         self._update_drift()
+
+    def _write_two_slices(self, gamuts, out) -> None:
+        """Two cross-sections, side by side, on one range.
+
+        The same question as two rooms in 3D -- what does each of these look
+        like on its own -- asked of a flat cut, where it is easier to answer
+        because nothing is hiding behind anything.
+
+        The shared range is the part that matters. Left to itself each pane
+        scales to whatever is in it, so a small gamut and a large one come out
+        the same size and the picture says the opposite of the truth.
+        """
+        from ti3gamut import (build_slice_figure, slice_extent,
+                              write_side_by_side_html)
+
+        lightness = float(self._slice_at.value())
+        extent = slice_extent(gamuts, lightness)
+        pages = [(name, build_slice_figure(
+            [(name, g)], lightness, "", mode=self._appearance,
+            extent=extent, legend=False, first=i))
+            for i, (name, g) in enumerate(gamuts[:2])]
+        write_side_by_side_html(pages, out, mode=self._appearance,
+                                linked=self._link_cameras.isChecked())
 
     def _write_two_rooms(self, gamuts, out, clouds, lost) -> None:
         """One page, two scenes, each holding a single shape.

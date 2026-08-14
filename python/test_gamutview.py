@@ -988,3 +988,92 @@ def test_the_light_stays_the_same_distance_however_it_is_placed():
                for p in (light_position(d, h)
                          for d, h in ((0, 0), (90, 0.5), (200, -0.8), (330, 1)))]
     assert max(lengths) - min(lengths) < 1e-6, lengths
+
+
+# --- two cross-sections, side by side ---------------------------------------
+
+def _two_gamuts():
+    """A big shape and a visibly smaller one, at a lightness both reach."""
+    _, xyz = rgb_cube(6)
+    big = build_gamut(xyz, white_point="D65")
+    lab = xyz_to_lab(xyz, "D65")
+    shrunk = lab * 0.6 + np.array([50.0, 0.0, 0.0]) * 0.4
+    small = build_gamut(shrunk, input_space="lab", white_point="D65")
+    return [("big", big), ("small", small)]
+
+
+def test_two_cuts_are_drawn_on_one_shared_scale():
+    """THE thing that would be wrong while looking perfectly fine. Each pane
+    left to itself scales to whatever is in it, so a small gamut and a large
+    one come out the same size and the picture says the opposite of the truth.
+    """
+    from ti3gamut import build_slice_figure, slice_extent
+    pair = _two_gamuts()
+    extent = slice_extent(pair, 50.0)
+    assert extent is not None
+
+    figures = [build_slice_figure([one], 50.0, "", extent=extent, legend=False)
+               for one in pair]
+    ranges = [(tuple(f.layout.xaxis.range), tuple(f.layout.yaxis.range))
+              for f in figures]
+    assert ranges[0] == ranges[1], ranges
+
+    # and the range must actually hold both shapes, not just one
+    for _name, g in pair:
+        from gamutview import slice_at
+        ring = slice_at(g, 50.0)
+        if not len(ring):
+            continue
+        assert ring[:, 0].min() >= extent[0][0] and ring[:, 0].max() <= extent[0][1]
+        assert ring[:, 1].min() >= extent[1][0] and ring[:, 1].max() <= extent[1][1]
+
+
+def test_the_shared_range_survives_the_equal_units_constraint():
+    """a* and b* are the same units, so the axes are locked together -- and
+    with that constraint in force Plotly re-derives the range from the data
+    unless autorange is switched off by name. Each pane then quietly went back
+    to fitting its own shape, which is exactly the fault being prevented."""
+    from ti3gamut import build_slice_figure, slice_extent
+    pair = _two_gamuts()
+    extent = slice_extent(pair, 50.0)
+    fig = build_slice_figure([pair[1]], 50.0, "", extent=extent)
+    assert fig.layout.xaxis.autorange is False
+    assert fig.layout.yaxis.autorange is False
+    assert fig.layout.xaxis.scaleanchor == "y"     # still equal units
+
+
+def test_the_range_is_square_so_a_round_gamut_stays_round():
+    from ti3gamut import slice_extent
+    extent = slice_extent(_two_gamuts(), 50.0)
+    width = extent[0][1] - extent[0][0]
+    height = extent[1][1] - extent[1][0]
+    assert width == pytest.approx(height, rel=1e-9)
+
+
+def test_a_lightness_nothing_reaches_has_no_range_to_share():
+    from ti3gamut import slice_extent
+    assert slice_extent(_two_gamuts(), 100.0) is None
+    assert slice_extent([], 50.0) is None
+
+
+def test_each_cut_keeps_the_colour_its_shape_has_in_the_overlay():
+    """Split apart, each figure holds one shape and would otherwise call it
+    the first -- so both cuts came out the same colour and no longer matched
+    the shapes they came from."""
+    from ti3gamut import build_slice_figure
+    pair = _two_gamuts()
+    lines = []
+    for i, one in enumerate(pair):
+        fig = build_slice_figure([one], 50.0, "", legend=False, first=i)
+        lines.append([t.line.color for t in fig.data
+                      if getattr(t, "mode", "") == "lines"][0])
+    assert lines[0] != lines[1], lines
+    together = build_slice_figure(pair, 50.0, "")
+    assert [t.line.color for t in together.data
+            if getattr(t, "mode", "") == "lines"] == lines
+
+
+def test_a_cut_on_its_own_needs_no_separator_before_the_lightness():
+    from ti3gamut import build_slice_figure
+    fig = build_slice_figure(_two_gamuts()[:1], 50.0, "")
+    assert "·" not in str(fig.layout.title.text).split("lightness")[0]

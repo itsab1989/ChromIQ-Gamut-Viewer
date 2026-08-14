@@ -1135,6 +1135,39 @@ window.cqSpin = (function () {
 """
 
 
+#: The flat equivalent of cqLinkCameras: zoom or pan one cross-section and
+#: the other follows, so the two always show the same patch of colour space.
+#: Without it, zooming into the reds on the left while the right still shows
+#: everything makes two shapes look wildly different sizes -- which is the one
+#: thing a side-by-side comparison must never do.
+_LINK_AXES_JS = """
+function cqLinkAxes(idA, idB) {
+  var a = document.getElementById(idA), b = document.getElementById(idB);
+  if (!a || !b) return;
+  var busy = false;
+  function follow(src, dstId) {
+    src.on("plotly_relayout", function (change) {
+      if (busy || !change) return;                 // do not answer ourselves
+      var want = {};
+      ["xaxis.range[0]", "xaxis.range[1]",
+       "yaxis.range[0]", "yaxis.range[1]"].forEach(function (k) {
+        if (change[k] !== undefined) want[k] = change[k];
+      });
+      if (change["xaxis.autorange"] !== undefined) {
+        want["xaxis.autorange"] = change["xaxis.autorange"];
+        want["yaxis.autorange"] = change["yaxis.autorange"];
+      }
+      if (!Object.keys(want).length) return;
+      busy = true;
+      Plotly.relayout(dstId, want).then(function () { busy = false; },
+                                        function () { busy = false; });
+    });
+  }
+  follow(a, idB); follow(b, idA);
+}
+"""
+
+
 def _spin_script(ids, spin) -> str:
     """The turning engine plus the settings the window had when it was written.
 
@@ -1171,13 +1204,19 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
     colours = SCENE_COLOURS["light" if mode == "light" else "dark"]
     blocks, first_id = [], None
     ids = []
+    flat = False                       # set per page; safe when there are none
     for i, (caption, fig) in enumerate(pages):
         # Centre the shape in ITS OWN half: give the scene the full width of
         # the pane and no legend gutter, or each one drifts toward the divider
         # and the two look misaligned even when they are identical.
-        fig.update_layout(
-            margin=dict(l=0, r=0, t=0, b=0), showlegend=False,
-            scene=dict(domain=dict(x=[0, 1], y=[0, 1])))
+        # A FLAT SLICE HAS NO SCENE. Handing a 2D figure a scene domain adds
+        # an empty 3D scene to the page and leaves the chart sized for a
+        # legend that is no longer there.
+        flat = not any(getattr(t, "type", "") == "scatter3d"
+                       or getattr(t, "type", "") == "mesh3d" for t in fig.data)
+        fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), showlegend=False)
+        if not flat:
+            fig.update_layout(scene=dict(domain=dict(x=[0, 1], y=[0, 1])))
         div = pio.to_html(fig, include_plotlyjs=(i == 0), full_html=False,
                           div_id=f"scene{i}",
                           config={"displaylogo": False, "responsive": True,
@@ -1204,9 +1243,11 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
                 "</script>")
     link = ""
     if linked and len(ids) == 2:
-        link = (f"<script>{_LINK_CAMERAS_JS}\n"
+        joiner = "cqLinkAxes" if flat else "cqLinkCameras"
+        body = _LINK_AXES_JS if flat else _LINK_CAMERAS_JS
+        link = (f"<script>{body}\n"
                 f"window.addEventListener('load', function() {{"
-                f"cqLinkCameras('{ids[0]}', '{ids[1]}');}});</script>")
+                f"{joiner}('{ids[0]}', '{ids[1]}');}});</script>")
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
  html,body {{ margin:0; padding:0; height:100%; overflow:hidden;
               background:{colours['page']}; }}
@@ -1218,7 +1259,7 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
           font-family:Menlo,Consolas,"Courier New",monospace;
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
  .half > div:last-child {{ flex:1 1 auto; min-height:0; }}
-</style></head><body><div class="row">{''.join(blocks)}</div>{resize}{link}{_spin_script(ids, spin)}</body></html>"""
+</style></head><body><div class="row">{''.join(blocks)}</div>{resize}{link}{_spin_script(ids, None if flat else spin)}</body></html>"""
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
 
@@ -1245,8 +1286,43 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None) -> Path:
     return Path(out)
 
 
-def write_slice_html(gamuts, out: Path, lightness: float, title: str,
-                     mode: str = "dark") -> Path:
+def slice_extent(gamuts, lightness: float):
+    """One square range covering every shape's cross-section, or None.
+
+    THE WHOLE POINT OF SHOWING TWO SLICES SIDE BY SIDE is that their sizes can
+    be compared, and left alone each pane scales to fit whatever is in it --
+    so a small gamut and a large one are drawn exactly the same size and the
+    picture says the opposite of the truth. One range, worked out from every
+    shape at once, and both panes use it.
+
+    Square, because a* and b* are the same units: a range that is wider than
+    it is tall would stretch the shape and make a round gamut look oval.
+    """
+    from gamutview import slice_at
+
+    lows, highs = [], []
+    for _name, g in gamuts:
+        try:
+            ring = slice_at(g, lightness)
+        except Exception:              # noqa: BLE001
+            continue
+        if len(ring):
+            lows.append(ring[:, :2].min(axis=0))
+            highs.append(ring[:, :2].max(axis=0))
+    if not lows:
+        return None
+    low = np.min(np.vstack(lows), axis=0)
+    high = np.max(np.vstack(highs), axis=0)
+    centre = (low + high) / 2.0
+    half = float(np.max(high - low)) / 2.0
+    half = max(half, 1.0) * 1.08       # a little air, never a zero-width axis
+    return ((float(centre[0] - half), float(centre[0] + half)),
+            (float(centre[1] - half), float(centre[1] + half)))
+
+
+def build_slice_figure(gamuts, lightness: float, title: str,
+                       mode: str = "dark", extent=None, legend: bool = True,
+                       first: int = 0):
     """A flat cross-section through every gamut at one lightness.
 
     Two 3D shapes hide each other and depth on a flat screen is guesswork; two
@@ -1271,7 +1347,12 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str,
         closed = np.vstack([ring, ring[:1]])       # join the ends
         fig.add_trace(go.Scatter(
             x=closed[:, 0], y=closed[:, 1], mode="lines",
-            line=dict(color=_SLICE_COLOURS[i % len(_SLICE_COLOURS)], width=3),
+            # KEEP THE COLOUR EACH SHAPE HAS IN THE OVERLAID VIEW. Split into
+            # two panes, each figure holds one shape and would otherwise call
+            # it the first -- so both cuts came out the same colour and stopped
+            # matching the shapes they came from.
+            line=dict(color=_SLICE_COLOURS[(first + i) % len(_SLICE_COLOURS)],
+                      width=3),
             name=name, fill="toself", opacity=0.35))
     note = ""
     if empty:
@@ -1283,16 +1364,35 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str,
                              marker=dict(color=c["mark"], size=5, symbol="x"),
                              name="neutral grey", hoverinfo="name"))
     fig.update_layout(
-        title=_caption(f"{title}  ·  lightness L* = {lightness:.0f}{note}", c),
+        title=_caption((f"{title}  ·  " if title else "")
+                       + f"lightness L* = {lightness:.0f}{note}", c),
         xaxis=dict(title="a*   green ← → red", zeroline=True,
                    zerolinecolor=c["axis"], gridcolor=c["grid"],
                    scaleanchor="y", scaleratio=1),
         yaxis=dict(title="b*   blue ← → yellow", zeroline=True,
                    zerolinecolor=c["axis"], gridcolor=c["grid"]),
         paper_bgcolor=c["page"], plot_bgcolor=c["plot"], font_color=c["text"],
-        legend=dict(orientation="h", y=-0.12),
+        legend=dict(orientation="h", y=-0.12), showlegend=legend,
         margin=dict(l=0, r=0, t=54, b=0))
-    _write_dark_html(fig, out, mode)
+    if extent is not None:
+        # BOTH PANES ON ONE RANGE, so their sizes mean something. autorange
+        # has to be turned off by name: with an equal-units constraint in
+        # force, Plotly re-derives the range from the data unless told not to,
+        # and each pane quietly went back to fitting its own shape -- which is
+        # precisely the lie this is here to prevent.
+        fig.update_layout(
+            xaxis=dict(range=list(extent[0]), autorange=False,
+                       constrain="domain"),
+            yaxis=dict(range=list(extent[1]), autorange=False,
+                       constrain="domain"))
+    return fig
+
+
+def write_slice_html(gamuts, out: Path, lightness: float, title: str,
+                     mode: str = "dark") -> Path:
+    """One page holding one flat cross-section. See :func:`build_slice_figure`."""
+    _write_dark_html(build_slice_figure(gamuts, lightness, title, mode), out,
+                     mode)
     return out
 
 

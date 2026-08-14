@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.6.1
+
+### ✨ What's new
+
+- **The flat cross-section works side by side too.** Tick **Slice it at one
+  lightness** and **Show them in two rooms, side by side** together, and the
+  two cuts are drawn in their own halves instead of on top of each other —
+  useful when one shape sits almost entirely inside the other and the overlap
+  hides what you are trying to see.
+- **Both halves share one scale**, worked out from both shapes at once. Left
+  to itself each half would size itself to whatever is in it, so a small gamut
+  and a large one would be drawn exactly the same size — a comparison saying
+  the opposite of the truth. A smaller gamut looks smaller.
+- **Zoom or drag one cut and the other follows**, while **Keep both rooms
+  pointing the same way** is ticked — the flat equivalent of keeping two 3D
+  views aimed alike.
+
+### 🐞 Fixed
+
+- **Showing two rooms did nothing while slicing.** The control stayed ticked
+  and available and was quietly ignored, which the app's own rule forbids: a
+  control that cannot do anything is worse than one that is not there.
+- Each cut keeps the colour its shape has in the overlaid view, instead of
+  both being drawn in the first colour.
+
 ## v1.6.0
 
 ### ✨ What's new
