@@ -461,7 +461,7 @@ class _FakeApp:
             setattr(self, name, None)
         for name in ("_slice_on", "_points", "_show_lost", "_relative",
                      "_manual_light", "_mesh_colour", "_rings_on", "_neutral",
-                     "_auto_update"):
+                     "_auto_update", "_side_by_side", "_link_cameras"):
             setattr(self, name, None)
         for name in ("_aspect", "_white", "_space", "_mode", "_style_mine",
                      "_style_second", "_style_other"):

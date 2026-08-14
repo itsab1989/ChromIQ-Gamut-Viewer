@@ -444,6 +444,54 @@ _FLAT = ("rgb(232,23,93)", "rgb(58,168,208)", "rgb(242,199,68)",
          "rgb(107,208,122)", "rgb(157,124,216)")
 
 
+#: Hue bands, and the accent hue each maps to. Mirrors ChromIQ's own
+#: _THEME_ACCENTS (workflow/gamut_viewer.py:88) so the two applications tint a
+#: gamut the same way: (from, to, accent hue, saturation).
+_ACCENT_BANDS = (
+    (330, 360, 345, 0.995),
+    (  0,  30, 345, 0.995),
+    ( 30,  80,  39, 0.990),
+    ( 80, 165, 158, 0.600),
+    (165, 210, 190, 0.630),
+    (210, 330, 254, 1.000),
+)
+
+#: Lightness cap when remapping. Without it the gamut's white tip stays pure
+#: white whatever hue it is given, and the brightest part of the shape loses
+#: the tint entirely. ChromIQ caps at the same value for the same reason.
+_ACCENT_L_CAP = 0.92
+
+
+def _accent_vertices(gamut) -> list:
+    """Every vertex tinted into the application's own accent family.
+
+    Keeps each point's LIGHTNESS -- so the shape still reads as a shape, with
+    its own highlights and shadows -- and replaces its HUE with whichever
+    accent hue that part of the colour wheel belongs to. Near-grey points stay
+    grey rather than being forced into a colour they never had.
+
+    The same idea as ChromIQ's "Use app theme colours for 3D gamut viewer",
+    and deliberately the same bands, so a gamut tinted here and a gamut tinted
+    there look like the same picture.
+    """
+    import colorsys
+
+    out = []
+    for r, g, b in np.clip(np.asarray(gamut.colors, float), 0.0, 1.0):
+        h, l, sat = colorsys.rgb_to_hls(float(r), float(g), float(b))
+        l = min(l, _ACCENT_L_CAP)
+        hue_deg = h * 360.0
+        new_h, new_s = 0.0, 0.0          # grey stays grey
+        if sat >= 0.15:
+            for lo, hi, accent_h, accent_s in _ACCENT_BANDS:
+                if lo <= hue_deg < hi:
+                    new_h, new_s = accent_h / 360.0, accent_s
+                    break
+        nr, ng, nb = colorsys.hls_to_rgb(new_h, l, new_s)
+        out.append(f"rgb({int(nr * 255)},{int(ng * 255)},{int(nb * 255)})")
+    return out
+
+
 def _paint_vertices(gamut, paint: str, index: int) -> "list | None":
     """The colour of every vertex, for the chosen way of painting.
 
@@ -454,6 +502,8 @@ def _paint_vertices(gamut, paint: str, index: int) -> "list | None":
         return None
     if paint == "solid":
         return [_FLAT[index % len(_FLAT)]] * len(gamut.vertices)
+    if paint == "accent":
+        return _accent_vertices(gamut)
     v = gamut.vertices
     if paint == "lightness":
         t = np.clip(v[:, 0] / 100.0, 0, 1)
@@ -729,6 +779,102 @@ SCENE_COLOURS = {
 _PAGE_BACKGROUND = "#111318"
 
 
+#: Keeps two scenes pointing the same way. Taken from ChromIQ's own
+#: cqLinkCameras (workflow/patch_cube.py), including the two subtleties that
+#: make it work: the live camera during a drag lives on the scene's internal
+#: object rather than in the layout, and only the view being driven is allowed
+#: to lead -- otherwise the two push each other back and forth for ever.
+_LINK_CAMERAS_JS = """
+function cqLinkCameras(idA, idB) {
+  var a = document.getElementById(idA), b = document.getElementById(idB);
+  if (!a || !b) return;
+  var active = null, wheelTimer = null;
+  function liveCam(gd) {
+    try {
+      var s = gd._fullLayout && gd._fullLayout.scene && gd._fullLayout.scene._scene;
+      if (s && s.getCamera) return s.getCamera();
+    } catch (e) {}
+    return gd.layout && gd.layout.scene && gd.layout.scene.camera;
+  }
+  function arm(gd) {                      // a wheel has no mouseup to end it
+    active = gd;
+    if (wheelTimer) clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(function () { active = null; }, 300);
+  }
+  a.addEventListener("mousedown", function () { active = a; }, true);
+  b.addEventListener("mousedown", function () { active = b; }, true);
+  window.addEventListener("mouseup", function () { active = null; }, true);
+  a.addEventListener("wheel", function () { arm(a); }, true);
+  b.addEventListener("wheel", function () { arm(b); }, true);
+  function link(src, dstId) {
+    function sync() {
+      if (active !== src) return;         // only the driven view leads
+      var c = liveCam(src);
+      if (c) Plotly.relayout(dstId, {"scene.camera": c});
+    }
+    src.on("plotly_relayouting", sync);   // continuously, during the gesture
+    src.on("plotly_relayout", sync);      // and once it is let go
+  }
+  link(a, idB); link(b, idA);
+}
+"""
+
+
+def write_side_by_side_html(pages, out: Path, mode: str = "dark",
+                            linked: bool = True) -> Path:
+    """Two scenes in one page, each with its own shape, side by side.
+
+    Overlaying two gamuts is the right way to see where one reaches past the
+    other, and the wrong way to judge either on its own -- the front shape
+    hides the back one, and whichever is drawn second looks bigger. Two rooms
+    side by side answers the other question: what does each of these actually
+    look like?
+
+    *pages* is a list of (title, plotly figure). They are written into one
+    document rather than two, because two separate pages cannot keep their
+    cameras together, and a comparison where the two halves face different
+    ways compares nothing.
+    """
+    import plotly.io as pio
+
+    colours = SCENE_COLOURS["light" if mode == "light" else "dark"]
+    blocks, first_id = [], None
+    ids = []
+    for i, (caption, fig) in enumerate(pages):
+        # Centre the shape in ITS OWN half: give the scene the full width of
+        # the pane and no legend gutter, or each one drifts toward the divider
+        # and the two look misaligned even when they are identical.
+        fig.update_layout(
+            margin=dict(l=0, r=0, t=0, b=0), showlegend=False,
+            scene=dict(domain=dict(x=[0, 1], y=[0, 1])))
+        div = pio.to_html(fig, include_plotlyjs=(i == 0), full_html=False,
+                          div_id=f"scene{i}",
+                          config={"displaylogo": False, "responsive": True,
+                                  "scrollZoom": True})
+        ids.append(f"scene{i}")
+        blocks.append(f'<div class="half"><div class="cap">{caption}</div>'
+                      f'{div}</div>')
+    link = ""
+    if linked and len(ids) == 2:
+        link = (f"<script>{_LINK_CAMERAS_JS}\n"
+                f"window.addEventListener('load', function() {{"
+                f"cqLinkCameras('{ids[0]}', '{ids[1]}');}});</script>")
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+ html,body {{ margin:0; padding:0; height:100%; overflow:hidden;
+              background:{colours['page']}; }}
+ .row  {{ display:flex; height:100%; width:100%; }}
+ .half {{ flex:1 1 0; min-width:0; display:flex; flex-direction:column; }}
+ .half + .half {{ border-left:1px solid {colours['grid']}; }}
+ .cap  {{ height:22px; line-height:22px; padding:0 10px; font-size:12px;
+          color:{colours['caption']}; background:{colours['page']};
+          font-family:Menlo,Consolas,"Courier New",monospace;
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+ .half > div:last-child {{ flex:1 1 auto; min-height:0; }}
+</style></head><body><div class="row">{''.join(blocks)}</div>{link}</body></html>"""
+    Path(out).write_text(html, encoding="utf-8")
+    return Path(out)
+
+
 def _write_dark_html(fig, out: Path, mode: str = "dark") -> Path:
     """Write the figure as a self-contained page whose paper matches the app."""
     html = fig.to_html(include_plotlyjs="inline", full_html=True)
@@ -794,12 +940,18 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str,
     return out
 
 
-def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
-               points: bool = False, patches=None,
-               aspect: str = "data", styles=None, lost=None,
-               mode: str = "dark", paint: str = "true",
-               depth: float = 0.35, mesh_paint: str = "plain",
-               rings: int = 0, per_shape=None, neutrals=None) -> Path:
+def write_html(gamuts, out: Path, title: str, **kwargs) -> Path:
+    """One self-contained page holding one scene. See :func:`build_figure`."""
+    mode = kwargs.get("mode", "dark")
+    return _write_dark_html(build_figure(gamuts, title, **kwargs), out, mode)
+
+
+def build_figure(gamuts, title: str, opacity: float | None = None,
+                 points: bool = False, patches=None,
+                 aspect: str = "data", styles=None, lost=None,
+                 mode: str = "dark", paint: str = "true",
+                 depth: float = 0.35, mesh_paint: str = "plain",
+                 rings: int = 0, per_shape=None, neutrals=None):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -888,9 +1040,7 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
         legend=dict(orientation="h", y=-0.02),
         margin=dict(l=0, r=0, t=54, b=0),
     )
-    # include_plotlyjs="inline" is the whole point: no CDN, no network, ever.
-    _write_dark_html(fig, out, mode)
-    return out
+    return fig
 
 
 def main(argv=None) -> int:

@@ -127,6 +127,7 @@ PAINTS = (
     ("solid", "One colour each"),
     ("lightness", "By lightness"),
     ("chroma", "By chroma"),
+    ("accent", "In the accent colours"),
 )
 
 #: Accent colours to choose from. Only the accent changes: the greys, the
@@ -1090,7 +1091,9 @@ class GamutApp(QMainWindow):
                 ("hint_hint", self._open_btn),
                 ("hint_cmp_hint", self._compare),
                 ("hint_style_hint", self._style_combos[-1][0]),
-                ("hint_paint_hint", self._paint_radios[PAINTS[-1][0]]),
+                ("hint_paint_hint", self._paint_label),
+                ("hint_appearance_hint", self._appearance_label),
+                ("hint_accent_hint", self._accent_label),
                 ("hint_volume_hint", self._volume)):
             self._pair_icon(_name, _control)
         # A hidden control must take its ⓘ with it. Anything already managed
@@ -1502,7 +1505,8 @@ class GamutApp(QMainWindow):
         lv.addWidget(light_hint)
         self._light_rows.append(light_hint)
 
-        v_paint = QLabel("How the shapes are coloured", g_look)
+        v_paint = self._paint_label = QLabel(
+            "How the shapes are coloured", g_look)
         lv.addWidget(v_paint)
         self._paint_group = QButtonGroup(self)
         self._paint_radios = {}
@@ -1633,6 +1637,42 @@ class GamutApp(QMainWindow):
         self._points = QCheckBox("Show every patch I measured", g_look)
         self._points.stateChanged.connect(self._redraw)
         lv.addWidget(self._points)
+
+        self._side_by_side = QCheckBox("Show them in two rooms, side by side",
+                                       g_look)
+        self._side_by_side.stateChanged.connect(self._on_side_by_side)
+        lv.addWidget(self._side_by_side)
+        side_hint = Hint(
+            "Two shapes in one picture is the right way to see where one "
+            "reaches past the other — but it is the wrong way to judge either "
+            "on its own, because the shape in front hides the one behind it "
+            "and whichever is drawn on top looks bigger than it is.\n\n"
+            "Tick this and each gets a room of its own, side by side. The "
+            "question changes from \"where do they differ\" to \"what does "
+            "each of these actually look like\", and both are worth asking.\n\n"
+            "It needs two shapes to show — a second chart, or a chart and "
+            "something to compare it with — so it does nothing until you have "
+            "them.", g_look)
+        side_hint.setObjectName("hint_side_hint")
+        lv.addWidget(side_hint)
+
+        self._link_cameras = QCheckBox("Keep both rooms pointing the same way",
+                                       g_look)
+        self._link_cameras.setChecked(True)
+        self._link_cameras.stateChanged.connect(self._redraw)
+        lv.addWidget(self._link_cameras)
+        link_hint = Hint(
+            "Turn one shape and the other turns with it, so you are always "
+            "comparing the same face of both. This is what makes two rooms "
+            "worth having: two shapes seen from two different angles cannot "
+            "be compared at all.\n\n"
+            "Untick it to move each one on its own — useful when you want to "
+            "look into the shadows of one while keeping the other where it "
+            "is.\n\n"
+            "Either way, nothing about your measurements changes. This only "
+            "moves the camera.", g_look)
+        link_hint.setObjectName("hint_link_hint")
+        lv.addWidget(link_hint)
         v.addWidget(g_look)
 
         # --- the number -------------------------------------------------------
@@ -1731,7 +1771,20 @@ class GamutApp(QMainWindow):
         # The label sits above its choices, the same shape as Accent and the
         # shape-colour set below it -- three groups laid out three different
         # ways is three things to parse instead of one.
-        pv.addWidget(QLabel("Appearance", g_prefs))
+        self._appearance_label = QLabel("Appearance", g_prefs)
+        pv.addWidget(self._appearance_label)
+        appearance_hint = Hint(
+            "Light or dark, for the window and for the picture inside it. "
+            "The choice is remembered, so the application opens the way you "
+            "left it.\n\n"
+            "It is worth trying both on the shape you are looking at: a gamut "
+            "with a lot of dark, saturated colour in it reads more easily on "
+            "a dark background, and a pale paper reads more easily on a light "
+            "one.\n\n"
+            "Nothing about your measurements changes — this only changes how "
+            "they are drawn.", g_prefs)
+        appearance_hint.setObjectName("hint_appearance_hint")
+        pv.addWidget(appearance_hint)
         theme_row = QHBoxLayout()
         theme_row.setContentsMargins(0, 0, 0, 10)
         # Light and Dark are two choices, not one word: without room between
@@ -1761,7 +1814,21 @@ class GamutApp(QMainWindow):
         # one line they came out as "Ma", "Tea", "Am". A grid gives every name
         # its full width, and reads as a set of choices rather than a cramped
         # strip.
-        pv.addWidget(QLabel("Accent", g_prefs))
+        self._accent_label = QLabel("Accent", g_prefs)
+        pv.addWidget(self._accent_label)
+        accent_hint = Hint(
+            "The colour this window uses for the things you can change: "
+            "buttons, the ⓘ you are reading now, a control you are pointing "
+            "at, and the bar under the title.\n\n"
+            "It is yours to pick and it changes nothing else. The greys, the "
+            "text and the backgrounds stay exactly where they are, because "
+            "those are what make the window readable — an accent is what "
+            "makes it yours.\n\n"
+            "One place it does reach the picture: choosing **In the accent "
+            "colours** under How the shapes are coloured tints the gamut into "
+            "this same family.", g_prefs)
+        accent_hint.setObjectName("hint_accent_hint")
+        pv.addWidget(accent_hint)
         scheme_grid = QGridLayout()
         scheme_grid.setContentsMargins(0, 0, 0, 10)
         # 4px left the accent radios almost touching -- the same fault as the
@@ -1860,6 +1927,11 @@ class GamutApp(QMainWindow):
         if self._placed:
             return
         self._placed = True
+        # Re-apply now the window is actually up: a setVisible(False) issued
+        # while the parent was still hidden does not survive the parent being
+        # shown, so the controls that depend on what is loaded have to be
+        # settled here as well as during construction.
+        self._apply_side_by_side_availability()
         screen = self.screen() or QApplication.primaryScreen()
         if screen is None:
             return
@@ -2036,6 +2108,8 @@ class GamutApp(QMainWindow):
             ("mesh_colour", self._mesh_colour, "check", False),
             ("rings_on", self._rings_on, "check", False),
             ("neutral", self._neutral, "check", False),
+            ("side_by_side", self._side_by_side, "check", False),
+            ("link_cameras", self._link_cameras, "check", True),
             ("auto_update", self._auto_update, "check", False),
             ("rings", self._rings, "slider", 6),
             ("aspect", self._aspect, "combo", "data"),
@@ -2887,12 +2961,42 @@ class GamutApp(QMainWindow):
             f"if(d&&window.Plotly)Plotly.restyle(d,{{opacity:{value / 100.0}}});"
             "})();")
 
+    def _on_side_by_side(self) -> None:
+        """Side by side changes which other controls make sense."""
+        self._apply_side_by_side_availability()
+        self._redraw()
+
+    def _apply_side_by_side_availability(self) -> None:
+        """Show the controls that only mean something in one arrangement.
+
+        Two rooms need two shapes, and the camera link needs two rooms. A
+        control that cannot do anything is worse than a missing one: it
+        invites a click and answers with nothing.
+        """
+        pieces = len(self._slots) + (1 if self._reference is not None else 0)
+        can_split = pieces >= 2
+        self._side_by_side.setEnabled(can_split)
+        self._side_by_side.setToolTip(
+            "" if can_split else
+            "Open a second chart, or choose something under Compare with, and "
+            "this can put the two side by side.")
+        if not can_split and self._side_by_side.isChecked():
+            self._side_by_side.blockSignals(True)
+            self._side_by_side.setChecked(False)
+            self._side_by_side.blockSignals(False)
+        linked_useful = can_split and self._side_by_side.isChecked()
+        self._link_cameras.setVisible(linked_useful)
+        for icon in self.findChildren(Hint):
+            if icon.objectName() == "hint_link_hint":
+                icon.setVisible(linked_useful)
+
     def _redraw(self) -> None:
         if not self._slots:
             return
         # The comparison can change without any chart changing, so the style
         # controls are refreshed here rather than only when charts are opened.
         self._refresh_style_controls()
+        self._apply_side_by_side_availability()
         gamuts, clouds, styles, lost = self._scene_contents()
         # A NEW FILE EVERY TIME. Writing to one name and loading the same URL
         # let the web view serve its cached copy, so switching to light left
@@ -2909,13 +3013,37 @@ class GamutApp(QMainWindow):
             self._update_coverage()
             self._update_drift()
             return
-        write_html(gamuts, out, self._scene_title(),
-                   patches=clouds, styles=styles, lost=lost,
-                   **self._render_options())
+        if self._side_by_side.isChecked() and len(gamuts) >= 2:
+            self._write_two_rooms(gamuts, out, clouds, styles, lost)
+        else:
+            write_html(gamuts, out, self._scene_title(),
+                       patches=clouds, styles=styles, lost=lost,
+                       **self._render_options())
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
         self._update_volume()
         self._update_coverage()
         self._update_drift()
+
+    def _write_two_rooms(self, gamuts, out, clouds, styles, lost) -> None:
+        """One page, two scenes, each holding a single shape.
+
+        Each is built by the same code that builds the single view, so the two
+        arrangements cannot drift apart in how they draw anything -- the only
+        difference is how many shapes go into each picture.
+        """
+        from ti3gamut import build_figure, write_side_by_side_html
+
+        options = self._render_options()
+        figures = []
+        for i, (name, gamut) in enumerate(gamuts[:2]):
+            figures.append((name, build_figure(
+                [(name, gamut)], "",
+                patches=[clouds[i]] if clouds and i < len(clouds) else None,
+                styles=[styles[i]] if styles and i < len(styles) else None,
+                lost=[lost[i]] if lost and i < len(lost) else None,
+                **options)))
+        write_side_by_side_html(figures, out, mode=self._appearance,
+                                linked=self._link_cameras.isChecked())
 
     #: The controls that can belong to one shape rather than all of them, as
     #: key → (widget, how to read it). Anything not here is window-wide by

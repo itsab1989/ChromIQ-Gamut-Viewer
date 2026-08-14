@@ -31,9 +31,14 @@ inner = w.findChild(QScrollArea).widget()
 # Radios and the big volume readout are controls the eye reads too;
 # leaving them out made two correctly-placed icons look like orphans.
 CTRL = (QComboBox, QCheckBox, QSlider, QPushButton, QRadioButton)
+
+# Headings count too. An explanation that covers a whole set belongs beside
+# the heading that names the set, and a checker that does not know that
+# reports three correctly placed icons as orphans -- which it did, twice.
 controls = [c for c in inner.findChildren(CTRL)
             if c.isVisible() and not isinstance(c, gamut_app.Hint)]
-controls += [l for l in inner.findChildren(QLabel) if l.objectName()=="volume" and l.isVisible()]
+controls += [l for l in inner.findChildren(QLabel)
+             if l.isVisible() and l.text() and l.objectName() not in ('hint',)]
 orphans = []
 for h in inner.findChildren(gamut_app.Hint):
     if not h.isVisible(): continue
