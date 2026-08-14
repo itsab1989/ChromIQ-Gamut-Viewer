@@ -2,6 +2,15 @@
 
 ## v1.4.0
 
+### 🐞 Fixed
+
+- **Side by side drew the second chart as a grey wireframe.** An outline is
+  there so you can see *through* the shape on top to the one behind it, which
+  is what you want when the two are drawn over each other. Side by side each
+  chart has a picture to itself with nothing behind it, so the outline was
+  only ever a worse drawing of the same gamut. Both are now drawn solid, and
+  your solid/outline choice still applies as before when they are overlaid.
+
 ### ✨ What's new
 
 - **Two links at the foot of the settings column**: one to the ChromIQ

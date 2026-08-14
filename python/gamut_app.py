@@ -3163,7 +3163,7 @@ class GamutApp(QMainWindow):
             self._update_drift()
             return
         if self._side_by_side.isChecked() and len(gamuts) >= 2:
-            self._write_two_rooms(gamuts, out, clouds, styles, lost)
+            self._write_two_rooms(gamuts, out, clouds, lost)
         else:
             write_html(gamuts, out, self._scene_title(),
                        patches=clouds, styles=styles, lost=lost,
@@ -3173,12 +3173,19 @@ class GamutApp(QMainWindow):
         self._update_coverage()
         self._update_drift()
 
-    def _write_two_rooms(self, gamuts, out, clouds, styles, lost) -> None:
+    def _write_two_rooms(self, gamuts, out, clouds, lost) -> None:
         """One page, two scenes, each holding a single shape.
 
         Each is built by the same code that builds the single view, so the two
         arrangements cannot drift apart in how they draw anything -- the only
         difference is how many shapes go into each picture.
+
+        **The per-shape solid/outline choice is deliberately not carried over.**
+        An outline exists so you can see through one shape to the one behind
+        it, which is what the second shape needs to be in an overlay. In a room
+        of its own there is nothing behind it, so an outline would only be a
+        worse drawing of the same gamut -- the wireframe that used to appear on
+        the right-hand side. Each room draws its shape solid.
         """
         from ti3gamut import build_figure, write_side_by_side_html
 
@@ -3188,7 +3195,7 @@ class GamutApp(QMainWindow):
             figures.append((name, build_figure(
                 [(name, gamut)], "",
                 patches=[clouds[i]] if clouds and i < len(clouds) else None,
-                styles=[styles[i]] if styles and i < len(styles) else None,
+                styles=["solid"],
                 lost=[lost[i]] if lost and i < len(lost) else None,
                 **options)))
         write_side_by_side_html(figures, out, mode=self._appearance,

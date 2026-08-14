@@ -1,4 +1,6 @@
 """Tests for the Python port. Run: python -m pytest python/ -q"""
+import pathlib
+
 import numpy as np
 import pytest
 
@@ -470,6 +472,39 @@ class _FakeApp:
 
     def findChildren(self, _cls):
         return []
+
+
+def test_a_room_of_its_own_is_always_drawn_solid(monkeypatch):
+    """An outline is for seeing through, and side by side there is nothing
+    behind it to see. Carrying the overlay's "second chart: outline only" into
+    a room of its own drew the right-hand paper as a grey wireframe: the same
+    gamut, worse. Whatever the overlay styles say, each room draws solid."""
+    import gamut_app
+    import ti3gamut
+
+    asked = []
+    monkeypatch.setattr(ti3gamut, "build_figure",
+                        lambda *a, **kw: asked.append(kw.get("styles")))
+    monkeypatch.setattr(ti3gamut, "write_side_by_side_html",
+                        lambda *a, **kw: None)
+
+    fake = _FakeApp()
+    fake._appearance = "dark"
+    fake._link_cameras = _Checked(True)
+    fake._render_options = lambda: {}
+    gamut_app.GamutApp._write_two_rooms(
+        fake, [("Glossy", None), ("Matte", None)],
+        pathlib.Path("never-written.html"), None, None)
+
+    assert asked == [["solid"], ["solid"]]
+
+
+class _Checked:
+    def __init__(self, value):
+        self._value = value
+
+    def isChecked(self):
+        return self._value
 
 
 # --- the legend key ---------------------------------------------------------
