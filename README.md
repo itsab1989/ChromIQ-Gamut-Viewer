@@ -440,10 +440,15 @@ Depth is genuinely hard to judge on a flat screen — a dent in the deep blues
 and a shadow look alike in a still picture. **Turn it by itself** sets the
 shape moving, left and right or up and down, and **Save this view as a
 picture…** writes the movement out as a file you can drop into a forum post
-the same way as a photograph. Both loops above were made by that button, at
-20 frames a second; the menu offers 15 up to 60.
+the same way as a photograph. Both loops above were made by that button, and every setting behind them is
+one you have: **Turn it by itself** on, **Left and right → back and forth** at
+95° and speed 14, **Up and down → back and forth** at 38° and speed 9, then
+**A moving picture**, WebP, 6 seconds, 25 frames a second. Partial swings on
+both axes rather than a full turn, so the shape keeps facing you while showing
+every side of itself.
 
-The loop closes exactly, so it never jumps as it comes round.
+The loop closes exactly — the last frame is one step from the first, measured
+— so it never jumps as it comes round.
 
 ### A picture with nothing around it
 

@@ -3011,27 +3011,35 @@ class GamutApp(QMainWindow):
         from PIL import Image
 
         mode = self._turn_mode.currentData()
-        if mode == "off":
+        tilt_mode = self._tilt_mode.currentData()
+        if mode == "off" and tilt_mode == "off":
             mode = "round"                  # something has to move
-        count = picture.frames_for(want["seconds"], want["fps"], mode)
-        angles = picture.turn_angles(count, mode,
-                                     float(self._turn_sweep.value()))
+        count = picture.frames_for(want["seconds"], want["fps"],
+                                   mode if mode != "off" else tilt_mode)
+        angles = (picture.turn_angles(count, mode,
+                                      float(self._turn_sweep.value()))
+                  if mode != "off" else [0.0] * count)
+        # UP AND DOWN GOES INTO THE FILE TOO. It was left out entirely, so a
+        # shape set to tip as well as turn came out only turning.
+        tilts = (picture.turn_angles(count, tilt_mode,
+                                     float(self._tilt_sweep.value()))
+                 if tilt_mode != "off" else [0.0] * count)
         was_on = self._spin_on.isChecked()
         self._spin_on.setChecked(False)     # we are driving it ourselves
         QApplication.processEvents()
-        frames, previous = [], 0.0
+        frames, previous, tilted = [], 0.0, 0.0
         try:
-            for angle in angles:
-                self._run_js("if(window.cqSpin)window.cqSpin.nudge("
-                             f"{angle - previous},0);")
-                previous = angle
-                QApplication.processEvents()
+            for angle, lift in zip(angles, tilts):
+                self._run_js_now("if(window.cqSpin)window.cqSpin.nudge("
+                                 f"{angle - previous},{lift - tilted});")
+                previous, tilted = angle, lift
                 shot = self._view.grab()
                 frames.append(Image.fromqpixmap(shot).convert("RGBA"))
         finally:
             # PUT IT BACK. Whatever happens, the view returns to where it was:
             # an export must not quietly leave the shape facing elsewhere.
-            self._run_js(f"if(window.cqSpin)window.cqSpin.nudge({-previous},0);")
+            self._run_js_now(f"if(window.cqSpin)window.cqSpin.nudge("
+                             f"{-previous},{-tilted});")
             self._spin_on.setChecked(was_on)
             QApplication.processEvents()
         if not frames:
@@ -3052,6 +3060,44 @@ class GamutApp(QMainWindow):
                    duration=gap, format={"webp": "WEBP", "gif": "GIF",
                                          "apng": "PNG"}[want["format"]])
         return target
+
+    def _run_js_now(self, script: str, seconds: float = 2.0) -> None:
+        """Run it and WAIT until the page has actually done it.
+
+        runJavaScript hands back immediately. Turning a frame and grabbing it
+        in the next breath therefore photographed the shape before it had
+        moved: measured, one frame in forty-eight came out identical to the
+        one before it, and the frame after covered twice the distance -- which
+        is exactly what a jump in a loop looks like.
+        """
+        import time as _time
+        page = self._view.page()
+        if page is None:
+            return
+        # WAIT FOR THE PICTURE TO BE PAINTED, not for the script to return.
+        # The shape is drawn by the graphics card on its own schedule, so a
+        # script that has finished says nothing about what is on screen yet:
+        # waiting only for the script still grabbed thirteen frames in
+        # forty-eight before they had moved. Two turns of the browser's own
+        # drawing loop mean a frame has actually been put up.
+        page.runJavaScript(
+            script + ";window.__painted=0;"
+            "requestAnimationFrame(function(){"
+            "requestAnimationFrame(function(){window.__painted=1;});});")
+        end = _time.time() + seconds
+        while _time.time() < end:
+            got = {}
+            page.runJavaScript("window.__painted",
+                               lambda r: got.setdefault("r", r))
+            waited = _time.time() + 1.0
+            while "r" not in got and _time.time() < waited:
+                QApplication.processEvents()
+                _time.sleep(0.001)
+            if got.get("r"):
+                break
+            QApplication.processEvents()
+            _time.sleep(0.002)
+        QApplication.processEvents()
 
     def _run_js(self, script: str) -> None:
         page = self._view.page()
