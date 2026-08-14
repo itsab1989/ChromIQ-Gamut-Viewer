@@ -47,7 +47,8 @@ import numpy as np
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
 from PyQt6.QtCore import (QEvent, QRect, QSettings, QSize, QStandardPaths, Qt,
                           QTimer, QUrl, pyqtSignal)
-from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QPainter,
+from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QLinearGradient,
+                         QPainter,
                          QPen, QPixmap)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel,
@@ -537,6 +538,78 @@ class NoScrollSlider(QSlider):
             super().wheelEvent(event)
         else:
             event.ignore()
+
+
+class _ScrollFade(QWidget):
+    """A vertical gradient strip: opaque on the edge, clear on the inside.
+
+    A long column cut off dead straight at the top or bottom gives no hint
+    that there is more of it. Fading it into the background says "this
+    continues" without spending a row on saying so. ChromIQ does the same
+    thing in ui/fade_scroll.py, and this is its behaviour.
+    """
+
+    def __init__(self, position: str, parent) -> None:
+        super().__init__(parent)
+        self._position = position               # "top" or "bottom"
+        self._colour = QColor("#181818")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+    def set_colour(self, colour: str) -> None:
+        self._colour = QColor(colour)
+        self.update()
+
+    def paintEvent(self, _event) -> None:       # noqa: N802 (Qt naming)
+        painter = QPainter(self)
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        opaque = QColor(self._colour); opaque.setAlpha(255)
+        clear = QColor(self._colour); clear.setAlpha(0)
+        if self._position == "top":
+            gradient.setColorAt(0.0, opaque)
+            gradient.setColorAt(1.0, clear)
+        else:
+            gradient.setColorAt(0.0, clear)
+            gradient.setColorAt(1.0, opaque)
+        painter.fillRect(self.rect(), gradient)
+        painter.end()
+
+
+class FadeScrollArea(QScrollArea):
+    """A scroll area whose top and bottom edges fade into the background.
+
+    Each fade only appears when there is something in that direction to
+    scroll to, so the window never suggests more content than it has.
+    """
+
+    FADE_H = 18
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._top = _ScrollFade("top", self.viewport())
+        self._bottom = _ScrollFade("bottom", self.viewport())
+        self.verticalScrollBar().valueChanged.connect(self._refresh)
+        self.verticalScrollBar().rangeChanged.connect(self._refresh)
+        self._refresh()
+
+    def set_colour(self, colour: str) -> None:
+        self._top.set_colour(colour)
+        self._bottom.set_colour(colour)
+
+    def resizeEvent(self, event) -> None:       # noqa: N802 (Qt naming)
+        super().resizeEvent(event)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        width = self.viewport().width()
+        self._top.setGeometry(0, 0, width, self.FADE_H)
+        self._bottom.setGeometry(0, self.viewport().height() - self.FADE_H,
+                                 width, self.FADE_H)
+        bar = self.verticalScrollBar()
+        scrollable = bar.maximum() > bar.minimum()
+        self._top.setVisible(scrollable and bar.value() > bar.minimum())
+        self._bottom.setVisible(scrollable and bar.value() < bar.maximum())
+        self._top.raise_()
+        self._bottom.raise_()
 
 
 class SpectrumStripe(QWidget):
@@ -1054,7 +1127,7 @@ class GamutApp(QMainWindow):
         # The column scrolls: its help text is as long as it needs to be, and
         # on a short screen that is taller than the window. Scrolling keeps
         # every control reachable instead of trimming the explanations.
-        controls = QScrollArea(body)
+        controls = FadeScrollArea(body)
         controls.setWidget(self._build_controls())
         controls.setWidgetResizable(True)
         # 330 fitted before each control gained an 18px icon and 6px of spacing
@@ -1347,7 +1420,7 @@ class GamutApp(QMainWindow):
         _r.addWidget(target_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
         orow = QHBoxLayout()
-        orow.addWidget(QLabel("See-through", g_look))
+        orow.addWidget(QLabel("How solid it looks", g_look))
         self._opacity = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         # FULLY OPAQUE BY DEFAULT. Any transparency blends the shape with
         # whatever is behind it -- which darkens colours on a dark background
@@ -2338,6 +2411,9 @@ class GamutApp(QMainWindow):
         # The viewer fill, not the window fill: the page inside it paints
         # itself this colour too (SCENE_COLOURS), so matching them means no
         # seam shows at the edge of the scene while a page is loading.
+        area = self.findChild(FadeScrollArea)
+        if area is not None:
+            area.set_colour(PALETTES[self._appearance]["bg"])
         colour = PALETTES[self._appearance]["plot_bg"]
         self._view.setStyleSheet(f"background: {colour};")
         page = self._view.page()
@@ -2962,7 +3038,7 @@ class GamutApp(QMainWindow):
     def _on_depth_changed(self, value: int) -> None:
         """Change the shading live, without rebuilding the picture.
 
-        The same trick the see-through slider uses: Plotly can restyle a scene
+        The same trick the solidity slider uses: Plotly can restyle a scene
         already on screen, so the shading moves as you drag, the camera stays
         where you put it, and nothing is recomputed.
         """
@@ -2974,7 +3050,7 @@ class GamutApp(QMainWindow):
             fresnel=0.02 + 0.1 * d))
 
     def _on_opacity_changed(self, value: int) -> None:
-        """Change how see-through the shapes are, live, as the slider moves.
+        """Change how solid the shapes look, live, as the slider moves.
 
         Rebuilding the whole page for each step would take long enough that the
         picture only caught up after letting go, which is not what a slider is

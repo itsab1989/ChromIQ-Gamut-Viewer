@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.1
+
+### 🐞 Fixed
+
+- **"See-through: 100%" said the opposite of what it did.** At 100% the shape
+  is fully solid, so the control is called **How solid it looks**.
+- **The settings column fades at its edges** when there is more to scroll to,
+  in both light and dark, so a long column no longer looks as though it stops
+  where the window does.
+
 ## v1.3.0
 
 ### ✨ What's new

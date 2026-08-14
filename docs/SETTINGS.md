@@ -481,3 +481,16 @@ spaced unevenly around the circle mean some stretches of hue are compressed
 and others expanded, whatever shape the curve takes. Perfect smoothness and a
 strong accent character are in tension; this sits deliberately near the smooth
 end while still clearly wearing the accent.
+
+### Two small things that were saying the wrong thing
+
+**"See-through" was named backwards.** The slider set opacity, so 100% meant
+fully solid — while the label invited exactly the opposite reading. It is
+**How solid it looks** now, and the help text was brought in line with it.
+
+**The settings column fades at its edges.** A long column cut off dead
+straight gives no hint that there is more below. Each fade appears only when
+there is something in that direction to scroll to, and is painted in the
+panel's own colour — `#181818` dark, `#eeece8` light — so it dissolves into
+the background rather than sitting on top of it. Ported from ChromIQ's
+`ui/fade_scroll.py`.
