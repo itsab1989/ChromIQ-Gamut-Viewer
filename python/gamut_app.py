@@ -331,8 +331,15 @@ class GamutApp(QMainWindow):
 
         self._view = QWebEngineView(central)
         self._view.setMinimumWidth(560)
+        # A web view paints white until a page has loaded, and again for an
+        # instant on every reload, which reads as a bright frame round a dark
+        # scene and as a flash when anything changes. Both the widget and the
+        # page it shows are told to be the same dark as the rest of the window.
+        self._view.setStyleSheet("background: #111318;")
+        self._view.page().setBackgroundColor(QColor("#111318"))
         frame = QFrame(central)
-        frame.setStyleSheet("border: 1px solid #2a2f3a; border-radius: 8px;")
+        frame.setStyleSheet("border: 1px solid #2a2f3a; border-radius: 8px;"
+                    "background: #111318;")
         fl = QVBoxLayout(frame)
         fl.setContentsMargins(1, 1, 1, 1)
         fl.addWidget(self._view)

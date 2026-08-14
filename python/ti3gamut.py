@@ -224,6 +224,25 @@ def _patch_cloud(lab, name: str):
 _SLICE_COLOURS = ("#e8175d", "#3aa8d0", "#f2c744", "#6bd07a")
 
 
+#: The page's own background. Plotly draws its plot on whatever the page is,
+#: and a plain HTML page is white -- which shows as a bright frame around a
+#: dark scene, and as a white flash every time the view reloads.
+_PAGE_BACKGROUND = "#111318"
+
+
+def _write_dark_html(fig, out: Path) -> Path:
+    """Write the figure as a self-contained page whose paper is dark too."""
+    html = fig.to_html(include_plotlyjs="inline", full_html=True)
+    style = (f"<style>html,body{{background:{_PAGE_BACKGROUND};margin:0;"
+             f"padding:0;overflow:hidden;}}</style>")
+    if "</head>" in html:
+        html = html.replace("</head>", style + "</head>", 1)
+    else:
+        html = style + html
+    Path(out).write_text(html, encoding="utf-8")
+    return Path(out)
+
+
 def write_slice_html(gamuts, out: Path, lightness: float, title: str) -> Path:
     """A flat cross-section through every gamut at one lightness.
 
@@ -269,7 +288,7 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str) -> Path:
         paper_bgcolor="#111318", plot_bgcolor="#15181e", font_color="#e8ecf2",
         legend=dict(orientation="h", y=-0.12),
         margin=dict(l=0, r=0, t=54, b=0))
-    fig.write_html(str(out), include_plotlyjs="inline", full_html=True)
+    _write_dark_html(fig, out)
     return out
 
 
@@ -303,6 +322,12 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
         scene=dict(
             xaxis_title="a*  (chroma →)", yaxis_title="b*", zaxis_title="L*",
             aspectmode=aspect,
+            # START A LITTLE FURTHER BACK. Plotly's default camera frames the
+            # data tightly, which on a wide, flat gamut crops the corners and
+            # opens on a close-up of the middle. Pulling the eye out by a
+            # quarter shows the whole shape at once; anybody who wants a
+            # closer look can still scroll in.
+            camera=dict(eye=dict(x=1.55, y=1.55, z=1.05)),
             xaxis=dict(backgroundcolor="#181a1f", gridcolor="#333"),
             yaxis=dict(backgroundcolor="#181a1f", gridcolor="#333"),
             zaxis=dict(backgroundcolor="#181a1f", gridcolor="#333"),
@@ -312,7 +337,7 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
         margin=dict(l=0, r=0, t=54, b=0),
     )
     # include_plotlyjs="inline" is the whole point: no CDN, no network, ever.
-    fig.write_html(str(out), include_plotlyjs="inline", full_html=True)
+    _write_dark_html(fig, out)
     return out
 
 
