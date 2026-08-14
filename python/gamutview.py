@@ -49,7 +49,7 @@ from typing import Literal
 
 import numpy as np
 
-__all__ = ["Gamut", "build_gamut", "coverage", "mesh_volume", "outside_of", "slice_at", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
+__all__ = ["Gamut", "build_gamut", "coverage", "mesh_volume", "outside_of", "slice_at", "delta_e_2000", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
            "lab_to_lch_cartesian", "WHITE_POINTS"]
 
 Space = Literal["xyz", "lab"]
@@ -346,6 +346,59 @@ def _device_cube_surface(drive_values, pts, xyz):
             "no populated faces of the device cube — drive_values must include "
             "patches at the extremes of each channel (the faces of the RGB cube)")
     return (np.vstack(verts_out), np.vstack(faces_out), np.vstack(xyz_out))
+
+
+def delta_e_2000(lab1, lab2) -> np.ndarray:
+    """CIEDE2000 colour difference between two sets of Lab values.
+
+    The modern standard, and the one worth the arithmetic: CIE76 is a plain
+    distance and badly over-states differences in the blues, which is exactly
+    where a printer drifts. Implemented from the CIE definition rather than
+    approximated -- a drift check is only worth having if the number is one
+    people can act on.
+    """
+    lab1 = np.atleast_2d(np.asarray(lab1, dtype=float))
+    lab2 = np.atleast_2d(np.asarray(lab2, dtype=float))
+    if lab1.shape != lab2.shape:
+        raise ValueError(f"cannot compare {lab1.shape} values with {lab2.shape}")
+
+    l1, a1, b1 = lab1[:, 0], lab1[:, 1], lab1[:, 2]
+    l2, a2, b2 = lab2[:, 0], lab2[:, 1], lab2[:, 2]
+    c1, c2 = np.hypot(a1, b1), np.hypot(a2, b2)
+    c_bar = (c1 + c2) / 2.0
+    g = 0.5 * (1 - np.sqrt(c_bar ** 7 / (c_bar ** 7 + 25.0 ** 7 + 1e-30)))
+    a1p, a2p = (1 + g) * a1, (1 + g) * a2
+    c1p, c2p = np.hypot(a1p, b1), np.hypot(a2p, b2)
+    h1p = np.degrees(np.arctan2(b1, a1p)) % 360.0
+    h2p = np.degrees(np.arctan2(b2, a2p)) % 360.0
+
+    dlp = l2 - l1
+    dcp = c2p - c1p
+    dhp = h2p - h1p
+    dhp = np.where(dhp > 180, dhp - 360, np.where(dhp < -180, dhp + 360, dhp))
+    dhp = np.where(c1p * c2p == 0, 0.0, dhp)
+    dHp = 2 * np.sqrt(c1p * c2p) * np.sin(np.radians(dhp / 2.0))
+
+    lp_bar = (l1 + l2) / 2.0
+    cp_bar = (c1p + c2p) / 2.0
+    hsum = h1p + h2p
+    hdiff = np.abs(h1p - h2p)
+    hp_bar = np.where(c1p * c2p == 0, hsum,
+                      np.where(hdiff <= 180, hsum / 2.0,
+                               np.where(hsum < 360, (hsum + 360) / 2.0,
+                                        (hsum - 360) / 2.0)))
+    t = (1
+         - 0.17 * np.cos(np.radians(hp_bar - 30))
+         + 0.24 * np.cos(np.radians(2 * hp_bar))
+         + 0.32 * np.cos(np.radians(3 * hp_bar + 6))
+         - 0.20 * np.cos(np.radians(4 * hp_bar - 63)))
+    sl = 1 + (0.015 * (lp_bar - 50) ** 2) / np.sqrt(20 + (lp_bar - 50) ** 2)
+    sc = 1 + 0.045 * cp_bar
+    sh = 1 + 0.015 * cp_bar * t
+    rt = (-2 * np.sqrt(cp_bar ** 7 / (cp_bar ** 7 + 25.0 ** 7 + 1e-30))
+          * np.sin(np.radians(60 * np.exp(-(((hp_bar - 275) / 25.0) ** 2)))))
+    return np.sqrt((dlp / sl) ** 2 + (dcp / sc) ** 2 + (dHp / sh) ** 2
+                   + rt * (dcp / sc) * (dHp / sh))
 
 
 def slice_at(gamut, lightness: float, steps: int = 180) -> np.ndarray:

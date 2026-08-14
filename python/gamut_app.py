@@ -21,6 +21,7 @@ wheels on all three.
 """
 from __future__ import annotations
 
+import csv
 import json
 import sys
 
@@ -39,6 +40,8 @@ if __name__ == "__main__" and "--version" in sys.argv:
 import tempfile
 from pathlib import Path
 from pathlib import Path as pathlib_Path
+
+import numpy as np
 
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
@@ -61,7 +64,8 @@ from gamutview import xyz_to_lab
 from references import (REFERENCE_SPACES, gam_gamut, icc_gamut,
                         reference_gamut)
 from spectral import optimal_colour_solid
-from ti3gamut import read_ti3, write_html, write_slice_html
+from ti3gamut import (CONVERTERS, compare_measurements, neutral_axis,
+                      read_measurement, write_html, write_slice_html)
 
 # Dark, close to ChromIQ's own, so the fit is judged on layout rather than on
 # a colour scheme that would never ship.
@@ -963,6 +967,18 @@ class GamutApp(QMainWindow):
             "the pictures you actually print.", g_look)
         lost_hint.setObjectName("hint")
         lv.addWidget(lost_hint)
+        self._neutral = QCheckBox("Show the greys", g_look)
+        self._neutral.stateChanged.connect(self._redraw)
+        lv.addWidget(self._neutral)
+        neutral_hint = WrappedLabel(
+            "Draws a line through the patches where you asked for an equal "
+            "amount of every colour — the greys. What comes back is rarely "
+            "neutral: paper is warm or cool, inks are never perfectly "
+            "balanced, and the drift is usually worst in the shadows. The "
+            "shape of a gamut cannot show this at all, and it is what people "
+            "notice first in a black-and-white print.", g_look)
+        neutral_hint.setObjectName("hint")
+        lv.addWidget(neutral_hint)
         self._points = QCheckBox("Show every patch I measured", g_look)
         self._points.stateChanged.connect(self._redraw)
         lv.addWidget(self._points)
@@ -981,6 +997,31 @@ class GamutApp(QMainWindow):
         self._volume_hint.setObjectName("hint"); _wrapped(self._volume_hint)
         vv.addWidget(self._volume_hint)
         v.addWidget(g_vol)
+
+        # Only meaningful with two readings of one chart, so it stays out of
+        # the way until there are two charts open.
+        self._drift_box = QGroupBox("Has anything changed?", col)
+        dv = QVBoxLayout(self._drift_box)
+        self._drift = WrappedLabel("", self._drift_box)
+        dv.addWidget(self._drift)
+        self._drift_worst = WrappedLabel("", self._drift_box)
+        self._drift_worst.setObjectName("hint")
+        dv.addWidget(self._drift_worst)
+        drift_hint = WrappedLabel(
+            "When both charts are two readings of the SAME chart — the same "
+            "paper measured on two days, or before and after a nozzle clean — "
+            "this compares them patch by patch. The gamut above answers how "
+            "much colour there is; this answers whether anything has moved, "
+            "which a shape cannot show, because two gamuts can be the same "
+            "size and hold different colours.\n\n"
+            "The numbers are ΔE2000. Below 1 nobody can see it. Around 2 a "
+            "careful eye finds it on a smooth gradient. Above 3 it is plain, "
+            "and worth investigating before you print anything that matters.",
+            self._drift_box)
+        drift_hint.setObjectName("hint")
+        dv.addWidget(drift_hint)
+        self._drift_box.setVisible(False)
+        v.addWidget(self._drift_box)
 
         v.addStretch(1)
 
@@ -1039,6 +1080,11 @@ class GamutApp(QMainWindow):
         self._reset_btn.setObjectName("secondary")
         self._reset_btn.clicked.connect(self._reset_defaults)
         v.addWidget(self._reset_btn)
+        self._export_btn = QPushButton("Save the numbers as a table…", col)
+        self._export_btn.setObjectName("secondary")
+        self._export_btn.clicked.connect(self._on_export)
+        self._export_btn.setEnabled(False)
+        v.addWidget(self._export_btn)
         self._glossary_btn = QPushButton("What do these words mean?", col)
         self._glossary_btn.setObjectName("secondary")
         self._glossary_btn.clicked.connect(self._on_glossary)
@@ -1047,6 +1093,7 @@ class GamutApp(QMainWindow):
         self._save.setObjectName("secondary")
         self._save.clicked.connect(self._on_save)
         self._save.setEnabled(False)
+        self._export_btn.setEnabled(False)
         v.addWidget(self._save)
         return col
 
@@ -1080,6 +1127,7 @@ class GamutApp(QMainWindow):
             ("manual_light", self._manual_light, "check", False),
             ("mesh_colour", self._mesh_colour, "check", False),
             ("rings_on", self._rings_on, "check", False),
+            ("neutral", self._neutral, "check", False),
             ("rings", self._rings, "slider", 6),
             ("aspect", self._aspect, "combo", "data"),
             ("white", self._white, "combo", "D50"),
@@ -1275,6 +1323,82 @@ class GamutApp(QMainWindow):
         if not self._slots:
             self._show_placeholder()
 
+    def _on_export(self) -> None:
+        """Write what is on screen as a table, for a report or a spreadsheet.
+
+        A picture is convincing and a number is quotable. This writes both
+        halves of what the window says — the volumes, the coverage in each
+        direction, the grey drift, and the drift between two readings — as
+        comma-separated text that opens in any spreadsheet.
+        """
+        if not self._slots:
+            return
+        default = self._slots[0][0].with_name(
+            self._slots[0][0].stem + "-gamut.csv")
+        dlg = self._file_dialog("Save the numbers as a table",
+                                QFileDialog.FileMode.AnyFile,
+                                "Comma-separated values (*.csv)", str(default))
+        dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dlg.setDefaultSuffix("csv")
+        _style_dialog_toolbar(dlg, PALETTES[self._appearance]["arrow"])
+        if not dlg.exec():
+            return
+        target = Path(dlg.selectedFiles()[0])
+        rows = [("what", "value", "units or note")]
+        ref = "the paper's own white" if self._relative.isChecked() else (
+            f"{self._white.currentData()} absolute")
+        rows.append(("measured against", ref, ""))
+        for path, g, m in self._slots:
+            rows.append((f"{path.stem}: patches", m.n_patches, m.instrument))
+            rows.append((f"{path.stem}: colour held", f"{g.volume:.0f}",
+                         "cubic Lab units"))
+            lab, _labels = neutral_axis(m)
+            if len(lab):
+                cast = float(np.hypot(lab[:, 1], lab[:, 2]).max())
+                rows.append((f"{path.stem}: greys", len(lab),
+                             f"worst colour cast {cast:.1f}"))
+        if self._reference is not None:
+            name, g = self._reference
+            rows.append((f"{name}: colour held", f"{g.volume:.0f}",
+                         "cubic Lab units"))
+        pair = None
+        if self._reference is not None and self._slots:
+            pair = ((self._slots[0][0].stem, self._slots[0][1]),
+                    self._reference)
+        elif len(self._slots) == 2:
+            pair = ((self._slots[0][0].stem, self._slots[0][1]),
+                    (self._slots[1][0].stem, self._slots[1][1]))
+        if pair is not None:
+            (an, a), (bn, b) = pair
+            try:
+                ab, ab_err = coverage(a.vertices, b.vertices)
+                ba, ba_err = coverage(b.vertices, a.vertices)
+                rows.append((f"{an} inside {bn}", f"{100 * ab:.1f}",
+                             f"per cent, +/- {100 * ab_err:.1f}"))
+                rows.append((f"{bn} inside {an}", f"{100 * ba:.1f}",
+                             f"per cent, +/- {100 * ba_err:.1f}"))
+            except Exception:      # noqa: BLE001 — a table must still be written
+                pass
+        if len(self._slots) == 2:
+            try:
+                d = compare_measurements(self._slots[0][2], self._slots[1][2])
+                rows.append(("patches in both readings", d.matched, ""))
+                rows.append(("biggest difference", f"{d.worst:.2f}", "dE2000"))
+                rows.append(("average difference", f"{d.average:.2f}", "dE2000"))
+                rows.append(("patches above 1", d.over_one, "dE2000"))
+            except ValueError:
+                pass               # not two readings of one chart; say nothing
+        try:
+            with open(target, "w", newline="", encoding="utf-8") as handle:
+                csv.writer(handle).writerows(rows)
+        except OSError as exc:
+            QMessageBox.warning(self, "That could not be saved", str(exc))
+            return
+        QMessageBox.information(
+            self, "Saved",
+            f"Written to\n{target}\n\nIt opens in any spreadsheet, and every "
+            "row says what it is and what the units are.")
+
     def _on_glossary(self) -> None:
         """Explain every word this window uses, in plain language.
 
@@ -1382,9 +1506,10 @@ class GamutApp(QMainWindow):
         dlg = self._file_dialog(
             "Open a measured chart or a profile",
             QFileDialog.FileMode.ExistingFiles,
-            "Charts, profiles and gamut files "
-            "(*.ti3 *.icc *.icm *.gam);;"
-            "Measured charts (*.ti3);;ICC profiles (*.icc *.icm);;"
+            "Everything this can open "
+            "(*.ti3 *.cxf *.mxf *.txt *.icc *.icm *.gam);;"
+            "Measured charts (*.ti3 *.cxf *.mxf *.txt);;"
+            "ICC profiles (*.icc *.icm);;"
             "ArgyllCMS gamut files (*.gam);;All files (*)")
         if dlg.exec():
             for chosen in dlg.selectedFiles():
@@ -1465,6 +1590,7 @@ class GamutApp(QMainWindow):
         self._warn_if_too_few_patches(path, m)
         self._refresh_slot_labels()
         self._save.setEnabled(True)
+        self._export_btn.setEnabled(True)
         self._redraw()
 
     def _load_profile_as_comparison(self, path: Path) -> None:
@@ -1489,7 +1615,8 @@ class GamutApp(QMainWindow):
         self._redraw()
 
     def _build_one(self, path: Path):
-        m = read_ti3(path, self._white.currentData(), self._relative.isChecked())
+        m = read_measurement(path, self._white.currentData(),
+                             self._relative.isChecked())
         drive = None if self._mode.currentData() == "hull" else m.device
         g = build_gamut(m.lab, drive, input_space="lab",
                         white_point=self._white.currentData())
@@ -1712,6 +1839,7 @@ class GamutApp(QMainWindow):
             self._view.setUrl(QUrl.fromLocalFile(str(out)))
             self._update_volume()
             self._update_coverage()
+            self._update_drift()
             return
         write_html(gamuts, out, self._scene_title(),
                    patches=clouds, styles=styles, lost=lost,
@@ -1719,6 +1847,7 @@ class GamutApp(QMainWindow):
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
         self._update_volume()
         self._update_coverage()
+        self._update_drift()
 
     #: The controls that can belong to one shape rather than all of them, as
     #: key → (widget, how to read it). Anything not here is window-wide by
@@ -1776,6 +1905,18 @@ class GamutApp(QMainWindow):
             widget.blockSignals(False)
         self._sync_slider_labels()
 
+    def _neutral_list(self) -> list:
+        """The measurement behind each shape, or None for a reference.
+
+        Only a measured chart has greys to draw: a standard colour space or a
+        profile has a perfect neutral axis by construction, so drawing one
+        would say nothing.
+        """
+        out = [m for _p, _g, m in self._slots]
+        if self._reference is not None:
+            out.append(None)
+        return out
+
     def _per_shape_list(self) -> list:
         """Per-shape overrides in the order the shapes are drawn."""
         out = [dict(self._per_shape[i]) for i in range(len(self._slots))]
@@ -1803,6 +1944,8 @@ class GamutApp(QMainWindow):
             mesh_paint=self._shared["mesh_paint"],
             rings=self._shared["rings"],
             per_shape=self._per_shape_list(),
+            neutrals=(self._neutral_list() if self._neutral.isChecked()
+                      else None),
         )
 
     def _scene_contents(self):
@@ -1883,6 +2026,40 @@ class GamutApp(QMainWindow):
             f"{100 * ba:.1f}% of {b_name} fits inside {a_name}.\n"
             "The two numbers differ because fitting inside is not the same "
             "question in both directions.")
+
+    def _update_drift(self) -> None:
+        """Compare two readings of one chart, when that is what is open."""
+        if len(self._slots) != 2:
+            self._drift_box.setVisible(False)
+            return
+        self._drift_box.setVisible(True)
+        (_pa, _ga, before), (_pb, _gb, after) = self._slots
+        try:
+            d = compare_measurements(before, after)
+        except ValueError as exc:
+            self._drift.setText(str(exc))
+            self._drift_worst.setText("")
+            return
+        matched = ("1 patch" if d.matched == 1 else f"{d.matched} patches")
+        verdict = ("Nothing anybody could see." if d.worst < 1.0
+                   else "Visible on a careful look." if d.worst < 3.0
+                   else "Plainly visible — worth looking into.")
+        self._drift.setText(
+            f"{matched} appear in both readings.\n"
+            f"Biggest difference ΔE {d.worst:.2f}, average {d.average:.2f}.\n"
+            f"{verdict}")
+        lines = [f"    {label} — ΔE {de:.2f}"
+                 for label, de, _a, _b in d.worst_patches[:4]]
+        above = []
+        if d.over_three:
+            above.append(f"{d.over_three} above 3")
+        if d.over_one:
+            above.append(f"{d.over_one} above 1")
+        summary = (", ".join(above) if above
+                   else "no patch differs by more than 1")
+        self._drift_worst.setText(
+            f"Of those, {summary}. The ones that moved most:\n"
+            + "\n".join(lines))
 
     def _update_volume(self) -> None:
         if len(self._slots) == 1:

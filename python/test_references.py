@@ -74,3 +74,63 @@ def test_a_file_that_is_not_a_profile_says_so(tmp_path):
         icc_gamut(bad)
     if _find_iccgamut() is None:
         pytest.skip("ArgyllCMS is not installed, so only the refusal is checked")
+
+
+def test_two_readings_of_one_chart_are_compared_patch_by_patch(tmp_path):
+    """The drift check, on files built here so the test needs no measurement."""
+    import numpy as np
+
+    from ti3gamut import Measurement, compare_measurements
+
+    rng = np.random.default_rng(11)
+    device = np.column_stack([rng.uniform(0, 1, 60) for _ in range(3)])
+    lab = np.column_stack([rng.uniform(10, 90, 60), rng.uniform(-40, 40, 60),
+                           rng.uniform(-40, 40, 60)])
+    before = Measurement("a", device, lab, "test", 60)
+    # A small, believable drift: the second reading is very slightly lighter.
+    after = Measurement("b", device, lab + np.array([0.4, 0.0, 0.0]), "test", 60)
+    d = compare_measurements(before, after)
+    assert d.matched == 60
+    assert 0.2 < d.worst < 1.0            # small but real
+    assert d.over_three == 0
+    assert len(d.worst_patches) == 8
+
+
+def test_two_different_charts_are_refused_rather_than_guessed():
+    """A confident number describing nothing is worse than a refusal."""
+    import numpy as np
+
+    from ti3gamut import Measurement, compare_measurements
+
+    rng = np.random.default_rng(3)
+    a = Measurement("a", rng.uniform(0, 1, (40, 3)),
+                    rng.uniform(0, 60, (40, 3)), "t", 40)
+    b = Measurement("b", rng.uniform(0, 1, (40, 3)),
+                    rng.uniform(0, 60, (40, 3)), "t", 40)
+    with pytest.raises(ValueError, match="not two readings of the same chart|too few"):
+        compare_measurements(a, b)
+
+
+def test_the_greys_are_found_and_sorted_dark_to_light():
+    import numpy as np
+
+    from ti3gamut import Measurement, neutral_axis
+
+    device = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5], [1.0, 1.0, 1.0],
+                       [1.0, 0.0, 0.0]])          # the last one is not a grey
+    lab = np.array([[5.0, 1.0, -2.0], [52.0, 0.5, 1.0], [95.0, -0.2, 2.0],
+                    [50.0, 70.0, 50.0]])
+    lab_out, labels = neutral_axis(Measurement("x", device, lab, "t", 4))
+    assert len(lab_out) == 3                       # the red is left out
+    assert list(lab_out[:, 0]) == sorted(lab_out[:, 0])
+    assert labels == ["0% grey", "50% grey", "100% grey"]
+
+
+def test_a_chart_without_device_values_has_no_greys_to_show():
+    import numpy as np
+
+    from ti3gamut import Measurement, neutral_axis
+
+    lab_out, labels = neutral_axis(
+        Measurement("x", None, np.zeros((5, 3)), "t", 5))
+    assert len(lab_out) == 0 and labels == []

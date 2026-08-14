@@ -27,9 +27,17 @@ would find out until they restarted.
 | | |
 |---|---|
 | **Control** | "Open a measured chart…", drag-and-drop, or a path on the command line |
-| **Accepts** | `.ti3` (a measured chart), `.icc` / `.icm` (a profile) |
+| **Accepts** | `.ti3`, `.cxf`, `.mxf`, `.txt` (measured charts), `.icc` / `.icm` (profiles), `.gam` (ArgyllCMS gamut surfaces) |
 | **Produces** | `Measurement(name, device, lab, instrument, n_patches)` |
-| **Where it goes** | `ti3gamut.read_ti3()` → `gamutview.build_gamut()` |
+| **Where it goes** | `ti3gamut.read_measurement()` → `gamutview.build_gamut()` |
+
+Files that are not `.ti3` are converted by the matching ArgyllCMS tool
+(`cxf2ti3`, `txt2ti3`) rather than parsed here — these formats have corners and
+ArgyllCMS already handles them, which is the same choice ChromIQ makes in
+`workflow/reference_convert.py`. The converted copy goes to a temporary folder,
+never beside the original: nobody's measurement folder should gain files
+because they opened something to look at it. A `.gam` needs no tool at all — it
+already holds the finished surface.
 
 A profile is not a measurement, so it is routed to the comparison slot instead
 of the chart slots. Two charts is the limit on purpose: a third would need a
@@ -133,6 +141,10 @@ that can contradict it.
 | Detail | 6–40 steps | 20 | redraw |
 | Draw each shape as | `"solid"`, `"solid+mesh"`, `"mesh"` | chart solid, others outline | redraw |
 | Show every patch I measured | on / off | off | redraw |
+| Show the greys | on / off | off | redraw |
+| Show rings inside | on / off, 1–20 | off, 6 | redraw |
+| Colour the outlines too | on / off | off | redraw |
+| Set this for | all shapes / first / second / comparison | all | — |
 | Show what the comparison cannot print | on / off | off | redraw |
 | Slice it at one lightness | on / off, plus L\* 0–100 | off, 50 | redraw |
 
@@ -172,6 +184,20 @@ Notes worth carrying over:
 |---|---|---|
 | How much colour it holds | `Gamut.volume` | cubic Lab units, as ArgyllCMS reports |
 | Coverage, both directions | `gamutview.coverage()` | per cent, ±0.2 |
+| Has anything changed? | `ti3gamut.compare_measurements()` | ΔE2000 |
+| Worst colour cast in the greys | `ti3gamut.neutral_axis()` | ΔE-ish chroma |
+
+**The drift check refuses rather than guesses.** Patches are matched on the
+device values, not the sample number, because charts are randomised and the
+same colour rarely carries the same number twice. When fewer than half the
+patches appear in both files it says these are not two readings of one chart,
+because a confident figure describing nothing is worse than no figure.
+
+**ΔE is CIEDE2000**, verified against the Sharma, Wu and Dalal (2005) reference
+pairs — the set published specifically to catch the hue-wrap and blue-rotation
+mistakes every implementation makes. Worst error 0.00004. CIE76 was not used:
+it badly over-states differences in the blues, which is exactly where a printer
+drifts.
 
 **Coverage is never shown as one number.** It is not symmetric: a paper can
 hold nearly all of what a smaller one shows while the smaller holds only part

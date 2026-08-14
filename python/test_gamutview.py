@@ -207,3 +207,38 @@ def test_orientation_is_fixed_here_not_assumed_of_the_caller():
         g.vertices[g.faces[:, 0]],
         np.cross(g.vertices[g.faces[:, 1]], g.vertices[g.faces[:, 2]])).sum()) / 6)
     assert mesh_volume(g.vertices, g.faces) > naive * 1.5
+
+
+def test_ciede2000_against_the_published_reference_pairs():
+    """Sharma, Wu and Dalal (2005) published a set of pairs specifically to
+    catch the mistakes every CIEDE2000 implementation makes — the hue-angle
+    wrap, the rotation term near blue. Checked against those rather than
+    against itself."""
+    from gamutview import delta_e_2000
+    cases = [
+        ((50.0, 2.6772, -79.7751), (50.0, 0.0, -82.7485), 2.0425),
+        ((50.0, 3.1571, -77.2803), (50.0, 0.0, -82.7485), 2.8615),
+        ((50.0, -1.3802, -84.2814), (50.0, 0.0, -82.7485), 1.0000),
+        ((50.0, 0.0, 0.0), (50.0, -1.0, 2.0), 2.3669),
+        ((50.0, 2.49, -0.001), (50.0, -2.49, 0.0009), 7.1792),
+        ((60.2574, -34.0099, 36.2677), (60.4626, -34.1751, 39.4387), 1.2644),
+        ((22.7233, 20.0904, -46.694), (23.0331, 14.973, -42.5619), 2.0373),
+        ((2.0776, 0.0795, -1.135), (0.9033, -0.0636, -0.5514), 0.9082),
+    ]
+    got = delta_e_2000([c[0] for c in cases], [c[1] for c in cases])
+    want = np.array([c[2] for c in cases])
+    assert np.abs(got - want).max() < 1e-4
+
+
+def test_a_colour_does_not_differ_from_itself():
+    from gamutview import delta_e_2000
+    rng = np.random.default_rng(5)
+    lab = np.column_stack([rng.uniform(0, 100, 200), rng.uniform(-100, 100, 200),
+                           rng.uniform(-100, 100, 200)])
+    assert delta_e_2000(lab, lab).max() < 1e-9
+
+
+def test_delta_e_refuses_mismatched_sets():
+    from gamutview import delta_e_2000
+    with pytest.raises(ValueError, match="cannot compare"):
+        delta_e_2000(np.zeros((3, 3)), np.zeros((4, 3)))

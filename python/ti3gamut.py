@@ -69,6 +69,80 @@ class Measurement:
     n_patches: int
 
 
+#: Measurement files that are not .ti3, and the ArgyllCMS tool that turns each
+#: into one. Converting rather than parsing is deliberate: these formats have
+#: corners (spectral tables, several colour specifications in one file, vendor
+#: extensions) and ArgyllCMS already handles them correctly. ChromIQ takes the
+#: same approach in workflow/reference_convert.py.
+CONVERTERS = {
+    ".cxf": "cxf2ti3",
+    ".txt": "txt2ti3",
+    ".mxf": "cxf2ti3",     # X-Rite's measurement flavour of the same XML
+}
+
+
+def _find_tool(name: str) -> "str | None":
+    """Where ArgyllCMS keeps *name*, if it is installed."""
+    import shutil
+
+    found = shutil.which(name)
+    if found:
+        return found
+    for folder in ("/Applications/Argyll/bin", "/usr/local/bin",
+                   "/opt/homebrew/bin", r"C:\\Argyll\\bin"):
+        guess = Path(folder) / name
+        for candidate in (guess, guess.with_suffix(".exe")):
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
+def convert_to_ti3(path: Path) -> Path:
+    """Turn a measurement file ArgyllCMS understands into a ``.ti3``.
+
+    The converted copy is written to a temporary folder, never beside the
+    original: somebody's measurement folder should not gain files because they
+    opened something to look at it.
+    """
+    import subprocess
+    import tempfile
+
+    tool_name = CONVERTERS[path.suffix.lower()]
+    tool = _find_tool(tool_name)
+    if tool is None:
+        raise ValueError(
+            f"Reading a {path.suffix} file needs ArgyllCMS's {tool_name}, "
+            "which does not appear to be installed. It is the same free "
+            "toolkit that measures charts in the first place.")
+    out_dir = Path(tempfile.mkdtemp(prefix="gamut-convert-"))
+    stem = out_dir / path.stem
+    try:
+        done = subprocess.run([tool, str(path), str(stem)],
+                              capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError(f"{path.name} took too long to convert") from exc
+    produced = stem.with_suffix(".ti3")
+    if not produced.is_file():
+        detail = (done.stderr or done.stdout or "").strip().splitlines()
+        why = detail[-1] if detail else f"exit code {done.returncode}"
+        raise ValueError(f"{path.name} could not be converted: {why}")
+    return produced
+
+
+def read_measurement(path, white_point: str = "D50",
+                     relative: bool = False) -> "Measurement":
+    """Read any measurement file this understands, converting when it must."""
+    path = Path(path)
+    if path.suffix.lower() in CONVERTERS:
+        converted = convert_to_ti3(path)
+        measured = read_ti3(converted, white_point, relative)
+        # Keep the name the user knows it by, not the temporary copy's.
+        return Measurement(name=path.stem, device=measured.device,
+                           lab=measured.lab, instrument=measured.instrument,
+                           n_patches=measured.n_patches)
+    return read_ti3(path, white_point, relative)
+
+
 def read_ti3(path: Path, white_point: str = "D50",
              relative: bool = False) -> Measurement:
     """Parse an ArgyllCMS ``.ti3`` (CGATS) into device values and Lab.
@@ -140,6 +214,53 @@ def read_ti3(path: Path, white_point: str = "D50",
 
     return Measurement(name=path.stem, device=device, lab=lab,
                        instrument=instrument, n_patches=len(rows))
+
+
+def neutral_axis(measurement, tolerance: float = 0.02):
+    """The greys of a measured chart: what the paper did with equal amounts.
+
+    Every patch whose device values are equal — 10/10/10, 50/50/50 and so on —
+    asked the printer for a neutral grey. What came back rarely is one: paper
+    is warm or cool, inks are not perfectly balanced, and the drift is usually
+    worst in the shadows. A gamut cannot show this at all; the grey axis is a
+    thin line through the middle of a solid, and it is what people actually
+    notice in a black-and-white print.
+
+    Returns (lab, labels) sorted from black to white, or empty when the chart
+    has no equal-value patches — some do not.
+    """
+    if measurement.device is None:
+        return np.empty((0, 3)), []
+    dev = measurement.device
+    spread = dev.max(axis=1) - dev.min(axis=1)
+    picked = np.nonzero(spread <= tolerance)[0]
+    if not len(picked):
+        return np.empty((0, 3)), []
+    lab = measurement.lab[picked]
+    order = np.argsort(lab[:, 0])
+    lab = lab[order]
+    labels = [f"{dev[picked[i]].mean() * 100:.0f}% grey" for i in order]
+    return lab, labels
+
+
+def _neutral_trace(measurement, name: str, colour: str):
+    """The grey axis as a line through the solid, with its patches marked."""
+    import plotly.graph_objects as go
+
+    from gamutview import lab_to_lch_cartesian
+
+    lab, labels = neutral_axis(measurement)
+    if len(lab) < 2:
+        return []
+    pts = lab_to_lch_cartesian(lab)
+    return [go.Scatter3d(
+        x=pts[:, 0], y=pts[:, 1], z=pts[:, 2], mode="lines+markers",
+        line=dict(color=colour, width=5),
+        marker=dict(size=3.5, color=colour),
+        name=f"{name} — greys", showlegend=True,
+        text=[f"{lbl}: a* {p[1]:+.1f}, b* {p[2]:+.1f}"
+              for lbl, p in zip(labels, lab)],
+        hoverinfo="text")]
 
 
 def _rings(gamut, name: str, count: int, colour: str, width: float = 1.5):
@@ -326,6 +447,79 @@ def _lighting(depth: float) -> dict:
                 fresnel=0.02 + 0.1 * d)
 
 
+@dataclass(frozen=True)
+class Drift:
+    """How far two measurements of the same chart have moved apart."""
+    matched: int          # patches found in both
+    total_a: int
+    total_b: int
+    worst: float          # the largest single difference
+    average: float
+    rms: float
+    over_one: int         # patches a careful eye would notice
+    over_three: int       # patches anybody would notice
+    worst_patches: list   # [(label, dE, lab_before, lab_after)], worst first
+
+
+def compare_measurements(before, after, *, top: int = 8) -> Drift:
+    """Patch-by-patch difference between two measurements of the same chart.
+
+    This is the drift check: the same paper and printer measured on two days,
+    or before and after a nozzle clean, or two sheets from the same run. The
+    gamut view answers "how much colour is there"; this answers "has anything
+    moved", which a gamut cannot show — a shape can be identical in size and
+    quite different in content.
+
+    Patches are matched on the DEVICE values, not on the sample number,
+    because charts are usually randomised and the same colour rarely carries
+    the same number twice. It refuses rather than guesses when too little
+    matches: two different charts would otherwise produce a confident figure
+    describing nothing.
+    """
+    from gamutview import delta_e_2000
+
+    if before.device is None or after.device is None:
+        raise ValueError(
+            "Both measurements need the device values that were asked for, "
+            "and at least one of these files does not carry them. Without "
+            "them there is no way to tell which patch corresponds to which.")
+
+    def index(m):
+        out = {}
+        for i, dev in enumerate(np.round(m.device, 5)):
+            out.setdefault(tuple(dev), i)      # first wins, as read
+        return out
+
+    ia, ib = index(before), index(after)
+    shared = [k for k in ia if k in ib]
+    if not shared:
+        raise ValueError(
+            "These two measurements have no patches in common, so they are "
+            "not two readings of the same chart. Comparing them patch by "
+            "patch would produce a number that describes nothing.")
+    smaller = min(len(ia), len(ib))
+    if len(shared) < 0.5 * smaller:
+        raise ValueError(
+            f"Only {len(shared)} of {smaller} patches appear in both files, "
+            "which is too few to call these the same chart. Patch-by-patch "
+            "comparison needs two readings of one chart; for two different "
+            "charts, compare the gamuts instead.")
+
+    lab_a = np.array([before.lab[ia[k]] for k in shared])
+    lab_b = np.array([after.lab[ib[k]] for k in shared])
+    de = delta_e_2000(lab_a, lab_b)
+    order = np.argsort(de)[::-1][:top]
+    worst = [(f"R{k[0]*100:.0f} G{k[1]*100:.0f} B{k[2]*100:.0f}",
+              float(de[i]), lab_a[i].tolist(), lab_b[i].tolist())
+             for i, k in ((int(j), shared[int(j)]) for j in order)]
+    return Drift(matched=len(shared), total_a=before.n_patches,
+                 total_b=after.n_patches, worst=float(de.max()),
+                 average=float(de.mean()),
+                 rms=float(np.sqrt((de ** 2).mean())),
+                 over_one=int((de > 1.0).sum()),
+                 over_three=int((de > 3.0).sum()), worst_patches=worst)
+
+
 def _mesh(gamut, name: str, opacity: float, wireframe: bool,
           paint: str = "true", index: int = 0, depth: float = 0.35):
     """One Plotly mesh for a gamut, painted the way the user asked."""
@@ -451,7 +645,7 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
                aspect: str = "data", styles=None, lost=None,
                mode: str = "dark", paint: str = "true",
                depth: float = 0.35, mesh_paint: str = "plain",
-               rings: int = 0, per_shape=None) -> Path:
+               rings: int = 0, per_shape=None, neutrals=None) -> Path:
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -491,6 +685,9 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
                 fig.add_trace(trace)
         if rings_i:
             for trace in _rings(g, name, rings_i, c["wire"]):
+                fig.add_trace(trace)
+        if neutrals is not None and i < len(neutrals) and neutrals[i] is not None:
+            for trace in _neutral_trace(neutrals[i], name, "#ff6b6b"):
                 fig.add_trace(trace)
         if points and patches is not None and i < len(patches):
             fig.add_trace(_patch_cloud(patches[i], name))
