@@ -190,18 +190,25 @@ def test_saving_is_not_offered_folders_it_cannot_write_to():
     offering them is offering three shortcuts to a refusal. They are for
     opening a profile, which is the only thing anybody does in them."""
     import gamut_app
-    opening = {u.toLocalFile() for u in gamut_app._sidebar_urls("", profiles=True)}
-    saving = {u.toLocalFile() for u in gamut_app._sidebar_urls("", profiles=False)}
+    # COMPARED AS PATHS, NOT STRINGS. A URL hands back forward slashes on
+    # every system while Windows writes its paths with backslashes, so a plain
+    # string comparison quietly matches nothing there and the check passes by
+    # accident -- which is how this first went out failing only on Windows.
+    from pathlib import Path
+    opening = {Path(u.toLocalFile()) for u in
+               gamut_app._sidebar_urls("", profiles=True)}
+    saving = {Path(u.toLocalFile()) for u in
+              gamut_app._sidebar_urls("", profiles=False)}
     assert saving <= opening
     for folder in gamut_app.PROFILE_FOLDERS:
-        assert str(folder) not in saving
+        assert Path(folder) not in saving
     # NOT "the list is non-empty": a machine with no desktop and no Pictures
     # folder -- a build runner, for one -- legitimately has none of these, and
     # the application drops what does not exist rather than offering a dead
     # entry. What must hold is that saving never loses an ordinary folder that
     # opening offers.
     ordinary = {u for u in opening
-                if not any(str(f) == u for f in gamut_app.PROFILE_FOLDERS)}
+                if not any(Path(f) == u for f in gamut_app.PROFILE_FOLDERS)}
     assert saving == ordinary
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.9.6
+
+### 🐞 Fixed
+
+- A test compared folders as text. A URL gives forward slashes everywhere
+  while Windows writes backslashes, so the comparison matched nothing there —
+  failing on Windows alone.
+
 ## v1.9.5
 
 ### 🐞 Fixed
