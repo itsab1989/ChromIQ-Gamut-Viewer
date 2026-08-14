@@ -696,12 +696,20 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
         scene=dict(
             xaxis_title="a*  (chroma →)", yaxis_title="b*", zaxis_title="L*",
             aspectmode=aspect,
-            # START A LITTLE FURTHER BACK. Plotly's default camera frames the
-            # data tightly, which on a wide, flat gamut crops the corners and
-            # opens on a close-up of the middle. Pulling the eye out by a
-            # quarter shows the whole shape at once; anybody who wants a
-            # closer look can still scroll in.
-            camera=dict(eye=dict(x=1.55, y=1.55, z=1.05)),
+            # START A LITTLE FURTHER BACK, AND ABOVE. Plotly's default camera
+            # frames the data tightly, which on a wide, flat gamut crops the
+            # corners and opens on a close-up of the middle. Pulling the eye
+            # out shows the whole shape at once; anybody who wants a closer
+            # look can still scroll in.
+            #
+            # The height matters as much as the distance. A printer gamut is
+            # about twice as wide in a*/b* as it is tall in L*, so a low eye
+            # looks at it nearly edge-on and it reads as a flat sheet — the
+            # lightness axis, which is half of what there is to see, collapses.
+            # Keeping the eye above the default's 35 degrees rather than below
+            # it shows the shape as a solid. Distance and elevation have to be
+            # raised together; scaling x and y alone flattens the view.
+            camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
             xaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"]),
             yaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"]),
             zaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"]),

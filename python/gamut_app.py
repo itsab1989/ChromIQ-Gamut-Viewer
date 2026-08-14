@@ -1992,9 +1992,17 @@ class GamutApp(QMainWindow):
         return gamuts, clouds, styles, lost
 
     def _scene_title(self) -> str:
+        """What the picture shows, and what its numbers are measured from.
+
+        Deliberately not the word "against": the Compare-with panel already
+        uses that for the shape being compared to, and a title reading
+        "against D50" beside a panel reading "Compare with sRGB" invites the
+        reader to think D50 is the comparison. This says where zero is
+        instead, which is what the white point actually decides.
+        """
         ref = ("the paper's own white" if self._relative.isChecked()
-               else f"{self._white.currentData()} absolute")
-        return f"Measured gamut — against {ref}"
+               else f"a {self._white.currentData()} white")
+        return f"Measured gamut — lightness and colour measured from {ref}"
 
     def _update_coverage(self) -> None:
         """Both directions, always — one number would hide the difference.
