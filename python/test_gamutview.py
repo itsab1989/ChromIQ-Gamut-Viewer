@@ -469,9 +469,30 @@ class _FakeApp:
                      "_style_second", "_style_other"):
             setattr(self, name, None)
         self._light_sliders = {k: (None,) for k, *_ in gamut_app.LIGHT_CONTROLS}
+        # The movement controls are read, not just listed, so these answer.
+        self._spin_on = _Value(False)
+        self._grid_on = _Value(True)
+        self._turn_mode, self._turn_speed, self._turn_sweep = (
+            _Value("swing"), _Value(8), _Value(60))
+        self._tilt_mode, self._tilt_speed, self._tilt_sweep = (
+            _Value("off"), _Value(6), _Value(40))
 
     def findChildren(self, _cls):
         return []
+
+    def __getattr__(self, name):
+        """Anything not stubbed above falls through to the window's own method,
+        bound to this stand-in.
+
+        So these tests run the REAL code against stub controls rather than a
+        re-description of it -- a test that re-implements what it is checking
+        passes whatever the window does.
+        """
+        import gamut_app
+        method = getattr(gamut_app.GamutApp, name, None)
+        if callable(method):
+            return method.__get__(self, type(self))
+        raise AttributeError(name)
 
 
 def test_a_room_of_its_own_is_always_drawn_solid(monkeypatch):
@@ -505,6 +526,301 @@ class _Checked:
 
     def isChecked(self):
         return self._value
+
+
+class _Value:
+    """One stand-in for a check box, a combo and a slider: the three ways the
+    window asks a control what it holds."""
+    def __init__(self, value):
+        self._value = value
+
+    def isChecked(self):
+        return bool(self._value)
+
+    def currentData(self):
+        return self._value
+
+    def value(self):
+        return self._value
+
+    def setVisible(self, on):
+        self.shown = on
+
+
+# --- turning by itself ------------------------------------------------------
+
+def test_turning_is_off_until_it_is_asked_for():
+    """A picture that starts moving on its own is startling, and drifting
+    motion is genuinely unpleasant for some people. Nothing moves unasked --
+    and up-and-down stays off even then, because one direction of movement at
+    a time is usually plenty."""
+    import gamut_app
+    defaults = {key: default for key, _w, _k, default in
+                gamut_app.GamutApp._persisted(_FakeApp())}
+    assert defaults["spin_on"] is False
+    assert defaults["grid_on"] is True        # the scale is on until it is not
+    assert defaults["turn_mode"] == "swing"   # the mode that shows you something
+    assert defaults["tilt_mode"] == "off"
+
+
+def test_every_movement_setting_is_saved_and_reset():
+    """_persisted() is the one table Save and Reset both read. A control left
+    out of it silently keeps its value through a reset, which has happened
+    before and is invisible until somebody tries it."""
+    import gamut_app
+    keys = {key for key, _w, _k, _d in
+            gamut_app.GamutApp._persisted(_FakeApp())}
+    assert {"spin_on",
+            "turn_mode", "turn_speed", "turn_sweep",
+            "tilt_mode", "tilt_speed", "tilt_sweep"} <= keys
+
+
+def test_the_two_directions_are_independent():
+    """Each carries its own way of moving, its own speed and its own distance,
+    so a slow tip can run against a quicker turn."""
+    import gamut_app
+    fake = _FakeApp()
+    fake._turn_mode, fake._turn_speed, fake._turn_sweep = (
+        _Value("round"), _Value(12), _Value(90))
+    fake._tilt_mode, fake._tilt_speed, fake._tilt_sweep = (
+        _Value("swing"), _Value(3), _Value(25))
+    got = gamut_app.GamutApp._spin_options(fake)
+    assert got["turn"] == {"mode": "round", "speed": 12.0, "range": 90.0}
+    assert got["tilt"] == {"mode": "swing", "speed": 3.0, "range": 25.0}
+
+
+def test_the_speed_is_quoted_as_a_length_of_time():
+    """Degrees per second means nothing to most people. Both readings are
+    checked against the arithmetic, not against themselves."""
+    import gamut_app
+    fake = _spin_fake(("round", 8, 60), ("swing", 8, 60))
+    gamut_app.GamutApp._update_spin_labels(fake)
+    assert fake._spin_rows[0]["speed_value"].text == "45 s a turn"   # 360 / 8
+    assert fake._spin_rows[1]["speed_value"].text == "24 s a swing"  # pi*60/8
+    assert fake._spin_rows[1]["sweep_value"].text == "60° wide"
+
+
+def test_the_ends_of_every_slider_still_read_sensibly():
+    """Where a division goes wrong if it is going to: nothing may come out as
+    zero, negative or absurd, in either direction."""
+    import gamut_app
+    for mode in ("round", "swing"):
+        for speed in (2, 30):
+            for sweep in (10, 180):
+                fake = _spin_fake((mode, speed, sweep), (mode, speed, sweep))
+                gamut_app.GamutApp._update_spin_labels(fake)
+                for axis in fake._spin_rows:
+                    seconds = int(axis["speed_value"].text.split()[0])
+                    assert 0 < seconds < 1000, (mode, speed, sweep)
+
+
+def test_a_direction_set_to_not_at_all_hides_its_own_two_sliders():
+    """A control for something switched off invites a change that does
+    nothing. How far goes too when it is going all the way round, because it
+    means nothing there."""
+    import gamut_app
+    fake = _spin_fake(("swing", 8, 60), ("off", 6, 40))
+    fake._spin_on = _Value(True)
+    fake._slice_on = _Value(False)
+    gamut_app.GamutApp._apply_spin_availability(fake)
+    turn, tilt = fake._spin_rows
+    assert all(w.shown for w in turn["mode_row"] + turn["speed_row"])
+    assert all(w.shown for w in turn["sweep_row"])       # it is swinging
+    assert all(w.shown for w in tilt["mode_row"])        # still choosable
+    assert not any(w.shown for w in tilt["speed_row"])   # but nothing to set
+    assert not any(w.shown for w in tilt["sweep_row"])
+
+    fake._spin_rows[0]["mode"] = _Value("round")
+    gamut_app.GamutApp._apply_spin_availability(fake)
+    assert all(w.shown for w in turn["speed_row"])
+    assert not any(w.shown for w in turn["sweep_row"])   # no distance to a circle
+
+
+def test_the_flat_slice_view_hides_all_of_it():
+    """The slice is drawn looking down. There is no camera to move."""
+    import gamut_app
+    fake = _spin_fake(("swing", 8, 60), ("swing", 6, 40))
+    fake._spin_on = _Value(True)
+    fake._slice_on = _Value(True)
+    gamut_app.GamutApp._apply_spin_availability(fake)
+    assert not fake._spin_on.shown
+    for axis in fake._spin_rows:
+        assert not any(w.shown for w in axis["mode_row"])
+
+
+def test_the_engine_reaches_a_three_d_page_and_not_the_flat_one(tmp_path):
+    """The flat page must not carry an engine that could never do anything."""
+    from ti3gamut import write_html, write_slice_html
+    _, xyz = rgb_cube(5)
+    g = build_gamut(xyz, white_point="D65")
+    spin = dict(on=True, turn=dict(mode="swing", speed=8.0, range=60.0),
+                tilt=dict(mode="off", speed=6.0, range=40.0))
+
+    solid = write_html([("chart", g)], tmp_path / "a.html", "t", spin=spin)
+    assert "cqSpin" in solid.read_text()
+
+    flat = write_slice_html([("chart", g)], tmp_path / "b.html", 50.0, "t")
+    assert "cqSpin" not in flat.read_text()
+
+
+def test_both_rooms_are_handed_to_the_engine(tmp_path):
+    """Side by side, the engine drives both scenes itself. cqLinkCameras only
+    lets the view being DRAGGED lead, so with nobody dragging it would leave
+    the second room standing still."""
+    from ti3gamut import build_figure, write_side_by_side_html
+    _, xyz = rgb_cube(5)
+    g = build_gamut(xyz, white_point="D65")
+    pages = [(n, build_figure([(n, g)], "")) for n in ("one", "two")]
+    out = write_side_by_side_html(
+        pages, tmp_path / "c.html",
+        spin=dict(on=True, turn=dict(mode="round", speed=8.0, range=60.0),
+                  tilt=dict(mode="round", speed=6.0, range=40.0)))
+    text = out.read_text()
+    assert "cqSpin" in text
+    assert '"ids": ["scene0", "scene1"]' in text
+
+
+def test_changing_the_speed_talks_to_the_page_instead_of_reloading_it():
+    """THE regression to guard. Every other control here rebuilds the page and
+    loads it again. If movement went the same way, each nudge of a speed
+    slider would throw the viewpoint away and restart it -- the control
+    fighting the thing it controls. It must reach the live page."""
+    import gamut_app
+    fake = _spin_fake(("swing", 8, 60), ("off", 6, 40))
+    fake._spin_on = _Value(True)
+    fake._slice_on = _Value(False)
+    sent = []
+    fake._view = _View(sent)
+    fake._redraw = lambda *_a: pytest.fail("movement must not reload the page")
+
+    gamut_app.GamutApp._on_spin_changed(fake)
+
+    assert len(sent) == 1 and "cqSpin" in sent[0]
+    assert '"speed": 8' in sent[0]
+
+
+def _spin_fake(turn, tilt):
+    """A stand-in window carrying two directions of movement."""
+    fake = _FakeApp()
+    fake._spin_rows = []
+    for mode, speed, sweep in (turn, tilt):
+        fake._spin_rows.append({
+            "mode": _Value(mode), "speed": _Value(speed), "sweep": _Value(sweep),
+            "speed_value": _Text(), "sweep_value": _Text(),
+            "mode_row": [_Shown(), _Shown()],
+            "speed_row": [_Shown(), _Shown(), _Shown()],
+            "sweep_row": [_Shown(), _Shown(), _Shown()],
+        })
+    (fake._turn_mode, fake._turn_speed, fake._turn_sweep) = (
+        _Value(turn[0]), _Value(turn[1]), _Value(turn[2]))
+    (fake._tilt_mode, fake._tilt_speed, fake._tilt_sweep) = (
+        _Value(tilt[0]), _Value(tilt[1]), _Value(tilt[2]))
+    return fake
+
+
+class _Shown:
+    """A widget that only remembers whether it was shown."""
+    def __init__(self):
+        self.shown = None
+
+    def setVisible(self, on):
+        self.shown = on
+
+
+class _Text:
+    """Catches what a label was asked to show."""
+    def __init__(self):
+        self.text = None
+
+    def setText(self, value):
+        self.text = value
+
+
+class _View:
+    """A page that records what was asked of it, instead of running it."""
+    def __init__(self, into):
+        self._into = into
+
+    def page(self):
+        return self
+
+    def runJavaScript(self, script):
+        self._into.append(script)
+
+
+# --- the surface itself -----------------------------------------------------
+
+def test_joining_repeated_corners_keeps_the_shape_exactly():
+    """A boundary built from the faces of the device cube repeats every point
+    along the twelve edges where two faces meet. Two copies of a corner cannot
+    share a normal, so the renderer creases every seam and the surface looks
+    grainy where it is continuous. Joining them must change the picture and
+    nothing else: same positions, same colours, same volume, same dents."""
+    from gamutview import mesh_volume
+    from ti3gamut import _weld
+    rgb, xyz = rgb_cube(6)
+    g = build_gamut(xyz, rgb, white_point="D65")
+    colours = [f"rgb({int(r*255)},{int(gr*255)},{int(b*255)})"
+               for r, gr, b in g.colors]
+
+    points, welded, faces = _weld(g.vertices, colours, g.faces)
+
+    assert len(points) < len(g.vertices)              # copies really were there
+    assert len(np.unique(np.round(points, 6), axis=0)) == len(points)
+    assert len(welded) == len(points)
+    assert faces.shape == g.faces.shape               # every triangle survives
+    assert faces.max() < len(points)                  # and still points at one
+    assert mesh_volume(points, faces) == pytest.approx(
+        mesh_volume(g.vertices, g.faces), rel=1e-12)
+    # every triangle keeps the three positions it had
+    for new, old in zip(faces, g.faces):
+        assert np.allclose(sorted(points[new].tolist()),
+                           sorted(g.vertices[old].tolist()))
+
+
+def test_a_shape_with_nothing_repeated_is_handed_back_untouched():
+    """A hull shares its corners already. Welding must not copy it for nothing."""
+    from ti3gamut import _weld
+    _, xyz = rgb_cube(5)
+    g = build_gamut(xyz, white_point="D65")
+    colours = list(range(len(g.vertices)))
+    points, welded, faces = _weld(g.vertices, colours, g.faces)
+    assert points is g.vertices and welded is colours and faces is g.faces
+
+
+def test_the_light_the_user_placed_reaches_the_surface():
+    """Set the lighting myself moves a lamp. The argument was accepted and
+    then dropped, so the controls turned nothing -- which is invisible unless
+    the trace itself is asked where its light is."""
+    from ti3gamut import build_figure, light_position
+    _, xyz = rgb_cube(5)
+    g = build_gamut(xyz, white_point="D65")
+    placed = light_position(90.0, 0.2)
+
+    fig = build_figure([("chart", g)], "", light=placed)
+    meshes = [t for t in fig.data if t.type == "mesh3d"]
+    assert meshes, "no surface drawn"
+    for mesh in meshes:
+        assert mesh.lightposition.x == pytest.approx(placed["x"])
+        assert mesh.lightposition.y == pytest.approx(placed["y"])
+        assert mesh.lightposition.z == pytest.approx(placed["z"])
+
+    # and with nobody having moved it, the lamp is overhead
+    plain = [t for t in build_figure([("chart", g)], "").data
+             if t.type == "mesh3d"][0]
+    assert (plain.lightposition.x, plain.lightposition.y) == (0, 0)
+    assert plain.lightposition.z > 0
+
+
+def test_moving_the_light_really_changes_where_it_is():
+    """Four bearings, four different lamps -- a control that always produced
+    the same position would pass a weaker test than this one."""
+    from ti3gamut import light_position
+    seen = {tuple(round(v, 3) for v in light_position(d, 0.3).values())
+            for d in (0, 90, 180, 270)}
+    assert len(seen) == 4
+    high, low = light_position(0, 0.9), light_position(0, 0.1)
+    assert high["z"] > low["z"]
 
 
 # --- the legend key ---------------------------------------------------------

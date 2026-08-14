@@ -21,6 +21,8 @@ wheels on all three.
 """
 from __future__ import annotations
 
+import math
+
 import csv
 import json
 import sys
@@ -1177,7 +1179,7 @@ class GamutApp(QMainWindow):
         for _name, _control in (
                 ("hint_hint", self._open_btn),
                 ("hint_cmp_hint", self._compare),
-                ("hint_style_hint", self._style_combos[-1][0]),
+                ("hint_style_hint", self._style_combos[0][0]),
                 ("hint_paint_hint", self._paint_label),
                 ("hint_appearance_hint", self._appearance_label),
                 ("hint_accent_hint", self._accent_label),
@@ -1190,8 +1192,16 @@ class GamutApp(QMainWindow):
             _followed = getattr(_icon, "_followed", None)
             if _followed is not None:
                 _icon.setVisible(_followed.isVisible())
+        import argyll as _argyll
+        _argyll.set_folder(self._store.value("argyll_folder", "") or None)
+        self._refresh_argyll()
         self._restore_everything()
         self._apply_space_availability()
+        # Settle the turning controls: fill in the value labels and hide the
+        # rows that do not apply yet. Nothing is loaded, so this only tidies
+        # the column -- but an empty label beside a slider looks broken.
+        self._update_spin_labels()
+        self._apply_spin_availability()
         for icon in self.findChildren(Hint):
             icon.set_colour(SCHEMES.get(self._scheme, SCHEMES['Magenta'])['accent'])
         self._apply_mode()
@@ -1315,7 +1325,14 @@ class GamutApp(QMainWindow):
             "stores alongside the results. The simpler setting stretches a "
             "skin over the whole thing, which looks tidier but claims more "
             "colour than your printer really has. Switch between them to see "
-            "the difference.", g_build)
+            "the difference.\n\n"
+            "If the skin shows long dark streaks fanning across the surface, "
+            "nothing is wrong with your measurement. That is the skin bridging "
+            "a gap between two patches that are far apart, and it has to "
+            "stretch one long thin triangle to do it — the streak is the shape "
+            "of that stretch. It is a fair warning that the skin is guessing "
+            "there. Follow the real edge has no gaps to bridge, so the streaks "
+            "do not appear.", g_build)
         mode_hint.setObjectName("hint_mode_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
         _r.setSpacing(6)
@@ -1412,10 +1429,13 @@ class GamutApp(QMainWindow):
         g_look = QGroupBox("How it looks", col)
         lv = QVBoxLayout(g_look)
         self._target = NoScrollComboBox(g_look)
-        self._target.addItem("Set this for: all shapes together", "all")
-        self._target.addItem("Set this for: the first chart", 0)
-        self._target.addItem("Set this for: the second chart", 1)
-        self._target.addItem("Set this for: the comparison", 2)
+        # THE NAME BELONGS BESIDE THE CONTROL, ONCE -- not inside every item.
+        # Carried in the item text it was repeated on all four lines of the
+        # open list, where the only thing that differs is the value.
+        self._target.addItem("all shapes together", "all")
+        self._target.addItem("the first chart", 0)
+        self._target.addItem("the second chart", 1)
+        self._target.addItem("the comparison", 2)
         self._target.currentIndexChanged.connect(self._on_target_changed)
         target_hint = Hint(
             "Everything below applies to whatever is chosen here. Leave it on "
@@ -1428,6 +1448,8 @@ class GamutApp(QMainWindow):
         target_hint.setObjectName("hint_target_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
         _r.setSpacing(6)
+        target_name = QLabel("Set this for", g_look)
+        _r.addWidget(target_name)
         _r.addWidget(self._target, 1)
         _r.addWidget(target_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
@@ -1452,39 +1474,83 @@ class GamutApp(QMainWindow):
         orow.addWidget(self._opacity_lbl)
         lv.addLayout(orow)
         self._aspect = NoScrollComboBox(g_look)
-        self._aspect.addItem("True proportions", "data")
-        self._aspect.addItem("Even up the box", "cube")
+        # Named beside the box like every other row here. "True proportions"
+        # was doing double duty as the name AND the value, which reads fine on
+        # its own and reads as a missing label once its neighbours have one.
+        # Measured: the box gives the text 133px, so "true to the
+        # measurements" (158px) cannot be said here. The ⓘ beside it carries
+        # the full explanation, which is what it is for.
+        self._aspect.addItem("as measured", "data")
+        self._aspect.addItem("evened into a cube", "cube")
         self._aspect.currentIndexChanged.connect(self._redraw)
         aspect_hint = Hint(
-            "To scale, one step of colour difference is drawn the same length "
-            "whichever direction it goes in, which is what makes the shape and "
-            "the amount below honest. Printers have roughly twice as much "
-            "range in colour as they do from black to white, so the true shape "
-            "really is wide and flat — that is your printer, not a drawing "
-            "error. Evening up the box is easier on the eye but no longer to "
-            "scale.", g_look)
+            "Left as measured, one step of colour difference is drawn the same "
+            "length whichever direction it goes in, which is what makes the "
+            "shape and the amount below honest. Printers have roughly twice as "
+            "much range in colour as they do from black to white, so the true "
+            "shape really is wide and flat — that is your printer, not a "
+            "drawing error. Evened into a cube it is easier on the eye, and no "
+            "longer to scale: use it to look around inside the shape, and come "
+            "back to as measured before you judge how big it is.", g_look)
         aspect_hint.setObjectName("hint_aspect_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
         _r.setSpacing(6)
+        aspect_name = QLabel("Proportions", g_look)
+        _r.addWidget(aspect_name)
         _r.addWidget(self._aspect, 1)
         _r.addWidget(aspect_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
+        self._grid_on = QCheckBox("Show the box and its grid", g_look)
+        self._grid_on.setChecked(True)
+        self._grid_on.stateChanged.connect(self._redraw)
+        lv.addWidget(self._grid_on)
+        grid_hint = Hint(
+            "The box the shape sits in: the three walls behind it, the grid "
+            "on them, the numbers up the sides and the names of the axes.\n\n"
+            "Leave it on while you are reading the shape. It is what tells "
+            "you how light a part of the surface is, or how far out into the "
+            "reds it reaches — without it you can see the shape but you "
+            "cannot say where anything is.\n\n"
+            "Turn it off for a picture meant for somebody else. The shape is "
+            "left floating on the page with nothing around it, which looks "
+            "much better in a document, on a slide or in a forum post, and it "
+            "is what Save this view as a web page will then write out.\n\n"
+            "It applies to the whole picture, so with two rooms side by side "
+            "both of them lose the box together and the pair still match.",
+            g_look)
+        grid_hint.setObjectName("hint_grid_hint")
+        lv.addWidget(grid_hint)
         self._style_mine = NoScrollComboBox(g_look)
         self._style_second = NoScrollComboBox(g_look)
         self._style_other = NoScrollComboBox(g_look)
         self._style_combos = (
             (self._style_mine, "First chart"),
             (self._style_second, "Second chart"),
-            (self._style_other, "The comparison"),
+            # "Comparison", not "The comparison": the name column is taken out
+            # of the control's width, and the extra word cost enough of it to
+            # clip "solid with its mesh" in the box beside it.
+            (self._style_other, "Comparison"),
         )
-        for combo, label in self._style_combos:
-            combo.addItem(f"{label}: solid", "solid")
-            combo.addItem(f"{label}: solid with its mesh", "solid+mesh")
-            combo.addItem(f"{label}: outline only", "mesh")
+        # ONE GRID for the three, so the names line up and the three controls
+        # start at the same edge. Ragged labels on rows that sit directly under
+        # each other read as a mistake rather than as three separate rows.
+        _sg = QGridLayout()
+        _sg.setContentsMargins(0, 0, 0, 0)
+        _sg.setHorizontalSpacing(6)
+        _sg.setVerticalSpacing(4)
+        _sg.setColumnStretch(1, 1)
+        self._style_labels = []
+        for _row, (combo, label) in enumerate(self._style_combos):
+            combo.addItem("solid", "solid")
+            combo.addItem("solid with its mesh", "solid+mesh")
+            combo.addItem("outline only", "mesh")
             combo.currentIndexChanged.connect(self._redraw)
             combo.setVisible(False)
-            if combo is not self._style_combos[-1][0]:
-                lv.addWidget(combo)      # the last one is added with its ⓘ
+            name = QLabel(label, g_look)
+            name.setVisible(False)   # kept with its combo by _refresh_style_controls
+            self._style_labels.append(name)
+            _sg.addWidget(name, _row, 0)
+            _sg.addWidget(combo, _row, 1)
         # An outer shape starts as a cage so whatever is inside stays visible.
         self._style_second.setCurrentIndex(2)
         self._style_other.setCurrentIndex(2)
@@ -1494,16 +1560,27 @@ class GamutApp(QMainWindow):
             "which is the only way to look at your printer sitting inside "
             "sRGB, or inside everything the eye can see, and still see your "
             "printer. Swap them round when the other one is the shape you want "
-            "to look into.", g_look)
+            "to look into.\n\n"
+            "This applies while the shapes share one picture. Give them a room "
+            "each with Show them in two rooms, side by side and every one is "
+            "drawn solid — there is nothing behind it to see through, so an "
+            "outline would only show you less of the same gamut.", g_look)
         style_hint.setObjectName("hint_style_hint")
-        # One explanation covers all three combos, so it goes beside the last
-        # of them rather than on a row of its own underneath the group.
-        _sr = QHBoxLayout(); _sr.setContentsMargins(0, 0, 0, 0); _sr.setSpacing(6)
-        _sr.addWidget(self._style_combos[-1][0], 1)
-        _sr.addWidget(style_hint, 0, Qt.AlignmentFlag.AlignVCenter)
-        lv.addLayout(_sr)
+        # One explanation covers all three rows, so it sits beside the FIRST of
+        # them. Beside the last, it went with the comparison -- and with no
+        # comparison loaded the explanation disappeared while two of the three
+        # controls it describes were still on screen.
+        _sg.addWidget(style_hint, 0, 2, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_sg)
+        # Every drop-down in this group opens its box at the same edge. A few
+        # pixels apart is the worst of both: not aligned, and close enough that
+        # it reads as a slip rather than as five separate rows.
+        self._name_column = [target_name, aspect_name, *self._style_labels]
+        self._align_names()
         self._slice_on = QCheckBox("Slice it at one lightness", g_look)
         self._slice_on.stateChanged.connect(self._redraw)
+        self._slice_on.stateChanged.connect(
+            lambda *_a: self._apply_spin_availability())
         lv.addWidget(self._slice_on)
         srow = QHBoxLayout()
         srow.addWidget(QLabel("Lightness", g_look))
@@ -1788,6 +1865,58 @@ class GamutApp(QMainWindow):
             "moves the camera.", g_look)
         link_hint.setObjectName("hint_link_hint")
         lv.addWidget(link_hint)
+
+        self._spin_on = QCheckBox("Turn it by itself", g_look)
+        self._spin_on.stateChanged.connect(self._on_spin_changed)
+        lv.addWidget(self._spin_on)
+        spin_hint = Hint(
+            "Sets the shape moving gently on its own, so you can watch it "
+            "from every side without holding the mouse.\n\n"
+            "It is more than a nicety. Depth is genuinely hard to judge on a "
+            "flat screen: a dent in the deep blues and a shadow can look "
+            "identical in a still picture. As soon as the shape moves, your "
+            "eyes get the same depth cue they use in the real world, and the "
+            "dent becomes obvious.\n\n"
+            "It never gets in your way. Touch the picture and it stops at "
+            "once, waits while you drag or zoom, and picks up again from "
+            "wherever you left it — so anything you set by hand is kept.\n\n"
+            "You can have it turning left and right, tipping up and down, or "
+            "both at the same time. Each is set on its own below.", g_look)
+        spin_hint.setObjectName("hint_spin_hint")
+        lv.addWidget(spin_hint)
+
+        self._spin_rows, self._name_extras = [], []
+        self._turn_mode, self._turn_speed, self._turn_sweep = self._axis_controls(
+            g_look, lv, "Left and right",
+            "Turns the shape the way a turntable does, keeping upright "
+            "upright: black stays at the bottom and white at the top, and the "
+            "hues come round one after another.\n\n"
+            "This is the one to reach for first. It shows you every hue in "
+            "turn — where the reds run out, how far the cyans reach — while "
+            "the shape stays the right way up and stays easy to read.\n\n"
+            "Back and forth swings a little way to each side and returns, "
+            "which keeps the shape facing the way you pointed it. All the way "
+            "round carries it through a complete circle, which is lovely to "
+            "leave running but will take it away from the angle you chose.",
+            speed_default=8, sweep_default=60, sweep_range=(15, 180))
+        self._tilt_mode, self._tilt_speed, self._tilt_sweep = self._axis_controls(
+            g_look, lv, "Up and down",
+            "Tips the shape towards you and away again, so you look down onto "
+            "the top of it and then up from underneath.\n\n"
+            "This is what shows you the lid and the floor of the gamut — how "
+            "flat the top is near white, and how the shape closes in towards "
+            "black — which a turntable alone never brings into view.\n\n"
+            "It works alongside left and right rather than instead of it: set "
+            "both and the shape drifts through a slow, easy tumble. It starts "
+            "at not at all, because one direction of movement at a time is "
+            "usually plenty.\n\n"
+            "All the way round takes it right over the top and back up the "
+            "other side. The picture turns with it rather than flipping over, "
+            "so the movement stays smooth the whole way round.",
+            speed_default=6, sweep_default=40, sweep_range=(10, 120),
+            start_off=True)
+        self._name_column.extend(self._name_extras)
+        self._align_names()
         v.addWidget(g_look)
 
         # --- the number -------------------------------------------------------
@@ -1978,6 +2107,41 @@ class GamutApp(QMainWindow):
         self._glossary_btn.setObjectName("secondary")
         self._glossary_btn.clicked.connect(self._on_glossary)
         v.addWidget(self._glossary_btn)
+        # ARGYLLCMS, MENTIONED BUT NEVER NAGGED ABOUT. Most people never need
+        # it: measurements, gamut files and profiles all open without it, and
+        # only .cxf, .mxf and .txt are converted by it. So there is no warning
+        # on startup and no badge -- just a quiet line for anybody who wonders,
+        # and a way to point at it when the search cannot find it.
+        self._argyll_label = WrappedLabel("", col)
+        self._argyll_label.setObjectName("argyllStatus")
+        v.addWidget(self._argyll_label)
+        argyll_row = QHBoxLayout()
+        argyll_row.setContentsMargins(0, 0, 0, 0)
+        argyll_row.setSpacing(6)
+        self._argyll_btn = QPushButton("Where ArgyllCMS is…", col)
+        self._argyll_btn.setObjectName("secondary")
+        self._argyll_btn.clicked.connect(self._on_choose_argyll)
+        argyll_row.addWidget(self._argyll_btn, 1)
+        argyll_hint = Hint(
+            "ArgyllCMS is the free toolkit that measures printed charts in "
+            "the first place. This viewer uses it for two things, and needs "
+            "it for only one of them.\n\n"
+            "It is NEEDED to open a .cxf, .mxf or .txt measurement, which it "
+            "converts to the .ti3 form everything else uses. If you only ever "
+            "open .ti3 files, gamut files or ICC profiles, you never need it "
+            "at all and can ignore this.\n\n"
+            "It is PREFERRED for ICC profiles, where it works the surface out "
+            "in full precision. Without it, profiles are still read here — "
+            "the two answers agree to well under one per cent.\n\n"
+            "It is looked for automatically in all the usual places, so this "
+            "button is only for when it lives somewhere unusual: press it and "
+            "choose the folder holding the tools, which is normally the bin "
+            "folder inside the ArgyllCMS one. If you do not have it, the "
+            "button offers the download page — it is free.", col)
+        argyll_hint.setObjectName("hint_argyll_hint")
+        argyll_row.addWidget(argyll_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        v.addLayout(argyll_row)
+
         self._update_btn = QPushButton("Check for a newer version…", col)
         self._update_btn.setObjectName("secondary")
         self._update_btn.clicked.connect(lambda: self._check_updates(asked=True))
@@ -2070,6 +2234,9 @@ class GamutApp(QMainWindow):
         wrong one is what puts a window in a corner.
         """
         super().showEvent(event)
+        # The stylesheet lands at polish, which is after the names were first
+        # measured. Measure them again now they are wearing it.
+        self._align_names()
         if self._placed:
             return
         self._placed = True
@@ -2254,6 +2421,14 @@ class GamutApp(QMainWindow):
             ("mesh_colour", self._mesh_colour, "check", False),
             ("rings_on", self._rings_on, "check", False),
             ("neutral", self._neutral, "check", False),
+            ("spin_on", self._spin_on, "check", False),
+            ("turn_mode", self._turn_mode, "combo", "swing"),
+            ("turn_speed", self._turn_speed, "slider", 8),
+            ("turn_sweep", self._turn_sweep, "slider", 60),
+            ("tilt_mode", self._tilt_mode, "combo", "off"),
+            ("tilt_speed", self._tilt_speed, "slider", 6),
+            ("tilt_sweep", self._tilt_sweep, "slider", 40),
+            ("grid_on", self._grid_on, "check", True),
             ("side_by_side", self._side_by_side, "check", False),
             ("link_cameras", self._link_cameras, "check", True),
             ("auto_update", self._auto_update, "check", False),
@@ -2754,7 +2929,7 @@ class GamutApp(QMainWindow):
             gamuts, clouds, styles, lost = self._scene_contents()
             write_html(gamuts, Path(target), self._scene_title(),
                        patches=clouds, styles=styles, lost=lost,
-                       **self._render_options())
+                       spin=self._spin_options(), **self._render_options())
         except OSError as exc:
             Notice.warn(self, "That could not be saved", str(exc))
             return
@@ -2961,6 +3136,251 @@ class GamutApp(QMainWindow):
         self._refresh_slot_labels()
         self._redraw()
 
+    def _refresh_argyll(self) -> None:
+        """Say where things stand, without making it sound like a problem."""
+        import argyll
+        argyll.forget()
+        got = argyll.status()
+        self._argyll_label.setText(argyll.summary())
+        self._argyll_btn.setText("Where ArgyllCMS is…" if got["found"]
+                                 else "Find or get ArgyllCMS…")
+        self._argyll_label.setToolTip(got["folder"] or "")
+
+    def _on_choose_argyll(self) -> None:
+        """Point the viewer at ArgyllCMS, or at the page to download it from.
+
+        Offered rather than demanded. Somebody who does not have it is not
+        stuck: everything except three file types works without it, so this
+        never blocks anything, and the wording says so.
+        """
+        import argyll
+        got = argyll.status()
+        if not got["found"]:
+            wanted = Notice.ask(
+                self, "ArgyllCMS was not found",
+                "Nothing is broken. Your measurements, gamut files and ICC "
+                "profiles all open without it — only .cxf, .mxf and .txt "
+                "files are converted by it.\n\n"
+                "If you have not got it, it is free, and it is the same "
+                "toolkit that reads a printed chart in the first place.\n\n"
+                "If you have got it and it simply lives somewhere unusual, "
+                "choose the folder holding the tools instead — normally the "
+                "bin folder inside the ArgyllCMS one.",
+                yes="Open the download page", no="Choose the folder…")
+            if wanted:
+                QDesktopServices.openUrl(QUrl(argyll.DOWNLOAD_URL))
+                return
+        start = got["folder"] or str(Path.home())
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Choose the folder holding the ArgyllCMS tools", start)
+        if not chosen:
+            return
+        if not argyll.looks_like_argyll(chosen):
+            # TURNED DOWN NOW rather than at the moment a file fails to open,
+            # which would be a puzzle days later in a different part of the app.
+            Notice.warn(
+                self, "That folder does not hold the tools",
+                f"None of the ArgyllCMS programs are in:\n{chosen}\n\n"
+                "The folder to choose is the one with the programs "
+                "themselves in it — iccgamut, cxf2ti3 and the rest. In a "
+                "normal installation that is the bin folder inside the "
+                "ArgyllCMS folder.\n\nNothing has been changed.")
+            return
+        self._store.setValue("argyll_folder", chosen)
+        argyll.set_folder(chosen)
+        self._refresh_argyll()
+        Notice.say(self, "That is where it will look",
+                   f"ArgyllCMS will be used from:\n{chosen}\n\n"
+                   "Every file type can be opened now.")
+
+    def _axis_controls(self, group, into, name: str, why: str,
+                       speed_default: int, sweep_default: int,
+                       sweep_range, start_off: bool = False):
+        """One direction of movement: how it moves, how fast, and how far.
+
+        Both directions are built from this so they cannot drift apart in
+        wording, in layout or in behaviour -- two hand-written copies of the
+        same three rows is how one of them ends up with a control the other
+        never got.
+        """
+        mode = NoScrollComboBox(group)
+        mode.addItem("not at all", "off")
+        mode.addItem("back and forth", "swing")
+        mode.addItem("all the way round", "round")
+        mode.setCurrentIndex(0 if start_off else 1)
+        mode.currentIndexChanged.connect(self._on_spin_changed)
+        mode_name = QLabel(name, group)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        row.addWidget(mode_name)
+        row.addWidget(mode, 1)
+        hint = Hint(why, group)
+        hint.setObjectName(f"hint_axis_{name.split()[0].lower()}_hint")
+        row.addWidget(hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        into.addLayout(row)
+
+        speed = NoScrollSlider(Qt.Orientation.Horizontal, group)
+        speed.setRange(2, 30)
+        speed.setValue(speed_default)
+        speed.valueChanged.connect(self._on_spin_changed)
+        speed_name = QLabel("How fast", group)
+        speed_value = QLabel("", group)
+        speed_value.setMinimumWidth(88)
+        speed_row = QHBoxLayout()
+        speed_row.setContentsMargins(0, 0, 0, 0)
+        speed_row.setSpacing(6)
+        speed_row.addWidget(speed_name)
+        speed_row.addWidget(speed, 1)
+        speed_row.addWidget(speed_value)
+        speed_hint = Hint(
+            f"How quickly it moves {name.lower()}. The number beside the "
+            "slider says it the way that is easiest to picture: how long one "
+            "full turn takes, or how long it takes to travel across and "
+            "back.\n\n"
+            "Slower is usually better. A gentle drift lets you follow one "
+            "part of the surface as it comes round; anything hurried is "
+            "harder to read and tiring to watch. If you are unsure, leave it "
+            "and lower it if the movement feels busy.\n\n"
+            "This direction keeps its own speed, so you can have a slow tip "
+            "up and down against a quicker turn — or the other way about.",
+            group)
+        speed_hint.setObjectName(f"hint_axis_{name.split()[0].lower()}_speed")
+        speed_row.addWidget(speed_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        into.addLayout(speed_row)
+
+        sweep = NoScrollSlider(Qt.Orientation.Horizontal, group)
+        sweep.setRange(*sweep_range)
+        sweep.setValue(sweep_default)
+        sweep.valueChanged.connect(self._on_spin_changed)
+        sweep_name = QLabel("How far", group)
+        sweep_value = QLabel("", group)
+        sweep_value.setMinimumWidth(88)
+        sweep_row = QHBoxLayout()
+        sweep_row.setContentsMargins(0, 0, 0, 0)
+        sweep_row.setSpacing(6)
+        sweep_row.addWidget(sweep_name)
+        sweep_row.addWidget(sweep, 1)
+        sweep_row.addWidget(sweep_value)
+        sweep_hint = Hint(
+            f"How wide the movement is when it is going back and forth "
+            f"{name.lower()}.\n\n"
+            "A narrow travel of 30° or so is a nudge: enough movement to "
+            "bring out the dents and hollows while the shape stays almost "
+            "still and stays facing you. A wide one shows much more of the "
+            "surface, at the cost of carrying the shape well away from the "
+            "angle you set.\n\n"
+            "This has no effect when it is going all the way round, so it is "
+            "hidden then.", group)
+        sweep_hint.setObjectName(f"hint_axis_{name.split()[0].lower()}_sweep")
+        sweep_row.addWidget(sweep_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        into.addLayout(sweep_row)
+
+        # Each row is shown or hidden whole. The ⓘ is not listed: it already
+        # follows the control it sits beside.
+        self._spin_rows.append({
+            "mode": mode,
+            "mode_row": [mode_name, mode],
+            "speed_row": [speed_name, speed, speed_value],
+            "sweep_row": [sweep_name, sweep, sweep_value],
+            "speed_value": speed_value, "sweep_value": sweep_value,
+            "speed": speed, "sweep": sweep,
+        })
+        self._name_extras.append(mode_name)
+        return mode, speed, sweep
+
+    def _spin_options(self) -> dict:
+        """What the page's turning engine should be doing, right now."""
+        return dict(
+            on=self._spin_on.isChecked(),
+            turn=dict(mode=self._turn_mode.currentData(),
+                      speed=float(self._turn_speed.value()),
+                      range=float(self._turn_sweep.value())),
+            tilt=dict(mode=self._tilt_mode.currentData(),
+                      speed=float(self._tilt_speed.value()),
+                      range=float(self._tilt_sweep.value())))
+
+    def _on_spin_changed(self, *_args) -> None:
+        """A movement control moved.
+
+        Deliberately NOT a redraw. Every other control here rebuilds the page
+        and loads it again, which would throw away the viewpoint and restart
+        the movement on every nudge of a speed slider -- the control would be
+        fighting the thing it controls. The engine is already in the page, so
+        the new settings are handed to it where it stands.
+        """
+        self._update_spin_labels()
+        self._apply_spin_availability()
+        self._push_spin()
+
+    def _update_spin_labels(self) -> None:
+        """Say each speed as a length of time, which is what a person can picture.
+
+        Degrees per second means nothing to most people. "45 s a turn" means
+        exactly what it says, and a swing is quoted for the whole journey --
+        across and back -- because that is the movement you actually watch.
+        """
+        for axis in self._spin_rows:
+            speed = max(1, axis["speed"].value())
+            sweep = axis["sweep"].value()
+            if axis["mode"].currentData() == "round":
+                axis["speed_value"].setText(f"{round(360 / speed)} s a turn")
+            else:
+                # A sine sweep: the setting is the peak rate, so one complete
+                # there-and-back takes pi x travel / peak.
+                axis["speed_value"].setText(
+                    f"{round(math.pi * sweep / speed)} s a swing")
+            axis["sweep_value"].setText(f"{sweep}° wide")
+
+    def _apply_spin_availability(self) -> None:
+        """Show only what applies, and nothing that does not.
+
+        The slice view is drawn flat, looking down: there is no camera to
+        move, so the whole block goes rather than sitting there inviting a
+        change that would do nothing. A direction that is set to not at all
+        needs neither a speed nor a distance, and how far means nothing to
+        something going all the way round.
+        """
+        turnable = not self._slice_on.isChecked()
+        running = turnable and self._spin_on.isChecked()
+        self._spin_on.setVisible(turnable)
+        for axis in self._spin_rows:
+            how = axis["mode"].currentData()
+            for widget in axis["mode_row"]:
+                widget.setVisible(running)
+            for widget in axis["speed_row"]:
+                widget.setVisible(running and how != "off")
+            for widget in axis["sweep_row"]:
+                widget.setVisible(running and how == "swing")
+
+    def _push_spin(self) -> None:
+        """Hand the settings to the page that is already loaded."""
+        page = self._view.page()
+        if page is None:
+            return
+        import json
+        page.runJavaScript(
+            "if (window.cqSpin) window.cqSpin.set("
+            f"{json.dumps(self._spin_options())});")
+
+    def _align_names(self) -> None:
+        """Give every drop-down name in How it looks the same column width.
+
+        The rows are built in separate layouts -- some have a slider between
+        them -- so nothing lines them up on its own. Taking the widest name and
+        making it the floor for all of them puts every box on the same edge,
+        and costs the boxes only as much width as the longest name needs.
+
+        Run again after the window is shown: a stylesheet is applied at polish,
+        which is after these were first measured, and a name that gained
+        padding in between would otherwise size the column from a stale number.
+        """
+        if not getattr(self, "_name_column", None):
+            return
+        widest = max(label.sizeHint().width() for label in self._name_column)
+        for label in self._name_column:
+            label.setMinimumWidth(widest)
+
     def _refresh_style_controls(self) -> None:
         """Show a style control only when the shape it governs is on screen.
 
@@ -2970,8 +3390,10 @@ class GamutApp(QMainWindow):
         """
         have = (len(self._slots) >= 1, len(self._slots) >= 2,
                 self._reference is not None)
-        for (combo, _label), show in zip(self._style_combos, have):
+        for (combo, _label), name, show in zip(self._style_combos,
+                                               self._style_labels, have):
             combo.setVisible(show)
+            name.setVisible(show)      # or the word is left behind on its own
 
     def _refresh_slot_labels(self) -> None:
         # "both" only when there really are two; a button that says the wrong
@@ -3166,6 +3588,7 @@ class GamutApp(QMainWindow):
             self._write_two_rooms(gamuts, out, clouds, lost)
         else:
             write_html(gamuts, out, self._scene_title(),
+                       spin=self._spin_options(),
                        patches=clouds, styles=styles, lost=lost,
                        **self._render_options())
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
@@ -3199,7 +3622,8 @@ class GamutApp(QMainWindow):
                 lost=[lost[i]] if lost and i < len(lost) else None,
                 **options)))
         write_side_by_side_html(figures, out, mode=self._appearance,
-                                linked=self._link_cameras.isChecked())
+                                linked=self._link_cameras.isChecked(),
+                                spin=self._spin_options())
 
     #: The controls that can belong to one shape rather than all of them, as
     #: key → (widget, how to read it). Anything not here is window-wide by
@@ -3317,6 +3741,7 @@ class GamutApp(QMainWindow):
             neutrals=(self._neutral_list() if self._neutral.isChecked()
                       else None),
             light=self._light_position(),
+            grid=self._grid_on.isChecked(),
         )
 
     def _scene_contents(self):

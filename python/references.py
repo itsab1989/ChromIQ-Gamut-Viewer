@@ -154,17 +154,9 @@ def gam_gamut(path, *, white_point: str = "D50", space: str = "lab"):
 
 
 def _find_iccgamut() -> "str | None":
-    """Where ArgyllCMS keeps iccgamut, if it is installed."""
-    import shutil
-    found = shutil.which("iccgamut")
-    if found:
-        return found
-    for guess in ("/Applications/Argyll/bin/iccgamut",
-                  "/usr/local/bin/iccgamut", "/opt/homebrew/bin/iccgamut",
-                  r"C:\Argyll\bin\iccgamut.exe"):
-        if pathlib.Path(guess).is_file():
-            return guess
-    return None
+    """Where ArgyllCMS keeps iccgamut. See ``argyll.find_tool``."""
+    from argyll import find_tool
+    return find_tool("iccgamut")
 
 
 def _read_gam(path) -> "tuple[np.ndarray, np.ndarray]":
@@ -231,7 +223,12 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
 
     with tempfile.TemporaryDirectory(prefix="iccgamut-") as tmp:
         work = pathlib.Path(tmp) / path.name
-        shutil.copy2(path, work)
+        # CONTENTS ONLY. copy2 also copies permissions, flags and extended
+        # attributes, and the operating system refuses that for its own
+        # protected files -- which is where the profiles people most want to
+        # compare against live, so the obvious folder to browse to was the one
+        # that failed. Nothing here needs the metadata; only the bytes.
+        shutil.copyfile(path, work)
         try:
             done = subprocess.run(
                 [tool, "-i", intent, str(work)],
@@ -241,12 +238,23 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
                 f"{path.name} took too long to read and was given up on") from exc
         gam = work.with_suffix(".gam")
         if done.returncode != 0 or not gam.is_file():
+            # ARGYLL COULD NOT OPEN IT. Version 4 profiles are the common
+            # case -- its library understands v2 thoroughly and v4 only in
+            # part -- and those are ordinary files: Display P3, Rec. 709 and
+            # Rec. 2020 all ship with macOS as v4, and paper makers hand out
+            # v4 output profiles. Reading it here is a fair second try, and
+            # it is checked against Argyll on every profile both can open.
+            try:
+                from icc_read import profile_gamut
+                return profile_gamut(path, white_point=white_point, space=space)
+            except Exception as mine:                    # noqa: BLE001
+                second = f"\n\nReading it directly did not work either: {mine}"
             detail = (done.stderr or done.stdout or "").strip().splitlines()
             why = detail[-1] if detail else f"exit code {done.returncode}"
             raise ValueError(
                 f"{path.name} could not be read as a colour profile: "
                 f"{why}.\n\nDevice-link and abstract profiles do not describe "
-                "a gamut, so there is nothing to draw for them.")
+                f"a gamut, so there is nothing to draw for them.{second}")
         verts, faces = _read_gam(gam)
 
     if len(verts) < 4:

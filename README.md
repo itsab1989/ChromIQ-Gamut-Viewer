@@ -310,14 +310,50 @@ words mean?** — fifteen of them, covering every such term the window can show.
 | `.ti3` | an ArgyllCMS or ChromIQ chart measurement | directly |
 | `.cxf`, `.mxf` | X-Rite's measurement exchange formats | converted with ArgyllCMS `cxf2ti3` |
 | `.txt` | a measurement table ArgyllCMS understands | converted with ArgyllCMS `txt2ti3` |
-| `.icc`, `.icm` | an ICC profile — becomes the **comparison**, not a chart | ArgyllCMS `iccgamut` |
+| `.icc`, `.icm` | an ICC profile — becomes the **comparison**, not a chart | ArgyllCMS `iccgamut`, or read directly if it declines |
 | `.gam` | an ArgyllCMS gamut file | directly |
 
 Converted copies are written to a temporary folder, **never beside your
 original** — opening a file to look at it should not leave new files in your
-measurement folder. The formats needing conversion require ArgyllCMS to be
-installed; if it isn't, the window says so in plain words rather than failing
-silently.
+measurement folder.
+
+### ICC version 4
+
+Both versions open. ArgyllCMS reads version 2 thoroughly and version 4 only in
+part, and declines a v4 profile outright — which matters, because v4 is not
+exotic: **Display P3, Rec. 709, Rec. 2020 and ROMM RGB all ship with macOS as
+v4**, and paper makers hand out v4 output profiles.
+
+So when ArgyllCMS turns a profile down, the viewer reads it itself: it works
+out where a dense grid of device values lands using the profile's own numbers,
+and builds the boundary from that — the same way it treats a measured chart.
+Matrix-and-curve profiles (every RGB working space, and every v4 display
+profile) and lookup-table profiles (printers and presses) are both handled.
+
+**It is checked against ArgyllCMS rather than against itself.** On every
+profile both can read, the two volumes are compared: they agree to a median of
+**0.2%**, worst **0.9%**. Agreeing with a mature implementation on every file
+both can open is what earns the right to be believed on the files only one of
+them can. The test is in `python/test_references.py` and runs against whatever
+profiles your own machine carries.
+
+### Do you need ArgyllCMS?
+
+**Usually not.** Measurements (`.ti3`), gamut files (`.gam`) and ICC profiles
+all open without it. It is needed only for `.cxf`, `.mxf` and `.txt`, which it
+converts — those formats have corners (spectral tables, several colour
+specifications in one file, vendor extensions) and ArgyllCMS already handles
+them correctly, so re-implementing that would be a worse answer, not a better
+one. For ICC profiles it is *preferred* rather than required, because it works
+the surface out in full precision.
+
+It is found automatically in all the usual places, including the
+version-numbered folder the official download unpacks into
+(`Argyll_V3.5.0`). **This window** says whether it was found and where, and
+**Where ArgyllCMS is…** lets you point at the folder yourself, or open
+[argyllcms.com](https://www.argyllcms.com/) to get it — it is free, and it is
+the same toolkit that reads a printed chart in the first place. Nothing nags
+you about it on startup, because most people never need it.
 
 ## What it saves
 

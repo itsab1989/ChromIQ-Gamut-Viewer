@@ -86,19 +86,11 @@ CONVERTERS = {
 
 
 def _find_tool(name: str) -> "str | None":
-    """Where ArgyllCMS keeps *name*, if it is installed."""
-    import shutil
-
-    found = shutil.which(name)
-    if found:
-        return found
-    for folder in ("/Applications/Argyll/bin", "/usr/local/bin",
-                   "/opt/homebrew/bin", r"C:\\Argyll\\bin"):
-        guess = Path(folder) / name
-        for candidate in (guess, guess.with_suffix(".exe")):
-            if candidate.is_file():
-                return str(candidate)
-    return None
+    """Where ArgyllCMS keeps *name*. One search, shared with everything else
+    that needs it, so a folder the user chose by hand is honoured everywhere.
+    """
+    from argyll import find_tool
+    return find_tool(name)
 
 
 def convert_to_ti3(path: Path) -> Path:
@@ -114,10 +106,17 @@ def convert_to_ti3(path: Path) -> Path:
     tool_name = CONVERTERS[path.suffix.lower()]
     tool = _find_tool(tool_name)
     if tool is None:
+        from argyll import DOWNLOAD_URL
         raise ValueError(
-            f"Reading a {path.suffix} file needs ArgyllCMS's {tool_name}, "
-            "which does not appear to be installed. It is the same free "
-            "toolkit that measures charts in the first place.")
+            f"Reading a {path.suffix} file needs ArgyllCMS, which was not "
+            f"found on this computer.\n\nIt is free, and it is the same "
+            f"toolkit that measures a chart in the first place — so if you "
+            f"printed and read this chart yourself, you very likely have it "
+            f"already and it is simply somewhere unusual.\n\n"
+            f"Get it from {DOWNLOAD_URL}, or, if it is already installed, "
+            f"point the viewer at it with Where ArgyllCMS is… under This "
+            f"window.\n\n.ti3 measurements, .gam files and ICC profiles "
+            f"need none of this and open as they are.")
     out_dir = Path(tempfile.mkdtemp(prefix="gamut-convert-"))
     stem = out_dir / path.stem
     try:
@@ -297,7 +296,8 @@ def _plot_points(gamut) -> np.ndarray:
     return gamut.vertices
 
 
-def _rings(gamut, name: str, count: int, colour: str, width: float = 1.5):
+def _rings(gamut, name: str, count: int, colour: str, width: float = 1.5,
+           key: str | None = None):
     """Contour rings stacked inside a gamut, at evenly spaced lightnesses.
 
     The wire cage shows only the outer surface, because that is what a gamut
@@ -329,10 +329,13 @@ def _rings(gamut, name: str, count: int, colour: str, width: float = 1.5):
         zs += list(pts[:, 2]) + [None]
     if not xs:
         return []
-    return [go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
+    rings = go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
                          line=dict(color=colour, width=width),
-                         name=f"{name} (rings inside)", showlegend=True,
-                         hoverinfo="name")]
+                         name=f"{name} (rings inside)",
+                         showlegend=key is None, hoverinfo="name")
+    if key is None:
+        return [rings]
+    return [rings, _legend_line(f"{name} (rings inside)", key)]
 
 
 def _band(colour: str, steps: int = 32) -> str:
@@ -346,7 +349,7 @@ def _band(colour: str, steps: int = 32) -> str:
 
 
 def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
-           paint: str = "plain", index: int = 0):
+           paint: str = "plain", index: int = 0, key: str | None = None):
     """The triangle edges of a gamut, as a wire cage.
 
     A solid shape hides whatever is inside it. Drawn as a cage instead, an
@@ -378,10 +381,13 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
             ys += [v[a, 1], v[b, 1], None]
             zs += [v[a, 2], v[b, 2], None]
     if paint == "plain":
-        return [go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
-                             line=dict(color=colour, width=width),
-                             name=f"{name} (outline)", showlegend=True,
-                             hoverinfo="name")]
+        cage = go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
+                            line=dict(color=colour, width=width),
+                            name=f"{name} (outline)", showlegend=key is None,
+                            hoverinfo="name")
+        if key is None:
+            return [cage]
+        return [cage, _legend_line(f"{name} (outline)", key)]
 
     per_vertex = _paint_vertices(gamut, paint, index)
     if per_vertex is None:                       # "true": each point's colour
@@ -423,17 +429,18 @@ _KEPT = "rgb(105,112,126)"
 
 
 def _mesh_lost(gamut, name: str, opacity: float, lost,
-               kept: str = _KEPT, depth: float = 0.35) -> "list":
+               kept: str = _KEPT, depth: float = 0.35, light=None) -> "list":
     """The gamut painted by what the comparison cannot reproduce."""
     import plotly.graph_objects as go
     v = _plot_points(gamut)
     colours = [_LOST if bad else kept for bad in lost]
+    v, colours, faces = _weld(v, colours, gamut.faces)
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
-        i=gamut.faces[:, 0], j=gamut.faces[:, 1], k=gamut.faces[:, 2],
+        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
         vertexcolor=colours, opacity=opacity, flatshading=False,
         lighting=_lighting(depth),
-        lightposition=dict(x=0, y=0, z=2000),
+        lightposition=light or _LIGHT_OVERHEAD,
         name=f"{name} — red is out of reach", showlegend=True,
         hoverinfo="name")
 
@@ -728,6 +735,24 @@ def _caption(text: str, colours) -> dict:
                   family='Menlo, Consolas, "Courier New", monospace'))
 
 
+def _legend_line(name: str, colour: str):
+    """A legend key for a cage, in a colour of its own.
+
+    The cage itself is drawn light, because hundreds of thin lines on a pale
+    page add up to a dark mass if each one is the weight of text. One key in
+    the legend is the opposite case: a single short line that has to be seen,
+    with nothing to add up with. So the key is drawn at full weight while the
+    cage stays light, and a line key rather than a dot keeps saying *outline*
+    -- which is how the legend tells a cage from a solid at a glance.
+    """
+    import plotly.graph_objects as go
+
+    return go.Scatter3d(
+        x=[None], y=[None], z=[None], mode="lines",
+        line=dict(color=colour, width=4),
+        name=name, showlegend=True, hoverinfo="skip")
+
+
 def _legend_proxy(name: str, colour: str):
     """A legend key that is not shaded by the scene's lighting.
 
@@ -809,6 +834,43 @@ def light_position(direction_deg: float, height: float) -> dict:
                 z=reach * lift)
 
 
+#: Where the light hangs when nobody has moved it: overhead.
+_LIGHT_OVERHEAD = dict(x=0, y=0, z=2000)
+
+
+def _weld(points, colours, faces):
+    """Join vertices that sit in the same place and carry the same colour.
+
+    A boundary built from the faces of the device cube repeats every point
+    along the twelve edges where two faces meet -- on a real 1168-patch chart
+    that is 27% of them. Two copies of a corner cannot share a normal, so the
+    renderer shades each one on its own and lays a crease along every seam:
+    the surface looks chipped and grainy where it is in fact continuous.
+
+    This changes no geometry, no colour and no volume -- only which triangles
+    agree about a corner. The dents stay: they are real, they are the whole
+    point of following the measured boundary, and nothing here smooths them.
+    """
+    keys, order, keep = [], {}, []
+    for point, colour in zip(points, colours):
+        keys.append((tuple(np.round(point, 6)),
+                     colour if isinstance(colour, str)
+                     else tuple(np.atleast_1d(np.round(colour, 6)))))
+    remap = np.empty(len(keys), dtype=np.int64)
+    for i, key in enumerate(keys):
+        at = order.get(key)
+        if at is None:
+            at = order[key] = len(keep)
+            keep.append(i)
+        remap[i] = at
+    if len(keep) == len(keys):
+        return points, colours, faces
+    kept = np.asarray(keep)
+    welded = ([colours[i] for i in kept] if isinstance(colours, list)
+              else np.asarray(colours)[kept])
+    return points[kept], welded, remap[np.asarray(faces)]
+
+
 def _mesh(gamut, name: str, opacity: float, wireframe: bool,
           paint: str = "true", index: int = 0, depth: float = 0.35,
           page: str = "#111318", light=None):
@@ -819,16 +881,19 @@ def _mesh(gamut, name: str, opacity: float, wireframe: bool,
     colours = chosen if chosen is not None else [
         f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
         for r, g, b in gamut.colors]
+    v, colours, faces = _weld(v, colours, gamut.faces)
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
-        i=gamut.faces[:, 0], j=gamut.faces[:, 1], k=gamut.faces[:, 2],
+        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
         vertexcolor=colours, opacity=opacity, name=name, showlegend=False,
         # Only the legend key uses this; vertexcolor paints the surface.
         color=_legend_swatch(chosen if chosen is not None else gamut.colors,
                              page),
         flatshading=False, hoverinfo="name",
         lighting=_lighting(depth),
-        lightposition=dict(x=0, y=0, z=2000),
+        # THE LIGHT THE USER PLACED. Fixed overhead here, this argument was
+        # accepted and then dropped, so Set the lighting myself moved nothing.
+        lightposition=light or _LIGHT_OVERHEAD,
         contour=dict(show=wireframe, color="#888", width=2),
     )
 
@@ -860,15 +925,23 @@ _SLICE_COLOURS = ("#e8175d", "#3aa8d0", "#f2c744", "#6bd07a")
 #: gamut viewer exactly (gamut_panel.py:86) -- #111111 dark, #efebe6 light --
 #: so a scene dropped into that panel has no seam at its edge, and the text
 #: and grid come from ChromIQ's own tokens for the same reason.
+#: ``wire`` is a DENSE FIELD of thin lines and ``mark`` is a single small
+#: symbol, so the two cannot share a value. A cage of hundreds of edges adds
+#: up: on a light page a text-weight grey turned the whole cage into a dark
+#: mass that shouted down the measured shape it is only there to frame, and at
+#: the rims, where the lines converge, it went nearly solid. The cage is
+#: therefore a good deal lighter than the text on the same page, while one
+#: 5-pixel marker still needs the full contrast to be seen at all.
 SCENE_COLOURS = {
     "dark": dict(page="#111111", plot="#141414", grid="#262626",
                  caption="#8a8a8a",   # TEXT_DIM: readable, not shouting
                  text="#e6e6e6", axis="#333333", kept="rgb(105,112,126)",
-                 wire="#9aa3b2"),
+                 wire="#9aa3b2", mark="#9aa3b2"),
     "light": dict(page="#efebe6", plot="#f7f4ef", grid="#e0ddd7",
                   caption="#7a7570",  # LM_TEXT_DIM
                   text="#22211f", axis="#d0ccc6", kept="rgb(176,180,188)",
-                  wire="#7a7570"),
+                  wire="#a8a4a0",     # LM_TEXT_FAINT: a cage, not a wall
+                  mark="#7a7570"),    # LM_TEXT_DIM: one symbol, full weight
 }
 
 _PAGE_BACKGROUND = "#111318"
@@ -915,8 +988,171 @@ function cqLinkCameras(idA, idB) {
 """
 
 
+#: Turns the shape by itself. Two ways, because they answer two questions: all
+#: the way round is for getting the feel of a shape you have just opened, and a
+#: small swing back and forth is for JUDGING A DENT -- the parallax reads depth
+#: on a flat screen the way a still picture never can, without throwing away
+#: the viewpoint you chose.
+#:
+#: Four things it must never do, each of which is a rule in the code below:
+#:
+#: 1. Fight the user. Any mouse gesture stops it at once, and it waits until
+#:    they have finished before moving again. A wheel has no mouseup, so the
+#:    pause is a timer, the same idiom cqLinkCameras uses.
+#: 2. Undo their zoom or their tilt. Only the horizontal angle is driven; the
+#:    distance and the height are read back from the live camera every frame,
+#:    so whatever they set is kept.
+#: 3. Drag them back to an angle they deliberately left. Back-and-forth takes
+#:    its centre from wherever the camera is when they let go.
+#: 4. Spin a hidden window. A page nobody is looking at does no work.
+#:
+#: Both scenes are driven from here rather than through cqLinkCameras, which
+#: deliberately lets only the view being DRAGGED lead -- with nobody dragging,
+#: the follower would never move.
+_SPIN_JS = """
+window.cqSpin = (function () {
+  var ids = [], on = false, raf = null, last = 0, held = 0;
+  var axes = {turn: {mode: "swing", speed: 8, range: 60, phase: 0},
+              tilt: {mode: "off",   speed: 6, range: 40, phase: 0}};
+
+  function scene(id) {
+    var gd = document.getElementById(id);
+    return (gd && gd._fullLayout) ? gd : null;
+  }
+  function liveCam(gd) {          // during a drag the real camera is internal
+    try {
+      var s = gd._fullLayout.scene && gd._fullLayout.scene._scene;
+      if (s && s.getCamera) return s.getCamera();
+    } catch (e) {}
+    return gd.layout && gd.layout.scene && gd.layout.scene.camera;
+  }
+  function setCam(gd, cam) {
+    var s = null;
+    try { s = gd._fullLayout.scene._scene; } catch (e) {}
+    if (s && s.setCamera) s.setCamera(cam);          // cheap: no relayout
+    else if (window.Plotly) Plotly.relayout(gd, {"scene.camera": cam});
+  }
+  function cross(a, b) {
+    return [a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0]];
+  }
+  function unit(v) {
+    var n = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    return n > 1e-9 ? [v[0] / n, v[1] / n, v[2] / n] : null;
+  }
+  function rot(v, k, a) {         // Rodrigues: turn v about unit axis k
+    var c = Math.cos(a), s = Math.sin(a);
+    var d = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
+    var x = cross(k, v);
+    return [v[0] * c + x[0] * s + k[0] * d * (1 - c),
+            v[1] * c + x[1] * s + k[1] * d * (1 - c),
+            v[2] * c + x[2] * s + k[2] * d * (1 - c)];
+  }
+  function rest() {
+    axes.turn.phase = 0; axes.tilt.phase = 0;
+  }
+  function hold() { held = Date.now(); rest(); }
+  function watch(gd) {
+    if (gd._cqSpinWatched) return;
+    gd._cqSpinWatched = true;
+    ["mousedown", "wheel", "touchstart", "touchmove"].forEach(function (ev) {
+      gd.addEventListener(ev, hold, true);
+    });
+  }
+  // HOW FAR TO MOVE THIS FRAME -- an increment, never an absolute angle. It is
+  // what makes a drag or a zoom survive: nothing is ever forced back to a
+  // remembered position, so whatever the user set is simply carried along. It
+  // also gives back-and-forth its centre for free -- the phase is reset when
+  // they let go, so the swing starts again from wherever they left it.
+  function advance(a, dt) {
+    if (a.mode === "off" || !(a.speed > 0)) return 0;
+    var rate = a.speed * Math.PI / 180;
+    if (a.mode === "round") return rate * dt;
+    var half = a.range / 2 * Math.PI / 180;
+    if (!(half > 0)) return 0;
+    var was = a.phase;
+    // Eased with a sine, so it slows into each turning point instead of
+    // snapping. The setting is the PEAK rate, which is what makes one speed
+    // mean the same thing whichever way it is moving.
+    a.phase += rate / half * dt;
+    return half * (Math.sin(a.phase) - Math.sin(was));
+  }
+  function step(id, turn, tilt) {
+    var gd = scene(id); if (!gd) return;
+    watch(gd);
+    var cam = liveCam(gd); if (!cam || !cam.eye) return;
+    var c = cam.center || {x: 0, y: 0, z: 0};
+    var e = [cam.eye.x - c.x, cam.eye.y - c.y, cam.eye.z - c.z];
+    var u = cam.up ? [cam.up.x, cam.up.y, cam.up.z] : [0, 0, 1];
+    if (turn) {                   // left and right: a turntable about L*
+      e = rot(e, [0, 0, 1], turn);
+      u = rot(u, [0, 0, 1], turn);
+    }
+    if (tilt) {
+      // UP AND DOWN TUMBLES THE WHOLE CAMERA, up vector and all. Simply
+      // raising the eye is a turntable, and a turntable cannot go over the
+      // top: at the pole the view has no left or right left to it and the
+      // picture flips. Turning the eye AND its up about the same axis has no
+      // pole at all, so a full tumble is as smooth as any other part of it.
+      var side = unit(cross(e, u));
+      if (side) { e = rot(e, side, tilt); u = rot(u, side, tilt); }
+    }
+    setCam(gd, {up: {x: u[0], y: u[1], z: u[2]}, center: c,
+                eye: {x: c.x + e[0], y: c.y + e[1], z: c.z + e[2]}});
+  }
+  function frame(now) {
+    if (!on) { raf = null; return; }
+    raf = window.requestAnimationFrame(frame);
+    var dt = (now - last) / 1000; last = now;
+    if (document.hidden) return;
+    if (!isFinite(dt) || dt <= 0) return;
+    if (dt > 0.1) dt = 0.1;       // back from a hidden tab: step, do not jump
+    if (Date.now() - held < 400) return;          // their gesture, not ours
+    // ONE set of increments for the whole frame, so two rooms that are meant
+    // to point the same way stay together to the last decimal.
+    var turn = advance(axes.turn, dt), tilt = advance(axes.tilt, dt);
+    if (!turn && !tilt) return;
+    for (var i = 0; i < ids.length; i++) step(ids[i], turn, tilt);
+  }
+  function set(o) {
+    if (o.ids !== undefined) { ids = o.ids; rest(); }
+    ["turn", "tilt"].forEach(function (which) {
+      var got = o[which]; if (!got) return;
+      var a = axes[which];
+      if (got.mode !== undefined && got.mode !== a.mode) { a.mode = got.mode; a.phase = 0; }
+      if (got.range !== undefined && got.range !== a.range) { a.range = got.range; a.phase = 0; }
+      if (got.speed !== undefined) a.speed = got.speed;
+    });
+    if (o.on !== undefined) { if (o.on && !on) rest(); on = !!o.on; }
+    if (on && raf === null) {
+      last = (window.performance || Date).now();
+      raf = window.requestAnimationFrame(frame);
+    }
+  }
+  return {set: set};
+})();
+"""
+
+
+def _spin_script(ids, spin) -> str:
+    """The turning engine plus the settings the window had when it was written.
+
+    A saved page keeps whatever was on screen when it was saved, so a page sent
+    to somebody arrives doing what the sender was looking at.
+    """
+    if not spin:
+        return ""
+    import json
+
+    settings = dict(spin)
+    settings["ids"] = list(ids)
+    return (f"<script>{_SPIN_JS}\nwindow.addEventListener('load', function () "
+            f"{{window.cqSpin.set({json.dumps(settings)});}});</script>")
+
+
 def write_side_by_side_html(pages, out: Path, mode: str = "dark",
-                            linked: bool = True) -> Path:
+                            linked: bool = True, spin=None) -> Path:
     """Two scenes in one page, each with its own shape, side by side.
 
     Overlaying two gamuts is the right way to see where one reaches past the
@@ -982,14 +1218,18 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
           font-family:Menlo,Consolas,"Courier New",monospace;
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
  .half > div:last-child {{ flex:1 1 auto; min-height:0; }}
-</style></head><body><div class="row">{''.join(blocks)}</div>{resize}{link}</body></html>"""
+</style></head><body><div class="row">{''.join(blocks)}</div>{resize}{link}{_spin_script(ids, spin)}</body></html>"""
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
 
 
-def _write_dark_html(fig, out: Path, mode: str = "dark") -> Path:
+def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None) -> Path:
     """Write the figure as a self-contained page whose paper matches the app."""
-    html = fig.to_html(include_plotlyjs="inline", full_html=True)
+    # A KNOWN div id, so the turning engine has something to address. Plotly
+    # invents a random one otherwise, and nothing outside the figure can find
+    # it afterwards.
+    html = fig.to_html(include_plotlyjs="inline", full_html=True,
+                       div_id="scene0")
     _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]
     style = (f"<style>html,body{{background:{_PAGE_BACKGROUND};margin:0;"
              f"padding:0;overflow:hidden;}}</style>")
@@ -997,6 +1237,10 @@ def _write_dark_html(fig, out: Path, mode: str = "dark") -> Path:
         html = html.replace("</head>", style + "</head>", 1)
     else:
         html = style + html
+    turn = _spin_script(["scene0"], spin)
+    if turn:
+        html = (html.replace("</body>", turn + "</body>", 1)
+                if "</body>" in html else html + turn)
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
 
@@ -1036,7 +1280,7 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str,
                 if len(empty) == 1 else
                 f"  —  {which} do not reach this lightness")
     fig.add_trace(go.Scatter(x=[0], y=[0], mode="markers",
-                             marker=dict(color=c["wire"], size=5, symbol="x"),
+                             marker=dict(color=c["mark"], size=5, symbol="x"),
                              name="neutral grey", hoverinfo="name"))
     fig.update_layout(
         title=_caption(f"{title}  ·  lightness L* = {lightness:.0f}{note}", c),
@@ -1055,7 +1299,11 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str,
 def write_html(gamuts, out: Path, title: str, **kwargs) -> Path:
     """One self-contained page holding one scene. See :func:`build_figure`."""
     mode = kwargs.get("mode", "dark")
-    return _write_dark_html(build_figure(gamuts, title, **kwargs), out, mode)
+    # Not a drawing option: it is what the page DOES once drawn, so it never
+    # reaches build_figure.
+    spin = kwargs.pop("spin", None)
+    return _write_dark_html(build_figure(gamuts, title, **kwargs), out, mode,
+                            spin=spin)
 
 
 def build_figure(gamuts, title: str, opacity: float | None = None,
@@ -1064,7 +1312,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                  mode: str = "dark", paint: str = "true",
                  depth: float = 0.35, mesh_paint: str = "plain",
                  rings: int = 0, per_shape=None, neutrals=None,
-                 light=None):
+                 light=None, grid: bool = True):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -1092,7 +1340,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         marked = lost[i] if lost is not None and i < len(lost) else None
         if marked is not None:
             fig.add_trace(_mesh_lost(g, name, base_i, marked, c["kept"],
-                                     depth_i))
+                                     depth_i, light=light))
         elif how in ("solid", "solid+mesh"):
             fig.add_trace(_mesh(g, name, opacity=base_i, wireframe=False,
                                 paint=paint_i, index=i, depth=depth_i,
@@ -1105,10 +1353,10 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                                 width=1.0 if how == "mesh" else 0.7,
                                 paint=("plain" if mesh_paint_i == "plain"
                                        else paint_i),
-                                index=i):
+                                index=i, key=c["mark"]):
                 fig.add_trace(trace)
         if rings_i:
-            for trace in _rings(g, name, rings_i, c["wire"]):
+            for trace in _rings(g, name, rings_i, c["wire"], key=c["mark"]):
                 fig.add_trace(trace)
         if neutrals is not None and i < len(neutrals) and neutrals[i] is not None:
             for trace in _neutral_trace(neutrals[i], name, "#ff6b6b",
@@ -1145,9 +1393,17 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             # it shows the shape as a solid. Distance and elevation have to be
             # raised together; scaling x and y alone flattens the view.
             camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
-            xaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"]),
-            yaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"]),
-            zaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"]),
+            # THE BOX AROUND THE SHAPE, or nothing at all. Turned off, the
+            # walls, the grid, the numbers and the axis names all go with it
+            # and the shape is left floating on the page -- which is what a
+            # picture for somebody else usually wants, and which takes the
+            # scale away, which is why it is not the default.
+            xaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"],
+                       visible=grid),
+            yaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"],
+                       visible=grid),
+            zaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"],
+                       visible=grid),
         ),
         paper_bgcolor=c["page"], font_color=c["text"],
         legend=dict(orientation="h", y=-0.02),

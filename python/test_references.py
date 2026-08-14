@@ -162,3 +162,134 @@ def test_a_gamut_file_reports_the_volume_its_own_triangles_enclose():
                       [0, 2, 1], [0, 3, 2]])
     assert mesh_volume(dented, faces) < float(ConvexHull(
         np.vstack([dented, [[5., 5., 8.]]])).volume)
+
+
+# --- ICC version 4, which ArgyllCMS declines --------------------------------
+
+def _system_profiles():
+    """Whatever ICC profiles this machine happens to carry."""
+    import glob
+    import pathlib
+    return [pathlib.Path(p) for p in sorted(set(
+        glob.glob("/System/Library/ColorSync/Profiles/*.icc")
+        + glob.glob("/Library/ColorSync/Profiles/*.icc")
+        + glob.glob("/usr/share/color/icc/**/*.icc", recursive=True)
+        + glob.glob(r"C:\Windows\System32\spool\drivers\color\*.icm")))]
+
+
+def test_the_header_is_read_the_way_the_specification_writes_it():
+    """The version is a byte for the major number and a packed byte for the
+    rest: 4.3 is stored as 04 30. Shifting the first byte reads EVERY profile
+    as version 0, which silently makes the v4 path unreachable."""
+    import icc_read
+    seen = {}
+    for path in _system_profiles():
+        try:
+            head = icc_read.describe(path)
+        except icc_read.UnsupportedProfile:
+            continue
+        seen[head["major"]] = seen.get(head["major"], 0) + 1
+    if not seen:
+        pytest.skip("this machine carries no ICC profiles")
+    assert set(seen) <= {2, 4, 5}, seen
+    assert 0 not in seen
+
+
+def test_our_reader_agrees_with_argyll_wherever_argyll_can_read_it():
+    """THE check that makes the fallback trustworthy. A parser is only worth
+    having if it gives the same answer as a mature implementation on every
+    file both can open; agreeing on those is what earns the right to be
+    believed on the files only one of them can.
+
+    Three-channel profiles only: for four inks there is no cube to walk, so
+    that path deliberately reports the outer skin and is a different quantity.
+    """
+    import icc_read
+    from references import icc_gamut
+    compared = []
+    for path in _system_profiles():
+        try:
+            head = icc_read.describe(path)
+        except icc_read.UnsupportedProfile:
+            continue
+        if head["class"] in ("abst", "link", "nmcl") or head["space"] != "RGB":
+            continue
+        try:
+            theirs = icc_gamut(path).volume
+        except Exception:                                # noqa: BLE001
+            continue                                     # Argyll refused it
+        try:
+            ours = icc_read.profile_gamut(path).volume
+        except icc_read.UnsupportedProfile:
+            continue
+        compared.append((path.name, theirs, ours))
+    if not compared:
+        pytest.skip("no profile on this machine can be read both ways")
+    for name, theirs, ours in compared:
+        off = abs(ours - theirs) / theirs
+        assert off < 0.03, f"{name}: Argyll {theirs:,.0f} vs ours {ours:,.0f}"
+
+
+def test_every_version_four_profile_here_can_now_be_opened():
+    """The reason this exists at all. Any v4 RGB profile the machine carries
+    must produce a real volume rather than a refusal."""
+    import icc_read
+    opened = 0
+    for path in _system_profiles():
+        try:
+            head = icc_read.describe(path)
+        except icc_read.UnsupportedProfile:
+            continue
+        if head["major"] < 4 or head["space"] != "RGB":
+            continue
+        if head["class"] in ("abst", "link", "nmcl"):
+            continue
+        gamut = icc_read.profile_gamut(path)
+        assert gamut.volume > 1000, f"{path.name} gave {gamut.volume}"
+        assert len(gamut.vertices) > 50
+        opened += 1
+    if not opened:
+        pytest.skip("this machine carries no version 4 RGB profile")
+
+
+def test_a_file_that_is_not_a_profile_says_so_rather_than_crashing(tmp_path):
+    import icc_read
+    for name, body in (("empty.icc", b""),
+                       ("short.icc", b"\x00" * 60),
+                       ("wrong.icc", b"\x00" * 40 + b"nope" + b"\x00" * 200)):
+        bad = tmp_path / name
+        bad.write_bytes(body)
+        with pytest.raises(icc_read.UnsupportedProfile):
+            icc_read.describe(bad)
+
+
+def test_a_truncated_profile_is_refused_rather_than_half_read(tmp_path):
+    """A profile cut in half must not produce a plausible-looking gamut."""
+    import icc_read
+    for path in _system_profiles():
+        try:
+            if icc_read.describe(path)["space"] != "RGB":
+                continue
+        except icc_read.UnsupportedProfile:
+            continue
+        cut = tmp_path / "cut.icc"
+        cut.write_bytes(path.read_bytes()[:len(path.read_bytes()) // 2])
+        with pytest.raises(Exception):                   # noqa: B017
+            icc_read.profile_gamut(cut)
+        return
+    pytest.skip("this machine carries no RGB profile to cut in half")
+
+
+def test_the_parametric_curves_match_their_definitions():
+    """Type 3 is the sRGB shape and is what every v4 display profile uses, so
+    it is checked against the numbers sRGB is actually defined by."""
+    import numpy as np
+
+    from icc_read import _parametric
+    srgb = _parametric(3, [2.4, 1 / 1.055, 0.055 / 1.055, 1 / 12.92, 0.04045])
+    x = np.array([0.0, 0.02, 0.04045, 0.5, 1.0])
+    want = np.where(x >= 0.04045, ((x + 0.055) / 1.055) ** 2.4, x / 12.92)
+    assert np.allclose(srgb(x), want, atol=1e-12)
+    # A plain gamma, and the identity, both of which appear in real files.
+    assert np.allclose(_parametric(0, [2.2])(x), x ** 2.2)
+    assert _parametric(0, [1.0])(np.array([0.25]))[0] == pytest.approx(0.25)

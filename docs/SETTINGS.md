@@ -509,3 +509,106 @@ the brighter accent and an underline on hover.
 Both open in the system browser and neither is ever pressed by the
 application. The tooltip says plainly that the app is free and stays fully
 featured whether or not anybody uses the Ko-fi link.
+
+
+---
+
+## 8. Turning by itself
+
+Depth is genuinely hard to judge on a flat screen. A dent in the deep blues
+and a shadow can look identical in a still picture; as soon as the shape
+moves, your eyes get the same depth cue they use in the real world and the
+dent becomes obvious. That is what **Turn it by itself** is for — not
+decoration.
+
+**Left and right** and **Up and down** are set separately, because they answer
+different questions. Left and right turns it like a turntable, keeping upright
+upright: black stays at the bottom, white at the top, and the hues come round
+one after another — this is the one to reach for first. Up and down tips it
+towards you and away again, which shows the lid and the floor of the gamut:
+how flat the top is near white, how it closes in towards black. Set both and
+the shape drifts through a slow tumble.
+
+Each direction offers **not at all**, **back and forth** or **all the way
+round**, with its own speed and, for a swing, its own distance.
+
+| Setting | Range | Standard | Notes |
+|---|---|---|---|
+| Left and right | not at all / back and forth / all the way round | back and forth | |
+| — how fast | 2–30 °/s | 8 | shown as "45 s a turn" or "24 s a swing" |
+| — how far | 15–180° | 60° | only for a swing |
+| Up and down | as above | **not at all** | one direction at a time is usually plenty |
+| — how fast | 2–30 °/s | 6 | |
+| — how far | 10–120° | 40° | |
+
+Four rules it obeys, each of which is a rule in the code:
+
+1. **It never fights you.** Any mouse gesture stops it at once and it waits
+   until you have finished. A wheel has no mouse-up, so the pause is a timer.
+2. **It never undoes your zoom or your tilt.** Only the angle is driven; the
+   distance and the height are read back from the live camera every frame.
+3. **It never drags you back to an angle you left.** Back and forth takes its
+   centre from wherever the camera is when you let go.
+4. **It never spins a window nobody is looking at.**
+
+### Why up and down is not simply the other axis
+
+Raising the eye of a turntable camera has a pole: at the top the view has no
+left or right left to it, and the picture flips. **Up and down therefore turns
+the camera's own up direction with it**, so the movement has no pole at all
+and a full tumble is as smooth as any other part of it. Measured on screen:
+the up vector travels the whole way from +1 to −1 and stays a unit vector
+throughout.
+
+### Speed means the same thing in both ways of moving
+
+A swing is eased with a sine, so it slows into each turning point rather than
+snapping. The setting is therefore the **peak** rate, and the phase rate is
+derived from it — which is what makes one "speed" feel the same whichever way
+it is moving. The number beside the slider is quoted as a length of time
+because degrees per second means nothing to most people.
+
+### It does not go through a redraw
+
+Every other control here rebuilds the page and loads it again. If movement did
+the same, each nudge of a speed slider would throw the viewpoint away and
+restart it — the control fighting the thing it controls. The engine is written
+into the page once and the settings are handed to it where it stands, through
+`runJavaScript`. A test guards exactly this.
+
+## 9. Show the box and its grid
+
+The three walls behind the shape, the grid on them, the numbers up the sides
+and the names of the axes. Leave it on while you are reading the shape: it is
+what tells you how light a part of the surface is, or how far into the reds it
+reaches. Turn it off for a picture meant for somebody else — the shape is left
+floating with nothing around it, which looks far better in a document, on a
+slide or in a forum post, and it is what **Save this view as a web page** then
+writes out. It applies to the whole picture, so two rooms lose the box
+together and the pair still match.
+
+## 10. ArgyllCMS: what needs it, and where it is
+
+Most people never need it, so nothing nags about it. See "Do you need
+ArgyllCMS?" in the README for the full picture; in the window it is one line
+under **This window** saying whether it was found, and a **Where ArgyllCMS
+is…** button for the case where it lives somewhere the search does not know
+about. A folder that does not actually hold the tools is turned down while you
+are still looking at the chooser, rather than days later when a file will not
+open.
+
+The saved setting is `argyll_folder`. The environment variable
+`CHROMIQ_ARGYLL_BIN` overrides everything, for a scripted install.
+
+## 11. If this goes into ChromIQ
+
+Three pieces are written to be lifted out as they are:
+
+* **`argyll.py`** — one search, one status line, one override. ChromIQ has its
+  own Argyll path setting; this would fold into it rather than sit beside it.
+* **`icc_read.py`** — reads an ICC profile without ArgyllCMS. ChromIQ hits the
+  same v4 wall wherever it calls `iccgamut`, and this answers it with no new
+  dependency: numpy only. It is validated against Argyll, not against itself.
+* **The turning engine** (`_SPIN_JS` in `ti3gamut.py`) — self-contained
+  JavaScript with one entry point, `cqSpin.set({...})`. ChromIQ has four 3D
+  views; this drops into any of them that can be handed a div id.

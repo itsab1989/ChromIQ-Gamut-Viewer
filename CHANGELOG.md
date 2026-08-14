@@ -1,5 +1,59 @@
 # Changelog
 
+## v1.5.0
+
+### ✨ What's new
+
+- **ICC version 4 profiles open.** Display P3, Rec. 709, Rec. 2020, ROMM RGB
+  and the v4 profiles paper makers hand out could not be compared against
+  before — ArgyllCMS declines them, and it was doing all the reading. They are
+  now read directly when it turns one down. On every profile both can read,
+  the two answers agree to **well under one per cent** (median 0.2%), which is
+  what makes the new reader worth believing on the files only it can open.
+- **Turn it by itself.** The shape can move on its own, so you can watch it
+  from every side without holding the mouse — which is the difference between
+  guessing at a dent and seeing it, because depth only really reads when
+  something moves. **Left and right** and **up and down** are set separately,
+  each with its own way of moving (a limited swing back and forth, or all the
+  way round), its own speed and its own distance. Touch the picture and it
+  stops at once, then carries on from wherever you left it.
+- **Show the box and its grid** can be turned off, leaving the shape floating
+  on the page with no walls, numbers or axis names. Much better for a picture
+  going into a document, a slide or a forum post.
+- **ArgyllCMS is found wherever it is**, including the version-numbered folder
+  the official download unpacks into, which was the one place not being looked
+  in. **This window** now says whether it was found, and **Where ArgyllCMS
+  is…** lets you point at it or open the download page. Nothing nags you about
+  it: measurements, gamut files and ICC profiles all open without it, and only
+  `.cxf`, `.mxf` and `.txt` need it.
+
+### 🐞 Fixed
+
+- **Setting the lighting yourself moved nothing.** Which side the light comes
+  from and how high it hangs were read from the controls and then dropped
+  before the surface was drawn. They work now — and the standard lighting is
+  the high, slightly-to-one-side key light it was always meant to be, so every
+  shape is modelled a little more clearly than before.
+- **The surface looked grainy where it is smooth.** A boundary built from the
+  faces of the device cube repeats every point along the twelve edges where
+  two faces meet — 27% of them on a 1168-patch chart — and two copies of a
+  corner cannot share a shading normal, so a crease was drawn along every
+  seam. The dents are untouched; only the false creases have gone.
+- **A profile in a system folder could not be opened at all** on macOS: the
+  copy step asked to carry the file's permissions and flags across, which the
+  operating system refuses for its own files. That is the folder holding
+  sRGB, Adobe RGB and Display P3, so it was the obvious one to browse to.
+- **The wire cage was a dark mass in the light appearance.** Hundreds of thin
+  lines at the weight of text add up; on a pale page they shouted down the
+  measured shape they are only there to frame, and went nearly solid at the
+  rims. The cage is lighter now, while its key in the legend keeps its full
+  weight so it can still be seen.
+- **Side by side drew the second chart as a grey wireframe.** An outline is
+  there so you can see *through* the shape on top to the one behind it. Side
+  by side there is nothing behind it, so both are now drawn solid.
+- **The names have come out of the drop-down boxes** and sit beside them,
+  where they are said once instead of on every line of the open list.
+
 ## v1.4.0
 
 ### 🐞 Fixed
