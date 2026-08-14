@@ -183,3 +183,33 @@ def test_a_folder_with_no_profiles_in_it_is_not_offered(tmp_path):
     assert _holds_profiles(empty)
     (empty / "another.ICM").write_bytes(b"\0" * 8)          # case does not matter
     assert _holds_profiles(empty)
+
+
+def test_saving_is_not_offered_folders_it_cannot_write_to():
+    """The profile folders belong to the operating system, so a save dialog
+    offering them is offering three shortcuts to a refusal. They are for
+    opening a profile, which is the only thing anybody does in them."""
+    import gamut_app
+    opening = {u.toLocalFile() for u in gamut_app._sidebar_urls("", profiles=True)}
+    saving = {u.toLocalFile() for u in gamut_app._sidebar_urls("", profiles=False)}
+    assert saving <= opening
+    for folder in gamut_app.PROFILE_FOLDERS:
+        assert str(folder) not in saving
+    # and the ordinary places are still there either way
+    assert saving, "saving was left with no shortcuts at all"
+
+
+def test_every_dialog_is_ours_rather_than_the_systems():
+    """Only a non-native dialog can carry the shortcuts down the left, which
+    is the difference between finding a file in one click and hunting."""
+    import inspect
+
+    import gamut_app
+    source = inspect.getsource(gamut_app.GamutApp._file_dialog)
+    assert "DontUseNativeDialog" in source
+    assert "setSidebarUrls" in source
+    # Exactly one dialog is ever built, and it is this one: any other route
+    # making its own would get the system's, with no shortcuts in it.
+    assert source.count("QFileDialog(") == 1
+    whole = inspect.getsource(gamut_app.GamutApp)
+    assert whole.count("QFileDialog(") == 1, "a second dialog is built somewhere"

@@ -520,7 +520,7 @@ def _holds_profiles(folder: Path) -> bool:
 PROFILE_FOLDERS = _profile_folders()
 
 
-def _sidebar_urls(*extra) -> list:
+def _sidebar_urls(*extra, profiles: bool = True) -> list:
     """Folders worth one click in the file dialog.
 
     The OS-correct, localized standard folders rather than hard-coded English
@@ -545,7 +545,11 @@ def _sidebar_urls(*extra) -> list:
     # sRGB, Adobe RGB, Display P3 -- and the ones a paper maker installs are
     # both a single click away. Anything absent is dropped, so a Mac shows the
     # Mac ones and a PC shows its own.
-    candidates.extend(f for f in PROFILE_FOLDERS if _holds_profiles(f))
+    # WHERE PROFILES LIVE IS FOR OPENING, NOT FOR SAVING. Those folders
+    # belong to the operating system and nothing can be written into them, so
+    # offering them while saving a picture is three shortcuts to a refusal.
+    if profiles:
+        candidates.extend(f for f in PROFILE_FOLDERS if _holds_profiles(f))
     candidates.extend(Path(e) for e in extra if e)
     seen, urls = set(), []
     for c in candidates:
@@ -2966,7 +2970,8 @@ class GamutApp(QMainWindow):
             moving=want["moving"])
         chooser = self._file_dialog("Where should the picture go?",
                                     QFileDialog.FileMode.AnyFile,
-                                    f"Picture (*.{want['format']})", suggested)
+                                    f"Picture (*.{want['format']})", suggested,
+                                    profiles=False)
         chooser.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         chooser.setDefaultSuffix(want["format"])
         if not chooser.exec():
@@ -3704,7 +3709,8 @@ class GamutApp(QMainWindow):
             self._slots[0][0].stem + "-gamut.csv")
         dlg = self._file_dialog("Save the numbers as a table",
                                 QFileDialog.FileMode.AnyFile,
-                                "Comma-separated values (*.csv)", str(default))
+                                "Comma-separated values (*.csv)", str(default),
+                                profiles=False)
         dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         dlg.setDefaultSuffix("csv")
         _style_dialog_toolbar(dlg, PALETTES[self._appearance]["arrow"])
@@ -3898,7 +3904,7 @@ class GamutApp(QMainWindow):
         self._redraw()
 
     def _file_dialog(self, title: str, mode, name_filter: str,
-                     preselect: str = "") -> QFileDialog:
+                     preselect: str = "", profiles: bool = True) -> QFileDialog:
         """A file dialog with useful places already in its sidebar.
 
         Qt's own dialog rather than the operating system's, because only that
@@ -3909,7 +3915,7 @@ class GamutApp(QMainWindow):
         dlg.setOption(QFileDialog.Option.DontUseNativeDialog)
         dlg.setFileMode(mode)
         dlg.setNameFilter(name_filter)
-        dlg.setSidebarUrls(_sidebar_urls(self._last_folder))
+        dlg.setSidebarUrls(_sidebar_urls(self._last_folder, profiles=profiles))
         if preselect:
             dlg.selectFile(preselect)
         if self._last_folder:
@@ -3989,7 +3995,8 @@ class GamutApp(QMainWindow):
         default = first.with_name(first.stem + "-gamut.html")
         dlg = self._file_dialog("Save this view as a web page",
                                 QFileDialog.FileMode.AnyFile,
-                                "Web page (*.html)", str(default))
+                                "Web page (*.html)", str(default),
+                                profiles=False)
         dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         dlg.setDefaultSuffix("html")
         if not dlg.exec():

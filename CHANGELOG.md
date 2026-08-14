@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.9.3
+
+### 🐞 Fixed
+
+- **Saving no longer offers folders you cannot write to.** Every file dialog
+  here is the application's own rather than the system's, so it can carry
+  useful shortcuts down the left — but the ones for opening a colour profile
+  belong to the operating system, and offering them while saving a picture was
+  three shortcuts to a refusal. Opening still offers them; saving offers the
+  Desktop, Pictures, Downloads, Documents and your ChromIQ folder.
+
 ## v1.9.2
 
 ### 🐞 Fixed
