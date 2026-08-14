@@ -201,7 +201,10 @@ jobs:
       # version inside the application: a release whose notes are quietly
       # wrong is worse than a build that stopped and said so.
       - name: Write the release notes for this version
-        run: python python/release_body.py "${GITHUB_REF_NAME}" --out body.md
+        # python3, not python: the release runner has no setup-python step
+        # and Ubuntu does not guarantee a bare "python" on PATH. The script
+        # needs nothing beyond the standard library, so nothing is installed.
+        run: python3 python/release_body.py "${GITHUB_REF_NAME}" --out body.md
 
       - name: Attach everything to the release
         uses: softprops/action-gh-release@v2
