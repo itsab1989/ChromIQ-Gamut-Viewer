@@ -518,3 +518,113 @@ def test_the_key_still_looks_like_the_shape_it_stands_for():
     red = _legend_swatch(np.array([[0.55, 0.05, 0.05]] * 8), "#111318")
     r, g, b = (int(red[i:i + 2], 16) for i in (1, 3, 5))
     assert r > g and r > b, red
+
+
+# --- tinting into the accent, and placing the light -------------------------
+
+def _gamut_for_paint():
+    # A fine cube, not a coarse one: with only six steps per channel there are
+    # too few distinct hues for banding to be visible either way, and the test
+    # would pass or fail on quantisation rather than on the thing it checks.
+    _, xyz = rgb_cube(14)
+    return build_gamut(xyz, input_space="xyz", white_point="D65")
+
+
+def test_the_accent_tint_has_no_bands_in_it():
+    """The first version snapped every colour to the nearest of six accent
+    hues, which produced six flat regions with hard seams between them.
+
+    Asserted as a property rather than against a fixed count, because how many
+    distinct colours appear depends entirely on how finely the chart sampled:
+    the smooth tint must produce meaningfully MORE distinct colours than
+    snapping the same data would.
+    """
+    import colorsys
+    import re as _re
+
+    import numpy as _np
+
+    from ti3gamut import _ACCENT_BANDS, _paint_vertices
+
+    g = _gamut_for_paint()
+    smooth = {tuple(int(v) // 6 for v in _re.findall(r"\d+", c))
+              for c in _paint_vertices(g, "accent", 0)}
+
+    snapped = set()
+    for r, gg, b in _np.clip(_np.asarray(g.colors, float), 0, 1):
+        h, l, s = colorsys.rgb_to_hls(float(r), float(gg), float(b))
+        hue, sat = 0.0, 0.0
+        if s >= 0.15:
+            for lo, hi, ah, asat in _ACCENT_BANDS:
+                if lo <= h * 360.0 < hi:
+                    hue, sat = ah / 360.0, asat
+                    break
+        nr, ng, nb = colorsys.hls_to_rgb(hue, min(l, 0.92), sat)
+        snapped.add(tuple(int(v * 255) // 6 for v in (nr, ng, nb)))
+
+    assert len(smooth) > len(snapped) * 1.5, (len(smooth), len(snapped))
+
+
+def test_the_tint_never_pushes_neighbours_much_further_apart():
+    """A rough edge is two touching vertices that the tint separates far more
+    than the measurement itself does. Judged against the real colours' own
+    worst step, so the bar adapts to the data rather than being a magic
+    number."""
+    import re as _re
+
+    import numpy as _np
+
+    from ti3gamut import _paint_vertices
+    g = _gamut_for_paint()
+    edges = set()
+    for t in g.faces:
+        for a, b in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])):
+            edges.add((min(a, b), max(a, b)))
+    edges = _np.array(sorted(edges))
+    tinted = _np.array([[int(v) for v in _re.findall(r"\d+", c)]
+                        for c in _paint_vertices(g, "accent", 0)], float)
+    real = _np.asarray(g.colors) * 255
+    step_t = _np.linalg.norm(tinted[edges[:, 0]] - tinted[edges[:, 1]], axis=1)
+    step_r = _np.linalg.norm(real[edges[:, 0]] - real[edges[:, 1]], axis=1)
+    assert step_t.max() <= step_r.max() * 1.6, (step_t.max(), step_r.max())
+
+
+def test_near_greys_are_left_grey():
+    """Forcing a near-neutral into a colour it never had would be a lie about
+    the measurement."""
+    import re as _re
+
+    import numpy as _np
+
+    from ti3gamut import _accent_vertices
+
+    class _Fake:
+        colors = _np.array([[0.5, 0.5, 0.5], [0.2, 0.2, 0.205]])
+    for text in _accent_vertices(_Fake()):
+        r, g, b = (int(v) for v in _re.findall(r"\d+", text))
+        assert max(r, g, b) - min(r, g, b) <= 6, text
+
+
+def test_the_light_can_be_moved_around_and_above():
+    """Direction swings it around the shape; height lifts it over the top."""
+    from ti3gamut import light_position
+    front = light_position(0.0, 0.0)
+    side = light_position(90.0, 0.0)
+    assert front["x"] > 0 and abs(front["y"]) < 1e-6
+    assert side["y"] > 0 and abs(side["x"]) < 1e-6
+    above = light_position(0.0, 1.0)
+    assert above["z"] > 0 and abs(above["x"]) < 1e-6
+    below = light_position(0.0, -1.0)
+    assert below["z"] < 0
+
+
+def test_the_light_stays_the_same_distance_however_it_is_placed():
+    """Only the direction should change: moving a lamp closer would change the
+    brightness, which is what the intensity controls are for."""
+    import math
+
+    from ti3gamut import light_position
+    lengths = [math.dist((0, 0, 0), (p["x"], p["y"], p["z"]))
+               for p in (light_position(d, h)
+                         for d, h in ((0, 0), (90, 0.5), (200, -0.8), (330, 1)))]
+    assert max(lengths) - min(lengths) < 1e-6, lengths

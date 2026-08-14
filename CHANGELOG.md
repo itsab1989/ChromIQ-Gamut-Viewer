@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.3.0
+
+### ✨ What's new
+
+- **Move the light.** Two more controls under **Set the lighting myself**:
+  which side the light comes from, and how high it hangs. Dropping it lower
+  throws longer shadows across the surface, which can make a shallow dent
+  easier to see.
+- **The accent tint is smooth.** It used to snap every colour to one of six
+  accent hues, which showed as six flat patches with hard seams. It is a
+  continuous sweep now.
+- **Show every patch I measured** has its own ⓘ, as does everything in
+  **This window**.
+
+### 🐞 Fixed
+
+- Side by side: each shape is centred in **its own half**, and stays centred
+  when the window is resized.
+
 ## v1.2.0
 
 ### ✨ What's new

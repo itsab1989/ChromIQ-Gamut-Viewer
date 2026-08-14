@@ -118,6 +118,8 @@ LIGHT_CONTROLS = (
     ("specular", "Specular — the shiny highlight", 0.0, 2.0, 0.08),
     ("roughness", "Roughness — how soft that highlight is", 0.0, 1.0, 0.78),
     ("fresnel", "Fresnel — glow around the edges", 0.0, 5.0, 0.06),
+    ("direction", "Which side the light comes from", 0.0, 360.0, 45.0),
+    ("height", "How high the light hangs", -1.0, 1.0, 0.85),
 )
 
 #: How the shapes in the picture are coloured. Each answers a different
@@ -1493,14 +1495,28 @@ class GamutApp(QMainWindow):
             self._light_rows.append(row)
             self._light_sliders[key] = (slider, lo, hi)
         light_hint = Hint(
-            "These are the five numbers the 3D view actually takes. Ambient is "
-            "light arriving from every direction, so more of it flattens the "
-            "shape and shows its colours plainly. Diffuse is light the surface "
-            "scatters, which is what makes a curve look curved. Specular is "
-            "the shiny highlight and roughness decides how soft that highlight "
-            "is. Fresnel adds a glow around the edges. Every one of them moves "
-            "the picture as you drag.", g_look)
-        light_hint.setVisible(False)   # only under "Set the lighting myself"
+            "Everything about the light in the 3D view, for anybody who wants "
+            "to dial in a particular look. Nothing here changes a single "
+            "measurement — it only changes how the shape is lit.\n\n"
+            "HOW BRIGHT, AND HOW SOFT.\n"
+            "Ambient is light arriving from every direction at once, so more "
+            "of it flattens the shape and shows its colours plainly. Diffuse "
+            "is light the surface scatters, which is what makes a curve look "
+            "curved. Specular is the shiny highlight and Roughness decides "
+            "how soft that highlight is — a low roughness gives a small hard "
+            "glint, a high one a broad sheen. Fresnel adds a glow around the "
+            "edges, where a real surface catches the light at a glancing "
+            "angle.\n\n"
+            "WHERE IT SHINES FROM.\n"
+            "Which side the light comes from swings it around the shape, like "
+            "walking a lamp around a table: 0 is straight ahead, 90 is off to "
+            "one side. How high the light hangs lifts it from below the shape "
+            "(-1) through level with it (0) to directly overhead (+1).\n\n"
+            "A light high and a little to one side is the usual choice, and "
+            "it is what you get with this switched off. Moving it lower "
+            "throws longer shadows across the surface, which can make a "
+            "shallow dent easier to see.\n\n"
+            "Every one of them moves the picture as you drag.", g_look)
         light_hint.setObjectName("hint_light_hint")
         lv.addWidget(light_hint)
         self._light_rows.append(light_hint)
@@ -1637,6 +1653,20 @@ class GamutApp(QMainWindow):
         self._points = QCheckBox("Show every patch I measured", g_look)
         self._points.stateChanged.connect(self._redraw)
         lv.addWidget(self._points)
+        points_hint = Hint(
+            "Draws every patch of the chart as a small dot in its own colour, "
+            "inside the shape they produced.\n\n"
+            "This is the evidence the shape is built from, and it answers a "
+            "question the smooth surface hides: where did the chart actually "
+            "sample, and where is the boundary a guess between two widely "
+            "spaced patches? A dense cloud means the edge is well measured; a "
+            "sparse one at the corners means the shape there is an "
+            "interpolation.\n\n"
+            "It is worth a look when a gamut seems surprisingly large or "
+            "oddly shaped — a boundary drawn from very few points in that "
+            "region is the usual explanation.", g_look)
+        points_hint.setObjectName("hint_points_hint")
+        lv.addWidget(points_hint)
 
         self._side_by_side = QCheckBox("Show them in two rooms, side by side",
                                        g_look)
@@ -3120,6 +3150,24 @@ class GamutApp(QMainWindow):
             out.append(dict(self._per_shape[2]))
         return out
 
+    def _light_value(self, key: str) -> float:
+        """One lighting slider, back in the units the renderer wants."""
+        slider, lo, hi = self._light_sliders[key]
+        return lo + (hi - lo) * slider.value() / 100.0
+
+    def _light_position(self) -> dict:
+        """Where the light hangs, from the two controls that place it.
+
+        With "Set the lighting myself" off, this is a plain key light: high
+        and a little to one side, which is what makes a curved surface read as
+        curved. The controls only take over once somebody asks for them.
+        """
+        from ti3gamut import light_position
+        if not self._manual_light.isChecked():
+            return light_position(45.0, 0.85)
+        return light_position(self._light_value("direction"),
+                              self._light_value("height"))
+
     def _render_options(self) -> dict:
         """Every option the renderer takes, from the controls, in one place.
 
@@ -3142,6 +3190,7 @@ class GamutApp(QMainWindow):
             per_shape=self._per_shape_list(),
             neutrals=(self._neutral_list() if self._neutral.isChecked()
                       else None),
+            light=self._light_position(),
         )
 
     def _scene_contents(self):

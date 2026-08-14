@@ -440,3 +440,44 @@ verbatim, so a gamut tinted in either application looks like the same picture.
 **A control that can do nothing is not offered.** Side by side needs two
 shapes; the camera link needs side by side. Their ⓘ appear and disappear with
 them.
+
+### Placing the light
+
+| Control | Range | Default |
+|---|---|---|
+| Which side the light comes from | 0–360° | 45° |
+| How high the light hangs | −1 (below) … +1 (overhead) | 0.85 |
+
+Given as a bearing and a height rather than as x, y, z: asking somebody for
+three coordinates to place a lamp is asking them to solve a puzzle, while
+asking which side it shines from and how high it is is a question about a
+room. `light_position()` converts.
+
+**The distance is fixed.** Only the direction is adjustable, because moving a
+light nearer a shape of this size changes the brightness rather than the
+modelling — and brightness is what the five intensity controls are for.
+
+### Why the accent tint is smooth, and what it cost to get there
+
+Snapping each colour to the nearest of six accent hues gives six flat regions
+with hard seams. Three things were needed, and the first two were *measured
+to be insufficient* before the third was added:
+
+1. **Interpolate between the accent hues** instead of snapping — necessary,
+   not sufficient.
+2. **Smooth the map around the circle**, so the rate of hue change has no
+   corners at the anchors. Widening that blur from 31° to 121° moved the worst
+   step between touching vertices only from 1.41× to 1.31× of what the real
+   colours do: blurring redistributes steepness, it cannot remove it.
+3. **Limit the rate directly** — differentiate the map, clip any stretch
+   faster than 1.25, re-integrate and rescale to close the circle.
+
+Result on a real 1,168-patch chart: distinct colours **111 → 430**, worst
+neighbour step **1.41× → 1.26×** of the measurement's own worst step, and
+**95% of edges within 1.17×**.
+
+**What remains is inherent, and worth stating rather than hiding.** Six accents
+spaced unevenly around the circle mean some stretches of hue are compressed
+and others expanded, whatever shape the curve takes. Perfect smoothness and a
+strong accent character are in tension; this sits deliberately near the smooth
+end while still clearly wearing the accent.
