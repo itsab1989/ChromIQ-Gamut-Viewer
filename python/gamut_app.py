@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import math
 
+import picture
+
 import csv
 import json
 import os
@@ -57,7 +59,7 @@ from PyQt6.QtGui import (QColor, QDesktopServices, QFont, QFontMetrics,
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel, QLayout,
                              QDialog, QMainWindow, QPushButton, QScrollArea, QSlider,
-                             QDialogButtonBox, QListView, QSizeGrip,
+                             QColorDialog, QDialogButtonBox, QListView, QSizeGrip, QSpinBox,
                              QSizePolicy, QStyle,
                              QButtonGroup, QGridLayout, QRadioButton, QToolButton,
                              QVBoxLayout,
@@ -625,6 +627,25 @@ class NoScrollComboBox(QComboBox):
             event.ignore()
 
 
+class NoScrollSpinBox(QSpinBox):
+    """A number box that ignores the wheel unless it has been clicked into.
+
+    The same rule as every other control here: scrolling past something must
+    never change it. A spin box is the worst offender, because a stray notch
+    of the wheel silently alters a number nobody looked at.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, event) -> None:        # noqa: N802 (Qt naming)
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
 class NoScrollSlider(QSlider):
     """A slider with the same rule, for the same reason."""
 
@@ -785,6 +806,325 @@ class Masthead(QWidget):
         inner.addWidget(title_label)
         lay.addLayout(inner)
         lay.addWidget(SpectrumStripe(self))
+
+
+
+class PictureDialog(QDialog):
+    """Choosing what kind of picture to make.
+
+    Everything here is a question somebody would actually ask -- how big, what
+    kind of file, what is behind it -- and the line at the foot says how large
+    the answer will be, so nobody presses Save and is handed a forty-megabyte
+    surprise.
+    """
+
+    def __init__(self, parent) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Save this view as a picture")
+        self.setModal(True)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(18, 16, 18, 14)
+        outer.setSpacing(10)
+        self._parent = parent
+
+        rows = QGridLayout()
+        rows.setHorizontalSpacing(8)
+        rows.setVerticalSpacing(8)
+        rows.setColumnStretch(1, 1)
+        line = 0
+
+        self._kind = NoScrollComboBox(self)
+        self._kind.addItem("A still picture", "still")
+        self._kind.addItem("A moving picture that turns and repeats", "moving")
+        self._kind.currentIndexChanged.connect(self._refresh)
+        line = self._row(rows, line, "What to make", self._kind, Hint(
+            "A STILL is one picture: the shape exactly as it stands, at "
+            "whatever size you ask for. It can be far larger than this window "
+            "and razor sharp, because the viewer draws it again rather than "
+            "copying the screen.\n\n"
+            "A MOVING PICTURE turns the shape and repeats, for ever, in a "
+            "file you can drop into a forum post or a chat the same way as a "
+            "still. It shows every side in the space one picture takes — which "
+            "is the whole difficulty with a gamut on paper, where you only "
+            "ever see one face of it.\n\n"
+            "The moving one is copied from this window as it is, so it comes "
+            "out the size the window is. If you want something enormous and "
+            "perfectly sharp, take a still.", self))
+
+        self._format = NoScrollComboBox(self)
+        self._format.currentIndexChanged.connect(self._refresh)
+        line = self._row(rows, line, "Kind of file", self._format, Hint(
+            "PNG is the safe answer: sharp, lossless, and it can be "
+            "see-through. Every program opens one.\n\n"
+            "WEBP is the same picture in a file several times smaller, and "
+            "everything made in the last few years opens it. Worth choosing "
+            "for anything going on a website or into a message.\n\n"
+            "JPEG makes the smallest file of all, and pays for it: fine "
+            "detail is smeared a little and it cannot be see-through.\n\n"
+            "SVG is not made of pixels at all — it is the outlines "
+            "themselves, so it stays perfectly sharp however far it is "
+            "enlarged, and the file is tiny. The right choice for a printed "
+            "document or a poster.\n\n"
+            "It is offered for the flat cross-section only. The 3D view is "
+            "drawn by your graphics card, and there are no outlines in it to "
+            "save — an SVG of it would just be an ordinary picture in an SVG "
+            "wrapper, thirty times the size and no sharper. Tick Slice it at "
+            "one lightness if you want a drawing that scales.\n\n"
+            "For a moving picture, WebP carries full colour. GIF is offered "
+            "because some places still take nothing else, but a GIF holds "
+            "only 256 colours and it shows: the gradients across a gamut come "
+            "out in visible bands.", self))
+
+        self._size = NoScrollComboBox(self)
+        for key, label, width in picture.SIZES:
+            self._size.addItem(f"{label}"
+                               + (f"  ({width} px)" if width else ""), key)
+        self._size.setCurrentIndex(1)
+        self._size.currentIndexChanged.connect(self._refresh)
+        line = self._row(rows, line, "How large", self._size, Hint(
+            "Named by what the picture is for, because that is the question "
+            "you actually have. The width in pixels is beside each one for "
+            "anybody who thinks in those.\n\n"
+            "For a forum post or an email, 1600 is plenty and keeps the file "
+            "small. For a document, 2400 stays sharp when somebody zooms in. "
+            "For printing, 3600 is about 300 dots an inch across a 30 cm "
+            "page.\n\n"
+            "Bigger is not automatically better: a picture four times the "
+            "width is sixteen times the file, and nobody thanks you for a "
+            "forty-megabyte attachment. This only applies to a still — a "
+            "moving picture comes out the size of the window.", self))
+
+        self._custom = NoScrollSpinBox(self)
+        self._custom.setRange(picture.MIN_WIDTH, picture.MAX_WIDTH)
+        self._custom.setValue(2400)
+        self._custom.setSuffix(" px wide")
+        self._custom.valueChanged.connect(self._refresh)
+        line = self._row(rows, line, "Width", self._custom, Hint(
+            "The exact width you want, in pixels. The height follows the "
+            "shape of the window, so the picture is never stretched.\n\n"
+            "Anything from 200 to 8000. The upper limit is there because a "
+            "picture larger than that takes a long time to draw and is bigger "
+            "than anything will display.", self))
+        self._custom_row = line - 1
+
+        self._quality = NoScrollSlider(Qt.Orientation.Horizontal, self)
+        self._quality.setRange(40, 100)
+        self._quality.setValue(90)
+        self._quality.valueChanged.connect(self._refresh)
+        line = self._row(rows, line, "Quality", self._quality, Hint(
+            "How much detail is kept in the kinds of file that trade some "
+            "away for a smaller size.\n\n"
+            "90 is a good place to be: no difference you would notice, at a "
+            "fraction of the size. Below about 70 the smooth gradients across "
+            "a gamut start to show blotches, which is exactly the thing the "
+            "picture is meant to show. Lossless kinds ignore this entirely, "
+            "so it disappears when you choose one.", self))
+        self._quality_row = line - 1
+
+        self._background = NoScrollComboBox(self)
+        for key, label in picture.BACKGROUNDS:
+            self._background.addItem(label, key)
+        self._background.currentIndexChanged.connect(self._refresh)
+        line = self._row(rows, line, "Behind the shape", self._background, Hint(
+            "What fills the space around the shape.\n\n"
+            "As it looks on screen keeps the dark or light background you are "
+            "looking at now. White suits a printed page or a document. Black "
+            "suits a slide.\n\n"
+            "SEE-THROUGH leaves nothing there at all, so the shape sits "
+            "directly on whatever page you drop it onto and takes that "
+            "background as its own. This is usually the one you want for a "
+            "document or a slide, and it needs a kind of file that can hold "
+            "it — PNG or WebP. Choose it with JPEG and this will say so "
+            "rather than quietly filling it with black.", self))
+
+        self._walls = NoScrollComboBox(self)
+        self._walls.addItem("The same as behind the shape", "same")
+        for key, label in picture.BACKGROUNDS:
+            self._walls.addItem(label, key)
+        self._walls.currentIndexChanged.connect(self._refresh)
+        line = self._row(rows, line, "The grid's walls", self._walls, Hint(
+            "The three panels the grid is drawn on, behind and beneath the "
+            "shape — separate from the page colour above, so you can have "
+            "them differ.\n\n"
+            "Leaving them the same as the background is usually right: the "
+            "picture then reads as one thing. Setting them apart is worth it "
+            "when you want the box to stand out a little from the page it is "
+            "sitting on, or to fade back so the shape carries the picture on "
+            "its own.\n\n"
+            "SEE-THROUGH here removes the panels as well, so the shape floats "
+            "with only the grid lines around it — and with the background "
+            "see-through too, nothing is left but the shape and its lines. "
+            "That is the version that drops cleanly onto any coloured page or "
+            "slide. It needs a kind of file that can hold see-through, which "
+            "PNG and WebP both can.\n\n"
+            "If you would rather have no grid at all, untick Show the box and "
+            "its grid in the main window before saving.", self))
+        self._walls_row = line - 1
+
+        self._wall_colour = QPushButton("Choose a colour…", self)
+        self._wall_colour.setObjectName("secondary")
+        self._wall_colour.clicked.connect(self._pick_wall_colour)
+        self._wall_chosen = "#202020"
+        line = self._row(rows, line, "Wall colour", self._wall_colour, Hint(
+            "Any colour you like on the three panels the grid sits on.", self))
+        self._wall_colour_row = line - 1
+
+        self._colour = QPushButton("Choose a colour…", self)
+        self._colour.setObjectName("secondary")
+        self._colour.clicked.connect(self._pick_colour)
+        self._chosen = "#ffffff"
+        line = self._row(rows, line, "Colour", self._colour, Hint(
+            "Any colour you like behind the shape — a house style, a slide "
+            "background, or the exact grey of the page it is going on.", self))
+        self._colour_row = line - 1
+
+        self._seconds = NoScrollSlider(Qt.Orientation.Horizontal, self)
+        self._seconds.setRange(2, 12)
+        self._seconds.setValue(6)
+        self._seconds.valueChanged.connect(self._refresh)
+        line = self._row(rows, line, "How long", self._seconds, Hint(
+            "How many seconds one time round takes before it repeats.\n\n"
+            "Six is comfortable: long enough to follow one part of the "
+            "surface all the way round, short enough that somebody watching "
+            "does not lose patience. Longer means a bigger file, since every "
+            "second is more frames.\n\n"
+            "It loops for ever and joins up exactly, so there is no jump each "
+            "time it comes round.", self))
+        self._seconds_row = line - 1
+
+        self._fps = NoScrollComboBox(self)
+        for n, label in ((15, "15 a second — smallest file"),
+                         (24, "24 a second — smooth, like film"),
+                         (30, "30 a second — smoothest")):
+            self._fps.addItem(label, n)
+        self._fps.setCurrentIndex(1)
+        self._fps.currentIndexChanged.connect(self._refresh)
+        line = self._row(rows, line, "Smoothness", self._fps, Hint(
+            "How many pictures make up each second of movement.\n\n"
+            "24 is what film uses and looks perfectly smooth for something "
+            "turning slowly. 15 halves the file and is still quite watchable "
+            "for a gentle rotation. 30 is smoother again and costs more "
+            "again.\n\n"
+            "It only affects the moving picture, and it changes the file size "
+            "more than anything else here.", self))
+        self._fps_row = line - 1
+
+        outer.addLayout(rows)
+        self._summary = WrappedLabel("", self)
+        self._summary.setObjectName("hint")
+        outer.addWidget(self._summary)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton("Cancel", self)
+        cancel.setObjectName("secondary")
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        save = QPushButton("Choose where to save…", self)
+        save.clicked.connect(self.accept)
+        save.setDefault(True)
+        buttons.addWidget(save)
+        outer.addLayout(buttons)
+
+        self._rows = rows
+        self._refresh()
+
+    def _row(self, grid, line, label, control, hint):
+        name = QLabel(label, self)
+        grid.addWidget(name, line, 0)
+        grid.addWidget(control, line, 1)
+        grid.addWidget(hint, line, 2, Qt.AlignmentFlag.AlignVCenter)
+        hint.follow(control)
+        return line + 1
+
+    def _pick_wall_colour(self) -> None:
+        picked = QColorDialog.getColor(QColor(self._wall_chosen), self,
+                                       "A colour for the grid's walls")
+        if picked.isValid():
+            self._wall_chosen = picked.name()
+            self._wall_colour.setText(f"  {self._wall_chosen}")
+            self._refresh()
+
+    def _pick_colour(self) -> None:
+        picked = QColorDialog.getColor(QColor(self._chosen), self,
+                                       "A colour behind the shape")
+        if picked.isValid():
+            self._chosen = picked.name()
+            self._colour.setText(f"  {self._chosen}")
+            self._refresh()
+
+    def _show_row(self, line: int, on: bool) -> None:
+        for column in range(3):
+            item = self._rows.itemAtPosition(line, column)
+            if item is not None and item.widget() is not None:
+                item.widget().setVisible(on)
+
+    def _refresh(self, *_a) -> None:
+        moving = self._kind.currentData() == "moving"
+        wanted = MOVING_KINDS if moving else STILL_KINDS
+        # SVG MEANS "MADE OF LINES", and the 3D view is not: it is drawn by
+        # the graphics card, so what comes out is a picture inside an SVG
+        # wrapper -- 426 kB against 12, and no sharper when enlarged. Measured.
+        # It is offered for the flat cross-section, which really is lines.
+        if not moving and not self._parent._slice_on.isChecked():
+            wanted = tuple(k for k in wanted if k[0] != "svg")
+        if [self._format.itemData(i) for i in range(self._format.count())] != \
+                [k for k, _l in wanted]:
+            self._format.blockSignals(True)
+            self._format.clear()
+            for key, label in wanted:
+                self._format.addItem(label, key)
+            self._format.blockSignals(False)
+        fmt = self._format.currentData() or wanted[0][0]
+        custom = self._size.currentData() == "custom"
+        self._show_row(self._custom_row, custom and not moving)
+        self._show_row(self._quality_row, picture.is_lossy(fmt) and not moving)
+        self._show_row(self._colour_row,
+                       self._background.currentData() == "custom")
+        self._show_row(self._wall_colour_row,
+                       self._walls.currentData() == "custom")
+        for line in (self._seconds_row, self._fps_row):
+            self._show_row(line, moving)
+        for key, _label, width in picture.SIZES:
+            if key == self._size.currentData() and width:
+                self._custom.blockSignals(True)
+                self._custom.setValue(width)
+                self._custom.blockSignals(False)
+        self._show_row(self._custom_row - 1, not moving)   # the size row itself
+
+        view = self._parent._view
+        if moving:
+            shot = view.grab()
+            wide, tall = shot.width(), shot.height()
+            frames = picture.frames_for(self._seconds.value(),
+                                        self._fps.currentData(),
+                                        self._parent._turn_mode.currentData()
+                                        or "round")
+        else:
+            wide = picture.clamp_width(self._custom.value())
+            tall = int(round(wide * view.height() / max(1, view.width())))
+            frames = 1
+        self._summary.setText(picture.describe(wide, tall, fmt, frames,
+                                               self._quality.value()))
+
+    def choices(self) -> dict:
+        return {
+            "moving": self._kind.currentData() == "moving",
+            "format": self._format.currentData(),
+            "width": self._custom.value(),
+            "quality": self._quality.value(),
+            "background": self._background.currentData(),
+            "colour": self._chosen,
+            "seconds": self._seconds.value(),
+            "fps": self._fps.currentData(),
+            "walls": self._walls.currentData(),
+            "wall_colour": self._wall_chosen,
+        }
+
+
+#: The two lists the dialog swaps between, kept beside it.
+STILL_KINDS = tuple((k, l) for k, l, _t, _q in picture.STILL_FORMATS)
+MOVING_KINDS = tuple((k, l) for k, l, _t in picture.MOVING_FORMATS)
 
 
 class Notice(QDialog):
@@ -2318,6 +2658,30 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._auto_update, 1)
         _r.addWidget(update_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         v.addLayout(_r)
+        self._picture = QPushButton("Save this view as a picture…", col)
+        self._picture.setObjectName("secondary")
+        self._picture.clicked.connect(self._on_picture)
+        self._picture.setEnabled(False)
+        picture_hint = Hint(
+            "Makes a picture of what is on screen, to put in a document, on a "
+            "slide, or in a forum post.\n\n"
+            "This is the third way of taking something away with you, and the "
+            "three answer different questions. A PICTURE is for showing "
+            "somebody. A WEB PAGE — the button below — keeps it turnable, so "
+            "whoever opens it can look from any side themselves. A TABLE of "
+            "numbers is for doing arithmetic on.\n\n"
+            "You can choose how large it is, what kind of file, and what is "
+            "behind the shape — including nothing at all, so it sits on "
+            "whatever page you drop it onto. It can also be a moving picture "
+            "that turns and repeats, which shows the shape from every side in "
+            "the space of one still.\n\n"
+            "Nothing is written until you have chosen where it goes, and a "
+            "file that is already there is never written over.", col)
+        picture_hint.setObjectName("hint_picture_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0); _r.setSpacing(6)
+        _r.addWidget(self._picture, 1)
+        _r.addWidget(picture_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        v.addLayout(_r)
         self._save = QPushButton("Save this view as a web page…", col)
         self._save.setObjectName("secondary")
         self._save.clicked.connect(self._on_save)
@@ -2360,6 +2724,221 @@ class GamutApp(QMainWindow):
         # exactly like a bug in the ones it missed.
         self._tighten_groups(col)
         return col
+
+
+    # ------------------------------------------------------------- pictures
+    def _picture_shapes(self) -> list:
+        """The names in the picture, for suggesting what to call the file."""
+        names = [path.stem for path, _g, _m in self._slots]
+        if self._reference is not None:
+            names.append(self._reference[0])
+        return names
+
+    def _on_picture(self) -> None:
+        """Save what is on screen as a picture."""
+        if not self._slots and self._reference is None:
+            return
+        dlg = PictureDialog(self)
+        if not dlg.exec():
+            return
+        want = dlg.choices()
+        why = picture.check_transparency(want["format"], want["background"])
+        if why:
+            Notice.warn(self, "That cannot be see-through", why)
+            return
+        suggested = picture.suggest_name(
+            self._picture_shapes(), want["format"],
+            slicing=self._slice_on.isChecked(),
+            lightness=float(self._slice_at.value()),
+            moving=want["moving"])
+        chooser = self._file_dialog("Where should the picture go?",
+                                    QFileDialog.FileMode.AnyFile,
+                                    f"Picture (*.{want['format']})", suggested)
+        chooser.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        chooser.setDefaultSuffix(want["format"])
+        if not chooser.exec():
+            return
+        target = picture.next_free(Path(chooser.selectedFiles()[0]))
+        self._last_folder = str(target.parent)
+        try:
+            if want["moving"]:
+                made = self._save_moving(target, want)
+            else:
+                made = self._save_still(target, want)
+        except Exception as exc:            # noqa: BLE001 — always explain
+            _log().warning("could not save %s: %s", target.name, exc)
+            Notice.warn(self, "That picture could not be saved", str(exc))
+            return
+        _log().info("saved %s (%s)", made.name, picture.human_size(
+            made.stat().st_size if made.exists() else 0))
+        Notice.say(self, "Saved",
+                   f"Written to\n{made}\n\n"
+                   f"{picture.human_size(made.stat().st_size)}.")
+
+    def _background_for(self, want, which: str = "background") -> "str | None":
+        """A chosen colour, or None to leave that part as it looks on screen."""
+        choice = want.get(which, "as-shown")
+        if which == "walls" and choice == "same":
+            choice = want.get("background", "as-shown")
+            custom = want.get("colour", "#ffffff")
+        else:
+            custom = want.get("wall_colour" if which == "walls" else "colour",
+                              "#ffffff")
+        if choice == "as-shown":
+            return None
+        if choice == "transparent":
+            return "rgba(0,0,0,0)"
+        if choice == "custom":
+            return custom
+        return {"white": "#ffffff", "black": "#000000"}.get(choice)
+
+    def _save_still(self, target: Path, want) -> Path:
+        """One picture, re-rendered by the viewer at the size asked for.
+
+        Rendered rather than grabbed, because a still is worth being sharp:
+        this can make a picture far larger than the window, and can make one
+        that is not pixels at all.
+        """
+        import base64
+        import json
+
+        width = picture.clamp_width(want["width"])
+        height = int(round(width * self._view.height()
+                           / max(1, self._view.width())))
+        paper = self._background_for(want)
+        walls = self._background_for(want, "walls")
+        options = {"format": want["format"], "width": width, "height": height,
+                   "scale": 1}
+        # THE WALLS ARE NOT THE PAGE. Clearing paper_bgcolor alone left the
+        # three panels the grid sits on still painted, so "see-through" came
+        # out with a solid box floating in nothing. They are separate
+        # properties and both have to be said.
+        changes, restore = {}, {}
+        if paper is not None:
+            changes["paper_bgcolor"] = paper
+            changes["plot_bgcolor"] = paper
+            restore["paper_bgcolor"] = None
+            restore["plot_bgcolor"] = None
+        if walls is not None:
+            for axis in ("xaxis", "yaxis", "zaxis"):
+                changes[f"scene.{axis}.backgroundcolor"] = walls
+                restore[f"scene.{axis}.backgroundcolor"] = None
+        script = (
+            "(function(){window.__shot=null;window.__shotErr=null;"
+            "var d=document.getElementsByClassName('plotly-graph-div')[0];"
+            "if(!d){window.__shotErr='nothing is drawn';return;}"
+            "var was={};"
+            + (f"var want={json.dumps(changes)};"
+               "Object.keys(want).forEach(function(k){"
+               "  var cur=d.layout, parts=k.split('.'), i;"
+               "  for(i=0;i<parts.length-1&&cur;i++)cur=cur[parts[i]];"
+               "  was[k]=cur?cur[parts[parts.length-1]]:null;});"
+               "Plotly.relayout(d,want);" if changes else "")
+            + f"Plotly.toImage(d,{json.dumps(options)})"
+              ".then(function(u){window.__shot=u;"
+            + ("Plotly.relayout(d,was);" if changes else "")
+            + "},function(e){window.__shotErr=String(e);"
+            + ("Plotly.relayout(d,was);" if changes else "")
+            + "});})()")
+        self._run_js(script)
+        url = self._wait_for("window.__shot", "window.__shotErr", seconds=90)
+        head, _, payload = url.partition(",")
+        if want["format"] == "svg":
+            from urllib.parse import unquote
+            target.write_text(unquote(payload), encoding="utf-8")
+        else:
+            target.write_bytes(base64.b64decode(payload))
+        return target
+
+    def _save_moving(self, target: Path, want) -> Path:
+        """A loop that turns, grabbed frame by frame from the live view.
+
+        Grabbed rather than re-rendered, and stepped to exact angles rather
+        than left to run: measured on this machine, re-rendering a frame takes
+        about 630 ms against 6 ms to grab one, so a six-second loop would cost
+        a minute and a half instead of a few seconds. Stepping also makes the
+        loop close exactly, which is what stops it jerking once every time
+        round.
+        """
+        from PIL import Image
+
+        mode = self._turn_mode.currentData()
+        if mode == "off":
+            mode = "round"                  # something has to move
+        count = picture.frames_for(want["seconds"], want["fps"], mode)
+        angles = picture.turn_angles(count, mode,
+                                     float(self._turn_sweep.value()))
+        was_on = self._spin_on.isChecked()
+        self._spin_on.setChecked(False)     # we are driving it ourselves
+        QApplication.processEvents()
+        frames, previous = [], 0.0
+        try:
+            for angle in angles:
+                self._run_js("if(window.cqSpin)window.cqSpin.nudge("
+                             f"{angle - previous},0);")
+                previous = angle
+                QApplication.processEvents()
+                shot = self._view.grab()
+                frames.append(Image.fromqpixmap(shot).convert("RGBA"))
+        finally:
+            # PUT IT BACK. Whatever happens, the view returns to where it was:
+            # an export must not quietly leave the shape facing elsewhere.
+            self._run_js(f"if(window.cqSpin)window.cqSpin.nudge({-previous},0);")
+            self._spin_on.setChecked(was_on)
+            QApplication.processEvents()
+        if not frames:
+            raise ValueError("no frames could be taken")
+        paper = self._background_for(want)
+        if paper and paper != "rgba(0,0,0,0)":
+            colour = QColor(paper)
+            flat = [Image.new("RGBA", f.size,
+                              (colour.red(), colour.green(), colour.blue(), 255))
+                    for f in frames]
+            frames = [Image.alpha_composite(b, f) for b, f in zip(flat, frames)]
+        gap = int(round(1000.0 / max(1, want["fps"])))
+        first, rest = frames[0], frames[1:]
+        if want["format"] == "gif":
+            first = first.convert("P", palette=Image.Palette.ADAPTIVE)
+            rest = [f.convert("P", palette=Image.Palette.ADAPTIVE) for f in rest]
+        first.save(target, save_all=True, append_images=rest, loop=0,
+                   duration=gap, format={"webp": "WEBP", "gif": "GIF",
+                                         "apng": "PNG"}[want["format"]])
+        return target
+
+    def _run_js(self, script: str) -> None:
+        page = self._view.page()
+        if page is not None:
+            page.runJavaScript(script)
+
+    def _wait_for(self, ready: str, failed: str, seconds: float = 30.0):
+        """Wait for a value the page sets when it has finished.
+
+        runJavaScript hands back before a promise resolves, so asking for the
+        picture and reading the answer in the same breath returns nothing --
+        which is how a first attempt at timing this measured the call rather
+        than the work, and was twenty times too fast.
+        """
+        import time as _time
+        page = self._view.page()
+        if page is None:
+            raise ValueError("there is no page to take a picture of")
+        end = _time.time() + seconds
+        while _time.time() < end:
+            box = {}
+            page.runJavaScript(f"[{ready},{failed}]",
+                               lambda r: box.setdefault("r", r))
+            waited = _time.time() + 2.0
+            while "r" not in box and _time.time() < waited:
+                QApplication.processEvents()
+                _time.sleep(0.005)
+            got = box.get("r") or [None, None]
+            if got[1]:
+                raise ValueError(str(got[1]))
+            if got[0]:
+                return got[0]
+            QApplication.processEvents()
+            _time.sleep(0.02)
+        raise ValueError("the picture took too long to make")
 
     # ------------------------------------------------------------------ actions
     def _set_appearance(self, which: str) -> None:
@@ -3142,6 +3721,7 @@ class GamutApp(QMainWindow):
         self._refresh_slot_labels()
         self._save.setEnabled(True)
         self._export_btn.setEnabled(True)
+        self._picture.setEnabled(True)
         self._redraw()
 
     def _load_profile_as_comparison(self, path: Path) -> None:

@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.7.0
+
+### ✨ What's new
+
+- **Save this view as a picture…** — the third way of taking something with
+  you, beside the web page and the table of numbers. A picture is for showing
+  somebody; the web page keeps it turnable; the table is for arithmetic.
+- **A still, at any size.** Named by what it is for — a forum post, a
+  document, a slide, printing — or a width of your own. The viewer draws it
+  again at that size rather than copying the screen, so it can be far larger
+  than the window and stays sharp.
+- **A moving picture that turns and repeats**, as WebP, GIF or APNG. It shows
+  every side of the shape in the space one still takes, which is the whole
+  difficulty with a gamut on paper. The loop closes exactly, so there is no
+  jump each time round.
+- **Choose what is behind it** — as on screen, white, black, a colour of your
+  own, or **see-through**, so the shape sits directly on whatever page you
+  drop it onto.
+- **The grid's walls are set separately**, with their own colour or their own
+  see-through, so you can have the box stand out from the page, fade back, or
+  vanish entirely and leave the shape floating with only its grid lines.
+- **It says how big the file will be** before you make it, so nothing is a
+  surprise.
+- **Nothing of yours is written over.** A picture saved beside one already
+  there is named `-2`, never on top of it.
+
+### 🐞 Fixed
+
+- SVG is offered for the flat cross-section, where it genuinely is made of
+  outlines and comes to about 12 kB. The 3D view is drawn by the graphics
+  card and has no outlines to save — an SVG of it is an ordinary picture in a
+  wrapper, thirty times the size and no sharper — so it is not offered there
+  and the help says why.
+
 ## v1.6.1
 
 ### ✨ What's new

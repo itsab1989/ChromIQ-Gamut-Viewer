@@ -1115,6 +1115,16 @@ window.cqSpin = (function () {
     if (!turn && !tilt) return;
     for (var i = 0; i < ids.length; i++) step(ids[i], turn, tilt);
   }
+  // FOR SAVING A MOVING PICTURE. The frames are stepped to exact angles
+  // rather than left to run in real time: that closes the loop precisely, and
+  // it takes as long as drawing takes instead of as long as the movement
+  // would have lasted.
+  function nudge(turnDeg, tiltDeg) {
+    var turn = (turnDeg || 0) * Math.PI / 180;
+    var tilt = (tiltDeg || 0) * Math.PI / 180;
+    if (!turn && !tilt) return;
+    for (var i = 0; i < ids.length; i++) step(ids[i], turn, tilt);
+  }
   function set(o) {
     if (o.ids !== undefined) { ids = o.ids; rest(); }
     ["turn", "tilt"].forEach(function (which) {
@@ -1130,7 +1140,7 @@ window.cqSpin = (function () {
       raf = window.requestAnimationFrame(frame);
     }
   }
-  return {set: set};
+  return {set: set, nudge: nudge};
 })();
 """
 
