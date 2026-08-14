@@ -195,8 +195,14 @@ def test_saving_is_not_offered_folders_it_cannot_write_to():
     assert saving <= opening
     for folder in gamut_app.PROFILE_FOLDERS:
         assert str(folder) not in saving
-    # and the ordinary places are still there either way
-    assert saving, "saving was left with no shortcuts at all"
+    # NOT "the list is non-empty": a machine with no desktop and no Pictures
+    # folder -- a build runner, for one -- legitimately has none of these, and
+    # the application drops what does not exist rather than offering a dead
+    # entry. What must hold is that saving never loses an ordinary folder that
+    # opening offers.
+    ordinary = {u for u in opening
+                if not any(str(f) == u for f in gamut_app.PROFILE_FOLDERS)}
+    assert saving == ordinary
 
 
 def test_every_dialog_is_ours_rather_than_the_systems():

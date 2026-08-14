@@ -1,5 +1,5 @@
 """One place the version and the name are written down."""
-__version__ = "1.9.4"
+__version__ = "1.9.5"
 APP_NAME = "ChromIQ Gamut Viewer"
 
 #: What this is built on. MIT permits redistributing a modified copy under

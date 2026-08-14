@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.9.5
+
+### 🐞 Fixed
+
+- A test assumed every machine has a Desktop and a Pictures folder, which a
+  build runner does not — so the Linux builds failed on a machine state rather
+  than on anything wrong with the application.
+
 ## v1.9.4
 
 ### 🐞 Fixed
