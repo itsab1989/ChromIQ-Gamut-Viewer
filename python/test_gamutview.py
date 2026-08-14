@@ -334,3 +334,68 @@ def test_every_space_says_how_to_draw_and_label_it():
     for space in SPACES:
         assert set(AXES[space]) == {"cylindrical", "x", "y", "z", "units"}
         assert AXES[space]["units"].startswith("cubic")
+
+
+# --- what two gamuts have in common -----------------------------------------
+
+def test_shared_volume_of_a_gamut_with_itself_is_everything():
+    from gamutview import shared_volume
+    _, xyz = rgb_cube(5)
+    lab = xyz_to_lab(xyz, "D65")
+    overlap, union, share = shared_volume(lab, lab)
+    assert share == pytest.approx(1.0, abs=0.02)
+    assert overlap == pytest.approx(union, rel=0.02)
+
+
+def test_shared_volume_is_symmetric_unlike_coverage():
+    """The point of adding it: containment depends on which way round you ask,
+    and this does not. A shape wholly inside another gives coverage 100% one
+    way and much less the other, while the shared figure is one honest number
+    either way round."""
+    from gamutview import coverage, shared_volume
+    _, big = rgb_cube(5)
+    big_lab = xyz_to_lab(big, "D65")
+    small_lab = big_lab * 0.5 + np.array([50.0, 0.0, 0.0]) * 0.5
+    assert coverage(small_lab, big_lab)[0] > 0.99
+    assert coverage(big_lab, small_lab)[0] < 0.60
+    a = shared_volume(small_lab, big_lab)[2]
+    b = shared_volume(big_lab, small_lab)[2]
+    assert a == pytest.approx(b, abs=0.02)
+    assert a < 0.60          # wholly inside, but much smaller: not "the same"
+
+
+def test_shared_volume_refuses_something_with_no_volume():
+    from gamutview import shared_volume
+    _, xyz = rgb_cube(4)
+    with pytest.raises(ValueError):
+        shared_volume(np.zeros((3, 3)), xyz_to_lab(xyz, "D65"))
+
+
+def test_lightness_range_is_the_darkest_and_brightest():
+    from gamutview import lightness_range
+    lab = np.array([[10.0, 0, 0], [90.0, 5, 5], [50.0, -3, 2], [30.0, 1, 1]])
+    assert lightness_range(lab) == (10.0, 90.0)
+
+
+def test_hue_reach_puts_every_hue_in_exactly_one_family():
+    """Sectors meet halfway between neighbours, so a hue on a boundary must
+    land in one family and not be counted in both."""
+    from gamutview import HUE_FAMILIES, hue_reach
+    angles = np.radians(np.arange(0, 360, 3.0))
+    lab = np.column_stack([np.full(len(angles), 50.0),
+                           50 * np.cos(angles), 50 * np.sin(angles)])
+    reach = hue_reach(lab)
+    assert set(reach) == {n for n, _c in HUE_FAMILIES}
+    # Every family got some hue, and each reports the radius of the circle.
+    for name, value in reach.items():
+        assert value == pytest.approx(50.0, abs=1e-6), name
+
+
+def test_hue_reach_finds_the_family_that_actually_reaches_further():
+    from gamutview import hue_reach
+    base = np.array([[50.0, 40.0, 0.0], [50.0, 0.0, 40.0],
+                     [50.0, -40.0, 0.0], [50.0, 0.0, -40.0]])
+    stretched = np.vstack([base, [[50.0, 0.0, 90.0]]])      # far into yellow
+    assert hue_reach(stretched)["yellows"] > hue_reach(base)["yellows"]
+    assert hue_reach(stretched)["blues"] == pytest.approx(
+        hue_reach(base)["blues"])

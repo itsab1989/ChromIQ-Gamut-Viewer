@@ -633,6 +633,17 @@ class Hint(QWidget):
         return self._label.text()
 
 
+def _join_words(words) -> str:
+    """"a", "a and b", "a, b and c" -- never "a, b, c" with a bare comma.
+
+    Count-aware by construction, so no message ever has to say "family(s)".
+    """
+    words = list(words)
+    if len(words) <= 1:
+        return words[0] if words else ""
+    return f"{', '.join(words[:-1])} and {words[-1]}"
+
+
 def _profile_label(path: Path) -> str:
     """What to call a profile in the readouts, so it cannot be mistaken for
     a measurement.
@@ -700,6 +711,46 @@ GLOSSARY = [
      "photographs and most screens assume, and it is smaller than a good "
      "photo printer — so comparing your paper against it tells you whether an "
      "sRGB workflow is throwing away ink you have already paid for."),
+    ("CIELAB",
+     "The way of writing down a colour that this window uses unless you "
+     "change it, and the right one for print. It has three numbers: L* for "
+     "how light the colour is, and a* and b* for what colour it actually is. "
+     "Its useful property is that the same distance anywhere in it looks like "
+     "about the same size of change, which is what makes it fair to measure a "
+     "volume in."),
+    ("CIELUV",
+     "Another way of writing down the same colours, with exactly the same "
+     "lightness as CIELAB but the colour part arranged differently. It is the "
+     "one screens and light sources are usually described in. Your paper will "
+     "look like a different shape and give a different volume in it — that is "
+     "the two spaces disagreeing about distance, not a mistake."),
+    ("CIE XYZ",
+     "The measurement in its rawest form, before anything is done to make "
+     "distances match what the eye notices. Everything else here is worked "
+     "out from it. It is honest but hard to read by eye: equal distances in "
+     "it do not look equally different, and it has no lightness axis and no "
+     "grey axis, so the slice, the rings and the greys are switched off while "
+     "you are looking at it."),
+    ("L*",
+     "How light a colour is, from 0 for black to 100 for a perfect white. "
+     "Your paper white is the highest L* the paper reaches and your blacks "
+     "are the lowest — the gap between them is the contrast the paper can "
+     "actually give you, whatever its gamut volume says."),
+    ("Chroma",
+     "How far a colour sits from grey. Low chroma is muted and close to grey, "
+     "high chroma is vivid. It says nothing about which colour it is: a deep "
+     "red and a deep blue can have the same chroma."),
+    ("Hue family",
+     "A group of neighbouring colours under one everyday name — the reds, "
+     "yellows, greens, cyans, blues and magentas. Comparing two papers family "
+     "by family is usually the practical answer to which one to use: a paper "
+     "that reaches further in the cyans and blues suits skies and water, one "
+     "that reaches further in the yellows and reds suits skin and autumn."),
+    ("Shared colour",
+     "How much of everything either paper can print is printable by both of "
+     "them. Unlike coverage it is the same number whichever way round you "
+     "ask, so it answers \"are these two alike?\" rather than \"will this "
+     "image survive the swap?\"."),
 ]
 
 
@@ -1283,11 +1334,45 @@ class GamutApp(QMainWindow):
         self._coverage = WrappedLabel("", g_vol, hide_when_empty=True)
         self._coverage.setObjectName("hint"); _wrapped(self._coverage)
         vv.addWidget(self._coverage)
+        self._range = WrappedLabel("", g_vol, hide_when_empty=True)
+        self._range.setObjectName("hint")
+        vv.addWidget(self._range)
         self._volume_hint = Hint(
             "Open a chart to see how much colour it holds.", g_vol)
         self._volume_hint.setObjectName("hint_volume_hint")
         vv.addWidget(self._volume_hint)
         v.addWidget(g_vol)
+
+        # Only meaningful when there are two shapes to hold against each
+        # other, so it stays hidden until there are.
+        self._pair_box = QGroupBox("How the two compare", col)
+        pv2 = QVBoxLayout(self._pair_box)
+        # NOT self._shared -- that name already holds the shared per-shape
+        # settings, and taking it silently broke every redraw.
+        self._shared_lbl = WrappedLabel("", self._pair_box,
+                                        hide_when_empty=True)
+        pv2.addWidget(self._shared_lbl)
+        self._reach = WrappedLabel("", self._pair_box, hide_when_empty=True)
+        self._reach.setObjectName("hint")
+        pv2.addWidget(self._reach)
+        pair_hint = Hint(
+            "How much of everything either one can print is printable by "
+            "both. The two percentages above answer \"does this one fit "
+            "inside that one\", one direction at a time; this answers how "
+            "much they have in common, which is a different question and one "
+            "number rather than two.\n\n"
+            "Underneath it, the hue families where one reaches further out "
+            "from grey than the other. This is usually the practical answer "
+            "to \"which paper should I use\": a paper that wins in the cyans "
+            "and blues suits skies and water, one that wins in the yellows "
+            "and reds suits skin and autumn. Families closer than a couple of "
+            "units apart are called about the same, because a difference that "
+            "small is neither visible nor worth trusting.",
+            self._pair_box)
+        pair_hint.setObjectName("hint_pair_hint")
+        pv2.addWidget(pair_hint)
+        self._pair_box.setVisible(False)
+        v.addWidget(self._pair_box)
 
         # Only meaningful with two readings of one chart, so it stays out of
         # the way until there are two charts open.
@@ -2417,6 +2502,9 @@ class GamutApp(QMainWindow):
                     (self._slots[1][0].stem, self._slots[1][1]))
         if pair is None:
             self._coverage.setText("")
+            self._shared_lbl.setText("")
+            self._reach.setText("")
+            self._pair_box.setVisible(False)
             return
         (a_name, a), (b_name, b) = pair
         try:
@@ -2424,6 +2512,7 @@ class GamutApp(QMainWindow):
             ba, _ = coverage(b.vertices, a.vertices)
         except Exception:      # noqa: BLE001 — a readout must never crash a view
             self._coverage.setText("")
+            self._pair_box.setVisible(False)
             return
         self._coverage.setText(
             f"{100 * ab:.1f}% of what {a_name} can print also fits inside "
@@ -2431,6 +2520,50 @@ class GamutApp(QMainWindow):
             f"{100 * ba:.1f}% of {b_name} fits inside {a_name}.\n"
             "The two numbers differ because fitting inside is not the same "
             "question in both directions.")
+        self._update_pair(a_name, a, b_name, b)
+
+    #: Below this much chroma apart, two hue families are called the same.
+    #: Roughly the point where a difference stops being visible, and well
+    #: inside what a percentage rounded to one decimal place can imply: the
+    #: demo papers differ by 0.6 in the reds while one sits entirely inside
+    #: the other, which is sampling precision rather than a real advantage.
+    REACH_MARGIN = 2.0
+
+    def _update_pair(self, a_name, a, b_name, b) -> None:
+        """What two shapes have in common, and where each one wins.
+
+        Everything here needs the hue circle and the lightness axis, so in CIE
+        XYZ the box is hidden rather than filled with numbers that would not
+        mean what they say.
+        """
+        from gamutview import AXES, hue_reach, shared_volume
+        if not AXES[self._space.currentData()]["cylindrical"]:
+            self._pair_box.setVisible(False)
+            return
+        try:
+            _overlap, _union, share = shared_volume(a.vertices, b.vertices)
+            reach_a, reach_b = hue_reach(a), hue_reach(b)
+        except Exception:      # noqa: BLE001 — a readout must never crash a view
+            self._pair_box.setVisible(False)
+            return
+        self._shared_lbl.setText(
+            f"Both can print {100 * share:.0f}% of everything either one can.")
+        wins_a = [n for n in reach_a
+                  if reach_a[n] - reach_b[n] > self.REACH_MARGIN]
+        wins_b = [n for n in reach_b
+                  if reach_b[n] - reach_a[n] > self.REACH_MARGIN]
+        lines = []
+        if wins_a:
+            lines.append(f"{a_name} reaches further in the "
+                         f"{_join_words(wins_a)}.")
+        if wins_b:
+            lines.append(f"{b_name} reaches further in the "
+                         f"{_join_words(wins_b)}.")
+        if not lines:
+            lines.append("Neither reaches meaningfully further than the other "
+                         "in any hue family.")
+        self._reach.setText("\n".join(lines))
+        self._pair_box.setVisible(True)
 
     def _update_drift(self) -> None:
         """Compare two readings of one chart, when that is what is open."""
@@ -2492,7 +2625,30 @@ class GamutApp(QMainWindow):
         from gamutview import AXES
         return AXES[self._space.currentData()]["units"]
 
+    def _update_range(self) -> None:
+        """How black the blacks go and how bright the paper is.
+
+        After the volume, this is the pair of numbers a printer looks for: a
+        paper that cannot go dark loses shadow detail whatever its gamut
+        volume says. Needs a lightness axis, so it is left blank in CIE XYZ.
+        """
+        from gamutview import AXES, lightness_range
+        if not self._slots or not AXES[self._space.currentData()]["cylindrical"]:
+            self._range.setText("")
+            return
+        try:
+            lines = []
+            for path, g, _m in self._slots:
+                dark, light = lightness_range(g)
+                lines.append(f"{path.stem}: blacks reach L* {dark:.0f}, "
+                             f"paper white L* {light:.0f}")
+        except Exception:      # noqa: BLE001 — a readout must never crash a view
+            self._range.setText("")
+            return
+        self._range.setText("\n".join(lines))
+
     def _update_volume(self) -> None:
+        self._update_range()
         if len(self._slots) == 1:
             g = self._slots[0][1]
             self._volume.setText(self._fmt_volume(g.volume))

@@ -601,3 +601,86 @@ def coverage(inner, outer, *, samples: int = 60_000, seed: int = 20260814
                          "degenerate (flat, a line, or a single point)")
     p = covered / kept
     return p, float(np.sqrt(max(p * (1.0 - p), 1e-12) / kept))
+
+
+#: The six hue families a printer person actually talks in, as the centre of
+#: each sector on the a*/b* (or u*/v*) hue circle, in degrees. Six rather than
+#: a finer split because these are the names people use -- "it runs out in the
+#: cyans" -- and a number per 10-degree slice would be precision nobody asked
+#: for.
+HUE_FAMILIES = (
+    ("reds", 0.0), ("yellows", 90.0), ("greens", 150.0),
+    ("cyans", 195.0), ("blues", 270.0), ("magentas", 330.0),
+)
+
+
+def lightness_range(gamut) -> tuple[float, float]:
+    """The darkest and brightest lightness the gamut reaches, as (min, max).
+
+    For a printed chart these are the two numbers a printer cares about most
+    after the volume: how black the blacks go, and how bright the paper is.
+    Only meaningful where the first axis *is* lightness, which is CIELAB and
+    CIELUV -- in XYZ the first axis is X and this would be nonsense.
+    """
+    v = np.asarray(gamut.vertices if hasattr(gamut, "vertices") else gamut,
+                   float)
+    if len(v) < 1:
+        raise ValueError("an empty gamut has no lightness range")
+    return float(v[:, 0].min()), float(v[:, 0].max())
+
+
+def hue_reach(gamut, families=HUE_FAMILIES) -> dict[str, float]:
+    """The furthest each hue family reaches from the grey axis.
+
+    Answers "where does this paper run out?" in the words people use. For each
+    family, the greatest chroma among the vertices whose hue falls in that
+    sector -- so comparing two papers family by family says which one reaches
+    further in the cyans, in the yellows, and so on.
+
+    Sectors are centred on the listed angles and meet halfway between
+    neighbours, so every hue belongs to exactly one family and none is counted
+    twice. Requires an opponent space, for the same reason as
+    :func:`lightness_range`.
+    """
+    v = np.asarray(gamut.vertices if hasattr(gamut, "vertices") else gamut,
+                   float)
+    chroma = np.hypot(v[:, 1], v[:, 2])
+    hue = np.degrees(np.arctan2(v[:, 2], v[:, 1])) % 360.0
+    centres = np.array([c for _n, c in families])
+    # Which centre each vertex is nearest, the short way round the circle.
+    gap = np.abs(((hue[:, None] - centres[None, :]) + 180.0) % 360.0 - 180.0)
+    nearest = gap.argmin(axis=1)
+    return {name: (float(chroma[nearest == i].max())
+                   if np.any(nearest == i) else 0.0)
+            for i, (name, _c) in enumerate(families)}
+
+
+def shared_volume(a, b, *, samples: int = 60_000, seed: int = 20260814
+                  ) -> tuple[float, float, float]:
+    """How much two gamuts have in common: (shared, union, shared/union).
+
+    The containment percentages answer "does A fit inside B", one direction at
+    a time. This answers the other question people ask -- "how much do these
+    two actually share" -- as a single honest number: the colour both can
+    print, over the colour either can.
+
+    Two papers of the same size that barely overlap and two that nearly
+    coincide give the same pair of containment figures only when one contains
+    the other; in every other case this adds something the two percentages do
+    not say on their own. Measured from the same sampling as
+    :func:`coverage`, so the figures agree with each other.
+    """
+    from scipy.spatial import ConvexHull
+
+    va = np.asarray(a.vertices if hasattr(a, "vertices") else a, float)
+    vb = np.asarray(b.vertices if hasattr(b, "vertices") else b, float)
+    if len(va) < 4 or len(vb) < 4:
+        raise ValueError("both gamuts need at least 4 vertices to have a volume")
+    vol_a = float(ConvexHull(va).volume)
+    vol_b = float(ConvexHull(vb).volume)
+    fraction, _err = coverage(va, vb, samples=samples, seed=seed)
+    overlap = fraction * vol_a
+    union = vol_a + vol_b - overlap
+    if union <= 0:
+        raise ValueError("two gamuts with no volume cannot be compared")
+    return overlap, union, overlap / union

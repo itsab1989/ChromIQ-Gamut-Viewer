@@ -239,10 +239,30 @@ Notes worth carrying over:
 
 | Readout | Source | Units |
 |---|---|---|
-| How much colour it holds | `Gamut.volume` | cubic Lab units, as ArgyllCMS reports |
+| How much colour it holds | `Gamut.volume` | the chosen space's cubic units, from `AXES[space]["units"]` |
+| Blacks reach / paper white | `gamutview.lightness_range()` | L\*, opponent spaces only |
 | Coverage, both directions | `gamutview.coverage()` | per cent, ±0.2 |
+| Both can print … of everything either can | `gamutview.shared_volume()` | per cent |
+| Where each one reaches further | `gamutview.hue_reach()` | chroma, by hue family |
 | Has anything changed? | `ti3gamut.compare_measurements()` | ΔE2000 |
 | Worst colour cast in the greys | `ti3gamut.neutral_axis()` | ΔE-ish chroma |
+
+**Three questions, not one.** "Does A fit inside B" is asked in both
+directions and answers whether an image will survive a swap. "How much do
+they share" (`shared_volume`) is symmetric and answers how alike two papers
+are — a small gamut wholly inside a large one scores 100% on containment one
+way round and still shares only part of the total, which is the honest answer
+to "are these the same?". "Where does each reach further" (`hue_reach`) is the
+one that usually decides which paper to use.
+
+**A hue family is only called a win by more than `REACH_MARGIN` = 2.0
+chroma.** On the demo papers one sits entirely inside the other and yet its
+reds measure 0.6 further out — sampling precision, not an advantage. Announcing
+that as a win would be a readout contradicting itself two lines further up.
+
+**Everything in "How the two compare" needs the hue circle and the lightness
+axis**, so the whole box is hidden in CIE XYZ rather than filled with figures
+that do not mean what they say. The same applies to blacks/paper white.
 
 **The drift check refuses rather than guesses.** Patches are matched on the
 device values, not the sample number, because charts are randomised and the
