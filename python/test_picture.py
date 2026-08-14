@@ -156,3 +156,62 @@ def test_nothing_of_the_users_is_ever_overwritten(tmp_path):
     second.write_bytes(b"x")
     assert picture.next_free(first).name == "gamut-3.png"
     assert picture.next_free(tmp_path / "unused.png").name == "unused.png"
+
+
+# --- the loop closes, whatever anybody sets ---------------------------------
+
+def test_the_loop_closes_for_every_setting_anybody_can_choose():
+    """THE claim behind a moving picture, checked exhaustively rather than on
+    one example.
+
+    The export does exactly ONE complete cycle over the seconds asked for --
+    360 degrees for a full turn, one there-and-back for a swing -- so the
+    frame after the last is the first, whatever the sweep, the seconds or the
+    frame rate. The speed slider does not enter into it, which is precisely
+    why the loop cannot drift open.
+    """
+    for mode in ("round", "swing"):
+        for seconds in (2, 6, 12):
+            for fps in (15, 24, 25, 30, 50, 60):
+                for sweep in (10, 38, 95, 180):
+                    count = picture.frames_for(seconds, fps, mode)
+                    angles = picture.turn_angles(count, mode, sweep)
+                    assert len(angles) == count
+                    steps = [b - a for a, b in zip(angles, angles[1:])]
+                    if mode == "round":
+                        wrap = 360.0 - angles[-1]
+                    else:
+                        wrap = angles[0] - angles[-1]
+                    biggest = max(abs(s) for s in steps)
+                    assert abs(wrap) <= biggest * 1.01 + 1e-9, (
+                        f"{mode} {seconds}s {fps}fps {sweep}deg: the join is "
+                        f"{abs(wrap):.4f} against a step of {biggest:.4f}")
+
+
+def test_two_axes_moving_together_both_close_on_the_same_frame():
+    """Left-and-right and up-and-down are given the same number of frames, so
+    a shape doing both returns to its start in one place, not two."""
+    count = picture.frames_for(6, 25, "swing")
+    across = picture.turn_angles(count, "swing", 95)
+    upward = picture.turn_angles(count, "swing", 38)
+    assert len(across) == len(upward) == count
+    assert across[0] == pytest.approx(0.0) and upward[0] == pytest.approx(0.0)
+    # the step that wraps round is no larger than the steps inside the loop
+    for angles in (across, upward):
+        inside = max(abs(b - a) for a, b in zip(angles, angles[1:]))
+        assert abs(angles[0] - angles[-1]) <= inside * 1.01 + 1e-9
+
+
+def test_how_long_decides_the_export_not_how_fast():
+    """Worth stating because it is a deliberate difference from the screen: a
+    faster setting makes the LIVE view move faster, while the exported loop
+    always fits exactly one cycle into the seconds chosen. That is what keeps
+    it seamless, and it means the same export takes the same time to make
+    whatever the speed slider says."""
+    slow = picture.frames_for(6, 25, "swing")
+    same = picture.frames_for(6, 25, "swing")
+    assert slow == same
+    assert picture.frames_for(12, 25, "swing") == 2 * slow
+    # the angles span one cycle either way -- the speed never appears
+    import inspect
+    assert "speed" not in inspect.signature(picture.turn_angles).parameters

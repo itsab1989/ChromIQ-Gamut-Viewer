@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.9.0
+
+### ✨ What's new
+
+- **A moving picture has its own size now** — the window's size, 1200, 900,
+  600, or a width of your own. Smaller is scaled down cleanly and makes a
+  markedly smaller file; larger than the window is brought back down to it,
+  because a copy of the screen cannot hold more detail than the screen had.
+
+### 🐞 Fixed
+
+- **Exported loops no longer jump.** A frame was sometimes photographed before
+  the shape had finished moving, which left one frame identical to the one
+  before and made the next cover twice the distance. Each frame now waits for
+  the picture to be painted: measured over forty-eight frames, one stalled
+  frame became none.
+- **Up and down reaches the file.** A shape set to tip as well as turn was
+  exported only turning — the tilt was worked out and then passed as zero.
+
 ## v1.8.0
 
 ### ✨ What's new

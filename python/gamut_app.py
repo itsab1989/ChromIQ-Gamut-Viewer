@@ -982,6 +982,39 @@ class PictureDialog(QDialog):
             "background, or the exact grey of the page it is going on.", self))
         self._colour_row = line - 1
 
+        self._moving_size = NoScrollComboBox(self)
+        self._moving_size.addItem("The size of the window", 0)
+        self._moving_size.addItem("1200 px wide", 1200)
+        self._moving_size.addItem("900 px wide — good for a README", 900)
+        self._moving_size.addItem("600 px wide — small file", 600)
+        self._moving_size.addItem("A width of my own", -1)
+        self._moving_size.currentIndexChanged.connect(self._refresh)
+        line = self._row(rows, line, "How large", self._moving_size, Hint(
+            "How wide the moving picture is.\n\n"
+            "A moving picture is copied from this window as it stands, so the "
+            "window's own size is as large as it can be — asking for more "
+            "would only stretch it and make it blurry. Anything smaller is "
+            "scaled down cleanly, and that is usually what you want: a loop "
+            "for a page or a forum post rarely needs to be more than about "
+            "900 pixels across, and every pixel you drop makes the file "
+            "markedly smaller.\n\n"
+            "If you want a bigger moving picture than the largest offered "
+            "here, make the window itself bigger and open this again — the "
+            "list follows whatever the window is.", self))
+        self._moving_size_row = line - 1
+
+        self._moving_width = NoScrollSpinBox(self)
+        self._moving_width.setRange(120, 4000)
+        self._moving_width.setValue(900)
+        self._moving_width.setSuffix(" px wide")
+        self._moving_width.valueChanged.connect(self._refresh)
+        line = self._row(rows, line, "Width", self._moving_width, Hint(
+            "The exact width you want. The height follows the shape of the "
+            "window, so nothing is stretched, and anything wider than the "
+            "window is brought back down to it — a copy of the screen cannot "
+            "hold more detail than the screen had.", self))
+        self._moving_width_row = line - 1
+
         self._seconds = NoScrollSlider(Qt.Orientation.Horizontal, self)
         self._seconds.setRange(2, 12)
         self._seconds.setValue(6)
@@ -993,7 +1026,14 @@ class PictureDialog(QDialog):
             "does not lose patience. Longer means a bigger file, since every "
             "second is more frames.\n\n"
             "It loops for ever and joins up exactly, so there is no jump each "
-            "time it comes round.", self))
+            "time it comes round.\n\n"
+            "This is what decides how fast the saved picture moves, and the "
+            "How fast slider in the main window does not: the file always "
+            "holds exactly one complete journey — once round for a full turn, "
+            "or once there and back for a swing — fitted into the seconds you "
+            "choose here. That is precisely what lets it join up perfectly "
+            "every time, whatever else is set. If the movement in the file "
+            "looks too quick, ask for more seconds.", self))
         self._seconds_row = line - 1
 
         self._fps = NoScrollComboBox(self)
@@ -1098,8 +1138,10 @@ class PictureDialog(QDialog):
                        self._background.currentData() == "custom")
         self._show_row(self._wall_colour_row,
                        self._walls.currentData() == "custom")
-        for line in (self._seconds_row, self._fps_row):
+        for line in (self._seconds_row, self._fps_row, self._moving_size_row):
             self._show_row(line, moving)
+        self._show_row(self._moving_width_row,
+                       moving and self._moving_size.currentData() == -1)
         for key, _label, width in picture.SIZES:
             if key == self._size.currentData() and width:
                 self._custom.blockSignals(True)
@@ -1111,6 +1153,12 @@ class PictureDialog(QDialog):
         if moving:
             shot = view.grab()
             wide, tall = shot.width(), shot.height()
+            asked = self._moving_size.currentData()
+            if asked == -1:
+                asked = self._moving_width.value()
+            if asked and asked < wide:
+                tall = int(round(tall * asked / wide))
+                wide = asked
             frames = picture.frames_for(self._seconds.value(),
                                         self._fps.currentData(),
                                         self._parent._turn_mode.currentData()
@@ -1132,6 +1180,9 @@ class PictureDialog(QDialog):
             "colour": self._chosen,
             "seconds": self._seconds.value(),
             "fps": self._fps.currentData(),
+            "moving_width": (self._moving_width.value()
+                             if self._moving_size.currentData() == -1
+                             else self._moving_size.currentData()),
             "walls": self._walls.currentData(),
             "wall_colour": self._wall_chosen,
         }
@@ -3044,6 +3095,12 @@ class GamutApp(QMainWindow):
             QApplication.processEvents()
         if not frames:
             raise ValueError("no frames could be taken")
+        # SMALLER IF ASKED, never larger: this is a copy of the screen, and no
+        # amount of enlarging puts back detail the screen never had.
+        asked = int(want.get("moving_width") or 0)
+        if 0 < asked < frames[0].width:
+            tall = int(round(frames[0].height * asked / frames[0].width))
+            frames = [f.resize((asked, tall), Image.LANCZOS) for f in frames]
         paper = self._background_for(want)
         if paper and paper != "rgba(0,0,0,0)":
             colour = QColor(paper)
