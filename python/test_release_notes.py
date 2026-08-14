@@ -124,3 +124,42 @@ def test_the_tag_and_the_application_version_must_agree():
     with pytest.raises(rb.NotReleasable) as why:
         rb.check_version_matches("v99.0.0")
     assert "have to agree" in str(why.value)
+
+
+# --- the rule itself, wired into the build ----------------------------------
+
+def _yaml():
+    """PyYAML is not something the application needs, only these two checks.
+    It is installed for the test run in CI; without it they step aside rather
+    than fail, because a missing test tool is not a broken workflow."""
+    return pytest.importorskip("yaml")
+
+
+def _workflow():
+    return (rb.ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8")
+
+
+def test_the_changelog_is_checked_before_anything_is_built():
+    """Every release says what changed, and finding out otherwise must not
+    cost a full build. The check runs first and the build waits on it."""
+    jobs = _yaml().safe_load(_workflow())["jobs"]
+    assert "notes" in jobs, "the pre-flight changelog check is gone"
+    assert "notes" in jobs["build"].get("needs", []), \
+        "the build no longer waits for the changelog check"
+    # A manual run has no tag to check, so the skip must not stop the build.
+    assert "skipped" in jobs["build"]["if"]
+
+
+def test_the_release_page_is_built_from_the_changelog_not_a_fixed_file():
+    """The whole point: a body_path pointing at a static file is how every
+    release came to carry the same words."""
+    steps = _yaml().safe_load(_workflow())["jobs"]["release"]["steps"]
+    bodies = [s["with"]["body_path"] for s in steps
+              if isinstance(s.get("with"), dict) and "body_path" in s["with"]]
+    assert bodies, "nothing sets the release body"
+    for body in bodies:
+        assert body != ".github/release-notes.md", \
+            "the release body is a fixed file again"
+    assert any("release_body.py" in str(s.get("run", "")) for s in steps), \
+        "the notes are no longer composed for this version"

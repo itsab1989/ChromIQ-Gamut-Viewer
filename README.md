@@ -477,6 +477,36 @@ cube and a sphere whose answers are known from arithmetic.
 
 ---
 
+## Releasing
+
+**Every release says what changed.** That is a rule, and it is enforced rather
+than remembered:
+
+1. Add a `## vX.Y.Z` section to `CHANGELOG.md` saying what changed.
+2. Set `__version__` in `python/version.py` to the same number.
+3. Commit, then `git tag -a vX.Y.Z` and push the tag.
+
+Pushing the tag builds all five platforms and publishes the release, with that
+changelog section as the body of the page.
+
+Two mistakes are refused rather than published:
+
+* **A tag the changelog says nothing about.** The build stops in about fifteen
+  seconds, before any platform is compiled, and names the versions that *do*
+  have notes. Without this the release would go out carrying the previous
+  version's words — a page that looks entirely normal and is wrong, which is
+  the sort of thing nobody notices for months.
+* **A tag that disagrees with `python/version.py`.** The in-app update check
+  compares the version the application reports against the newest tag, so a
+  bundle tagged v1.6.0 that reports 1.5.0 would offer people an update they
+  already have, for ever.
+
+To see what a release page will say before tagging:
+
+```bash
+python python/release_body.py v1.6.0
+```
+
 ## Credits and licence
 
 The gamut construction — and in particular the idea of following the device's

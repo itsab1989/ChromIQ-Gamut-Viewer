@@ -11,8 +11,30 @@ permissions:
   contents: write
 
 jobs:
+  # EVERY RELEASE SAYS WHAT CHANGED, and this is checked before anything is
+  # built. The same check runs again later, where the notes are actually
+  # written -- but by then five platforms have spent twenty minutes compiling,
+  # and being told about a one-line omission at the end of that is a poor way
+  # to find out. Here it costs about fifteen seconds.
+  notes:
+    name: Release notes
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The changelog must have an entry for this tag
+        run: |
+          python3 python/release_body.py "${GITHUB_REF_NAME}" --out preview.md
+          echo "--- what the release page will say ---"
+          head -40 preview.md
+
   build:
     name: ${{ matrix.label }}
+    needs: [notes]
+    # A tag must pass the check above; a manual run has no tag to check, so
+    # `notes` is skipped and the build goes ahead. Without this, `needs` would
+    # treat the skip as a reason to skip the build too.
+    if: always() && (needs.notes.result == 'success' || needs.notes.result == 'skipped')
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -152,7 +174,10 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          pip install pytest
+          # pyyaml is for the tests alone -- two of them read the workflow
+          # itself to check the changelog guard is still wired in. The
+          # application needs neither, so neither is in requirements.txt.
+          pip install pytest pyyaml
           python -m pytest . -q
 
       - name: Build
