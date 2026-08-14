@@ -38,13 +38,14 @@ if __name__ == "__main__" and "--version" in sys.argv:
 
 import tempfile
 from pathlib import Path
+from pathlib import Path as pathlib_Path
 
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
 from PyQt6.QtCore import (QRect, QSettings, QSize, QStandardPaths, Qt,
                           QUrl)
 from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QPainter,
-                         QPixmap)
+                         QPen, QPixmap)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel,
                              QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider,
@@ -118,9 +119,42 @@ SCHEMES = {
 }
 
 
-def stylesheet(mode: str, scheme: str = "Magenta") -> str:
+def chevron_png(path: pathlib_Path, colour: str, dpr: float = 2.0,
+                size: int = 10) -> str:
+    """Draw the little arrow a combo box shows, and save it.
+
+    Styling a combo box's drop-down at all makes Qt stop drawing its own
+    arrow, so one has to be supplied. Drawing it here rather than shipping an
+    image means it is the right colour in either appearance and the right
+    resolution on any screen -- an arrow bitmap made for one of those is
+    wrong on the other.
+    """
+    px = int(size * dpr)
+    pm = QPixmap(px, px)
+    pm.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pm)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(QColor(colour))
+    pen.setWidthF(1.6 * dpr)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    inset = px * 0.22
+    painter.drawPolyline(*[
+        __import__("PyQt6.QtCore", fromlist=["QPointF"]).QPointF(x, y)
+        for x, y in ((inset, px * 0.36), (px / 2, px - inset),
+                     (px - inset, px * 0.36))])
+    painter.end()
+    pm.save(str(path))
+    return str(path)
+
+
+def stylesheet(mode: str, scheme: str = "Magenta",
+               arrow_image: str = "") -> str:
     """The whole window's styling, painted from one palette and one accent."""
     c = dict(PALETTES["light" if mode == "light" else "dark"])
+    arrow_rule = (f"QComboBox::down-arrow {{ image: url({arrow_image}); "
+                  f"width: 10px; height: 10px; }}" if arrow_image else "")
     chosen = SCHEMES.get(scheme, SCHEMES["Magenta"])
     c["accent"] = chosen["accent"]
     c["accent_hot"] = (chosen["light_hot"] if mode == "light"
@@ -145,7 +179,18 @@ QPushButton#closer {{ background: transparent; color: {c["faint"]};
 QPushButton#closer:hover {{ background: {c["second_hover"]};
                            color: {c["text"]}; }}
 QComboBox {{ background: {c["panel"]}; border: 1px solid {c["line"]};
-            border-radius: 5px; padding: 5px 8px; }}
+            border-radius: 5px; padding: 5px 28px 5px 8px; }}
+/* Qt draws the drop-down as its own sub-button inside the box: it paints a
+   second border beside the arrow and squares off the rounded right-hand
+   corner, which is what made the right edge look cut. Give it no border, no
+   background of its own, and the same corner radius as the box it sits in. */
+QComboBox::drop-down {{ subcontrol-origin: padding;
+                       subcontrol-position: top right; width: 26px;
+                       border: none; background: transparent;
+                       border-top-right-radius: 5px;
+                       border-bottom-right-radius: 5px; }}
+QComboBox:hover {{ border-color: {c["line_soft"]}; }}
+{arrow_rule}
 QComboBox QAbstractItemView {{ background: {c["panel"]};
                               selection-background-color: {c["accent"]}; }}
 QCheckBox::indicator {{ width: 15px; height: 15px; border-radius: 3px;
@@ -522,49 +567,6 @@ class GamutApp(QMainWindow):
         # to name the mode you are NOT in, which reads as a statement about the
         # current state and is read wrongly about half the time. Radios show
         # both choices and which one is active, and cannot be misread.
-        # The label sits above its choices, the same shape as Accent and the
-        # shape-colour set below it -- three groups laid out three different
-        # ways is three things to parse instead of one.
-        v.addWidget(QLabel("Appearance", col))
-        theme_row = QHBoxLayout()
-        theme_row.setContentsMargins(0, 0, 0, 0)
-        # EACH SET NEEDS ITS OWN GROUP. Radio buttons sharing a parent are one
-        # exclusive group in Qt, so choosing an accent silently unchecked the
-        # appearance -- both sets looked empty and neither could be read off the
-        # screen. Grouping them explicitly keeps the two questions separate.
-        self._theme_group = QButtonGroup(self)
-        self._theme_light = QRadioButton("Light", col)
-        self._theme_dark = QRadioButton("Dark", col)
-        for radio in (self._theme_light, self._theme_dark):
-            self._theme_group.addButton(radio)
-            theme_row.addWidget(radio)
-        theme_row.addStretch(1)
-        self._theme_light.toggled.connect(
-            lambda on: self._set_appearance("light") if on else None)
-        self._theme_dark.toggled.connect(
-            lambda on: self._set_appearance("dark") if on else None)
-        v.addLayout(theme_row)
-
-        # Five names will not fit one row of a 310 px column -- squeezed onto
-        # one line they came out as "Ma", "Tea", "Am". A grid gives every name
-        # its full width, and reads as a set of choices rather than a cramped
-        # strip.
-        v.addWidget(QLabel("Accent", col))
-        scheme_grid = QGridLayout()
-        scheme_grid.setContentsMargins(0, 0, 0, 0)
-        scheme_grid.setHorizontalSpacing(4)
-        self._scheme_group = QButtonGroup(self)
-        self._scheme_radios = {}
-        for i, name in enumerate(SCHEMES):
-            radio = QRadioButton(name, col)
-            self._scheme_group.addButton(radio)
-            radio.setToolTip(f"Use the {name.lower()} accent colour")
-            radio.toggled.connect(
-                lambda on, which=name: self._set_scheme(which) if on else None)
-            self._scheme_radios[name] = radio
-            scheme_grid.addWidget(radio, i // 3, i % 3)
-        v.addLayout(scheme_grid)
-
         sub = WrappedLabel(
             "Every colour your printer actually put on paper, worked out from "
             "the patches you measured. This is what the printer really did, on "
@@ -980,6 +982,57 @@ class GamutApp(QMainWindow):
         v.addWidget(g_vol)
 
         v.addStretch(1)
+
+        # Appearance and accent live at the FOOT of the column. Between the
+        # heading and the sentence that explains it, they separated a title
+        # from its own description and left the heading looking orphaned --
+        # and they are preferences about the window, not about the subject.
+        g_prefs = QGroupBox("This window", col)
+        pv = QVBoxLayout(g_prefs)
+        # The label sits above its choices, the same shape as Accent and the
+        # shape-colour set below it -- three groups laid out three different
+        # ways is three things to parse instead of one.
+        pv.addWidget(QLabel("Appearance", g_prefs))
+        theme_row = QHBoxLayout()
+        theme_row.setContentsMargins(0, 0, 0, 0)
+        # EACH SET NEEDS ITS OWN GROUP. Radio buttons sharing a parent are one
+        # exclusive group in Qt, so choosing an accent silently unchecked the
+        # appearance -- both sets looked empty and neither could be read off the
+        # screen. Grouping them explicitly keeps the two questions separate.
+        self._theme_group = QButtonGroup(self)
+        self._theme_light = QRadioButton("Light", g_prefs)
+        self._theme_dark = QRadioButton("Dark", g_prefs)
+        for radio in (self._theme_light, self._theme_dark):
+            self._theme_group.addButton(radio)
+            theme_row.addWidget(radio)
+        theme_row.addStretch(1)
+        self._theme_light.toggled.connect(
+            lambda on: self._set_appearance("light") if on else None)
+        self._theme_dark.toggled.connect(
+            lambda on: self._set_appearance("dark") if on else None)
+        pv.addLayout(theme_row)
+
+        # Five names will not fit one row of a 310 px column -- squeezed onto
+        # one line they came out as "Ma", "Tea", "Am". A grid gives every name
+        # its full width, and reads as a set of choices rather than a cramped
+        # strip.
+        pv.addWidget(QLabel("Accent", g_prefs))
+        scheme_grid = QGridLayout()
+        scheme_grid.setContentsMargins(0, 0, 0, 0)
+        scheme_grid.setHorizontalSpacing(4)
+        self._scheme_group = QButtonGroup(self)
+        self._scheme_radios = {}
+        for i, name in enumerate(SCHEMES):
+            radio = QRadioButton(name, g_prefs)
+            self._scheme_group.addButton(radio)
+            radio.setToolTip(f"Use the {name.lower()} accent colour")
+            radio.toggled.connect(
+                lambda on, which=name: self._set_scheme(which) if on else None)
+            self._scheme_radios[name] = radio
+            scheme_grid.addWidget(radio, i // 3, i % 3)
+        pv.addLayout(scheme_grid)
+        v.addWidget(g_prefs)
+
         self._reset_btn = QPushButton("Start again with standard settings",
                                       col)
         self._reset_btn.setObjectName("secondary")
@@ -1188,7 +1241,12 @@ class GamutApp(QMainWindow):
         """
         app = QApplication.instance()
         if app is not None:
-            app.setStyleSheet(stylesheet(self._appearance, self._scheme))
+            arrow = chevron_png(
+                self._tmp / f"chevron-{self._appearance}.png",
+                PALETTES[self._appearance]["dim"],
+                self.devicePixelRatioF() or 1.0)
+            app.setStyleSheet(stylesheet(self._appearance, self._scheme,
+                                         arrow.replace("\\", "/")))
         radio = (self._theme_light if self._appearance == "light"
                  else self._theme_dark)
         if not radio.isChecked():
@@ -1513,9 +1571,11 @@ class GamutApp(QMainWindow):
                 # that says which printer and the part that says which paper
                 # or date -- the two halves people actually tell files apart
                 # by. The full name is on the tooltip.
+                # Measure against the column, not against the label: asked
+                # during the first layout a label reports a width it has not
+                # been given yet, which shortened names that had ample room.
                 shown = QFontMetrics(lab.font()).elidedText(
-                    path.stem, Qt.TextElideMode.ElideMiddle,
-                    max(120, lab.width() - 18))
+                    path.stem, Qt.TextElideMode.ElideMiddle, _TEXT_WIDTH - 34)
                 lab.setText(f"● {shown}\n   {patches}{measured}")
                 lab.setToolTip(str(path))
             else:
