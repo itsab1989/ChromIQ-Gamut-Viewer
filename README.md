@@ -355,6 +355,18 @@ version-numbered folder the official download unpacks into
 the same toolkit that reads a printed chart in the first place. Nothing nags
 you about it on startup, because most people never need it.
 
+### A picture with nothing around it
+
+<p align="center"><img src="docs/screenshots/18-no-grid.webp" width="820"
+alt="The measured gamut drawn with no box, grid or axis labels around it"></p>
+
+Untick **Show the box and its grid** and the walls, the grid, the numbers and
+the axis names all go, leaving the shape floating on the page. Keep them while
+you are reading the shape — they are what tell you how light a part of the
+surface is — and drop them for a picture going into a document, a slide or a
+forum post. It applies to the whole picture, so two rooms lose the box
+together and the pair still match.
+
 ## What it saves
 
 Nothing, unless you ask.
