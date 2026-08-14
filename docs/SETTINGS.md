@@ -373,3 +373,15 @@ be grabbed.
 has a floor of 420px. That floor was 560, which forced a 972px minimum — wide
 enough to hang off the side of a small display. 420 is still a scene worth
 looking at, and the window can always be made bigger.
+
+### Hover and focus
+
+Every control that can be changed answers the pointer in **the chosen accent**,
+not a grey: combo boxes, checkbox indicators, radio indicators, slider handles.
+The same colour is used for keyboard focus, so somebody tabbing through sees
+exactly what somebody pointing sees.
+
+A grey highlight is indistinguishable from the resting border on a dark
+background. The radios already used the accent, so before this half the
+controls appeared to answer the pointer and half appeared not to — which reads
+as some of them being disabled.

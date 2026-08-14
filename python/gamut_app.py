@@ -228,7 +228,18 @@ QComboBox::drop-down {{ subcontrol-origin: padding;
                        border: none; background: transparent;
                        border-top-right-radius: 5px;
                        border-bottom-right-radius: 5px; }}
-QComboBox:hover {{ border-color: {c["line_soft"]}; }}
+/* Pointing at something you can change should say so in the colour the rest
+   of the window uses for "this is yours to touch". A grey highlight is
+   indistinguishable from the resting border on a dark background, and the
+   radios were already using the accent -- so half the controls answered the
+   pointer and half appeared not to. */
+QComboBox:hover {{ border-color: {c["accent"]}; }}
+QComboBox:focus {{ border-color: {c["accent"]}; }}
+QComboBox:on {{ border-color: {c["accent"]}; }}
+QCheckBox::indicator:hover {{ border: 1px solid {c["accent"]}; }}
+QCheckBox::indicator:focus {{ border: 1px solid {c["accent"]}; }}
+QSlider::handle:horizontal:hover {{ background: {c["accent_hot"]}; }}
+QPushButton#secondary:focus {{ border: 1px solid {c["accent"]}; }}
 {arrow_rule}
 QComboBox QAbstractItemView {{ background: {c["panel"]};
                               selection-background-color: {c["accent"]}; }}
