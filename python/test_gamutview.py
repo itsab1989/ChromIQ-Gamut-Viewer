@@ -399,3 +399,74 @@ def test_hue_reach_finds_the_family_that_actually_reaches_further():
     assert hue_reach(stretched)["yellows"] > hue_reach(base)["yellows"]
     assert hue_reach(stretched)["blues"] == pytest.approx(
         hue_reach(base)["blues"])
+
+
+# --- update checking -------------------------------------------------------
+
+def test_versions_compare_as_numbers_not_as_text():
+    """The mistake this exists to prevent: "1.10.0" is newer than "1.9.0",
+    which a plain string comparison gets backwards."""
+    from updates import is_newer
+    assert is_newer("1.10.0", "1.9.0")
+    assert not is_newer("1.9.0", "1.10.0")
+    assert is_newer("2.0.0", "1.99.99")
+    assert is_newer("v1.0.1", "1.0.0")          # a leading "v" is normal
+
+
+def test_the_same_version_is_not_an_update():
+    """Announcing an update to the version already running would be worse
+    than saying nothing at all."""
+    from updates import is_newer
+    for a, b in (("1.0.0", "1.0.0"), ("v1.0.0", "1.0.0"),
+                 ("1.1", "1.1.0"), ("1.1.0", "1.1")):
+        assert not is_newer(a, b), (a, b)
+
+
+def test_an_older_version_is_never_announced():
+    from updates import is_newer
+    assert not is_newer("0.9.0", "1.0.0")
+    assert not is_newer("1.0.0", "1.0.1")
+
+
+def test_a_tag_nobody_can_parse_is_never_an_update():
+    """A release tagged something unexpected must not be reported as newer --
+    silence is the safe answer when the version cannot be established."""
+    from updates import is_newer, parse_version
+    for junk in ("", "latest", "nightly", None):
+        assert parse_version(junk) == ()
+        assert not is_newer(junk or "", "1.0.0")
+
+
+def test_version_parsing_is_forgiving_about_shape():
+    from updates import parse_version
+    assert parse_version("v1.2.3") == (1, 2, 3)
+    assert parse_version("1.2.3-beta.4") == (1, 2, 3, 4)
+    assert parse_version("2026.8") == (2026, 8)
+
+
+def test_the_unattended_check_is_off_by_default():
+    """The release notes promise no network is used. Anything that reaches the
+    network without being asked has to be opt-in, or that promise is false."""
+    import gamut_app
+    defaults = {key: default for key, _w, _k, default in
+                gamut_app.GamutApp._persisted(_FakeApp())}
+    assert defaults["auto_update"] is False
+
+
+class _FakeApp:
+    """Only enough of the window for _persisted() to build its table."""
+    def __init__(self):
+        import gamut_app
+        for name in ("_opacity", "_depth", "_detail", "_slice_at", "_rings"):
+            setattr(self, name, None)
+        for name in ("_slice_on", "_points", "_show_lost", "_relative",
+                     "_manual_light", "_mesh_colour", "_rings_on", "_neutral",
+                     "_auto_update"):
+            setattr(self, name, None)
+        for name in ("_aspect", "_white", "_space", "_mode", "_style_mine",
+                     "_style_second", "_style_other"):
+            setattr(self, name, None)
+        self._light_sliders = {k: (None,) for k, *_ in gamut_app.LIGHT_CONTROLS}
+
+    def findChildren(self, _cls):
+        return []

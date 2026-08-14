@@ -54,7 +54,11 @@ folder, never beside your original.
 | Linux | `GamutViewer-Linux-x86_64.tar.gz` |
 | Linux on ARM (Raspberry Pi and similar) | `GamutViewer-Linux-aarch64.tar.gz` |
 
-Unpack it and run it. Nothing is uploaded anywhere and no network is used.
+Unpack it and run it. Nothing is uploaded anywhere, and the app reaches the
+network only if you ask it to: **Check for a newer version…** looks at this
+releases page and tells you what it finds. It never downloads or installs
+anything by itself, and the unattended "Check when the app starts" option
+begins switched off.
 
 On macOS the first launch needs **right-click ▸ Open** rather than a double
 click, because the app is not signed with an Apple developer certificate.

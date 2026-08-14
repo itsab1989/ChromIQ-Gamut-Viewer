@@ -82,7 +82,13 @@ beside your profile. Other formats are listed under [What it
 opens](#what-it-opens).
 
 You do **not** need an ICC profile, an internet connection, or an account.
-Nothing is uploaded anywhere.
+Nothing about you, your printer or your measurements is ever uploaded.
+
+The one thing that can reach the network is **Check for a newer version…**,
+which looks at this project's releases page and tells you whether a newer
+version exists. It never downloads or installs anything by itself, and the
+unattended **Check when the app starts** option begins switched off — so
+unless you ask, the app makes no network requests at all.
 
 ---
 

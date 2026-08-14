@@ -46,7 +46,7 @@ import numpy as np
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
 from PyQt6.QtCore import (QRect, QSettings, QSize, QStandardPaths, Qt,
-                          QUrl, pyqtSignal)
+                          QTimer, QUrl, pyqtSignal)
 from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QPainter,
                          QPen, QPixmap)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
@@ -849,6 +849,13 @@ class GamutApp(QMainWindow):
                       else widget.currentIndexChanged)
             signal.connect(lambda *_a: self._remember_everything())
 
+        # Deferred so the window is on screen first: a check that runs
+        # during construction would hold up the first paint on a slow
+        # network, and its dialog could arrive before the window.
+        if self._auto_update.isChecked():
+            QTimer.singleShot(1500,
+                              lambda: self._check_updates(asked=False))
+
         for p in (initial or []):
             self._load(Path(p))
 
@@ -1467,6 +1474,33 @@ class GamutApp(QMainWindow):
         self._glossary_btn.setObjectName("secondary")
         self._glossary_btn.clicked.connect(self._on_glossary)
         v.addWidget(self._glossary_btn)
+        self._update_btn = QPushButton("Check for a newer version…", col)
+        self._update_btn.setObjectName("secondary")
+        self._update_btn.clicked.connect(lambda: self._check_updates(asked=True))
+        v.addWidget(self._update_btn)
+        self._auto_update = QCheckBox("Check when the app starts", col)
+        # OFF by default, and it must stay that way. This app tells people
+        # nothing leaves their machine; looking for updates without being
+        # asked would quietly make that untrue. Pressing the button above is
+        # itself the consent, the same way pressing Open consents to a file
+        # being read -- so the button is always available and only the
+        # unattended check has to be switched on deliberately.
+        self._auto_update.setChecked(False)
+        v.addWidget(self._auto_update)
+        update_hint = Hint(
+            "Looks at the project's releases page and tells you whether a "
+            "newer version has been published. It never downloads or installs "
+            "anything by itself — the most it does is show you the version "
+            "number and offer the link.\n\n"
+            "Nothing about you, your printer or your measurements is sent. "
+            "The request carries no account and no identifier, and there is "
+            "no record kept of it here.\n\n"
+            "Everything else in this window works with no internet connection "
+            "at all, which is why this starts switched off: the only time the "
+            "app reaches the network is when you press the button, or after "
+            "you tick this box.", col)
+        update_hint.setObjectName("hint_update_hint")
+        v.addWidget(update_hint)
         self._save = QPushButton("Save this view as a web page…", col)
         self._save.setObjectName("secondary")
         self._save.clicked.connect(self._on_save)
@@ -1506,6 +1540,7 @@ class GamutApp(QMainWindow):
             ("mesh_colour", self._mesh_colour, "check", False),
             ("rings_on", self._rings_on, "check", False),
             ("neutral", self._neutral, "check", False),
+            ("auto_update", self._auto_update, "check", False),
             ("rings", self._rings, "slider", 6),
             ("aspect", self._aspect, "combo", "data"),
             ("white", self._white, "combo", "D50"),
@@ -1786,6 +1821,53 @@ class GamutApp(QMainWindow):
             self, "Saved",
             f"Written to\n{target}\n\nIt opens in any spreadsheet, and every "
             "row says what it is and what the units are.")
+
+    def _check_updates(self, *, asked: bool) -> None:
+        """Ask the releases page whether there is a newer version.
+
+        *asked* is True when somebody pressed the button. It decides how
+        talkative the answer is: a check you asked for always answers, even to
+        say you are up to date, because silence after pressing a button reads
+        as a fault. The unattended check at start-up only ever speaks up when
+        there really is something newer — nobody wants a dialog every morning
+        telling them nothing has changed.
+        """
+        from updates import RELEASES_PAGE, UpdateCheck
+
+        if asked:
+            self._update_btn.setEnabled(False)
+            self._update_btn.setText("Checking…")
+
+        def done(newer: bool, version: str, url: str, problem: str) -> None:
+            if asked:
+                self._update_btn.setEnabled(True)
+                self._update_btn.setText("Check for a newer version…")
+            if newer:
+                Notice.say(
+                    self, f"Version {version} is available",
+                    f"You are running {__version__}, and {version} has been "
+                    "published.\n\n"
+                    "Nothing has been downloaded or changed. To update, open "
+                    f"the releases page and take the file for your computer:\n"
+                    f"{url}\n\n"
+                    "Your settings and your measurement files are not touched "
+                    "by updating.")
+            elif not asked:
+                return                      # up to date, unasked: stay quiet
+            elif problem:
+                Notice.say(self, "The check could not be made", problem)
+            else:
+                Notice.say(
+                    self, "You are up to date",
+                    f"{__version__} is the newest version published.\n\n"
+                    f"You can always see what has changed at\n{RELEASES_PAGE}")
+
+        # Held on self until it reports. A check that is garbage-collected
+        # mid-request never delivers its answer, and the button stays greyed
+        # out for ever.
+        self._update_check = UpdateCheck(__version__, self)
+        self._update_check.finished.connect(done)
+        self._update_check.start()
 
     def _on_glossary(self) -> None:
         """Explain every word this window uses, in plain language.

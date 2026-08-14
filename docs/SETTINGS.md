@@ -233,6 +233,37 @@ Notes worth carrying over:
   is opt-in because a folded hint's label is hidden while still holding plenty
   of text, and showing it again would unfold it behind the user's back.
 
+### Checking for a newer version
+
+| Control | Values | Default | Goes to |
+|---|---|---|---|
+| Check for a newer version… | button | — | `updates.UpdateCheck` |
+| Check when the app starts | on / off | **off** | `auto_update` in `_persisted()` |
+
+**The default is not a preference, it is a promise being kept.** The release
+notes tell everybody the app uses no network. Pressing the button *is* the
+consent for that one request, the same way pressing Open consents to a file
+being read — so the button is always there. A check that happens without
+anybody pressing anything is a different thing, so it starts off.
+
+One ordinary HTTPS GET to the public releases API. No account, no identifier,
+nothing about the machine, the printer or the measurements, and nothing is
+downloaded or installed automatically — the most it does is show a version
+number and offer a link.
+
+Two rules the code has to honour, and does:
+
+* **A check you asked for always answers**, even to say you are up to date.
+  Silence after pressing a button reads as a fault.
+* **An unattended check speaks only when there is something newer.** Nobody
+  wants a dialog every morning telling them nothing has changed.
+
+Versions compare as numbers, not text — `1.10.0` is newer than `1.9.0`, which
+a string comparison gets backwards. A tag that cannot be parsed is never
+announced as an update, so a release tagged `nightly` stays quiet. Being
+unable to reach the site is reported as a normal thing that happens, never as
+a fault with the user's copy.
+
 ---
 
 ## 5. What is reported

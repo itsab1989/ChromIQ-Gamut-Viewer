@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.0.1
+
+### ✨ What's new
+
+- **It can tell you when a newer version is out.** **Check for a newer
+  version…** looks at the releases page and says what it finds. It never
+  downloads or installs anything by itself — the most it does is show you a
+  version number and offer the link.
+- **Nothing about you is sent, and it stays off until you ask.** Everything
+  else in the window works with no internet connection at all, so the
+  unattended **Check when the app starts** option begins switched off. Pressing
+  the button is itself the consent for that one request.
+- A check you asked for always answers, even to say you are up to date. An
+  unattended one speaks up only when there really is something newer.
+- If the site cannot be reached, it says so as the ordinary thing it is —
+  never as a fault with your copy.
+
+### 📖 Documentation
+
+- The release notes and README said no network was used. That is now stated
+  precisely instead: no request is made unless you ask for one.
+
 ## v1.0.0
 
 The first release. See the gamut your printer **actually measured** — not the
