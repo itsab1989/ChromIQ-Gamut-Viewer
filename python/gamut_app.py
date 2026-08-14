@@ -216,8 +216,17 @@ QPushButton {{ background: {c["accent"]}; color: {c["on_accent"]}; border: none;
               min-height: 20px; }}
 QPushButton:hover {{ background: {c["accent_hot"]}; }}
 QPushButton:disabled {{ background: {c["second"]}; color: {c["faint"]}; }}
+/* A QUIET BUTTON STILL HAS TO BE A BUTTON. Its fill is one step from the
+   window it sits on -- #edebe6 on #eeece8 in the light appearance, a contrast
+   ratio of 1.01:1, which is nothing at all -- so with no edge it simply was
+   not there. An edge rather than a darker fill, because a darker fill reads
+   as pressed. line_soft is the token whose whole job this is, and it lands at
+   1.93:1 light and 2.00:1 dark, so neither appearance is favoured.
+   The padding gives back the two pixels the border takes, so these stay
+   exactly the size of the solid buttons beside them. */
 QPushButton#secondary {{ background: {c["second"]}; color: {c["text"]};
-                        font-weight: 500; }}
+                        border: 1px solid {c["line_soft"]};
+                        padding: 6px 11px; font-weight: 500; }}
 QPushButton#secondary:hover {{ background: {c["second_hover"]}; }}
 QPushButton#closer {{ background: transparent; color: {c["faint"]};
                      border: none; border-radius: 11px; padding: 0;
@@ -320,6 +329,10 @@ QToolButton#hintToggle {{ color: {c["faint"]}; font-size: 11px;
                           padding: 1px 0; text-align: left; }}
 QToolButton#hintToggle:hover {{ color: {c["accent"]}; }}
 QToolButton#hintToggle:checked {{ color: {c["dim"]}; }}
+/* The two words that name a group of choices below them, rather than
+   labelling one control beside them. They read as headings, so they are set
+   as headings. */
+QLabel#prefsHeading {{ color: {c["text"]}; font-weight: 600; }}
 QLabel#volume {{ font-size: 21px; font-weight: 600; color: {c["text"]}; }}
 QLabel#slot {{ color: {c["dim"]}; }}
 QScrollArea {{ border: none; background: {c["bg"]}; }}
@@ -2016,6 +2029,7 @@ class GamutApp(QMainWindow):
         # shape-colour set below it -- three groups laid out three different
         # ways is three things to parse instead of one.
         self._appearance_label = QLabel("Appearance", g_prefs)
+        self._appearance_label.setObjectName("prefsHeading")
         pv.addWidget(self._appearance_label)
         appearance_hint = Hint(
             "Light or dark, for the window and for the picture inside it. "
@@ -2059,6 +2073,7 @@ class GamutApp(QMainWindow):
         # its full width, and reads as a set of choices rather than a cramped
         # strip.
         self._accent_label = QLabel("Accent", g_prefs)
+        self._accent_label.setObjectName("prefsHeading")
         pv.addWidget(self._accent_label)
         accent_hint = Hint(
             "The colour this window uses for the things you can change: "

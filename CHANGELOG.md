@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.5.1
+
+### 🐞 Fixed
+
+- **The quieter buttons were nearly invisible in the light appearance.**
+  Their fill sits one step away from the window behind them — a contrast of
+  1.01 to 1, which is nothing at all — so **Start again with standard
+  settings**, **What do these words mean?**, **Where ArgyllCMS is…** and the
+  rest read as plain text rather than as buttons. They have an edge now, in
+  both appearances. An edge rather than a darker fill, because a darker fill
+  would make them look permanently pressed.
+- **Appearance and Accent are set as the headings they are.** Each names the
+  group of choices underneath it rather than labelling one control beside it,
+  so they no longer read as part of the row below.
+
 ## v1.5.0
 
 ### ✨ What's new
