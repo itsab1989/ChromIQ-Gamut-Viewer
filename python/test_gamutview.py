@@ -470,3 +470,51 @@ class _FakeApp:
 
     def findChildren(self, _cls):
         return []
+
+
+# --- the legend key ---------------------------------------------------------
+
+def test_the_legend_key_is_visible_on_both_pages():
+    """A mesh painted per-vertex has no single colour, so Plotly draws its
+    legend key in a default that vanishes on a dark page. The key must be
+    legible against whichever page it is drawn on."""
+    from ti3gamut import SCENE_COLOURS, _legend_swatch
+
+    def luminance(hex_colour):
+        r, g, b = (int(hex_colour[i:i + 2], 16) / 255.0 for i in (1, 3, 5))
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    very_dark = np.zeros((10, 3)) + 0.03
+    very_light = np.ones((10, 3)) - 0.03
+    for mode, floor, ceiling in (("dark", 0.30, None), ("light", None, 0.70)):
+        page = SCENE_COLOURS[mode]["page"]
+        for colours in (very_dark, very_light):
+            got = luminance(_legend_swatch(colours, page))
+            if floor is not None:
+                assert got >= floor, (mode, got)
+            if ceiling is not None:
+                assert got <= ceiling, (mode, got)
+
+
+def test_the_legend_key_accepts_both_colour_forms():
+    """Gamut.colors is a float array; the paint schemes hand back
+    "rgb(r,g,b)" strings. Both reach this code in normal use."""
+    from ti3gamut import _legend_swatch
+    page = "#111318"
+    assert _legend_swatch(np.array([[0.9, 0.1, 0.1]] * 4), page).startswith("#")
+    assert _legend_swatch(["rgb(230,25,25)"] * 4, page).startswith("#")
+
+
+def test_the_legend_key_never_brings_the_page_down():
+    """Decoration must not be able to raise. Anything unusable falls back."""
+    from ti3gamut import _legend_swatch
+    for junk in (None, [], "not a list", [object()], [[1.0]], {}):
+        assert _legend_swatch(junk, "#111318").startswith("#")
+
+
+def test_the_key_still_looks_like_the_shape_it_stands_for():
+    """Lifting it for legibility must not turn a red gamut into a grey chip."""
+    from ti3gamut import _legend_swatch
+    red = _legend_swatch(np.array([[0.55, 0.05, 0.05]] * 8), "#111318")
+    r, g, b = (int(red[i:i + 2], 16) for i in (1, 3, 5))
+    assert r > g and r > b, red

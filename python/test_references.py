@@ -134,3 +134,31 @@ def test_a_chart_without_device_values_has_no_greys_to_show():
     lab_out, labels = neutral_axis(
         Measurement("x", None, np.zeros((5, 3)), "t", 5))
     assert len(lab_out) == 0 and labels == []
+
+
+def test_a_gamut_file_reports_the_volume_its_own_triangles_enclose():
+    """A .gam describes a DENTED surface. Measuring the convex hull of its
+    vertices instead over-states it -- 8.3% on a real profile gamut -- and
+    makes this tool disagree with ArgyllCMS about the very file ArgyllCMS
+    wrote. The triangles are in the file; they are what must be measured."""
+    import numpy as np
+    from scipy.spatial import ConvexHull
+
+    from gamutview import Gamut, mesh_volume
+
+    # A cube with one corner pushed inwards: dented, so hull > true volume.
+    pts = np.array([[0., 0., 0.], [10., 0., 0.], [10., 10., 0.], [0., 10., 0.],
+                    [0., 0., 10.], [10., 0., 10.], [10., 10., 10.],
+                    [7., 7., 7.]])
+    hull = ConvexHull(pts)
+    true = mesh_volume(pts, hull.simplices)
+    assert true == pytest.approx(float(hull.volume), rel=1e-9)
+
+    # And the property that matters: for any closed surface, mesh_volume is
+    # what the triangles enclose, never the hull of the points.
+    dented = np.array([[0., 0., 0.], [10., 0., 0.], [10., 10., 0.], [0., 10., 0.],
+                       [5., 5., 2.]])
+    faces = np.array([[0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4],
+                      [0, 2, 1], [0, 3, 2]])
+    assert mesh_volume(dented, faces) < float(ConvexHull(
+        np.vstack([dented, [[5., 5., 8.]]])).volume)

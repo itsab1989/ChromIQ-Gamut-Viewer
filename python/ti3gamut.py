@@ -35,15 +35,19 @@ COLOUR SCIENCE, STATED PLAINLY
   is what a relative-colorimetric profile does and what makes two papers of
   different brightness comparable. Off by default, because the absolute numbers
   are what the instrument actually reported.
-* The volume is the convex hull's, in cubic Lab units — the same quantity
-  ArgyllCMS calls "units" and reports for ``iccgamut``. Comparable between two
-  charts measured the same way; not comparable across white points.
+* The volume is the one the surface actually encloses, in cubic Lab units —
+  the same quantity ArgyllCMS calls "units" and reports for ``iccgamut``, and
+  it agrees with iccgamut to one part in 10^8 on the same file. In the default
+  mode that is the DENTED boundary, not a hull thrown around it. Comparable
+  between two charts measured the same way; not comparable across white points
+  or across colour spaces.
 
 Requires: numpy, scipy, plotly.
 """
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import webbrowser
 from dataclasses import dataclass
@@ -550,8 +554,75 @@ def compare_measurements(before, after, *, top: int = 8) -> Drift:
                  over_three=int((de > 3.0).sum()), worst_patches=worst)
 
 
+def _as_rgb_array(colours):
+    """Colours as an (N, 3) float array in 0..1, whatever form they arrive in.
+
+    Returns None when nothing usable can be made of them, so the caller can
+    fall back rather than raise: a legend key is decoration, and no colour
+    scheme is worth losing the whole picture over.
+    """
+    if colours is None:
+        return None
+    try:
+        first = colours[0]
+    except (IndexError, TypeError, KeyError):
+        return None
+    if isinstance(first, str):
+        out = []
+        for text in colours:
+            found = re.findall(r"[\d.]+", str(text))
+            if len(found) >= 3:
+                out.append([float(found[0]) / 255.0, float(found[1]) / 255.0,
+                            float(found[2]) / 255.0])
+        return np.asarray(out, dtype=float) if out else None
+    try:
+        arr = np.asarray(colours, dtype=float)
+    except (TypeError, ValueError):
+        return None
+    if arr.ndim != 2 or arr.shape[1] < 3:
+        return None
+    return arr[:, :3]
+
+
+def _legend_swatch(colours, page: str) -> str:
+    """A colour for the legend key that both represents the shape and can be
+    seen against the page.
+
+    A mesh painted with ``vertexcolor`` has no single colour, so Plotly draws
+    its legend key in a default that is almost invisible on a dark page -- the
+    little marker before the name disappears and the legend stops being a key
+    to anything.
+
+    The average of the colours actually used is the honest representative. It
+    is then lifted (on a dark page) or deepened (on a light one) only as far
+    as it must be to stay legible, so it still looks like the shape it stands
+    for rather than becoming a generic swatch.
+    """
+    # Two shapes reach here: a Gamut's own (N, 3) float array, and the
+    # "rgb(r,g,b)" strings the paint schemes produce. Both are normal, so both
+    # are handled rather than one of them crashing the whole page.
+    arr = _as_rgb_array(colours)
+    if arr is None or not len(arr):
+        return "#9aa3b2"
+    mean = arr.mean(axis=0)
+    # Relative luminance, and the page's, on the same 0..1 scale.
+    def lum(rgb):
+        return float(0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2])
+    page_rgb = np.array([int(page[i:i + 2], 16) / 255.0 for i in (1, 3, 5)])
+    dark_page = lum(page_rgb) < 0.5
+    target = 0.45 if dark_page else 0.55
+    have = lum(mean)
+    if dark_page and have < target:
+        mean = mean + (1.0 - mean) * ((target - have) / max(1e-6, 1.0 - have))
+    elif not dark_page and have > target:
+        mean = mean * (target / max(1e-6, have))
+    r, g, b = (int(round(float(np.clip(c, 0.0, 1.0)) * 255)) for c in mean)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def _mesh(gamut, name: str, opacity: float, wireframe: bool,
-          paint: str = "true", index: int = 0, depth: float = 0.35):
+          paint: str = "true", index: int = 0, depth: float = 0.35,
+          page: str = "#111318"):
     """One Plotly mesh for a gamut, painted the way the user asked."""
     import plotly.graph_objects as go
     v = _plot_points(gamut)
@@ -563,6 +634,9 @@ def _mesh(gamut, name: str, opacity: float, wireframe: bool,
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=gamut.faces[:, 0], j=gamut.faces[:, 1], k=gamut.faces[:, 2],
         vertexcolor=colours, opacity=opacity, name=name, showlegend=True,
+        # Only the legend key uses this; vertexcolor paints the surface.
+        color=_legend_swatch(chosen if chosen is not None else gamut.colors,
+                             page),
         flatshading=False, hoverinfo="name",
         lighting=_lighting(depth),
         lightposition=dict(x=0, y=0, z=2000),
@@ -706,7 +780,8 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
                                      depth_i))
         elif how in ("solid", "solid+mesh"):
             fig.add_trace(_mesh(g, name, opacity=base_i, wireframe=False,
-                                paint=paint_i, index=i, depth=depth_i))
+                                paint=paint_i, index=i, depth=depth_i,
+                                page=c["page"]))
         if how in ("mesh", "solid+mesh"):
             for trace in _edges(g, name, colour=c["wire"],
                                 width=1.0 if how == "mesh" else 0.7,
