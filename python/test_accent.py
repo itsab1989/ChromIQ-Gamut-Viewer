@@ -140,7 +140,13 @@ def test_the_percentage_sits_on_the_middle_of_the_bar(app):
     assert ink, "the percentage was not found in the picture at all"
     middle = (filled[0] + filled[-1]) / 2
     centre = (ink[0] + ink[-1]) / 2
-    assert abs(centre - middle) <= 1.0, (
+    # A PIXEL AND A HALF, not one. The rows of ink are counted as whole
+    # pixels and the baseline is rounded to one, so half a pixel of slack is
+    # in the measurement rather than in the drawing — and it lands differently
+    # wherever the font is substituted, which is what Windows does. The fault
+    # this exists to catch was three pixels at ordinary resolution and five on
+    # a high-resolution screen, so it still bites.
+    assert abs(centre - middle) <= 1.5, (
         f"the number sits {centre - middle:+.1f} px from the middle of the bar")
 
 

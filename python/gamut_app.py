@@ -907,6 +907,21 @@ def _chequerboard(across: int, down: int, square: int = 9):
     return board
 
 
+def _baseline_for(groove, ink) -> float:
+    """Where to put the baseline so the INK sits on the middle of the groove.
+
+    tightBoundingRect is measured from the baseline, and its ``top`` is how far
+    above that the ink begins — a negative number, and NOT simply minus the
+    height, because a font can put ink below the baseline and because the two
+    disagree by a fraction on some. Assuming they were the same put the number
+    a pixel and a half high on Windows, where the substituted font differs from
+    the one this was worked out on. Using the rectangle as given is exact
+    wherever it runs.
+    """
+    wanted = groove.top() + groove.height() / 2.0        # middle of the bar
+    return wanted - ink.top() - ink.height() / 2.0
+
+
 class CentredProgressBar(QProgressBar):
     """A progress bar whose percentage sits on the middle of the bar.
 
@@ -953,10 +968,7 @@ class CentredProgressBar(QProgressBar):
         ink = metrics.tightBoundingRect(wanted)
         across = groove.left() + (groove.width()
                                   - metrics.horizontalAdvance(wanted)) / 2.0
-        # tightBoundingRect is measured up from the baseline, so its height is
-        # the ink alone; putting half of it below the middle of the groove puts
-        # the middle of the ink on the middle of the bar.
-        baseline = groove.top() + (groove.height() + ink.height()) / 2.0
+        baseline = _baseline_for(groove, ink)
         painter.setPen(option.palette.color(QPalette.ColorRole.Text))
         painter.drawText(int(round(across)), int(round(baseline)), wanted)
 
@@ -966,11 +978,10 @@ class CentredProgressBar(QProgressBar):
         Positive is low, negative is high, and zero is the point of all this.
         """
         groove = self._groove()
-        metrics = QFontMetrics(self.font())
-        ink = metrics.tightBoundingRect(self.text())
-        baseline = groove.top() + (groove.height() + ink.height()) / 2.0
-        return ((baseline - ink.height() / 2.0)
-                - (groove.top() + groove.height() / 2.0))
+        ink = QFontMetrics(self.font()).tightBoundingRect(self.text())
+        baseline = _baseline_for(groove, ink)
+        middle = baseline + ink.top() + ink.height() / 2.0
+        return middle - (groove.top() + groove.height() / 2.0)
 
 
 class Stopped(Exception):
