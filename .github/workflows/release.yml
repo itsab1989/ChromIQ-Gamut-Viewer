@@ -193,9 +193,19 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+      # WHAT CHANGED IN THIS VERSION, from CHANGELOG.md. Without this every
+      # release carried the same words -- a description of the application --
+      # so the one thing that differed between two releases was the one thing
+      # the page did not say. This also fails the release outright when the
+      # changelog has nothing for the tag, or when the tag disagrees with the
+      # version inside the application: a release whose notes are quietly
+      # wrong is worse than a build that stopped and said so.
+      - name: Write the release notes for this version
+        run: python python/release_body.py "${GITHUB_REF_NAME}" --out body.md
+
       - name: Attach everything to the release
         uses: softprops/action-gh-release@v2
         with:
           files: assets/*
           generate_release_notes: false
-          body_path: .github/release-notes.md
+          body_path: body.md
