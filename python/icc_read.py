@@ -57,8 +57,19 @@ from pathlib import Path
 
 import numpy as np
 
-#: The PCS is D50 by definition of the specification. Not a choice.
-PCS_WHITE = "D50"
+#: THE PCS WHITE IS A CONSTANT IN THE SPECIFICATION, not a matter of picking
+#: a D50. ICC writes it as three s15Fixed16 numbers -- 0x0000F6D6, 0x00010000,
+#: 0x0000D32D -- which come to 0.964203, 1.0, 0.824905. The CIE textbook D50 a
+#: colour library hands you is 0.96422, 1.0, 0.82521: the Z differs in the
+#: fourth decimal.
+#:
+#: That sounds ignorable and is not, because it is the difference between
+#: agreeing with ArgyllCMS exactly and agreeing with it approximately. Measured
+#: over 100 colours per profile: using the textbook D50 left a constant
+#: max ΔE of 0.0248 against `icclu`; using the number below leaves 0.000002,
+#: which is that tool's printing precision. Nothing about an ICC profile is
+#: open to interpretation -- this was simply the wrong constant.
+PCS_WHITE = np.array([0x0000F6D6, 0x00010000, 0x0000D32D]) / 65536.0
 
 
 class UnsupportedProfile(Exception):
@@ -424,7 +435,7 @@ def profile_to_lab(path, steps: int = 17):
     return device, xyz_to_lab(xyz, PCS_WHITE)
 
 
-def profile_gamut(path, *, white_point: str = PCS_WHITE, space: str = "lab",
+def profile_gamut(path, *, white_point="D50", space: str = "lab",
                   steps: int = 17, **_ignored):
     """The gamut of an ICC profile ArgyllCMS declines to open.
 
@@ -434,6 +445,12 @@ def profile_gamut(path, *, white_point: str = PCS_WHITE, space: str = "lab",
     for the same reason, as everywhere else here.
     """
     from gamutview import build_gamut
+    # Inside an ICC profile "D50" is not a choice of illuminant, it is the
+    # PCS, so the caller asking for it gets the specification's own constant
+    # rather than a library's textbook one. Anything else is passed through:
+    # asking to see the shape under another white is a different question.
+    if isinstance(white_point, str) and white_point.upper() == "D50":
+        white_point = PCS_WHITE
     device, lab = profile_to_lab(path, steps=steps)
     good = np.isfinite(lab).all(axis=1)
     if good.sum() < 8:

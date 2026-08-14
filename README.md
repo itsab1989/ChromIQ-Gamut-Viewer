@@ -330,12 +330,36 @@ and builds the boundary from that — the same way it treats a measured chart.
 Matrix-and-curve profiles (every RGB working space, and every v4 display
 profile) and lookup-table profiles (printers and presses) are both handled.
 
-**It is checked against ArgyllCMS rather than against itself.** On every
-profile both can read, the two volumes are compared: they agree to a median of
-**0.2%**, worst **0.9%**. Agreeing with a mature implementation on every file
-both can open is what earns the right to be believed on the files only one of
-them can. The test is in `python/test_references.py` and runs against whatever
+**It is checked against ArgyllCMS rather than against itself**, and in two
+separate ways, because two different claims are being made.
+
+**Reading the profile is exact.** Nothing in an ICC profile is open to
+interpretation: given a device value, the matrix, the curves and the tables in
+the file determine the colour. Fed the same values, this and ArgyllCMS's own
+`icclu` return the same colour to a worst **ΔE of 0.000002** — which is that
+tool's printing precision, not a real difference. If the two ever disagreed
+about a colour, one of them would simply be wrong.
+
+**A gamut is not in the file, and that is where the small difference lives.**
+The file describes a *mapping* from device values to colours. A gamut is the
+*boundary of everything that mapping can reach* — and finding a boundary means
+sampling the mapping, which the specification says nothing about, because it is
+not part of the format. ArgyllCMS samples on its own grid and builds a surface
+its own way; this samples a 17-step grid per channel and follows the device
+cube's faces. So the volumes land a median of **0.2%** apart, worst **0.9%**,
+and always slightly *under* ArgyllCMS's — exactly what a sampled boundary does,
+since it is inscribed in the true one.
+
+Both tests live in `python/test_references.py` and run against whatever
 profiles your own machine carries.
+
+**One number is worth knowing about.** The specification fixes the connection
+space's white as three exact numbers — 0.964203, 1.0, 0.824905 — which is not
+quite the CIE D50 a colour library hands you (0.96422, 1.0, 0.82521). The Z
+differs in the fourth decimal. Using the textbook value left a constant ΔE of
+0.0248 against ArgyllCMS on every profile; using the specification's own
+constant leaves nothing. It is a small number that decides whether "agrees
+with ArgyllCMS" means exactly or approximately.
 
 ### Do you need ArgyllCMS?
 

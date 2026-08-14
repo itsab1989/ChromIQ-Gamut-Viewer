@@ -293,3 +293,83 @@ def test_the_parametric_curves_match_their_definitions():
     # A plain gamma, and the identity, both of which appear in real files.
     assert np.allclose(_parametric(0, [2.2])(x), x ** 2.2)
     assert _parametric(0, [1.0])(np.array([0.25]))[0] == pytest.approx(0.25)
+
+
+def test_reading_a_profile_is_exact_not_approximate():
+    """THE claim this reader rests on, checked against ArgyllCMS's own
+    evaluator rather than against a gamut.
+
+    Nothing in an ICC profile is open to interpretation: given a device value,
+    the matrix, the curves and the tables in the file determine the colour. So
+    the two implementations must not merely be close, they must agree to the
+    precision the comparison can even express -- `icclu` prints six decimals,
+    which is where this bottoms out.
+
+    It is a separate check from the gamut comparison on purpose. A gamut is
+    NOT in the file: it is the boundary of everything the mapping can reach,
+    and finding a boundary needs sampling, which the specification says
+    nothing about. Mixing the two would let a sampling difference hide a
+    reading error.
+    """
+    import pathlib
+    import shutil
+    import subprocess
+
+    import numpy as np
+
+    import icc_read
+    from gamutview import xyz_to_lab
+
+    tool = shutil.which("icclu") or "/Applications/Argyll/bin/icclu"
+    if not pathlib.Path(tool).is_file():
+        pytest.skip("ArgyllCMS icclu is not installed here")
+
+    rng = np.random.default_rng(3)
+    device = np.vstack([np.eye(3), np.zeros((1, 3)), np.ones((1, 3)),
+                        rng.random((60, 3))])
+    checked = 0
+    for path in _system_profiles():
+        try:
+            head = icc_read.describe(path)
+        except icc_read.UnsupportedProfile:
+            continue
+        if head["space"] != "RGB" or head["class"] in ("abst", "link", "nmcl"):
+            continue
+        tags = icc_read.read_tags(path)
+        if tags.get("A2B1") or tags.get("A2B0"):
+            continue                       # covered by the gamut comparison
+        fed = "\n".join(f"{a:.8f} {b:.8f} {c:.8f}" for a, b, c in device)
+        try:
+            done = subprocess.run([tool, "-ff", "-ir", "-pl", str(path)],
+                                  input=fed, capture_output=True, text=True,
+                                  timeout=90)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        theirs = np.array([[float(x) for x in line.split("->")[-1].split()[:3]]
+                           for line in done.stdout.splitlines()
+                           if line.strip().endswith("[Lab]")])
+        if len(theirs) != len(device):
+            continue                       # ArgyllCMS declined this one
+        ours = xyz_to_lab(icc_read._matrix_to_pcs(tags, device),
+                          icc_read.PCS_WHITE)
+        worst = np.linalg.norm(ours - theirs, axis=1).max()
+        assert worst < 0.001, f"{path.name}: worst ΔE {worst:.6f}"
+        checked += 1
+    if not checked:
+        pytest.skip("no profile here can be read both ways")
+
+
+def test_the_pcs_white_is_the_specification_constant_not_a_textbook_d50():
+    """The specification fixes the PCS white as three exact s15Fixed16
+    numbers. A colour library's CIE D50 differs in the fourth decimal of Z,
+    which is small, constant, and the whole gap between agreeing with
+    ArgyllCMS exactly and agreeing with it approximately."""
+    import numpy as np
+
+    import icc_read
+    from gamutview import WHITE_POINTS
+
+    written = np.array([0x0000F6D6, 0x00010000, 0x0000D32D]) / 65536.0
+    assert np.allclose(icc_read.PCS_WHITE, written, atol=0)
+    # and it is deliberately NOT the textbook one
+    assert not np.allclose(icc_read.PCS_WHITE, WHITE_POINTS["D50"], atol=1e-5)

@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.5.2
+
+### 🐞 Fixed
+
+- **ICC profiles are now read exactly, rather than very nearly.** The
+  specification fixes the colour connection space's white as three exact
+  numbers, which are not quite the CIE D50 a colour library gives you — the
+  Z differs in the fourth decimal. Using the textbook value left a constant
+  difference of ΔE 0.0248 against ArgyllCMS on every profile tested; using
+  the specification's own constant leaves ΔE 0.000002, which is the precision
+  the comparison can express at all. Far too small to see, and the whole
+  distance between agreeing with ArgyllCMS exactly and agreeing with it
+  approximately.
+
+### 📖 Documentation
+
+- **What "agrees to 0.2%" actually means.** Reading a profile and working out
+  a gamut are two different claims and the README now separates them: reading
+  is exact, because nothing in the file is open to interpretation; the 0.2% is
+  in deriving a *boundary*, which needs sampling the file says nothing about,
+  because a gamut is not stored in a profile at all.
+
 ## v1.5.1
 
 ### 🐞 Fixed
