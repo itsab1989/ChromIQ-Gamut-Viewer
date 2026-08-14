@@ -1010,6 +1010,18 @@ class GamutApp(QMainWindow):
         self.setCentralWidget(central)
         self.setAcceptDrops(True)      # drop a .ti3 anywhere on the window
         self._attach_hint_icons(self.findChild(QScrollArea))
+        # Five explanations cover a whole group rather than one control, so
+        # the generic pass has nothing obvious to attach them to. Each is
+        # named here with the control it belongs beside -- the one the group
+        # is really about -- because an icon on a row of its own reads as
+        # explaining nothing.
+        for _name, _control in (
+                ("hint_hint", self._open_btn),
+                ("hint_cmp_hint", self._compare),
+                ("hint_style_hint", self._style_combos[-1][0]),
+                ("hint_paint_hint", self._paint_radios[PAINTS[-1][0]]),
+                ("hint_volume_hint", self._volume)):
+            self._pair_icon(_name, _control)
         # A hidden control must take its ⓘ with it. Anything already managed
         # by an explicit show/hide list keeps that behaviour; the attach pass
         # ties the rest to the control they were placed beside.
@@ -1746,6 +1758,62 @@ class GamutApp(QMainWindow):
         self._apply_mode()
         if self._slots:
             self._redraw()          # the scene is repainted to match
+
+    def _pair_icon(self, name: str, control) -> None:
+        """Put the ⓘ called *name* on the same row as *control*.
+
+        Used for the handful of explanations that describe a whole group: the
+        generic pass cannot guess which control such a hint belongs to, but a
+        person can, so those are named. The icon is taken out of wherever it
+        currently sits and inserted beside the control at the control's own
+        place in its layout, so the row order does not change.
+        """
+        icon = self.findChild(Hint, name)
+        if icon is None or control is None:
+            return
+        here = icon.parentWidget().layout() if icon.parentWidget() else None
+        for layout in self._layouts_of(here):
+            index = layout.indexOf(icon)
+            if index >= 0:
+                layout.takeAt(index)
+                break
+        holder = control.parentWidget()
+        target = holder.layout() if holder is not None else None
+        for layout in self._layouts_of(target):
+            index = layout.indexOf(control)
+            if index < 0:
+                continue
+            if isinstance(layout, QGridLayout):
+                # A grid has no insertLayout; put the icon in the cell beside
+                # the control instead, which is the same result.
+                row_i, col_i, span_r, span_c = layout.getItemPosition(index)
+                layout.addWidget(icon, row_i, col_i + span_c,
+                                 1, 1, Qt.AlignmentFlag.AlignVCenter)
+            else:
+                layout.takeAt(index)
+                row = QHBoxLayout()
+                row.setContentsMargins(0, 0, 0, 0)
+                row.setSpacing(6)
+                row.addWidget(control, 1)
+                row.addWidget(icon, 0, Qt.AlignmentFlag.AlignVCenter)
+                layout.insertLayout(index, row)
+            icon.follow(control)
+            return
+        # The control is nested somewhere unexpected; leave the icon where it
+        # is rather than dropping it out of the window entirely.
+        icon.setParent(control.parentWidget())
+        icon.show()
+
+    @staticmethod
+    def _layouts_of(layout):
+        """*layout* and every layout nested inside it, depth first."""
+        if layout is None:
+            return
+        yield layout
+        for i in range(layout.count()):
+            child = layout.itemAt(i)
+            if child is not None and child.layout() is not None:
+                yield from GamutApp._layouts_of(child.layout())
 
     def _attach_hint_icons(self, root) -> None:
         """Move any ⓘ that ended up on a row of its own onto the row above.
