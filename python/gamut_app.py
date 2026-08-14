@@ -235,6 +235,15 @@ QPushButton:disabled {{ background: {c["second"]}; color: {c["faint"]}; }}
    1.93:1 light and 2.00:1 dark, so neither appearance is favoured.
    The padding gives back the two pixels the border takes, so these stay
    exactly the size of the solid buttons beside them. */
+/* The bar that fills while a moving picture is made. Left alone it is drawn
+   in the operating system's own blue, which is the one colour in the window
+   that answers to nothing the user chose. */
+QProgressBar {{ background: {c["second"]}; border: 1px solid {c["line_soft"]};
+               border-radius: 5px; text-align: center; color: {c["text"]};
+               min-height: 16px; }}
+QProgressBar::chunk {{ background: {c["accent"]}; border-radius: 4px; }}
+QProgressDialog {{ background: {c["bg"]}; }}
+QProgressDialog QLabel {{ color: {c["text"]}; }}
 QPushButton#secondary {{ background: {c["second"]}; color: {c["text"]};
                         border: 1px solid {c["line_soft"]};
                         padding: 6px 11px; font-weight: 500; }}

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.9.2
+
+### 🐞 Fixed
+
+- **The progress bar wears your accent colour** while a moving picture is
+  made. Left to itself it was drawn in the operating system's own blue — the
+  one thing in the window answering to nothing you chose.
+
 ## v1.9.1
 
 ### 🐞 Fixed
