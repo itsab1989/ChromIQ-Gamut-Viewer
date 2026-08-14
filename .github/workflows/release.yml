@@ -68,10 +68,16 @@ jobs:
           pip install -r python/requirements.txt pyinstaller
 
       - name: Check it imports and reports its version
+        # QtWebEngine is imported at module level and wants a display; the
+        # offscreen platform lets a headless build machine answer.
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: python python/gamut_app.py --version
 
       - name: Run the tests
         working-directory: python
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: |
           pip install pytest
           python -m pytest . -q

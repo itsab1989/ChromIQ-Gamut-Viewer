@@ -62,8 +62,15 @@ def test_a_missing_icc_file_says_so():
 
 
 def test_a_file_that_is_not_a_profile_says_so(tmp_path):
-    from references import icc_gamut
+    """Reading a profile needs ArgyllCMS, which not every machine has -- so
+    this accepts either honest refusal: "that is not a profile" when the tool
+    is present, or "the tool is missing" when it is not. Asserting only the
+    first assumed a tool that is not guaranteed, which is what broke this on
+    the build machines while passing here."""
+    from references import _find_iccgamut, icc_gamut
     bad = tmp_path / "not.icc"
     bad.write_text("this is not an ICC profile")
-    with pytest.raises(ValueError, match="could not be read"):
+    with pytest.raises(ValueError, match="could not be read|needs ArgyllCMS"):
         icc_gamut(bad)
+    if _find_iccgamut() is None:
+        pytest.skip("ArgyllCMS is not installed, so only the refusal is checked")
