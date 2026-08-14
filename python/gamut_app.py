@@ -263,6 +263,7 @@ QSlider::handle:horizontal {{ width: 12px; height: 12px; margin: -4px 0;
    drew one pixel into each other. Reserving 20px gives the row more than the
    widget needs, so the grid can never squeeze two rows into touching. */
 QRadioButton {{ spacing: 7px; min-height: 20px; }}
+QCheckBox {{ spacing: 8px; min-height: 20px; }}
 QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 8px;
                           border: 1px solid {c["line_soft"]};
                           background: {c["panel"]}; }}
@@ -286,9 +287,13 @@ QLabel#eyebrow {{ color: {c["dim"]}; font-size: 10px; font-weight: 600;
                   letter-spacing: 1.4px; }}
 QFrame#mastheadRule {{ background: {c["accent"]}; border: none; }}
 QLabel#mastheadTitle {{ color: {c["text"]}; background: transparent; }}
-QToolButton#hintIcon {{ background: transparent; border: none; padding: 0; }}
+QToolButton#hintIcon {{ background: transparent; border: none; padding: 0;
+                        margin: 0; }}
 QToolButton#hintIcon:hover {{ background: rgba(128,128,128,40);
-                              border-radius: 11px; }}
+                              border: none; border-radius: 11px; }}
+QToolButton#hintIcon:pressed {{ background: rgba(128,128,128,64);
+                                border: none; border-radius: 11px; }}
+QToolButton#hintIcon::menu-indicator {{ image: none; width: 0; }}
 /* The line that unfolds an explanation. Quiet enough that it never competes
    with the control it belongs to, but it takes the accent colour on hover so
    it is visibly something you can click rather than another caption. */
@@ -766,6 +771,11 @@ class Hint(QToolButton):
         self.setFixedSize(QSize(Hint.ICON + 4, Hint.ICON + 4))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # No button frame: a QToolButton paints the platform's raised box and
+        # its shadow otherwise, which on a light background looks like a
+        # button around the icon rather than an icon.
+        self.setAutoRaise(True)
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.setToolTip(self._summary())
         self.setAccessibleName("Explain this setting")
         self.clicked.connect(self._open)
