@@ -1504,6 +1504,7 @@ class GamutApp(QMainWindow):
         # Real space between the rows. Without it the grid was handed one
         # pixel less than the buttons are tall and they touched.
         paint_grid.setVerticalSpacing(6)
+        paint_grid.setHorizontalSpacing(16)
         for i, (key, label) in enumerate(PAINTS):
             radio = QRadioButton(label, g_look)
             # Set here, not only in the stylesheet. A QSS min-height is applied
@@ -1726,6 +1727,11 @@ class GamutApp(QMainWindow):
         pv.addWidget(QLabel("Appearance", g_prefs))
         theme_row = QHBoxLayout()
         theme_row.setContentsMargins(0, 0, 0, 10)
+        # Light and Dark are two choices, not one word: without room between
+        # them they read as a single run of text and the pair of radios is
+        # harder to tell apart than it should be. The accent grid below uses
+        # the same gap.
+        theme_row.setSpacing(18)
         # EACH SET NEEDS ITS OWN GROUP. Radio buttons sharing a parent are one
         # exclusive group in Qt, so choosing an accent silently unchecked the
         # appearance -- both sets looked empty and neither could be read off the
@@ -1736,6 +1742,7 @@ class GamutApp(QMainWindow):
         for radio in (self._theme_light, self._theme_dark):
             self._theme_group.addButton(radio)
             theme_row.addWidget(radio)
+        theme_row.addStretch(1)      # keep the pair together on the left
         theme_row.addStretch(1)
         self._theme_light.toggled.connect(
             lambda on: self._set_appearance("light") if on else None)
@@ -1750,7 +1757,9 @@ class GamutApp(QMainWindow):
         pv.addWidget(QLabel("Accent", g_prefs))
         scheme_grid = QGridLayout()
         scheme_grid.setContentsMargins(0, 0, 0, 10)
-        scheme_grid.setHorizontalSpacing(4)
+        # 4px left the accent radios almost touching -- the same fault as the
+        # appearance pair, found by measuring the gap rather than looking.
+        scheme_grid.setHorizontalSpacing(16)
         scheme_grid.setVerticalSpacing(6)
         self._scheme_group = QButtonGroup(self)
         self._scheme_radios = {}
