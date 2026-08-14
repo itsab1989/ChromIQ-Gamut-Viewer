@@ -54,11 +54,14 @@ folder, never beside your original.
 | Linux | `GamutViewer-Linux-x86_64.tar.gz` |
 | Linux on ARM (Raspberry Pi and similar) | `GamutViewer-Linux-aarch64.tar.gz` |
 
-Unpack it and run it. Nothing is uploaded anywhere, and the app reaches the
-network only if you ask it to: **Check for a newer version…** looks at this
-releases page and tells you what it finds. It never downloads or installs
-anything by itself, and the unattended "Check when the app starts" option
-begins switched off.
+Unpack it and run it. Nothing about you, your printer or your measurements is
+ever uploaded.
+
+One thing does reach the internet, and only one: on starting, the app asks this
+releases page whether a newer version exists and tells you the answer. It sends
+nothing else and installs nothing — you get a version number and a link, and
+following it is up to you. It begins switched on, and unticking **Look for a
+newer version when the app starts** under **This window** stops it for good.
 
 On macOS the first launch needs **right-click ▸ Open** rather than a double
 click, because the app is not signed with an Apple developer certificate.

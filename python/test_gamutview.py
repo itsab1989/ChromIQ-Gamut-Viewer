@@ -446,13 +446,21 @@ def test_version_parsing_is_forgiving_about_shape():
     assert parse_version("2026.8") == (2026, 8)
 
 
-def test_the_unattended_check_is_off_by_default():
-    """The release notes promise no network is used. Anything that reaches the
-    network without being asked has to be opt-in, or that promise is false."""
+def test_the_startup_check_is_on_and_is_the_only_thing_that_reaches_out():
+    """Looking for a newer version on startup is on. That is a deliberate
+    choice, and it is only defensible while the surrounding promises hold: it
+    asks the releases page for a version number and nothing else, it sends
+    nothing about the person, the machine or their measurements, and it never
+    downloads or installs anything. If that ever stops being true, this
+    default is the first thing that has to change back."""
     import gamut_app
     defaults = {key: default for key, _w, _k, default in
                 gamut_app.GamutApp._persisted(_FakeApp())}
-    assert defaults["auto_update"] is False
+    assert defaults["auto_update"] is True
+    # Somebody who already turned it off keeps it off: a stored choice is not
+    # overridden by a change of default.
+    assert "auto_update" in {k for k, _w, _kind, _d in
+                             gamut_app.GamutApp._persisted(_FakeApp())}
 
 
 class _FakeApp:
@@ -706,6 +714,7 @@ def _spin_fake(turn, tilt):
     for mode, speed, sweep in (turn, tilt):
         fake._spin_rows.append({
             "mode": _Value(mode), "speed": _Value(speed), "sweep": _Value(sweep),
+            "holder": _Shown(),
             "speed_value": _Text(), "sweep_value": _Text(),
             "mode_row": [_Shown(), _Shown()],
             "speed_row": [_Shown(), _Shown(), _Shown()],

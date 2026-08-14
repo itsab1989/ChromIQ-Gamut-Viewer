@@ -25,6 +25,7 @@ import math
 
 import csv
 import json
+import os
 import sys
 
 # ASKING THE VERSION SHOULD NOT NEED A BROWSER ENGINE. Everything below pulls
@@ -54,7 +55,7 @@ from PyQt6.QtGui import (QColor, QDesktopServices, QFont, QFontMetrics,
                          QPainter,
                          QPen, QPixmap)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
-                             QFrame, QGroupBox, QHBoxLayout, QLabel,
+                             QFrame, QGroupBox, QHBoxLayout, QLabel, QLayout,
                              QDialog, QMainWindow, QPushButton, QScrollArea, QSlider,
                              QDialogButtonBox, QListView, QSizeGrip,
                              QSizePolicy, QStyle,
@@ -153,12 +154,15 @@ SPEC_VIOLET  = "#9f82ff"
 #: needs no per-mode palette either.
 TAB_COLORS = (SPEC_MAGENTA, SPEC_AMBER, SPEC_GREEN, SPEC_CYAN, SPEC_VIOLET)
 
+#: In ChromIQ's own order -- the sequence its colour bar runs in, magenta
+#: through violet -- because these are its five hues and a companion listing
+#: them in a different order looks like a different set.
 SCHEMES = {
     "Magenta": dict(accent=SPEC_MAGENTA, dark_hot="#ff6b90", light_hot="#e02a58"),
-    "Cyan": dict(accent=SPEC_CYAN, dark_hot="#5ad0e8", light_hot="#2597ad"),
     "Amber": dict(accent=SPEC_AMBER, dark_hot="#ffc75c", light_hot="#d8930f"),
-    "Violet": dict(accent=SPEC_VIOLET, dark_hot="#b9a3ff", light_hot="#7e5fe0"),
     "Green": dict(accent=SPEC_GREEN, dark_hot="#7ce3bb", light_hot="#33b184"),
+    "Cyan": dict(accent=SPEC_CYAN, dark_hot="#5ad0e8", light_hot="#2597ad"),
+    "Violet": dict(accent=SPEC_VIOLET, dark_hot="#b9a3ff", light_hot="#7e5fe0"),
 }
 
 
@@ -439,6 +443,67 @@ def _style_dialog_toolbar(dlg, arrow_colour: str = "#e0e0e0") -> None:
                 button.style().polish(button)
 
 
+def _profile_folders() -> list:
+    """Where each platform keeps its ICC profiles.
+
+    Every one of these is the folder that operating system genuinely installs
+    into, so the profiles that came with the machine and the ones a paper
+    maker put there are both a single click away in the file dialog. A folder
+    that does not exist, or that holds no profile, is dropped rather than
+    offered as a shortcut to nothing.
+    """
+    return [Path(where) for where in
+            profile_folder_names(sys.platform, os.name, str(Path.home()),
+                                 os.environ.get("SystemRoot", "C:/Windows"),
+                                 os.environ.get("LOCALAPPDATA", ""))]
+
+
+def profile_folder_names(platform: str, osname: str, home: str,
+                         windows_root: str = "C:/Windows",
+                         local_appdata: str = "") -> list:
+    """The folders, as plain strings, for any platform.
+
+    Strings rather than Path objects so every platform's list can actually be
+    checked from any other: pathlib decides whether a Path is a Windows one
+    from os.name at the moment it is built, so a test that fakes the platform
+    and then builds a Path simply raises instead of testing anything.
+    """
+    # The same folders ChromIQ offers (ui/widgets.py, icc_profile_paths), so
+    # the two applications send somebody to the same places. Reusing its list
+    # rather than deriving another one is the point: this has been in the
+    # field, and a near-copy that quietly differs is worse than either.
+    if platform == "darwin":
+        return ["/Library/ColorSync/Profiles",               # everyone's
+                "/System/Library/ColorSync/Profiles",        # Apple's own
+                f"{home}/Library/ColorSync/Profiles"]        # yours
+    if platform.startswith("win") or osname == "nt":
+        # Honour %SystemRoot%: Windows is not always installed on C:.
+        folders = [f"{windows_root}/System32/spool/drivers/color"]
+        if local_appdata:
+            folders.append(f"{local_appdata}/Microsoft/Windows/Color")
+        return folders
+    return ["/usr/share/color/icc",
+            "/usr/local/share/color/icc",
+            f"{home}/.local/share/icc",     # XDG per-user (colord, GNOME)
+            f"{home}/.color/icc"]           # older Argyll and oyranos
+
+
+def _holds_profiles(folder: Path) -> bool:
+    """Whether it is worth offering: does anything of the right kind live here?"""
+    try:
+        for entry in folder.iterdir():
+            if entry.suffix.lower() in (".icc", ".icm"):
+                return True
+    except OSError:
+        return False
+    return False
+
+
+#: Worked out once: the folders exist or they do not, and that does not change
+#: while the application is running.
+PROFILE_FOLDERS = _profile_folders()
+
+
 def _sidebar_urls(*extra) -> list:
     """Folders worth one click in the file dialog.
 
@@ -458,6 +523,13 @@ def _sidebar_urls(*extra) -> list:
         if where:
             candidates.append(Path(where))
     candidates.append(Path.home() / "ChromIQ")
+    # WHERE PROFILES LIVE, now that a profile is something you can open here
+    # rather than only compare against. These are the folders the operating
+    # system itself keeps them in, so the ones that come with the machine --
+    # sRGB, Adobe RGB, Display P3 -- and the ones a paper maker installs are
+    # both a single click away. Anything absent is dropped, so a Mac shows the
+    # Mac ones and a PC shows its own.
+    candidates.extend(f for f in PROFILE_FOLDERS if _holds_profiles(f))
     candidates.extend(Path(e) for e in extra if e)
     seen, urls = set(), []
     for c in candidates:
@@ -984,7 +1056,15 @@ def _profile_label(path: Path) -> str:
     the one distinction this whole window exists to draw. Saying "(profile)"
     keeps described and measured apart on every line that mentions them.
     """
-    kind = "gamut file" if path.suffix.lower() == ".gam" else "profile"
+    suffix = path.suffix.lower()
+    if suffix == ".gam":
+        kind = "gamut file"
+    elif suffix in (".icc", ".icm"):
+        kind = "profile"
+    else:
+        # A measurement may be the comparison too, and calling it a profile
+        # would be exactly the confusion this function exists to prevent.
+        kind = "measured"
     return f"{path.stem} ({kind})"
 
 
@@ -1215,8 +1295,7 @@ class GamutApp(QMainWindow):
         # the column -- but an empty label beside a slider looks broken.
         self._update_spin_labels()
         self._apply_spin_availability()
-        for icon in self.findChildren(Hint):
-            icon.set_colour(SCHEMES.get(self._scheme, SCHEMES['Magenta'])['accent'])
+        self._recolour_hints()
         self._apply_mode()
         self._show_placeholder()
         # Anything the user moves is written straight away, so a crash or a
@@ -1268,9 +1347,9 @@ class GamutApp(QMainWindow):
         # both choices and which one is active, and cannot be misread.
 
         # --- the measurements -------------------------------------------------
-        g_files = QGroupBox("Your measured chart", col)
+        g_files = QGroupBox("What you are looking at", col)
         fv = QVBoxLayout(g_files)
-        self._open_btn = QPushButton("Open a measured chart…", g_files)
+        self._open_btn = QPushButton("Open a measurement or a profile…", g_files)
         self._open_btn.clicked.connect(self._on_open)
         fv.addWidget(self._open_btn)
         # One row per open chart, each with its own way out. A single "close
@@ -1288,11 +1367,11 @@ class GamutApp(QMainWindow):
             # A small × rather than a "Close" button: it sits beside the name
             # of the chart it closes, so the word adds nothing that the
             # position does not already say, and a full-width button there
-            # competes with "Open a measured chart" for attention.
+            # competes with "Open a measurement or a profile" for attention.
             shut = QPushButton("×", row)
             shut.setObjectName("closer")
             shut.setFixedSize(22, 22)
-            shut.setToolTip("Close this chart")
+            shut.setToolTip("Close this one")
             shut.setCursor(Qt.CursorShape.PointingHandCursor)
             shut.clicked.connect(lambda _checked=False, which=i:
                                  self._close_one(which))
@@ -1301,19 +1380,33 @@ class GamutApp(QMainWindow):
             fv.addWidget(row)
             self._slot_labels.append(lab)
             self._slot_rows.append(row)
-        self._clear_btn = QPushButton("Close both charts", g_files)
+        self._clear_btn = QPushButton("Close both", g_files)
         self._clear_btn.setObjectName("secondary")
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setVisible(False)
         hint = Hint(
-            "Open the .ti3 file ArgyllCMS saved when you measured a printed "
-            "chart — or simply drag it onto this window. Open a second one and "
-            "both are drawn together, so you can see which paper holds more "
-            "colour and exactly where they differ.\n\n"
-            "You can open an ICC profile (.icc or .icm) the same way. A "
-            "profile is not a measurement, so it goes into Compare with "
-            "below rather than here — it is what your printer is described "
-            "as being able to do, next to what it actually did.", g_files)
+            "Two kinds of file can go here, and you can start with either.\n\n"
+            "A MEASUREMENT is the .ti3 file ArgyllCMS saves once you have read "
+            "a printed chart with your instrument. The chart is the sheet of "
+            "patches you printed; the measurement is what your instrument made "
+            "of it, and that is the file. Every corner of the shape it draws "
+            "is a patch that was really printed and really read, which is what "
+            "makes it worth looking at.\n\n"
+            "An ICC PROFILE (.icc or .icm) is the other kind — what your "
+            "printer is *described* as being able to do. A profile is a "
+            "fitted model: it smooths, it fills in the gaps, and near the "
+            "edges it can promise a little more than the paper really gave. "
+            "An ArgyllCMS gamut file (.gam) works here too.\n\n"
+            "Open one, or drag it onto this window. Open a second and both "
+            "are drawn together, so you can see which holds more colour and "
+            "exactly where they differ — a paper against another paper, or a "
+            "profile against the measurement it was built from, which is the "
+            "comparison that shows you whether the profile is telling the "
+            "truth.\n\n"
+            "Each one always says underneath which kind it is, because "
+            "mistaking the two is the one confusion this window exists to "
+            "clear up. A third shape can join them through Compare with, "
+            "below.", g_files)
         hint.setObjectName("hint_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
         _r.setSpacing(6)
@@ -1358,12 +1451,20 @@ class GamutApp(QMainWindow):
         g_cmp = QGroupBox("Compare with", col)
         cvv = QVBoxLayout(g_cmp)
         self._compare = NoScrollComboBox(g_cmp)
-        self._compare.addItem("Nothing — my chart alone", None)
+        self._compare.addItem("Nothing — this one on its own", None)
         for _name in REFERENCE_SPACES:
             self._compare.addItem(_name, ("space", _name))
-        self._compare.addItem("An ICC profile on my computer…", ("icc", None))
+        # Measured: the box gives the text 212px, and naming both kinds in a
+        # sentence needs 332. The ⓘ beside it carries the longer explanation,
+        # which is what it is for.
+        self._compare.addItem("A profile or a measurement file…", ("icc", None))
         self._compare.addItem("Everything the eye can see", ("visible", None))
-        self._compare.currentIndexChanged.connect(self._on_compare_changed)
+        # ACTIVATED, NOT currentIndexChanged. Choosing the entry you are
+        # already on changes no index, so nothing fired and the dialog never
+        # opened: swapping to a different file meant picking something else
+        # first and coming back. activated fires whenever a person picks a
+        # line, which is the thing actually being responded to.
+        self._compare.activated.connect(lambda _i: self._on_compare_changed())
         cvv.addWidget(self._compare)
         self._compare_note = WrappedLabel("", g_cmp, hide_when_empty=True)
         self._compare_note.setObjectName("hint"); _wrapped(self._compare_note)
@@ -1446,8 +1547,8 @@ class GamutApp(QMainWindow):
         # Carried in the item text it was repeated on all four lines of the
         # open list, where the only thing that differs is the value.
         self._target.addItem("all shapes together", "all")
-        self._target.addItem("the first chart", 0)
-        self._target.addItem("the second chart", 1)
+        self._target.addItem("the first shape", 0)
+        self._target.addItem("the second shape", 1)
         self._target.addItem("the comparison", 2)
         self._target.currentIndexChanged.connect(self._on_target_changed)
         target_hint = Hint(
@@ -1537,8 +1638,8 @@ class GamutApp(QMainWindow):
         self._style_second = NoScrollComboBox(g_look)
         self._style_other = NoScrollComboBox(g_look)
         self._style_combos = (
-            (self._style_mine, "First chart"),
-            (self._style_second, "Second chart"),
+            (self._style_mine, "First shape"),
+            (self._style_second, "Second shape"),
             # "Comparison", not "The comparison": the name column is taken out
             # of the control's width, and the extra word cost enough of it to
             # clip "solid with its mesh" in the box beside it.
@@ -1861,11 +1962,21 @@ class GamutApp(QMainWindow):
         side_hint.setObjectName("hint_side_hint")
         lv.addWidget(side_hint)
 
+        # A CONTAINER, hidden as a whole. Hiding the check box on its own left
+        # its spacing behind, so the option under it sat seven pixels lower
+        # than every other option in this group -- small, and the sort of
+        # thing that reads as untidiness without anybody seeing why. The
+        # lighting rows are built this way for the same reason.
+        self._link_row = QWidget(g_look)
+        _lr = QVBoxLayout(self._link_row)
+        _lr.setContentsMargins(0, 0, 0, 0)
+        _lr.setSpacing(4)
         self._link_cameras = QCheckBox("Keep both rooms pointing the same way",
-                                       g_look)
+                                       self._link_row)
         self._link_cameras.setChecked(True)
         self._link_cameras.stateChanged.connect(self._redraw)
-        lv.addWidget(self._link_cameras)
+        _lr.addWidget(self._link_cameras)
+        lv.addWidget(self._link_row)
         link_hint = Hint(
             "Turn one shape and the other turns with it, so you are always "
             "comparing the same face of both. This is what makes two rooms "
@@ -1877,7 +1988,7 @@ class GamutApp(QMainWindow):
             "Either way, nothing about your measurements changes. This only "
             "moves the camera.", g_look)
         link_hint.setObjectName("hint_link_hint")
-        lv.addWidget(link_hint)
+        _lr.addWidget(link_hint)
 
         self._spin_on = QCheckBox("Turn it by itself", g_look)
         self._spin_on.stateChanged.connect(self._on_spin_changed)
@@ -2162,13 +2273,14 @@ class GamutApp(QMainWindow):
         self._update_btn.clicked.connect(lambda: self._check_updates(asked=True))
         v.addWidget(self._update_btn)
         self._auto_update = QCheckBox("Look for a newer version when the app starts", col)
-        # OFF by default, and it must stay that way. This app tells people
-        # nothing leaves their machine; looking for updates without being
-        # asked would quietly make that untrue. Pressing the button above is
-        # itself the consent, the same way pressing Open consents to a file
-        # being read -- so the button is always available and only the
-        # unattended check has to be switched on deliberately.
-        self._auto_update.setChecked(False)
+        # ON by default, at Basti's direction. It is the one thing here that
+        # reaches the network, so it is named plainly, it is one click to turn
+        # off, and it asks the releases page for a version number and nothing
+        # else -- no account, no identifier, nothing about the machine, the
+        # printer or the measurements. It never downloads or installs
+        # anything. The README and the release notes say so in those words,
+        # and they have to keep saying it while this is on.
+        self._auto_update.setChecked(True)
         update_hint = Hint(
             "Looks at the project's releases page and tells you whether a "
             "newer version has been published. It never downloads or installs "
@@ -2178,9 +2290,12 @@ class GamutApp(QMainWindow):
             "The request carries no account and no identifier, and there is "
             "no record kept of it here.\n\n"
             "Everything else in this window works with no internet connection "
-            "at all, which is why this starts switched off: the only time the "
-            "app reaches the network is when you press the button, or after "
-            "you tick this box.", col)
+            "at all.\n\nThis starts switched on, because a colour tool "
+            "quietly running a year out of date helps nobody — and it is the "
+            "only thing in this window that ever reaches the internet. Untick "
+            "it and it will never look again; everything else here works with "
+            "no network whatever. You can still ask whenever you like, with "
+            "the button just above.", col)
         update_hint.setObjectName("hint_update_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
         _r.setSpacing(6)
@@ -2224,6 +2339,10 @@ class GamutApp(QMainWindow):
         links.addWidget(website, 0)
         links.addStretch(1)
         v.addLayout(links)
+        # LAST, once every group exists. Run partway down the column it tidied
+        # the groups built so far and left the rest as they were, which looks
+        # exactly like a bug in the ones it missed.
+        self._tighten_groups(col)
         return col
 
     # ------------------------------------------------------------------ actions
@@ -2446,7 +2565,7 @@ class GamutApp(QMainWindow):
             ("grid_on", self._grid_on, "check", True),
             ("side_by_side", self._side_by_side, "check", False),
             ("link_cameras", self._link_cameras, "check", True),
-            ("auto_update", self._auto_update, "check", False),
+            ("auto_update", self._auto_update, "check", True),
             ("rings", self._rings, "slider", 6),
             ("aspect", self._aspect, "combo", "data"),
             ("white", self._white, "combo", "D50"),
@@ -2600,6 +2719,19 @@ class GamutApp(QMainWindow):
         if self._slots:
             self._redraw()
 
+    def _recolour_hints(self) -> None:
+        """Repaint every ⓘ in the accent.
+
+        The icons are DRAWN, not styled, so the stylesheet that carries the
+        accent everywhere else goes straight past them: re-applying it left
+        thirty-five of them in the colour they were built with. Anything this
+        window paints itself has to be told separately, which is the same trap
+        the scroll fade and the chevron are in.
+        """
+        accent = SCHEMES.get(self._scheme, SCHEMES["Magenta"])["accent"]
+        for icon in self.findChildren(Hint):
+            icon.set_colour(accent)
+
     def _set_scheme(self, which: str) -> None:
         """Change the accent colour, and remember it for next time."""
         if which == self._scheme or which not in SCHEMES:
@@ -2647,6 +2779,7 @@ class GamutApp(QMainWindow):
         area = self.findChild(FadeScrollArea)
         if area is not None:
             area.set_colour(PALETTES[self._appearance]["bg"])
+        self._recolour_hints()
         colour = PALETTES[self._appearance]["plot_bg"]
         self._view.setStyleSheet(f"background: {colour};")
         page = self._view.page()
@@ -2686,9 +2819,15 @@ class GamutApp(QMainWindow):
         rows.append(("drawn in", self._space.currentText(),
                      self._volume_units()))
         for path, g, m in self._slots:
-            rows.append((f"{path.stem}: patches", m.n_patches, m.instrument))
+            if m is None:
+                rows.append((f"{path.stem}: kind", "ICC profile",
+                             "described, not measured"))
+            else:
+                rows.append((f"{path.stem}: patches", m.n_patches, m.instrument))
             rows.append((f"{path.stem}: colour held", self._fmt_volume(g.volume),
                          self._volume_units()))
+            if m is None:
+                continue
             lab, _labels = neutral_axis(m)
             if len(lab):
                 cast = float(np.hypot(lab[:, 1], lab[:, 2]).max())
@@ -2716,7 +2855,7 @@ class GamutApp(QMainWindow):
                              f"per cent, +/- {100 * ba_err:.1f}"))
             except Exception:      # noqa: BLE001 — a table must still be written
                 pass
-        if len(self._slots) == 2:
+        if len(self._slots) == 2 and all(x[2] is not None for x in self._slots):
             try:
                 d = compare_measurements(self._slots[0][2], self._slots[1][2])
                 rows.append(("patches in both readings", d.matched, ""))
@@ -2819,21 +2958,26 @@ class GamutApp(QMainWindow):
                 self._compare_note.setText(REFERENCE_SPACES[name]["note"])
             elif choice[0] == "icc":
                 dlg = self._file_dialog(
-                    "Choose an ICC profile to compare against",
+                    "Choose a file to compare against",
                     QFileDialog.FileMode.ExistingFile,
-                    "Profiles and gamut files (*.icc *.icm *.gam);;All files (*)")
+                    "Profiles and measurements (*.icc *.icm *.gam *.ti3 *.cxf "
+                    "*.mxf *.txt);;ICC profiles (*.icc *.icm);;"
+                    "Measurements (*.ti3 *.cxf *.mxf *.txt);;"
+                    "ArgyllCMS gamut files (*.gam);;All files (*)")
                 if not dlg.exec():
                     self._compare.setCurrentIndex(0)
                     return
                 path = dlg.selectedFiles()[0]
                 self._last_folder = str(Path(path).parent)
                 self._reference_path = Path(path)
-                self._reference = (_profile_label(Path(path)), icc_gamut(
-                    path, white_point=self._white.currentData(),
-                    space=self._space.currentData()))
+                chosen = Path(path)
+                built, _m = self._build_one(chosen)
+                self._reference = (_profile_label(chosen), built)
                 self._compare_note.setText(
                     "The gamut this profile describes, asked of the profile "
-                    "itself.")
+                    "itself." if chosen.suffix.lower() in (".icc", ".icm", ".gam")
+                    else "The gamut this measurement reached — every corner of "
+                         "it a patch that was printed and read.")
             elif choice[0] == "visible":
                 v, _f = optimal_colour_solid(
                     "D50" if self._white.currentData() == "D50" else "D65",
@@ -2954,13 +3098,11 @@ class GamutApp(QMainWindow):
             "network — the viewer travels inside the page.")
 
     def _load(self, path: Path) -> None:
-        # An ICC profile is not a measurement, so it goes to the comparison
-        # slot rather than the chart slots -- but it arrives through the same
-        # button and the same drag, because that is where someone with a file
-        # in their hand will try to put it.
-        if path.suffix.lower() in (".icc", ".icm", ".gam"):
-            self._load_profile_as_comparison(path)
-            return
+        # ONE RULE: OPENING A FILE SHOWS YOU THAT FILE. A profile opened here
+        # used to become the comparison instead, which draws nothing at all
+        # when there is no chart to draw it against -- so opening a profile
+        # first appeared to do nothing whatever. Comparing is what the
+        # Compare with box is for, and it says so.
         if len(self._slots) >= 2:
             self._slots.pop(0)                 # newest two win
         try:
@@ -2969,14 +3111,17 @@ class GamutApp(QMainWindow):
             _log().warning("could not use %s: %s", path.name, exc)
             Notice.warn(
                 self, "This file could not be used",
-                f"{path.name}\n\n{exc}\n\nA measured chart is a .ti3 file — the "
-                "one ArgyllCMS writes after you read a printed chart. A .ti1 or "
-                ".ti2 is the chart before it was measured and has no colours in "
-                "it yet.")
+                f"{path.name}\n\n{exc}\n\nThis opens a measured chart (a .ti3, "
+                "the file ArgyllCMS writes after you read a printed chart), an "
+                "ICC profile (.icc or .icm), or an ArgyllCMS gamut file (.gam). "
+                "A .ti1 or .ti2 is the chart before it was measured and has no "
+                "colours in it yet.")
             return
         self._slots.append((path, g, m))
-        _log().info("opened %s: %d patches, %d vertices, volume %.0f",
-                    path.name, m.n_patches, len(g.vertices), g.volume)
+        _log().info("opened %s (%s): %s%d vertices, volume %.0f",
+                    path.name, "measurement" if m is not None else "profile",
+                    f"{m.n_patches} patches, " if m is not None else "",
+                    len(g.vertices), g.volume)
         self._warn_if_too_few_patches(path, m)
         self._refresh_slot_labels()
         self._save.setEnabled(True)
@@ -3007,6 +3152,16 @@ class GamutApp(QMainWindow):
         self._redraw()
 
     def _build_one(self, path: Path):
+        """The gamut of one file, whichever kind it is.
+
+        A profile has no patches, so there is no Measurement to return with
+        it -- everything downstream treats that None as "this one was not
+        measured" rather than assuming a chart.
+        """
+        if path.suffix.lower() in (".icc", ".icm", ".gam"):
+            reader = gam_gamut if path.suffix.lower() == ".gam" else icc_gamut
+            return reader(path, white_point=self._white.currentData(),
+                          space=self._space.currentData()), None
         m = read_measurement(path, self._white.currentData(),
                              self._relative.isChecked())
         drive = None if self._mode.currentData() == "hull" else m.device
@@ -3031,8 +3186,8 @@ class GamutApp(QMainWindow):
         is exactly how this went unnoticed. Better to say so than to let
         somebody compare two meaningless shapes and believe the answer.
         """
-        if m.n_patches >= self.TOO_FEW_PATCHES:
-            return
+        if m is None or m.n_patches >= self.TOO_FEW_PATCHES:
+            return                 # a profile has no patches to count
         patches = "1 patch" if m.n_patches == 1 else f"{m.n_patches} patches"
         Notice.say(
             self, "This chart is very small",
@@ -3218,6 +3373,10 @@ class GamutApp(QMainWindow):
         same three rows is how one of them ends up with a control the other
         never got.
         """
+        holder = QWidget(group)
+        holder_layout = QVBoxLayout(holder)
+        holder_layout.setContentsMargins(0, 0, 0, 0)
+        holder_layout.setSpacing(4)
         mode = NoScrollComboBox(group)
         mode.addItem("not at all", "off")
         mode.addItem("back and forth", "swing")
@@ -3225,7 +3384,8 @@ class GamutApp(QMainWindow):
         mode.setCurrentIndex(0 if start_off else 1)
         mode.currentIndexChanged.connect(self._on_spin_changed)
         mode_name = QLabel(name, group)
-        row = QHBoxLayout()
+        mode_row = QWidget(holder)
+        row = QHBoxLayout(mode_row)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
         row.addWidget(mode_name)
@@ -3233,7 +3393,7 @@ class GamutApp(QMainWindow):
         hint = Hint(why, group)
         hint.setObjectName(f"hint_axis_{name.split()[0].lower()}_hint")
         row.addWidget(hint, 0, Qt.AlignmentFlag.AlignVCenter)
-        into.addLayout(row)
+        holder_layout.addWidget(mode_row)
 
         speed = NoScrollSlider(Qt.Orientation.Horizontal, group)
         speed.setRange(2, 30)
@@ -3242,7 +3402,8 @@ class GamutApp(QMainWindow):
         speed_name = QLabel("How fast", group)
         speed_value = QLabel("", group)
         speed_value.setMinimumWidth(88)
-        speed_row = QHBoxLayout()
+        speed_holder = QWidget(holder)
+        speed_row = QHBoxLayout(speed_holder)
         speed_row.setContentsMargins(0, 0, 0, 0)
         speed_row.setSpacing(6)
         speed_row.addWidget(speed_name)
@@ -3262,7 +3423,7 @@ class GamutApp(QMainWindow):
             group)
         speed_hint.setObjectName(f"hint_axis_{name.split()[0].lower()}_speed")
         speed_row.addWidget(speed_hint, 0, Qt.AlignmentFlag.AlignVCenter)
-        into.addLayout(speed_row)
+        holder_layout.addWidget(speed_holder)
 
         sweep = NoScrollSlider(Qt.Orientation.Horizontal, group)
         sweep.setRange(*sweep_range)
@@ -3271,7 +3432,8 @@ class GamutApp(QMainWindow):
         sweep_name = QLabel("How far", group)
         sweep_value = QLabel("", group)
         sweep_value.setMinimumWidth(88)
-        sweep_row = QHBoxLayout()
+        sweep_holder = QWidget(holder)
+        sweep_row = QHBoxLayout(sweep_holder)
         sweep_row.setContentsMargins(0, 0, 0, 0)
         sweep_row.setSpacing(6)
         sweep_row.addWidget(sweep_name)
@@ -3289,15 +3451,17 @@ class GamutApp(QMainWindow):
             "hidden then.", group)
         sweep_hint.setObjectName(f"hint_axis_{name.split()[0].lower()}_sweep")
         sweep_row.addWidget(sweep_hint, 0, Qt.AlignmentFlag.AlignVCenter)
-        into.addLayout(sweep_row)
+        holder_layout.addWidget(sweep_holder)
+        into.addWidget(holder)
 
         # Each row is shown or hidden whole. The ⓘ is not listed: it already
         # follows the control it sits beside.
         self._spin_rows.append({
             "mode": mode,
-            "mode_row": [mode_name, mode],
-            "speed_row": [speed_name, speed, speed_value],
-            "sweep_row": [sweep_name, sweep, sweep_value],
+            "holder": holder,
+            "mode_row": [mode_row],
+            "speed_row": [speed_holder],
+            "sweep_row": [sweep_holder],
             "speed_value": speed_value, "sweep_value": sweep_value,
             "speed": speed, "sweep": sweep,
         })
@@ -3361,6 +3525,11 @@ class GamutApp(QMainWindow):
         self._spin_on.setVisible(turnable)
         for axis in self._spin_rows:
             how = axis["mode"].currentData()
+            # The container as well, not only the rows inside it: a visible
+            # box with everything hidden inside still keeps its own margins,
+            # which is where the band of empty space under the last option
+            # came from -- two of them, about eighteen pixels each.
+            axis["holder"].setVisible(running)
             for widget in axis["mode_row"]:
                 widget.setVisible(running)
             for widget in axis["speed_row"]:
@@ -3377,6 +3546,53 @@ class GamutApp(QMainWindow):
         page.runJavaScript(
             "if (window.cqSpin) window.cqSpin.set("
             f"{json.dumps(self._spin_options())});")
+
+    def _tighten_groups(self, column) -> None:   # noqa: D401
+        """Take the slack out of the bottom of every group, in one place.
+
+        A group box carries its own padding AND its layout carries margins, so
+        the two stack up into a band of empty space under the last control --
+        the same amount in every group, which is why it reads as a gap rather
+        than as breathing room. Trimming the layout's own bottom margin leaves
+        the top and sides alone, so the titles still sit where they did.
+
+        Done for every group at once rather than per group: a number set in
+        eight places drifts, and then one section looks wrong for no reason
+        anybody can see.
+        """
+        for group in column.findChildren(QGroupBox):
+            layout = group.layout()
+            if layout is None:
+                continue
+            # EMPTY ROWS STILL TAKE UP ROOM. Moving an ⓘ beside the control it
+            # explains leaves the row it used to sit in behind, and a layout
+            # with nothing in it keeps its margins regardless -- 29px each,
+            # three of them, stacked under the last control in one group. They
+            # are invisible in every sense except the space they occupy.
+            for i in reversed(range(layout.count())):
+                inner = layout.itemAt(i).layout()
+                if inner is None:
+                    continue
+                if not any(inner.itemAt(j).widget() is not None
+                           for j in range(inner.count())):
+                    layout.removeItem(layout.itemAt(i))
+            left, top, right, _bottom = layout.getContentsMargins()
+            layout.setContentsMargins(left, top, right, 2)
+            # NEVER TALLER THAN WHAT IS IN IT. A group will otherwise take any
+            # spare height the column hands out, which shows as a band of
+            # nothing under the last control -- and the band grows as options
+            # are hidden, which is exactly when it is most noticeable.
+            layout.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
+            group.setSizePolicy(QSizePolicy.Policy.Preferred,
+                                QSizePolicy.Policy.Maximum)
+            # A nested layout at the very bottom carries its own margin on top
+            # of the group's, which is why one section kept six pixels more
+            # than the rest after the group itself had been trimmed.
+            last = layout.itemAt(layout.count() - 1) if layout.count() else None
+            inner = last.layout() if last is not None else None
+            if inner is not None:
+                l2, t2, r2, _b2 = inner.getContentsMargins()
+                inner.setContentsMargins(l2, t2, r2, 0)
 
     def _align_names(self) -> None:
         """Give every drop-down name in How it looks the same column width.
@@ -3420,10 +3636,19 @@ class GamutApp(QMainWindow):
         for i, lab in enumerate(self._slot_labels):
             if i < len(self._slots):
                 path, _g, m = self._slots[i]
-                patches = ("1 patch" if m.n_patches == 1
-                           else f"{m.n_patches} patches")
-                measured = (f", measured with your {m.instrument}"
-                            if m.instrument else "")
+                if m is None:
+                    # NEVER CALL A PROFILE A MEASUREMENT. Telling the two apart
+                    # is what this application is for, so the line under the
+                    # name says which one you are looking at.
+                    patches = ("an ICC profile — what it describes"
+                               if path.suffix.lower() in (".icc", ".icm")
+                               else "a gamut file — the surface it holds")
+                    measured = ", not a measurement"
+                else:
+                    patches = ("1 patch" if m.n_patches == 1
+                               else f"{m.n_patches} patches")
+                    measured = (f", measured with your {m.instrument}"
+                                if m.instrument else "")
                 # A chart name is usually one long token with no spaces, so
                 # word wrap cannot break it and the end simply disappears off
                 # the edge. Shortening it in the MIDDLE keeps both the part
@@ -3466,7 +3691,8 @@ class GamutApp(QMainWindow):
             "colour that printer actually put on paper — what it really did, "
             "on that paper, on that day, rather than what a profile predicts "
             "it can do.</p>"
-            "<p style='margin:0'>Use <b>Open a measured chart</b> on the left, "
+            "<p style='margin:0'>Use <b>Open a measurement or a profile</b> on the "
+            "left, "
             "or drag the file onto this window.</p>"
             "</div></body></html>")
 
@@ -3571,13 +3797,10 @@ class GamutApp(QMainWindow):
             self._side_by_side.setChecked(False)
             self._side_by_side.blockSignals(False)
         linked_useful = can_split and self._side_by_side.isChecked()
-        self._link_cameras.setVisible(linked_useful)
-        for icon in self.findChildren(Hint):
-            if icon.objectName() == "hint_link_hint":
-                icon.setVisible(linked_useful)
+        self._link_row.setVisible(linked_useful)
 
     def _redraw(self) -> None:
-        if not self._slots:
+        if not self._slots and self._reference is None:
             return
         # The comparison can change without any chart changing, so the style
         # controls are refreshed here rather than only when charts are opened.
@@ -3703,7 +3926,7 @@ class GamutApp(QMainWindow):
         profile has a perfect neutral axis by construction, so drawing one
         would say nothing.
         """
-        out = [m for _p, _g, m in self._slots]
+        out = [m for _p, _g, m in self._slots]   # None where it was a profile
         if self._reference is not None:
             out.append(None)
         return out
@@ -3767,7 +3990,10 @@ class GamutApp(QMainWindow):
         the save route came to be broken while the view looked fine.
         """
         gamuts = [(p.stem, g) for p, g, _m in self._slots]
-        clouds = [m.lab for _p, _g, m in self._slots]
+        # None where the file was a profile: there are no measured patches to
+        # show, and inventing some would be exactly the claim this application
+        # exists to avoid making.
+        clouds = [(m.lab if m is not None else None) for _p, _g, m in self._slots]
         per_chart = (self._style_mine.currentData(),
                      self._style_second.currentData())
         styles = [per_chart[i] for i in range(len(self._slots))]
@@ -3896,7 +4122,9 @@ class GamutApp(QMainWindow):
 
     def _update_drift(self) -> None:
         """Compare two readings of one chart, when that is what is open."""
-        if len(self._slots) != 2:
+        # Two READINGS, and a profile was never read: there are no patches to
+        # pair up, so there is no drift to speak of.
+        if len(self._slots) != 2 or any(x[2] is None for x in self._slots):
             self._drift_box.setVisible(False)
             return
         self._drift_box.setVisible(True)
@@ -3978,6 +4206,20 @@ class GamutApp(QMainWindow):
 
     def _update_volume(self) -> None:
         self._update_range()
+        if not self._slots:
+            # Only a comparison is open. It is still a shape with a size, and
+            # saying nothing here while one is plainly on screen reads as a
+            # fault rather than as a blank.
+            if self._reference is not None:
+                name, g = self._reference
+                self._volume.setText(self._fmt_volume(g.volume))
+                self._volume_hint.setText(
+                    f"{name}, measured in {self._volume_units()}. Open a chart "
+                    "or a profile as well and the two are compared.")
+            else:
+                self._volume.setText("—")
+                self._volume_hint.setText("")
+            return
         if len(self._slots) == 1:
             g = self._slots[0][1]
             self._volume.setText(self._fmt_volume(g.volume))

@@ -131,3 +131,55 @@ def test_the_file_types_that_need_it_are_the_ones_documented():
     """This list is what the help text promises, so it must not drift."""
     assert set(argyll.NEEDS_ARGYLL) == {".cxf", ".mxf", ".txt"}
     assert argyll.DOWNLOAD_URL.startswith("https://")
+
+
+# --- the file dialog's shortcuts, on every platform --------------------------
+
+def test_each_platform_is_offered_its_own_profile_folders():
+    """A shortcut list that is right on the machine it was written on and
+    wrong everywhere else is worse than none: it sends somebody to a folder
+    their system does not use.
+
+    Checked as strings on purpose. pathlib decides whether a Path is a Windows
+    one from os.name when it is BUILT, so a test that fakes the platform and
+    then builds a Path raises instead of checking anything -- which is how an
+    earlier attempt at this "passed" while testing nothing.
+    """
+    from gamut_app import profile_folder_names
+
+    mac = profile_folder_names("darwin", "posix", "/Users/x")
+    assert "/Users/x/Library/ColorSync/Profiles" in mac
+    assert "/System/Library/ColorSync/Profiles" in mac      # sRGB, Display P3
+    assert "/Library/ColorSync/Profiles" in mac             # what a paper maker adds
+
+    win = profile_folder_names("win32", "nt", r"C:\\Users\\x", "C:/Windows",
+                               "C:/Users/x/AppData/Local")
+    assert "C:/Windows/System32/spool/drivers/color" in win   # for everyone
+    assert "C:/Users/x/AppData/Local/Microsoft/Windows/Color" in win   # yours
+    # %SystemRoot% is honoured: Windows is not always installed on C:.
+    other = profile_folder_names("win32", "nt", "D:/Users/x", "D:/Windows")
+    assert other[0].startswith("D:/Windows")
+
+    linux = profile_folder_names("linux", "posix", "/home/x")
+    assert "/home/x/.local/share/icc" in linux      # XDG, colord and GNOME
+    assert "/usr/share/color/icc" in linux           # installed for everyone
+    assert "/home/x/.color/icc" in linux             # Argyll and oyranos
+
+    for got in (mac, win, linux):
+        assert got, "a platform was left with no shortcuts at all"
+        assert len(set(got)) == len(got), f"a folder is listed twice: {got}"
+
+
+def test_a_folder_with_no_profiles_in_it_is_not_offered(tmp_path):
+    """A shortcut that opens on an empty folder is a small lie about where
+    things are."""
+    from gamut_app import _holds_profiles
+    empty = tmp_path / "empty"; empty.mkdir()
+    assert not _holds_profiles(empty)
+    assert not _holds_profiles(tmp_path / "not-there-at-all")
+    (empty / "readme.txt").write_text("x")
+    assert not _holds_profiles(empty)
+    (empty / "something.icc").write_bytes(b"\0" * 8)
+    assert _holds_profiles(empty)
+    (empty / "another.ICM").write_bytes(b"\0" * 8)          # case does not matter
+    assert _holds_profiles(empty)

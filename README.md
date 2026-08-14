@@ -81,14 +81,23 @@ test chart. If you profile with [ArgyllCMS](https://www.argyllcms.com/) or with
 beside your profile. Other formats are listed under [What it
 opens](#what-it-opens).
 
-You do **not** need an ICC profile, an internet connection, or an account.
-Nothing about you, your printer or your measurements is ever uploaded.
+You do **not** need an internet connection or an account, and nothing about
+you, your printer or your measurements is ever uploaded.
 
-The one thing that can reach the network is **Check for a newer version…**,
-which looks at this project's releases page and tells you whether a newer
-version exists. It never downloads or installs anything by itself, and the
-unattended **Check when the app starts** option begins switched off — so
-unless you ask, the app makes no network requests at all.
+**One thing does reach the internet, and only one.** When the app starts it
+asks this project's releases page a single question — "is there a newer
+version?" — and tells you the answer. That is the whole of it. It sends no
+account, no name, nothing about your computer, your printer or anything you
+have measured, and it never downloads or installs a thing: if a newer version
+exists, you get a version number and a link, and it is entirely up to you
+whether you follow it.
+
+It is switched on to begin with, because a colour tool quietly running a year
+out of date helps nobody. If you would rather it did not, untick **Look for a
+newer version when the app starts** under **This window** and it will never
+look again — everything else in the app works with no network at all. You can
+still check whenever you like with the **Check for a newer version…** button
+just above it.
 
 ---
 
@@ -310,12 +319,34 @@ words mean?** — fifteen of them, covering every such term the window can show.
 | `.ti3` | an ArgyllCMS or ChromIQ chart measurement | directly |
 | `.cxf`, `.mxf` | X-Rite's measurement exchange formats | converted with ArgyllCMS `cxf2ti3` |
 | `.txt` | a measurement table ArgyllCMS understands | converted with ArgyllCMS `txt2ti3` |
-| `.icc`, `.icm` | an ICC profile — becomes the **comparison**, not a chart | ArgyllCMS `iccgamut`, or read directly if it declines |
+| `.icc`, `.icm` | an ICC profile — open it on its own, or use it as the comparison | ArgyllCMS `iccgamut`, or read directly if it declines |
 | `.gam` | an ArgyllCMS gamut file | directly |
 
 Converted copies are written to a temporary folder, **never beside your
 original** — opening a file to look at it should not leave new files in your
 measurement folder.
+
+### Either kind of file, in either place
+
+**Open a measurement or a profile…** shows you the file you opened, whichever
+kind it is. You can start with a profile and never open a chart at all. Open a
+second and the two are drawn together.
+
+**Compare with → A profile or a measurement file…** puts a third shape beside
+them, and takes either kind as well — so you can hold a paper up against
+another paper's measurement as readily as against a profile, sRGB or
+everything the eye can see.
+
+Every open file says underneath which kind it is. That distinction is the
+point of the whole application, so a profile is never quietly called a
+measurement: a *chart* is the sheet of patches you print, a *measurement* is
+what your instrument made of it, and a *profile* is the fitted model built
+afterwards.
+
+The file dialog puts the places profiles actually live one click away — the
+ColorSync folders on macOS, the colour folder on Windows including your own
+under AppData, and the ICC folders on Linux. A folder holding nothing is not
+offered.
 
 ### ICC version 4
 

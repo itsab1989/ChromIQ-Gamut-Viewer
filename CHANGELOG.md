@@ -1,5 +1,47 @@
 # Changelog
 
+## v1.6.0
+
+### ✨ What's new
+
+- **Start with whatever you have.** An ICC profile can now be the thing you
+  look at, not only the thing you compare against — so you can open a profile
+  first, on its own, and see the shape it describes. Opening a file always
+  shows you that file now; comparing is what **Compare with** is for.
+- **Compare against a measurement too.** The **Compare with** list offers *A
+  profile or a measurement file…*, so a paper can be held up against another
+  paper's measurement as easily as against a profile or sRGB. Each open file
+  says underneath which kind it is, because a profile is never a measurement.
+- **The file dialog knows where profiles live** on all three systems — the
+  ColorSync folders on a Mac, the colour folder on Windows including your own
+  under AppData, and the ICC folders on Linux. The same list ChromIQ uses.
+  Folders that hold nothing are not offered.
+- **It looks for a newer version on starting.** One question to the releases
+  page — is there a newer version? — and nothing else: no account, no name,
+  nothing about your computer or your measurements, and it never downloads or
+  installs anything. Untick it under **This window** and it never looks again.
+
+### 🐞 Fixed
+
+- **Opening an ICC profile appeared to do nothing.** It was loaded, put
+  straight into the comparison, and a comparison is only ever drawn beside a
+  chart — so with nothing else open, nothing was drawn and nothing was said.
+- **Choosing the same entry in Compare with a second time did nothing at
+  all** — no dialog, no file. Swapping to a different profile meant picking
+  something else first and coming back.
+- **Empty space at the bottom of a section.** Hidden rows were leaving their
+  space behind in three different ways, and it grew as more options were
+  hidden. Every section now ends the same distance below its last control, and
+  grows back exactly as before when options return.
+- **Turn it by itself sat lower than every other option** in its section, by
+  seven pixels, because the row above it left its spacing behind when hidden.
+- The accent colours are offered in the colour bar's own order: magenta,
+  amber, green, cyan, violet.
+- **Words that named only one kind of file** — the buttons, the group, the
+  per-shape controls — now cover both. A *chart* is the sheet of patches you
+  print; a *measurement* is what your instrument made of it, and that is the
+  file you open.
+
 ## v1.5.2
 
 ### 🐞 Fixed
