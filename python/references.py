@@ -36,7 +36,8 @@ import numpy as np
 from gamutview import (WHITE_POINTS, _bradford_adapt, _as_white_point,
                        build_gamut, xyz_to_lab)
 
-__all__ = ["REFERENCE_SPACES", "reference_gamut", "icc_gamut"]
+__all__ = ["REFERENCE_SPACES", "reference_gamut", "icc_gamut",
+           "gam_gamut"]
 
 #: name -> (red xy, green xy, blue xy, white point, encoding gamma)
 #: Primaries from each space's own definition; gamma only affects how the cube
@@ -109,6 +110,35 @@ def reference_gamut(name: str, *, white_point: str = "D50", steps: int = 20):
 
     return build_gamut(xyz_to_lab(xyz, white_point), rgb, input_space="lab",
                        white_point=white_point)
+
+
+def gam_gamut(path, *, white_point: str = "D50"):
+    """A gamut straight out of an ArgyllCMS ``.gam`` file.
+
+    ``iccgamut``, ``tiffgamut`` and ChromIQ itself all write these, and
+    ``viewgam`` reads them — so anybody working with ArgyllCMS already has
+    them lying around. They hold the finished surface, vertices and triangles
+    both, which is exactly what this needs: no tool has to be run and nothing
+    is recomputed.
+    """
+    path = pathlib.Path(path)
+    if not path.is_file():
+        raise ValueError(f"no such gamut file: {path}")
+    try:
+        verts, faces = _read_gam(path)
+    except Exception as exc:      # noqa: BLE001 — say what, not how
+        raise ValueError(
+            f"{path.name} could not be read as an ArgyllCMS gamut file: "
+            f"{exc}") from exc
+    if len(verts) < 4:
+        raise ValueError(f"{path.name} describes no usable volume")
+    from scipy.spatial import ConvexHull
+
+    from gamutview import Gamut, lab_to_xyz, xyz_to_srgb
+    return Gamut(vertices=verts, faces=faces,
+                 colors=xyz_to_srgb(lab_to_xyz(verts, white_point), white_point),
+                 volume=float(ConvexHull(verts).volume),
+                 space="lab", mode="argyll-gam")
 
 
 def _find_iccgamut() -> "str | None":

@@ -1,4 +1,4 @@
-# Build the Measured Gamut Viewer for every platform ChromIQ supports, and
+# Build the ChromIQ Gamut Viewer for every platform ChromIQ supports, and
 # attach the results to a release. Triggered by pushing a v* tag.
 name: Build and release
 
@@ -100,7 +100,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           cd dist
-          ditto -c -k --keepParent "Measured Gamut Viewer.app" \
+          ditto -c -k --keepParent "ChromIQ Gamut Viewer.app" \
             "../${{ matrix.asset }}.zip"
 
       - name: Package (Windows)

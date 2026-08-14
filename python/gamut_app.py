@@ -1,4 +1,4 @@
-"""Measured Gamut Viewer — a small desktop app, and a fitting study.
+"""ChromIQ Gamut Viewer — a small desktop app, and a fitting study.
 
     python gamut_app.py                 # then use "Open a measured chart…"
     python gamut_app.py chart.ti3       # or start with a file
@@ -58,7 +58,8 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
 from version import APP_NAME, __version__
 from gamutview import build_gamut, coverage, outside_of
 from gamutview import xyz_to_lab
-from references import REFERENCE_SPACES, icc_gamut, reference_gamut
+from references import (REFERENCE_SPACES, gam_gamut, icc_gamut,
+                        reference_gamut)
 from spectral import optimal_colour_solid
 from ti3gamut import read_ti3, write_html, write_slice_html
 
@@ -350,6 +351,12 @@ def _sidebar_urls(*extra) -> list:
     return urls
 
 
+#: Inside width of the control column, in pixels: the column is 310 wide, a
+#: group box eats about 24 of it and its layout another 16. Text is measured
+#: against this when a widget cannot yet report a width of its own.
+_TEXT_WIDTH = 262
+
+
 class WrappedLabel(QLabel):
     """A word-wrapped label that always claims the height its text needs.
 
@@ -559,21 +566,15 @@ class GamutApp(QMainWindow):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(12)
 
-        title = QLabel("What your printer can print", col)
-        f = QFont(); f.setPointSize(19); f.setWeight(QFont.Weight.DemiBold)
-        title.setFont(f)
-        v.addWidget(title)
+        # NO HEADING HERE. The window is already titled, the first group says
+        # "Your measured chart", and a lone title above a column of controls
+        # does no work -- it either repeats the window title or, with its
+        # explanation moved to the empty view where it is actually needed,
+        # sits there with nothing under it. The controls start straight away.
         # Two radio buttons rather than one button that toggles: a toggle has
         # to name the mode you are NOT in, which reads as a statement about the
         # current state and is read wrongly about half the time. Radios show
         # both choices and which one is active, and cannot be misread.
-        sub = WrappedLabel(
-            "Every colour your printer actually put on paper, worked out from "
-            "the patches you measured. This is what the printer really did, on "
-            "that paper, on that day — not what a profile predicts it can do.",
-            col)
-        sub.setObjectName("hint"); _wrapped(sub)
-        v.addWidget(sub)
 
         # --- the measurements -------------------------------------------------
         g_files = QGroupBox("Your measured chart", col)
@@ -1312,7 +1313,7 @@ class GamutApp(QMainWindow):
                 dlg = self._file_dialog(
                     "Choose an ICC profile to compare against",
                     QFileDialog.FileMode.ExistingFile,
-                    "ICC profiles (*.icc *.icm);;All files (*)")
+                    "Profiles and gamut files (*.icc *.icm *.gam);;All files (*)")
                 if not dlg.exec():
                     self._compare.setCurrentIndex(0)
                     return
@@ -1381,9 +1382,10 @@ class GamutApp(QMainWindow):
         dlg = self._file_dialog(
             "Open a measured chart or a profile",
             QFileDialog.FileMode.ExistingFiles,
-            "Measured charts and profiles (*.ti3 *.icc *.icm);;"
+            "Charts, profiles and gamut files "
+            "(*.ti3 *.icc *.icm *.gam);;"
             "Measured charts (*.ti3);;ICC profiles (*.icc *.icm);;"
-            "All files (*)")
+            "ArgyllCMS gamut files (*.gam);;All files (*)")
         if dlg.exec():
             for chosen in dlg.selectedFiles():
                 self._last_folder = str(Path(chosen).parent)
@@ -1444,7 +1446,7 @@ class GamutApp(QMainWindow):
         # slot rather than the chart slots -- but it arrives through the same
         # button and the same drag, because that is where someone with a file
         # in their hand will try to put it.
-        if path.suffix.lower() in (".icc", ".icm"):
+        if path.suffix.lower() in (".icc", ".icm", ".gam"):
             self._load_profile_as_comparison(path)
             return
         if len(self._slots) >= 2:
@@ -1468,7 +1470,9 @@ class GamutApp(QMainWindow):
     def _load_profile_as_comparison(self, path: Path) -> None:
         """Show an ICC profile as the thing to compare against."""
         try:
-            g = icc_gamut(path, white_point=self._white.currentData())
+            reader = (gam_gamut if path.suffix.lower() == ".gam"
+                      else icc_gamut)
+            g = reader(path, white_point=self._white.currentData())
         except Exception as exc:      # noqa: BLE001 — always explain
             QMessageBox.warning(
                 self, "This profile could not be used",
@@ -1585,15 +1589,31 @@ class GamutApp(QMainWindow):
 
     # ------------------------------------------------------------------ drawing
     def _show_placeholder(self) -> None:
+        """What the empty view says.
+
+        This is where the explanation of what the app is for belongs, and the
+        only place it is needed: once a chart is open the picture makes the
+        point far better than a sentence does, and at the top of the control
+        column it sat between somebody and the first thing they wanted to
+        click.
+        """
         c = PALETTES[self._appearance]
         self._view.setHtml(
-            "<html><body style='background:" + c["bg"] + ";color:" + c["faint"] + ";"
-            "font:14px -apple-system,Segoe UI,sans-serif;display:flex;"
+            "<html><body style='background:" + c["bg"] + ";color:" + c["faint"]
+            + ";font:14px -apple-system,Segoe UI,sans-serif;display:flex;"
             "align-items:center;justify-content:center;height:100%;margin:0'>"
-            "<div style='text-align:center;max-width:32em'>"
-            "<div style='font-size:44px'>◱</div>"
-            "<p>Open a measured chart — a <b>.ti3</b> file — to see the gamut "
-            "it encloses.</p></div></body></html>")
+            "<div style='text-align:center;max-width:30em;line-height:1.55'>"
+            "<div style='font-size:52px;margin-bottom:12px'>◱</div>"
+            "<p style='color:" + c["text"] + ";font-size:17px;margin:0 0 14px'>"
+            "See what your printer can really print</p>"
+            "<p style='margin:0 0 14px'>Open the <b>.ti3</b> file ArgyllCMS "
+            "saved when you measured a printed chart, and this draws every "
+            "colour that printer actually put on paper — what it really did, "
+            "on that paper, on that day, rather than what a profile predicts "
+            "it can do.</p>"
+            "<p style='margin:0'>Use <b>Open a measured chart</b> on the left, "
+            "or drag the file onto this window.</p>"
+            "</div></body></html>")
 
     def _on_manual_light(self) -> None:
         """Show or hide the five individual lighting controls.

@@ -1,4 +1,4 @@
-# PyInstaller spec for the Measured Gamut Viewer.
+# PyInstaller spec for the ChromIQ Gamut Viewer.
 #
 # The awkward part of freezing this is QtWebEngine: it is a browser, with its
 # own helper process, resource packs and locales, and PyInstaller does not find
@@ -46,7 +46,7 @@ coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas,
                strip=False, upx=False, name="GamutViewer")
 
 if sys.platform == "darwin":
-    app = BUNDLE(coll, name="Measured Gamut Viewer.app",
+    app = BUNDLE(coll, name="ChromIQ Gamut Viewer.app",
                  icon="assets/icon.icns",
                  bundle_identifier="io.github.itsab1989.gamutviewer",
                  info_plist={
