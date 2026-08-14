@@ -1274,13 +1274,22 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
     return Path(out)
 
 
-def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None) -> Path:
-    """Write the figure as a self-contained page whose paper matches the app."""
+def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
+                     carry_viewer: bool = True, notes: str = "") -> Path:
+    """Write the figure as a page whose paper matches the application.
+
+    *carry_viewer* decides whether the drawing library travels inside the file.
+    Measured on a real chart: carrying it costs 4778 kB and the page opens for
+    ever with no network at all; fetching it when opened costs 41 kB and needs
+    the internet the first time. A hundred and sixteen times smaller is worth
+    offering, and being the default would quietly break the promise this
+    application makes everywhere else, so it is not.
+    """
     # A KNOWN div id, so the turning engine has something to address. Plotly
     # invents a random one otherwise, and nothing outside the figure can find
     # it afterwards.
-    html = fig.to_html(include_plotlyjs="inline", full_html=True,
-                       div_id="scene0")
+    html = fig.to_html(include_plotlyjs="inline" if carry_viewer else "cdn",
+                       full_html=True, div_id="scene0")
     _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]
     style = (f"<style>html,body{{background:{_PAGE_BACKGROUND};margin:0;"
              f"padding:0;overflow:hidden;}}</style>")
@@ -1288,6 +1297,17 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None) -> Path:
         html = html.replace("</head>", style + "</head>", 1)
     else:
         html = style + html
+    if notes:
+        # THE NUMBERS TRAVEL WITH THE PICTURE. A shape sent to somebody
+        # without them is a shape they cannot check, and "which paper was
+        # that?" is where every one of these ends up otherwise.
+        colours = SCENE_COLOURS["light" if mode == "light" else "dark"]
+        block = ("<div style=\"font:13px/1.6 -apple-system,Segoe UI,Roboto,"
+                 f"sans-serif;color:{colours['text']};background:"
+                 f"{colours['page']};padding:14px 22px 22px;white-space:pre-wrap"
+                 f"\">{notes}</div>")
+        html = (html.replace("</body>", block + "</body>", 1)
+                if "</body>" in html else html + block)
     turn = _spin_script(["scene0"], spin)
     if turn:
         html = (html.replace("</body>", turn + "</body>", 1)
@@ -1412,8 +1432,10 @@ def write_html(gamuts, out: Path, title: str, **kwargs) -> Path:
     # Not a drawing option: it is what the page DOES once drawn, so it never
     # reaches build_figure.
     spin = kwargs.pop("spin", None)
+    carry = kwargs.pop("carry_viewer", True)
+    notes = kwargs.pop("notes", "")
     return _write_dark_html(build_figure(gamuts, title, **kwargs), out, mode,
-                            spin=spin)
+                            spin=spin, carry_viewer=carry, notes=notes)
 
 
 def build_figure(gamuts, title: str, opacity: float | None = None,

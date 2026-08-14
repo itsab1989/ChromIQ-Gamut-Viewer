@@ -995,16 +995,27 @@ class PictureDialog(QDialog):
         self._fps = NoScrollComboBox(self)
         for n, label in ((15, "15 a second — smallest file"),
                          (24, "24 a second — smooth, like film"),
-                         (30, "30 a second — smoothest")):
+                         (25, "25 a second — European television"),
+                         (30, "30 a second — smoother"),
+                         (50, "50 a second — very smooth, large file"),
+                         (60, "60 a second — smoothest, largest file")):
             self._fps.addItem(label, n)
         self._fps.setCurrentIndex(1)
         self._fps.currentIndexChanged.connect(self._refresh)
         line = self._row(rows, line, "Smoothness", self._fps, Hint(
             "How many pictures make up each second of movement.\n\n"
-            "24 is what film uses and looks perfectly smooth for something "
-            "turning slowly. 15 halves the file and is still quite watchable "
-            "for a gentle rotation. 30 is smoother again and costs more "
-            "again.\n\n"
+            "24 is what film uses, and for something turning slowly it "
+            "already looks perfectly smooth — most people cannot tell it from "
+            "60. 15 halves the file and is still quite watchable for a gentle "
+            "rotation.\n\n"
+            "25 and 50 are the European television rates, worth choosing if "
+            "the picture is going somewhere that expects them. 30 and 60 are "
+            "the American ones, and 60 is as smooth as anything gets.\n\n"
+            "Above 30 the file grows quickly for a difference you will "
+            "struggle to see on a shape that is drifting round. If you want "
+            "smoother movement rather than more frames of it, slow the "
+            "turning down instead — the same journey over more seconds looks "
+            "calmer at any rate.\n\n"
             "It only affects the moving picture, and it changes the file size "
             "more than anything else here.", self))
         self._fps_row = line - 1
@@ -1125,6 +1136,98 @@ class PictureDialog(QDialog):
 #: The two lists the dialog swaps between, kept beside it.
 STILL_KINDS = tuple((k, l) for k, l, _t, _q in picture.STILL_FORMATS)
 MOVING_KINDS = tuple((k, l) for k, l, _t in picture.MOVING_FORMATS)
+
+
+
+class WebPageDialog(QDialog):
+    """Choosing what the saved web page carries.
+
+    The page is the export that stays turnable, so the questions are about
+    what travels with it: the viewer that draws it, and the numbers that say
+    what it is.
+    """
+
+    def __init__(self, parent) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Save this view as a web page")
+        self.setModal(True)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(18, 16, 18, 14)
+        outer.setSpacing(10)
+        rows = QGridLayout()
+        rows.setHorizontalSpacing(8)
+        rows.setVerticalSpacing(8)
+        rows.setColumnStretch(1, 1)
+
+        self._carry = NoScrollComboBox(self)
+        self._carry.addItem("Carry the viewer inside it — works anywhere", True)
+        self._carry.addItem("Fetch it when opened — about 4.7 MB smaller", False)
+        rows.addWidget(QLabel("The file", self), 0, 0)
+        rows.addWidget(self._carry, 0, 1)
+        carry_hint = Hint(
+            "Whether the little program that draws the shape travels inside "
+            "the page or is fetched when somebody opens it.\n\n"
+            "CARRYING IT is the safe answer and the one to keep for anything "
+            "you are storing. The page works on a machine that has never been "
+            "online, on an aeroplane, and in ten years when the place it "
+            "would have fetched from has gone. The viewer adds about 4.7 MB "
+            "to the file.\n\n"
+            "FETCHING IT leaves that 4.7 MB out, which is often the "
+            "difference between an email that sends and one that bounces. The "
+            "cost is that whoever opens it needs an internet connection the "
+            "first time, and that in some years' time it may stop working "
+            "altogether.\n\n"
+            "Your measurements travel inside the page either way, so the "
+            "smaller file is still not tiny — a chart of a thousand patches "
+            "with something to compare it against carries a good deal of its "
+            "own numbers.\n\n"
+            "Your measurements are inside the page either way. Nothing about "
+            "them is ever sent anywhere.", self)
+        carry_hint.setObjectName("hint_carry_hint")
+        rows.addWidget(carry_hint, 0, 2, Qt.AlignmentFlag.AlignVCenter)
+        carry_hint.follow(self._carry)
+
+        self._numbers = QCheckBox("Put the numbers under the picture", self)
+        self._numbers.setChecked(True)
+        rows.addWidget(self._numbers, 1, 0, 1, 2)
+        numbers_hint = Hint(
+            "Adds everything the readouts on the left are showing — how much "
+            "colour each shape holds, how much of one fits inside the other "
+            "both ways round, and any drift between two readings — as plain "
+            "text underneath the picture.\n\n"
+            "Worth keeping on for anything you are sending to somebody else. "
+            "A shape on its own is a shape they cannot check: it does not say "
+            "which paper, measured against what, or how big it actually is. "
+            "With the numbers there the page answers those questions without "
+            "anybody having to ask you.\n\n"
+            "Turn it off if you want nothing but the picture.", self)
+        numbers_hint.setObjectName("hint_numbers_hint")
+        rows.addWidget(numbers_hint, 1, 2, Qt.AlignmentFlag.AlignVCenter)
+        numbers_hint.follow(self._numbers)
+
+        outer.addLayout(rows)
+        note = WrappedLabel(
+            "The page opens in any browser and keeps everything you can do "
+            "here: turning it, zooming in, and reading a name by pointing at "
+            "a shape.", self)
+        note.setObjectName("hint")
+        outer.addWidget(note)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton("Cancel", self)
+        cancel.setObjectName("secondary")
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(cancel)
+        save = QPushButton("Choose where to save…", self)
+        save.clicked.connect(self.accept)
+        save.setDefault(True)
+        buttons.addWidget(save)
+        outer.addLayout(buttons)
+
+    def choices(self) -> dict:
+        return {"carry_viewer": bool(self._carry.currentData()),
+                "numbers": self._numbers.isChecked()}
 
 
 class Notice(QDialog):
@@ -2727,6 +2830,27 @@ class GamutApp(QMainWindow):
 
 
     # ------------------------------------------------------------- pictures
+    def _readout_text(self) -> str:
+        """Everything the readouts are showing, as plain text.
+
+        Read from the labels themselves rather than worked out again, so the
+        page cannot disagree with the window it came from.
+        """
+        parts = []
+        volume = self._volume.text().strip()
+        if volume and volume != "—":
+            parts.append(f"Colour held: {volume} {self._volume_units()}")
+        for name in ("_coverage", "_pair", "_drift", "_drift_worst"):
+            label = getattr(self, name, None)
+            if label is None:
+                continue
+            try:
+                if label.isVisible() and label.text().strip():
+                    parts.append(label.text().strip())
+            except Exception:              # noqa: BLE001 — a note is not vital
+                continue
+        return "\n\n".join(parts)
+
     def _picture_shapes(self) -> list:
         """The names in the picture, for suggesting what to call the file."""
         names = [path.stem for path, _g, _m in self._slots]
@@ -3670,7 +3794,13 @@ class GamutApp(QMainWindow):
         """
         if not self._slots:
             return
-        default = self._slots[0][0].with_name(self._slots[0][0].stem + "-gamut.html")
+        options = WebPageDialog(self)
+        if not options.exec():
+            return
+        chosen = options.choices()
+        first = (self._slots[0][0] if self._slots
+                 else Path(self._reference[0] if self._reference else "gamut"))
+        default = first.with_name(first.stem + "-gamut.html")
         dlg = self._file_dialog("Save this view as a web page",
                                 QFileDialog.FileMode.AnyFile,
                                 "Web page (*.html)", str(default))
@@ -3678,12 +3808,15 @@ class GamutApp(QMainWindow):
         dlg.setDefaultSuffix("html")
         if not dlg.exec():
             return
-        target = dlg.selectedFiles()[0]
+        target = picture.next_free(Path(dlg.selectedFiles()[0]))
         try:
             gamuts, clouds, styles, lost = self._scene_contents()
-            write_html(gamuts, Path(target), self._scene_title(),
+            write_html(gamuts, target, self._scene_title(),
                        patches=clouds, styles=styles, lost=lost,
-                       spin=self._spin_options(), **self._render_options())
+                       spin=self._spin_options(),
+                       carry_viewer=chosen["carry_viewer"],
+                       notes=self._readout_text() if chosen["numbers"] else "",
+                       **self._render_options())
         except OSError as exc:
             Notice.warn(self, "That could not be saved", str(exc))
             return

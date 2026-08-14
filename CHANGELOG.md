@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.7.1
+
+### ✨ What's new
+
+- **The web page has choices now.** It can **carry the viewer inside it**, so
+  it opens on a machine that has never been online and still will in ten
+  years — or **fetch the viewer when opened**, which leaves about 4.7 MB out
+  of the file and is often the difference between an email that sends and one
+  that bounces. Carrying it stays the standard, because working with no
+  network at all is what this application promises everywhere else.
+- **The numbers can travel with the picture.** Everything the readouts show —
+  how much colour each shape holds, how much of one fits inside the other both
+  ways round, any drift between two readings — is written under the picture as
+  plain text. A shape sent without them is a shape nobody can check.
+- **More frame rates for a moving picture**: 15, 24, 25, 30, 50 and 60 a
+  second. 25 and 50 are the European television rates and 30 and 60 the
+  American ones; 24 still looks perfectly smooth for something turning slowly,
+  and above 30 the file grows quickly for a difference few people can see.
+- A web page is never written over one already there, the same as every other
+  export.
+
 ## v1.7.0
 
 ### ✨ What's new
