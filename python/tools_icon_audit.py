@@ -7,8 +7,8 @@ icon on a row of its own reads as explaining nothing, and the only reliable
 way to know is to ask, for each one, whether any control shares its row.
 """
 
-import sys, time
-sys.path.insert(0,"/private/tmp/claude-502/-Users-Basti-develop-ChromIQ/b54296f1-3089-4f47-9963-bfd3535a2eb9/scratchpad/fork/python")
+import os, pathlib, sys, time
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.argv=["x"]
 from pathlib import Path
 from PyQt6.QtCore import QSettings
@@ -17,12 +17,16 @@ from PyQt6.QtWidgets import (QApplication, QComboBox, QCheckBox, QSlider,
                              QRadioButton)
 QSettings("MeasuredGamutViewer","MeasuredGamutViewer").clear()
 import gamut_app
-DEMO=Path("/private/tmp/claude-502/-Users-Basti-develop-ChromIQ/b54296f1-3089-4f47-9963-bfd3535a2eb9/scratchpad/demo")
+DEMO = Path(os.environ.get("GAMUTVIEW_DEMO_TI3", ""))
 app=QApplication(sys.argv); w=gamut_app.GamutApp([]); w.resize(1500,950); w.show()
 def pump(s):
     e=time.time()+s
     while time.time()<e: app.processEvents(); time.sleep(0.01)
-pump(4); w._load(DEMO/"Glossy-paper.ti3"); pump(7)
+pump(4); # A chart is optional: without one the audit still checks every icon
+# that is on screen. Point GAMUTVIEW_DEMO_TI3 at a .ti3 to check the
+# rows that only appear once something is open.
+if DEMO.name and DEMO.is_file():
+    w._load(DEMO); pump(7)
 inner = w.findChild(QScrollArea).widget()
 # Radios and the big volume readout are controls the eye reads too;
 # leaving them out made two correctly-placed icons look like orphans.
