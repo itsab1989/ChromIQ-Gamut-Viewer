@@ -45,7 +45,7 @@ import numpy as np
 
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
-from PyQt6.QtCore import (QRect, QSettings, QSize, QStandardPaths, Qt,
+from PyQt6.QtCore import (QEvent, QRect, QSettings, QSize, QStandardPaths, Qt,
                           QTimer, QUrl, pyqtSignal)
 from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QPainter,
                          QPen, QPixmap)
@@ -198,10 +198,12 @@ def stylesheet(mode: str, scheme: str = "Magenta",
     return f"""
 QWidget {{ background: {c["bg"]}; color: {c["text"]};
            font-family: "Inter"; font-size: 13px; }}
-QGroupBox {{ border: 1px solid {c["line"]}; border-radius: 6px; margin-top: 10px;
-            padding: 10px 8px 8px 8px; }}
-QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px;
-                   color: {c["dim"]}; }}
+/* ChromIQ's own group-box metrics: radius 4, margin-top 14, padding-top 4,
+   and no fill -- it inherits the window colour there too. */
+QGroupBox {{ border: 1px solid {c["line"]}; border-radius: 4px;
+            margin-top: 14px; padding: 4px 8px 8px 8px; }}
+QGroupBox::title {{ subcontrol-origin: margin; left: 10px; top: 2px;
+                   padding: 0 4px; color: {c["dim"]}; }}
 QPushButton {{ background: {c["accent"]}; color: {c["on_accent"]}; border: none;
               border-radius: 5px; padding: 7px 12px; font-weight: 600;
               min-height: 20px; }}
@@ -237,7 +239,8 @@ QCheckBox::indicator:checked {{ background: {c["accent"]};
                                border-color: {c["accent"]}; }}
 QSlider::groove:horizontal {{ height: 4px; background: {c["line"]};
                              border-radius: 2px; }}
-QSlider::handle:horizontal {{ width: 13px; margin: -5px 0; border-radius: 7px;
+QSlider::handle:horizontal {{ width: 12px; height: 12px; margin: -4px 0;
+                             border-radius: 6px; border: none;
                              background: {c["accent"]}; }}
 /* A radio has to be round, and in Qt that means the radius must be half of
    the WHOLE box -- content plus both borders. 14 + 1 + 1 = 16, so 8. Thicken
@@ -764,6 +767,27 @@ class Hint(QToolButton):
     def _open(self) -> None:
         Notice.say(self.window(), self._title, self._text)
 
+    def follow(self, control) -> None:
+        """Show and hide with *control*.
+
+        An explanation for something that is not on screen is worse than no
+        explanation: it points at nothing and takes up a place in the column
+        that the eye tries to make sense of.
+        """
+        if control is None:
+            return
+        self._followed = control
+        control.installEventFilter(self)
+        self.setVisible(control.isVisible())
+
+    def eventFilter(self, watched, event):      # noqa: N802 (Qt naming)
+        if watched is getattr(self, "_followed", None):
+            if event.type() == QEvent.Type.Show:
+                self.setVisible(True)
+            elif event.type() == QEvent.Type.Hide:
+                self.setVisible(False)
+        return super().eventFilter(watched, event)
+
     def isChecked(self) -> bool:
         return False
 
@@ -985,6 +1009,14 @@ class GamutApp(QMainWindow):
         row.addWidget(frame, 1)
         self.setCentralWidget(central)
         self.setAcceptDrops(True)      # drop a .ti3 anywhere on the window
+        self._attach_hint_icons(self.findChild(QScrollArea))
+        # A hidden control must take its ⓘ with it. Anything already managed
+        # by an explicit show/hide list keeps that behaviour; the attach pass
+        # ties the rest to the control they were placed beside.
+        for _icon in self.findChildren(Hint):
+            _followed = getattr(_icon, "_followed", None)
+            if _followed is not None:
+                _icon.setVisible(_followed.isVisible())
         self._restore_everything()
         self._apply_space_availability()
         for icon in self.findChildren(Hint):
@@ -1670,7 +1702,7 @@ class GamutApp(QMainWindow):
         self._update_btn.setObjectName("secondary")
         self._update_btn.clicked.connect(lambda: self._check_updates(asked=True))
         v.addWidget(self._update_btn)
-        self._auto_update = QCheckBox("Check when the app starts", col)
+        self._auto_update = QCheckBox("Look for a newer version when the app starts", col)
         # OFF by default, and it must stay that way. This app tells people
         # nothing leaves their machine; looking for updates without being
         # asked would quietly make that untrue. Pressing the button above is
@@ -1714,6 +1746,88 @@ class GamutApp(QMainWindow):
         self._apply_mode()
         if self._slots:
             self._redraw()          # the scene is repainted to match
+
+    def _attach_hint_icons(self, root) -> None:
+        """Move any ⓘ that ended up on a row of its own onto the row above.
+
+        An explanation has to point at the thing it explains. A help icon
+        floating on its own line reads as belonging to nothing -- and several
+        in a row read as a column of decorations.
+
+        Rather than restructure every place a hint is added, the layouts are
+        walked once after they are built, nested ones included: any Hint
+        sitting alone as a row is lifted out and put at the end of the row
+        above it. Anything it cannot sensibly point at is stepped over -- a
+        readout that hides itself when empty, or a group heading -- because
+        attaching to one of those leaves the icon beside an invisible partner,
+        which looks exactly like being alone.
+
+        Each icon is then tied to the visibility of what it explains, so a
+        control that is hidden takes its ⓘ with it.
+        """
+        if root is None:
+            return
+        for box in root.findChildren(QGroupBox):
+            if box.layout() is not None:
+                self._attach_in_layout(box.layout(), box)
+
+    def _attach_in_layout(self, layout, box) -> None:
+        """One layout, and every layout nested inside it."""
+        i = 0
+        while i < layout.count():
+            item = layout.itemAt(i)
+            if item is None:
+                i += 1
+                continue
+            if item.layout() is not None:
+                self._attach_in_layout(item.layout(), box)
+                i += 1
+                continue
+            hint = item.widget()
+            if not isinstance(hint, Hint) or i == 0:
+                i += 1
+                continue
+            j = i - 1
+            while j >= 0:
+                candidate = layout.itemAt(j)
+                widget = candidate.widget()
+                if candidate.layout() is not None:
+                    break
+                if widget is not None and widget.isVisibleTo(box):
+                    # A heading is not something an icon can point at; a
+                    # readout showing a number is.
+                    if not (isinstance(widget, QLabel)
+                            and widget.objectName() not in ("volume", "hint")):
+                        break
+                j -= 1
+            if j < 0:
+                i += 1
+                continue
+            above = layout.itemAt(j)
+            layout.takeAt(i)
+            if above.layout() is not None:
+                above.layout().addWidget(hint, 0,
+                                         Qt.AlignmentFlag.AlignVCenter)
+                hint.follow(self._first_widget_in(above.layout()))
+            else:
+                control = above.widget()
+                layout.takeAt(j)
+                row = QHBoxLayout()
+                row.setContentsMargins(0, 0, 0, 0)
+                row.setSpacing(6)
+                row.addWidget(control, 1)
+                row.addWidget(hint, 0, Qt.AlignmentFlag.AlignVCenter)
+                layout.insertLayout(j, row)
+                hint.follow(control)
+
+    @staticmethod
+    def _first_widget_in(layout):
+        """The first real widget in a row, which is what that row is about."""
+        for k in range(layout.count()):
+            widget = layout.itemAt(k).widget()
+            if widget is not None and not isinstance(widget, Hint):
+                return widget
+        return None
 
     def _persisted(self):
         """Every control worth remembering, as (key, widget, kind, default).
