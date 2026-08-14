@@ -385,3 +385,29 @@ A grey highlight is indistinguishable from the resting border on a dark
 background. The radios already used the accent, so before this half the
 controls appeared to answer the pointer and half appeared not to — which reads
 as some of them being disabled.
+
+## 7. The log
+
+| | |
+|---|---|
+| **Where** | macOS `~/Library/Logs/ChromIQ Gamut Viewer/` · Windows `%LOCALAPPDATA%` · Linux `$XDG_STATE_HOME` |
+| **File** | `gamut-viewer.log` |
+| **Cap** | 2 MB per file, 5 files kept — **10 MB at the very most, ever** |
+| **Override** | `GAMUTVIEW_LOG_DIR`, which is how the tests keep out of the real one |
+
+Follows ChromIQ's `core/logger.py` so somebody who has seen one has seen the
+other. It never leaves the machine; it is plain text you can read and delete.
+
+**The cap is not decoration.** A log that quietly eats a disk is a bug of its
+own, so the total is asserted in the tests rather than merely configured, and
+rotation is *observed* happening rather than assumed from the settings.
+
+**A log that cannot be written never stops the app.** A read-only disk, a full
+one, or a path the platform rejects all return `None` and the window opens
+anyway. That last case was a real hole — `configure()` caught `OSError` but
+not `ValueError`, and a test written for the case found it.
+
+**The tests leave nothing behind.** Every one redirects `GAMUTVIEW_LOG_DIR`
+into pytest's `tmp_path` and closes its handlers afterwards, so no file is
+written outside the test's own folder and Windows can still delete it. The
+whole suite, 85 tests, runs in about 5 seconds.

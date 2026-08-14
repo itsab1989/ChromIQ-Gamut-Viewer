@@ -864,6 +864,13 @@ def _join_words(words) -> str:
     return f"{', '.join(words[:-1])} and {words[-1]}"
 
 
+def _log():
+    """The application's logger, fetched lazily so importing this module does
+    not create a log file for a process that never shows a window."""
+    from logger import get_logger
+    return get_logger("app")
+
+
 def _profile_label(path: Path) -> str:
     """What to call a profile in the readouts, so it cannot be mistaken for
     a measurement.
@@ -2546,6 +2553,7 @@ class GamutApp(QMainWindow):
         try:
             g, m = self._build_one(path)
         except Exception as exc:               # noqa: BLE001 — always explain
+            _log().warning("could not use %s: %s", path.name, exc)
             Notice.warn(
                 self, "This file could not be used",
                 f"{path.name}\n\n{exc}\n\nA measured chart is a .ti3 file — the "
@@ -2554,6 +2562,8 @@ class GamutApp(QMainWindow):
                 "it yet.")
             return
         self._slots.append((path, g, m))
+        _log().info("opened %s: %d patches, %d vertices, volume %.0f",
+                    path.name, m.n_patches, len(g.vertices), g.volume)
         self._warn_if_too_few_patches(path, m)
         self._refresh_slot_labels()
         self._save.setEnabled(True)
@@ -3246,6 +3256,10 @@ class GamutApp(QMainWindow):
 
 
 def main(argv=None) -> int:
+    from logger import configure, get_logger, install_exception_hook
+    _log = configure()
+    install_exception_hook()
+    get_logger("app").info("log file: %s", _log or "(could not be opened)")
     argv = list(sys.argv if argv is None else argv)
     if "--version" in argv:
         print(f"{APP_NAME} {__version__}")

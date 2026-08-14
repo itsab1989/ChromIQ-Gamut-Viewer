@@ -584,6 +584,46 @@ def _as_rgb_array(colours):
     return arr[:, :3]
 
 
+def _caption(text: str, colours) -> dict:
+    """The line of text above the picture, as a caption rather than a banner.
+
+    Plotly's default title is large, centred and in the foreground colour,
+    which made a sentence of explanation the loudest thing on the page --
+    louder than the shape it describes. This is small, dimmed, monospace to
+    match the figures underneath, and pulled in from the edges so it never
+    touches the frame.
+
+    Used by both the main view and the slice view, because the same window
+    showing two different kinds of title is worse than either choice.
+    """
+    return dict(
+        text=text,
+        x=0.012, xanchor="left", y=0.98, yanchor="top",
+        pad=dict(l=6, r=18, t=4),
+        font=dict(size=12, color=colours["caption"],
+                  family='Menlo, Consolas, "Courier New", monospace'))
+
+
+def _legend_proxy(name: str, colour: str):
+    """A legend key that is not shaded by the scene's lighting.
+
+    Plotly draws a mesh's own key by rendering a tiny piece of that mesh --
+    lighting, opacity and all -- so on a dark page the key comes out far
+    darker than the colour given to it, and the marker beside the name is
+    barely there. Reported twice from the real window.
+
+    A scatter trace with no points solves it: it never draws anything in the
+    scene, and its legend key is a plain filled marker in exactly the colour
+    asked for. The mesh keeps its name for hover; only the key moves.
+    """
+    import plotly.graph_objects as go
+
+    return go.Scatter3d(
+        x=[None], y=[None], z=[None], mode="markers",
+        marker=dict(size=11, color=colour, line=dict(width=0)),
+        name=name, showlegend=True, hoverinfo="skip")
+
+
 def _legend_swatch(colours, page: str) -> str:
     """A colour for the legend key that both represents the shape and can be
     seen against the page.
@@ -637,7 +677,7 @@ def _mesh(gamut, name: str, opacity: float, wireframe: bool,
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=gamut.faces[:, 0], j=gamut.faces[:, 1], k=gamut.faces[:, 2],
-        vertexcolor=colours, opacity=opacity, name=name, showlegend=True,
+        vertexcolor=colours, opacity=opacity, name=name, showlegend=False,
         # Only the legend key uses this; vertexcolor paints the surface.
         color=_legend_swatch(chosen if chosen is not None else gamut.colors,
                              page),
@@ -677,9 +717,11 @@ _SLICE_COLOURS = ("#e8175d", "#3aa8d0", "#f2c744", "#6bd07a")
 #: and grid come from ChromIQ's own tokens for the same reason.
 SCENE_COLOURS = {
     "dark": dict(page="#111111", plot="#141414", grid="#262626",
+                 caption="#8a8a8a",   # TEXT_DIM: readable, not shouting
                  text="#e6e6e6", axis="#333333", kept="rgb(105,112,126)",
                  wire="#9aa3b2"),
     "light": dict(page="#efebe6", plot="#f7f4ef", grid="#e0ddd7",
+                  caption="#7a7570",  # LM_TEXT_DIM
                   text="#22211f", axis="#d0ccc6", kept="rgb(176,180,188)",
                   wire="#7a7570"),
 }
@@ -739,7 +781,7 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str,
                              marker=dict(color=c["wire"], size=5, symbol="x"),
                              name="neutral grey", hoverinfo="name"))
     fig.update_layout(
-        title=f"{title}  ·  lightness L* = {lightness:.0f}{note}",
+        title=_caption(f"{title}  ·  lightness L* = {lightness:.0f}{note}", c),
         xaxis=dict(title="a*   green ← → red", zeroline=True,
                    zerolinecolor=c["axis"], gridcolor=c["grid"],
                    scaleanchor="y", scaleratio=1),
@@ -790,6 +832,9 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
             fig.add_trace(_mesh(g, name, opacity=base_i, wireframe=False,
                                 paint=paint_i, index=i, depth=depth_i,
                                 page=c["page"]))
+            fig.add_trace(_legend_proxy(
+                name, _legend_swatch(_paint_vertices(g, paint_i, i)
+                                     or g.colors, c["page"])))
         if how in ("mesh", "solid+mesh"):
             for trace in _edges(g, name, colour=c["wire"],
                                 width=1.0 if how == "mesh" else 0.7,
@@ -816,11 +861,7 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
         # the page -- louder than the shape it describes. Small, dimmed, set
         # in the same monospace the figures below use, and moved to the left
         # so it reads as a label on the picture rather than a banner over it.
-        title=dict(
-            text=title,
-            x=0.0, xanchor="left", y=0.985, yanchor="top",
-            font=dict(size=12, color=c["axis"],
-                      family='Menlo, Consolas, "Courier New", monospace')),
+        title=_caption(title, c),
         scene=dict(
             xaxis_title=_axes["x"], yaxis_title=_axes["y"],
             zaxis_title=_axes["z"],
