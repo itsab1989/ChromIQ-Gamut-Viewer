@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.9.4
+
+### 🐞 Fixed
+
+- **The progress bar and its Stop button were touching**, which read as one
+  broken control rather than two, and the percentage inside the bar sat above
+  the middle.
+
+### 📖 Documentation
+
+- **Six moving pictures, on a page of their own** — `docs/MOTION.md` — each
+  saying exactly which controls produced it. Two are on the README; the rest
+  are one click away, so a page that loads on every visit does not carry ten
+  megabytes of animation.
+
+### Known
+
+- **Writing the file at the end of a moving picture blocks the window** for a
+  few seconds — longer for a large one. The frames are taken smoothly and the
+  window answers throughout that part; it is the final encoding, a single
+  step that cannot be interrupted, which still stops it. It needs to move off
+  the main thread.
+
 ## v1.9.3
 
 ### 🐞 Fixed
