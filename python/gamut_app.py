@@ -47,7 +47,8 @@ import numpy as np
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
 from PyQt6.QtCore import (QEvent, QRect, QSettings, QSize, QStandardPaths, Qt,
                           QTimer, QUrl, pyqtSignal)
-from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QLinearGradient,
+from PyQt6.QtGui import (QColor, QDesktopServices, QFont, QFontMetrics,
+                         QIcon, QLinearGradient,
                          QPainter,
                          QPen, QPixmap)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
@@ -287,6 +288,13 @@ QLabel#noticeBody {{ font-size: 12px; font-weight: 400; color: {c["dim"]};
 QFrame#noticeCard QScrollArea {{ background: transparent; }}
 QFrame#noticeCard QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QLabel#hint {{ color: {c["faint"]}; font-size: 11px; }}
+/* The two links at the foot of the column. Not buttons competing with the
+   controls above: quiet text that takes the accent when pointed at, the way
+   a link does. */
+QPushButton#footLink {{ background: transparent; border: none; padding: 2px 0;
+                        color: {c["faint"]}; font-size: 11px;
+                        text-align: left; min-height: 0; }}
+QPushButton#footLink:hover {{ color: {c["accent"]}; }}
 QLabel#eyebrow {{ color: {c["dim"]}; font-size: 10px; font-weight: 600;
                   letter-spacing: 1.4px; }}
 QFrame#mastheadRule {{ background: {c["accent"]}; border: none; }}
@@ -2002,6 +2010,37 @@ class GamutApp(QMainWindow):
         self._save.setEnabled(False)
         self._export_btn.setEnabled(False)
         v.addWidget(self._save)
+
+        # THE VERY FOOT OF THE COLUMN: where to find the project, and where to
+        # say thanks. Quiet, and the last thing met on the way down rather
+        # than something competing with the controls. ChromIQ opens the same
+        # Ko-fi page from its Welcome window.
+        links = QHBoxLayout()
+        links.setContentsMargins(0, 10, 0, 2)
+        links.setSpacing(12)
+        support = QPushButton("♥  Support ChromIQ", col)
+        support.setObjectName("footLink")
+        support.setCursor(Qt.CursorShape.PointingHandCursor)
+        support.setToolTip(
+            "Opens ko-fi.com in your browser.\n\n"
+            "This application is free and stays fully featured whether or not "
+            "anybody ever does this. If it has been useful to you, a coffee is "
+            "a kind way to say so.")
+        support.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl("https://ko-fi.com/itsab1989")))
+        links.addWidget(support, 0)
+        website = QPushButton("ChromIQ website", col)
+        website.setObjectName("footLink")
+        website.setCursor(Qt.CursorShape.PointingHandCursor)
+        website.setToolTip(
+            "Opens the ChromIQ website in your browser, where the printer "
+            "profiling application this one accompanies is introduced, with "
+            "screenshots of each step.")
+        website.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl("https://itsab1989.github.io/ChromIQ/")))
+        links.addWidget(website, 0)
+        links.addStretch(1)
+        v.addLayout(links)
         return col
 
     # ------------------------------------------------------------------ actions

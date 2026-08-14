@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4.0
+
+### ✨ What's new
+
+- **Two links at the foot of the settings column**: one to the ChromIQ
+  website, and one to Ko-fi if you would like to buy a coffee. The
+  application is free and stays fully featured either way.
+
 ## v1.3.1
 
 ### 🐞 Fixed
