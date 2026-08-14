@@ -762,8 +762,8 @@ class GamutApp(QMainWindow):
         self.setWindowTitle(f"{APP_NAME} {__version__}")
         # NEVER OPEN BIGGER THAN THE SCREEN. A window that starts off the
         # bottom of a laptop display hides its own buttons and cannot always
-        # be dragged back (Sebastian, 2026-08-14). Ask the screen how much
-        # room there actually is -- availableGeometry already excludes the
+        # be dragged back -- reported from a real display. Ask the screen
+        # how much room there actually is -- availableGeometry excludes the
         # menu bar and the dock -- and take the smaller of that and a
         # comfortable size, leaving a small margin so the frame is grabbable.
         screen = QApplication.primaryScreen()

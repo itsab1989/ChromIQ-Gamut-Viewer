@@ -126,8 +126,8 @@ Three consequences the code has to honour, and does:
 
 An earlier version of this note said the white point should not be a control
 inside ChromIQ, because "the application already knows a printed chart was
-measured under D50". That was too strong, and Sebastian was right to question
-it. What the files actually show:
+measured under D50". That was too strong, and it was rightly questioned in
+review. What the files actually show:
 
 * **A `.ti3` records no illuminant or observer field.** Checked across several
   real measurements: there is `TARGET_INSTRUMENT`, `DEVCALSTD`, `COLOR_REP`
