@@ -326,11 +326,28 @@ Converted copies are written to a temporary folder, **never beside your
 original** — opening a file to look at it should not leave new files in your
 measurement folder.
 
-### Either kind of file, in either place
+### Any of three kinds of file, in either place
 
 **Open a measurement or a profile…** shows you the file you opened, whichever
 kind it is. You can start with a profile and never open a chart at all. Open a
 second and the two are drawn together.
+
+**A picture can be one of them too** — a photograph, or anything else you can
+open. What is drawn is *the colours actually in that picture*, not the space
+it was saved in, and the difference is the whole point: measured on this
+project's own test pictures, a warm sunset encloses **19% of sRGB** and a misty
+morning **8%**. Open one beside a paper you have measured and the readouts
+answer the real question — the sunset prints at **98%** on the demo paper and
+the misty morning at **99.9%**, where an image using all of sRGB would lose a
+third of its colours. Tick **Show what the comparison cannot print** and the
+ones that fall outside are picked out on the shape itself.
+
+A picture is read through its own colour profile when it carries one. When it
+does not, sRGB is assumed — the usual convention — and the line under its name
+says **read as sRGB**, because an assumption that changes the answer should
+never be made quietly. JPEG, PNG, TIFF, WebP, AVIF, HEIC, JPEG XL, BMP, GIF
+and JPEG 2000 all open; the list is asked of your own machine, so nothing is
+offered that would fail.
 
 **Compare with → A profile or a measurement file…** puts a third shape beside
 them, and takes either kind as well — so you can hold a paper up against
@@ -410,6 +427,24 @@ version-numbered folder the official download unpacks into
 the same toolkit that reads a printed chart in the first place. Nothing nags
 you about it on startup, because most people never need it.
 
+### It moves, and you can take the movement with you
+
+<p align="center">
+  <img src="docs/screenshots/19-turning.webp" width="420"
+       alt="A measured gamut turning slowly on its own">
+  <img src="docs/screenshots/20-what-srgb-cannot-reach.webp" width="420"
+       alt="The same gamut turning, with the colours sRGB cannot reach picked out">
+</p>
+
+Depth is genuinely hard to judge on a flat screen — a dent in the deep blues
+and a shadow look alike in a still picture. **Turn it by itself** sets the
+shape moving, left and right or up and down, and **Save this view as a
+picture…** writes the movement out as a file you can drop into a forum post
+the same way as a photograph. Both loops above were made by that button, at
+20 frames a second; the menu offers 15 up to 60.
+
+The loop closes exactly, so it never jumps as it comes round.
+
 ### A picture with nothing around it
 
 <p align="center"><img src="docs/screenshots/18-no-grid.webp" width="820"
@@ -423,6 +458,24 @@ forum post. It applies to the whole picture, so two rooms lose the box
 together and the pair still match.
 
 ## What it saves
+
+Three ways of taking something with you, answering three different questions.
+
+| | For | Notes |
+|---|---|---|
+| **A picture** | showing somebody | still or moving, any size, see-through if you like |
+| **A web page** | letting them turn it themselves | carries its viewer, or fetches it and saves 4.7 MB |
+| **A table** | doing arithmetic on the numbers | plain CSV |
+
+A **still** is redrawn by the viewer at whatever size you ask for, so it can be
+far larger than the window — and for the flat cross-section it can be a real
+vector SVG of about 12 kB. A **moving picture** is WebP, GIF or APNG. The
+background and the grid's walls are set separately, each able to be a colour of
+your own or see-through, so the shape can float on any page you drop it onto.
+
+It says roughly how big the file will be before you make it, and never writes
+over a file that is already there.
+
 
 Nothing, unless you ask.
 
