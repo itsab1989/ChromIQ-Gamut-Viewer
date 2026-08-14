@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.1.0
+
+### ✨ What's new
+
+- **It looks like ChromIQ now**, because it is meant to sit beside it: the same
+  masthead and colour bar, the same palette down to each value, the same Inter
+  type, and the same round **ⓘ** beside every setting.
+- **Every explanation is behind that ⓘ.** Hover for a one-line answer, click
+  for the full text in a window wide enough to read it. An option that is
+  hidden takes its ⓘ with it.
+- **There is a log**, so a fault that happened once can still be looked at.
+  It never leaves your machine and cannot grow past 10 MB.
+
+### 🐞 Fixed
+
+- The window opens **centred**, on the screen it actually appears on, and fits
+  a small display — it can go down to 832px wide.
+- Scrolling the settings column no longer **changes a setting** under the
+  pointer.
+- Hovering a combo box, checkbox or slider now outlines it in **your accent
+  colour** instead of a grey that looked like nothing had happened.
+- The legend key beside each shape is **visible on a dark page**.
+- The caption above the picture is a caption, not a banner, and reads the same
+  way in every view.
+- Slider handles are round; checkbox labels have room; the radio choices under
+  Appearance and Accent are no longer nearly touching.
+
 ## v1.0.1
 
 ### ✨ What's new
