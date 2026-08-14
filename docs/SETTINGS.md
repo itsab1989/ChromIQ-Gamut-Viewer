@@ -344,3 +344,32 @@ knows about runs and this does not.
 The open questions — a `scipy` dependency across six frozen targets, whether to
 emit a `.gam` for `viewgam` rather than carry a second 3D renderer, and where
 it should live — are in issue #1.
+
+### Where the window opens, and how small it may get
+
+| | |
+|---|---|
+| **Opens at** | 1280 × 840, or the screen's available area minus a margin, whichever is smaller |
+| **Centred** | on the screen the window is actually on, on first show only |
+| **Smallest it can be** | 832 × 179 |
+
+**The centring happens in `showEvent`, not in `__init__`.** Done at
+construction it centres a size the window does not end up being: the controls
+are built afterwards, the window grows to fit them, and it drifts down and to
+the right by half of whatever it gained. That is what puts it in a corner.
+
+**It centres on `self.screen()`, not `QApplication.primaryScreen()`.** With
+two displays those are often different, and centring on the wrong one is the
+other way a window ends up in a corner.
+
+**Only on the first show.** Re-centring on every show would drag the window
+back from wherever the user had put it.
+
+**The frame is kept inside the screen** after centring, so a window taller
+than the display cannot have its title bar pushed off the top where it cannot
+be grabbed.
+
+**Why 832 and not less.** The controls column is a fixed 366px and the 3D view
+has a floor of 420px. That floor was 560, which forced a 972px minimum — wide
+enough to hang off the side of a small display. 420 is still a scene worth
+looking at, and the window can always be made bigger.

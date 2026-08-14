@@ -932,8 +932,10 @@ class GamutApp(QMainWindow):
         room = (screen.availableGeometry() if screen is not None
                 else QRect(0, 0, 1280, 840))
         self.resize(min(1280, room.width() - 40), min(840, room.height() - 60))
-        self.move(room.center().x() - self.width() // 2,
-                  room.top() + max(0, (room.height() - self.height()) // 2))
+        # Positioned properly in showEvent, not here: at this point the
+        # controls have not been built, so the window still grows afterwards
+        # and any centring done now is centring the wrong size.
+        self._placed = False
         self._slots: list[tuple[Path, object]] = []      # (path, Gamut, Measurement)
         self._reference: tuple[str, object] | None = None   # (name, Gamut)
         # Where an ICC or .gam comparison came from. Remembered so that
@@ -995,7 +997,11 @@ class GamutApp(QMainWindow):
         row.addWidget(controls, 0)
 
         self._view = QWebEngineView(body)
-        self._view.setMinimumWidth(560)
+        # 420, not 560: with the 366px controls column beside it, a 560 floor
+        # made the whole window refuse to go below 972px, which would hang off
+        # the side of a genuinely small display. A 420px scene is still worth
+        # looking at, and anybody can make the window bigger.
+        self._view.setMinimumWidth(420)
         # A web view paints white until a page has loaded, and again for an
         # instant on every reload, which reads as a bright frame round a dark
         # scene and as a flash when anything changes. Both the widget and the
@@ -1758,6 +1764,39 @@ class GamutApp(QMainWindow):
         self._apply_mode()
         if self._slots:
             self._redraw()          # the scene is repainted to match
+
+    def showEvent(self, event) -> None:            # noqa: N802 (Qt naming)
+        """Centre the window the first time it is shown, and never again.
+
+        Doing it in __init__ centred a size the window did not end up being:
+        the controls are built afterwards, the window grows to fit them, and
+        it drifts down and to the right by half of whatever it gained.
+
+        The screen used is the one the window is actually on, not the primary
+        one. With two displays those are often different, and centring on the
+        wrong one is what puts a window in a corner.
+        """
+        super().showEvent(event)
+        if self._placed:
+            return
+        self._placed = True
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+        room = screen.availableGeometry()
+        # Never larger than the screen it is on, with a margin so the frame
+        # stays grabbable, and never smaller than the window can actually be.
+        width = max(self.minimumWidth(), min(self.width(), room.width() - 40))
+        height = max(self.minimumHeight(), min(self.height(), room.height() - 60))
+        if (width, height) != (self.width(), self.height()):
+            self.resize(width, height)
+        frame = self.frameGeometry()
+        frame.moveCenter(room.center())
+        # If the frame is taller than the screen, centring would push its
+        # title bar off the top where it cannot be grabbed. Keep it inside.
+        frame.moveTop(max(room.top(), frame.top()))
+        frame.moveLeft(max(room.left(), frame.left()))
+        self.move(frame.topLeft())
 
     def _pair_icon(self, name: str, control) -> None:
         """Put the ⓘ called *name* on the same row as *control*.
