@@ -67,12 +67,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r python/requirements.txt pyinstaller
 
-      - name: Check it imports and reports its version
-        # QtWebEngine is imported at module level and wants a display; the
-        # offscreen platform lets a headless build machine answer.
+      - name: Check it reports its version
+        run: python python/gamut_app.py --version
+
+      - name: Check the whole graphical stack loads
+        # Separate from the version check on purpose: this is the one that can
+        # legitimately fail on a platform where QtWebEngine will not load, and
+        # it should say so loudly rather than hide inside another step.
+        working-directory: python
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python python/gamut_app.py --version
+        run: |
+          python -c "
+          import gamut_app
+          print('the application imports, including QtWebEngine')
+          "
 
       - name: Run the tests
         working-directory: python

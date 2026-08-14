@@ -22,6 +22,19 @@ wheels on all three.
 from __future__ import annotations
 
 import sys
+
+# ASKING THE VERSION SHOULD NOT NEED A BROWSER ENGINE. Everything below pulls
+# in Qt and QtWebEngine, which on some machines -- headless build runners in
+# particular -- cannot load at all. Answering here means "which version is
+# this?" works anywhere, and keeps that question separate from "does the whole
+# graphical stack work?", which deserves its own answer rather than being
+# smuggled into a version check.
+if __name__ == "__main__" and "--version" in sys.argv:
+    from version import APP_NAME, __version__ as _v
+
+    print(f"{APP_NAME} {_v}")
+    raise SystemExit(0)
+
 import tempfile
 from pathlib import Path
 
@@ -35,7 +48,8 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider,
                              QDialogButtonBox, QListView, QSizeGrip,
                              QSizePolicy, QStyle,
-                             QRadioButton, QToolButton, QVBoxLayout,
+                             QButtonGroup, QGridLayout, QRadioButton, QToolButton,
+                             QVBoxLayout,
                              QWidget)
 
 from version import APP_NAME, __version__
@@ -68,9 +82,35 @@ PALETTES = {
 }
 
 
-def stylesheet(mode: str) -> str:
-    """The whole window's styling, painted from one palette."""
-    c = PALETTES["light" if mode == "light" else "dark"]
+#: How the shapes in the picture are coloured. Each answers a different
+#: question, which is why this is a choice rather than a preference.
+PAINTS = (
+    ("true", "True colours"),
+    ("solid", "One colour each"),
+    ("lightness", "By lightness"),
+    ("chroma", "By chroma"),
+)
+
+#: Accent colours to choose from. Only the accent changes: the greys, the
+#: text and the backgrounds stay put, because they are what makes the window
+#: readable and an accent is what makes it yours. Each is picked to hold up
+#: against both the dark and the light background at the same weight.
+SCHEMES = {
+    "Magenta": dict(accent="#e8175d", dark_hot="#ff2e73", light_hot="#c9134f"),
+    "Teal": dict(accent="#0f9b8e", dark_hot="#17b9aa", light_hot="#0c7d72"),
+    "Amber": dict(accent="#d98324", dark_hot="#f09a3c", light_hot="#b56a17"),
+    "Violet": dict(accent="#7d5ba6", dark_hot="#9670c4", light_hot="#66478a"),
+    "Slate": dict(accent="#4a6b8a", dark_hot="#5f83a6", light_hot="#3a5670"),
+}
+
+
+def stylesheet(mode: str, scheme: str = "Magenta") -> str:
+    """The whole window's styling, painted from one palette and one accent."""
+    c = dict(PALETTES["light" if mode == "light" else "dark"])
+    chosen = SCHEMES.get(scheme, SCHEMES["Magenta"])
+    c["accent"] = chosen["accent"]
+    c["accent_hot"] = (chosen["light_hot"] if mode == "light"
+                       else chosen["dark_hot"])
     return f"""
 QWidget {{ background: {c["bg"]}; color: {c["text"]}; font-size: 13px; }}
 QGroupBox {{ border: 1px solid {c["line"]}; border-radius: 6px; margin-top: 10px;
@@ -374,6 +414,12 @@ class GamutApp(QMainWindow):
         self._appearance = str(self._store.value("appearance", "dark"))
         if self._appearance not in PALETTES:
             self._appearance = "dark"
+        self._scheme = str(self._store.value("scheme", "Magenta"))
+        if self._scheme not in SCHEMES:
+            self._scheme = "Magenta"
+        self._paint = str(self._store.value("paint", "true"))
+        if self._paint not in dict(PAINTS):
+            self._paint = "true"
 
         central = QWidget(self)
         row = QHBoxLayout(central)
@@ -442,15 +488,41 @@ class GamutApp(QMainWindow):
         theme_row = QHBoxLayout()
         theme_row.addWidget(QLabel("Appearance", col))
         theme_row.addStretch(1)
+        # EACH SET NEEDS ITS OWN GROUP. Radio buttons sharing a parent are one
+        # exclusive group in Qt, so choosing an accent silently unchecked the
+        # appearance -- both sets looked empty and neither could be read off the
+        # screen. Grouping them explicitly keeps the two questions separate.
+        self._theme_group = QButtonGroup(self)
         self._theme_light = QRadioButton("Light", col)
         self._theme_dark = QRadioButton("Dark", col)
         for radio in (self._theme_light, self._theme_dark):
+            self._theme_group.addButton(radio)
             theme_row.addWidget(radio)
         self._theme_light.toggled.connect(
             lambda on: self._set_appearance("light") if on else None)
         self._theme_dark.toggled.connect(
             lambda on: self._set_appearance("dark") if on else None)
         v.addLayout(theme_row)
+
+        # Five names will not fit one row of a 310 px column -- squeezed onto
+        # one line they came out as "Ma", "Tea", "Am". A grid gives every name
+        # its full width, and reads as a set of choices rather than a cramped
+        # strip.
+        v.addWidget(QLabel("Accent", col))
+        scheme_grid = QGridLayout()
+        scheme_grid.setContentsMargins(0, 0, 0, 0)
+        scheme_grid.setHorizontalSpacing(4)
+        self._scheme_group = QButtonGroup(self)
+        self._scheme_radios = {}
+        for i, name in enumerate(SCHEMES):
+            radio = QRadioButton(name, col)
+            self._scheme_group.addButton(radio)
+            radio.setToolTip(f"Use the {name.lower()} accent colour")
+            radio.toggled.connect(
+                lambda on, which=name: self._set_scheme(which) if on else None)
+            self._scheme_radios[name] = radio
+            scheme_grid.addWidget(radio, i // 3, i % 3)
+        v.addLayout(scheme_grid)
 
         sub = WrappedLabel(
             "Every colour your printer actually put on paper, worked out from "
@@ -663,6 +735,49 @@ class GamutApp(QMainWindow):
             "slider from dark to light to see how the shape changes.", g_look)
         slice_hint.setObjectName("hint")
         lv.addWidget(slice_hint)
+        drow = QHBoxLayout()
+        drow.addWidget(QLabel("Depth", g_look))
+        self._depth = QSlider(Qt.Orientation.Horizontal, g_look)
+        self._depth.setRange(0, 100)
+        self._depth.setValue(35)
+        self._depth.valueChanged.connect(self._on_depth_changed)
+        drow.addWidget(self._depth, 1)
+        self._depth_lbl = QLabel("35%", g_look)
+        self._depth_lbl.setFixedWidth(46)
+        drow.addWidget(self._depth_lbl)
+        lv.addLayout(drow)
+        depth_hint = WrappedLabel(
+            "How much the surface is shaded. At nothing it is lit evenly and "
+            "you see only its colours, which is the honest picture; turning it "
+            "up trades some of that for shading, which is what makes a rounded "
+            "thing look rounded and a dent look like a dent. It moves as you "
+            "drag, so you can stop wherever the shape reads best to you.",
+            g_look)
+        depth_hint.setObjectName("hint")
+        lv.addWidget(depth_hint)
+
+        v_paint = QLabel("How the shapes are coloured", g_look)
+        lv.addWidget(v_paint)
+        self._paint_group = QButtonGroup(self)
+        self._paint_radios = {}
+        paint_grid = QGridLayout()
+        paint_grid.setContentsMargins(0, 0, 0, 0)
+        for i, (key, label) in enumerate(PAINTS):
+            radio = QRadioButton(label, g_look)
+            self._paint_group.addButton(radio)
+            radio.toggled.connect(
+                lambda on, which=key: self._set_paint(which) if on else None)
+            self._paint_radios[key] = radio
+            paint_grid.addWidget(radio, i // 2, i % 2)
+        lv.addLayout(paint_grid)
+        paint_hint = WrappedLabel(
+            "True colours paints every point the colour it represents, which "
+            "is the honest picture of one gamut. One colour each is easier "
+            "when two shapes overlap — you can tell at a glance which is "
+            "which. By lightness and by chroma throw away the hue on purpose, "
+            "so the shape itself is what you see.", g_look)
+        paint_hint.setObjectName("hint")
+        lv.addWidget(paint_hint)
         self._detail = QComboBox(g_look)
         self._detail.addItem("Detail: normal", 20)
         self._detail.addItem("Detail: fine (slower to draw)", 32)
@@ -731,6 +846,23 @@ class GamutApp(QMainWindow):
         if self._slots:
             self._redraw()          # the scene is repainted to match
 
+    def _set_paint(self, which: str) -> None:
+        """Change how the shapes themselves are coloured, and remember it."""
+        if which == self._paint:
+            return
+        self._paint = which
+        self._store.setValue("paint", which)
+        if self._slots:
+            self._redraw()
+
+    def _set_scheme(self, which: str) -> None:
+        """Change the accent colour, and remember it for next time."""
+        if which == self._scheme or which not in SCHEMES:
+            return
+        self._scheme = which
+        self._store.setValue("scheme", which)
+        self._apply_mode()
+
     def _apply_mode(self) -> None:
         """Repaint the whole window, and say what the button will do next.
 
@@ -740,13 +872,23 @@ class GamutApp(QMainWindow):
         """
         app = QApplication.instance()
         if app is not None:
-            app.setStyleSheet(stylesheet(self._appearance))
+            app.setStyleSheet(stylesheet(self._appearance, self._scheme))
         radio = (self._theme_light if self._appearance == "light"
                  else self._theme_dark)
         if not radio.isChecked():
             radio.blockSignals(True)
             radio.setChecked(True)
             radio.blockSignals(False)
+        painted = self._paint_radios.get(self._paint)
+        if painted is not None and not painted.isChecked():
+            painted.blockSignals(True)
+            painted.setChecked(True)
+            painted.blockSignals(False)
+        chosen = self._scheme_radios.get(self._scheme)
+        if chosen is not None and not chosen.isChecked():
+            chosen.blockSignals(True)
+            chosen.setChecked(True)
+            chosen.blockSignals(False)
         colour = PALETTES[self._appearance]["bg"]
         self._view.setStyleSheet(f"background: {colour};")
         page = self._view.page()
@@ -916,7 +1058,8 @@ class GamutApp(QMainWindow):
                        opacity=self._opacity.value() / 100.0,
                        points=self._points.isChecked(), patches=clouds,
                        aspect=self._aspect.currentData(), styles=styles, lost=lost,
-                   mode=self._appearance)
+                   mode=self._appearance, paint=self._paint,
+                   depth=self._depth.value() / 100.0)
         except OSError as exc:
             QMessageBox.warning(self, "That could not be saved", str(exc))
             return
@@ -1069,6 +1212,32 @@ class GamutApp(QMainWindow):
             "<p>Open a measured chart — a <b>.ti3</b> file — to see the gamut "
             "it encloses.</p></div></body></html>")
 
+    def _on_depth_changed(self, value: int) -> None:
+        """Change the shading live, without rebuilding the picture.
+
+        The same trick the see-through slider uses: Plotly can restyle a scene
+        already on screen, so the shading moves as you drag, the camera stays
+        where you put it, and nothing is recomputed.
+        """
+        self._depth_lbl.setText(f"{value}%")
+        page = self._view.page()
+        if page is None or not self._slots:
+            return
+        d = max(0.0, min(1.0, value / 100.0))
+        lighting = (f"{{'ambient':{0.95 - 0.45 * d},"
+                    f"'diffuse':{0.10 + 0.75 * d},"
+                    f"'specular':{0.02 + 0.18 * d},"
+                    f"'roughness':{0.95 - 0.5 * d},"
+                    f"'fresnel':{0.02 + 0.1 * d}}}")
+        page.runJavaScript(
+            "(function(){var el=document.getElementsByClassName("
+            "'plotly-graph-div')[0];"
+            "if(!el||!window.Plotly||!el.data)return;"
+            "var idx=[];for(var i=0;i<el.data.length;i++)"
+            "if(el.data[i].type==='mesh3d')idx.push(i);"
+            f"if(idx.length)Plotly.restyle(el,{{lighting:{lighting}}},idx);"
+            "})();")
+
     def _on_opacity_changed(self, value: int) -> None:
         """Change how see-through the shapes are, live, as the slider moves.
 
@@ -1112,7 +1281,8 @@ class GamutApp(QMainWindow):
                    opacity=self._opacity.value() / 100.0,
                    points=self._points.isChecked(), patches=clouds,
                    aspect=self._aspect.currentData(), styles=styles, lost=lost,
-                   mode=self._appearance)
+                   mode=self._appearance, paint=self._paint,
+                   depth=self._depth.value() / 100.0)
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
         self._update_volume()
         self._update_coverage()

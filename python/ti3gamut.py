@@ -180,7 +180,7 @@ _KEPT = "rgb(105,112,126)"
 
 
 def _mesh_lost(gamut, name: str, opacity: float, lost,
-               kept: str = _KEPT) -> "list":
+               kept: str = _KEPT, depth: float = 0.35) -> "list":
     """The gamut painted by what the comparison cannot reproduce."""
     import plotly.graph_objects as go
     v = gamut.cylindrical() if gamut.space == "lab" else gamut.vertices
@@ -189,26 +189,70 @@ def _mesh_lost(gamut, name: str, opacity: float, lost,
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=gamut.faces[:, 0], j=gamut.faces[:, 1], k=gamut.faces[:, 2],
         vertexcolor=colours, opacity=opacity, flatshading=False,
-        lighting=dict(ambient=0.88, diffuse=0.35, specular=0.02,
-                      roughness=0.9, fresnel=0.02),
+        lighting=_lighting(depth),
         lightposition=dict(x=0, y=0, z=2000),
         name=f"{name} — red is out of reach", showlegend=True,
         hoverinfo="name")
 
 
-def _mesh(gamut, name: str, opacity: float, wireframe: bool):
-    """One Plotly mesh for a gamut, painted with its own colours."""
+#: A distinct colour per shape, for when telling them apart matters more than
+#: seeing what colours they hold.
+_FLAT = ("rgb(232,23,93)", "rgb(58,168,208)", "rgb(242,199,68)",
+         "rgb(107,208,122)", "rgb(157,124,216)")
+
+
+def _paint_vertices(gamut, paint: str, index: int) -> "list | None":
+    """The colour of every vertex, for the chosen way of painting.
+
+    Returns None for the plain case so the caller can use the gamut's own
+    colours without copying them.
+    """
+    if paint == "true":
+        return None
+    if paint == "solid":
+        return [_FLAT[index % len(_FLAT)]] * len(gamut.vertices)
+    v = gamut.vertices
+    if paint == "lightness":
+        t = np.clip(v[:, 0] / 100.0, 0, 1)
+    else:                                   # chroma
+        c = np.hypot(v[:, 1], v[:, 2])
+        t = np.clip(c / max(1e-6, c.max()), 0, 1)
+    # A ramp that stays readable on either background: dark blue-grey to warm
+    # white, rather than pure black to pure white which loses an end each time.
+    lo, hi = np.array([44, 52, 68]), np.array([250, 246, 236])
+    rgb = (lo + (hi - lo) * t[:, None]).astype(int)
+    return [f"rgb({r},{g},{b})" for r, g, b in rgb]
+
+
+def _lighting(depth: float) -> dict:
+    """Plotly lighting for a given amount of shape definition.
+
+    At 0 the surface is lit flat and shows only its colours; turning it up
+    trades some of that for shading, which is what makes a rounded thing look
+    rounded. Kept as one number because "ambient, diffuse, specular, roughness
+    and fresnel" is not a question anybody wants to be asked.
+    """
+    d = max(0.0, min(1.0, depth))
+    return dict(ambient=0.95 - 0.45 * d, diffuse=0.10 + 0.75 * d,
+                specular=0.02 + 0.18 * d, roughness=0.95 - 0.5 * d,
+                fresnel=0.02 + 0.1 * d)
+
+
+def _mesh(gamut, name: str, opacity: float, wireframe: bool,
+          paint: str = "true", index: int = 0, depth: float = 0.35):
+    """One Plotly mesh for a gamut, painted the way the user asked."""
     import plotly.graph_objects as go
     v = gamut.cylindrical()
-    colours = [f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
-               for r, g, b in gamut.colors]
+    chosen = _paint_vertices(gamut, paint, index)
+    colours = chosen if chosen is not None else [
+        f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
+        for r, g, b in gamut.colors]
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=gamut.faces[:, 0], j=gamut.faces[:, 1], k=gamut.faces[:, 2],
         vertexcolor=colours, opacity=opacity, name=name, showlegend=True,
         flatshading=False, hoverinfo="name",
-        lighting=dict(ambient=0.88, diffuse=0.35, specular=0.02,
-                      roughness=0.9, fresnel=0.02),
+        lighting=_lighting(depth),
         lightposition=dict(x=0, y=0, z=2000),
         contour=dict(show=wireframe, color="#888", width=2),
     )
@@ -317,7 +361,8 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str,
 def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
                points: bool = False, patches=None,
                aspect: str = "data", styles=None, lost=None,
-               mode: str = "dark") -> Path:
+               mode: str = "dark", paint: str = "true",
+               depth: float = 0.35) -> Path:
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -333,9 +378,10 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
         how = (styles[i] if styles is not None and i < len(styles) else "solid")
         marked = lost[i] if lost is not None and i < len(lost) else None
         if marked is not None:
-            fig.add_trace(_mesh_lost(g, name, base, marked, c["kept"]))
+            fig.add_trace(_mesh_lost(g, name, base, marked, c["kept"], depth))
         elif how in ("solid", "solid+mesh"):
-            fig.add_trace(_mesh(g, name, opacity=base, wireframe=False))
+            fig.add_trace(_mesh(g, name, opacity=base, wireframe=False,
+                                paint=paint, index=i, depth=depth))
         if how in ("mesh", "solid+mesh"):
             fig.add_trace(_edges(g, name, colour=c["wire"],
                                  width=1.0 if how == "mesh" else 0.7))
