@@ -21,8 +21,14 @@ jobs:
           - label: macOS arm64
             runner: macos-14
             asset: GamutViewer-macOS-arm64
+          # macos-15-intel, NOT macos-13. The macos-13 image is the retired
+          # Intel one: jobs asking for it are accepted and then sit in the
+          # queue for hours without ever being allocated a runner, which
+          # blocks the whole matrix and with it the release job, because
+          # `needs: build` waits for every leg. A job that never starts is
+          # worse than one that fails.
           - label: macOS x86_64
-            runner: macos-13
+            runner: macos-15-intel
             asset: GamutViewer-macOS-x86_64
           - label: Windows x64
             runner: windows-latest
@@ -53,14 +59,30 @@ jobs:
           # 24.04 renamed libasound2 to libasound2t64, and apt fails the whole
           # run over one unknown name -- so each package is asked for on its
           # own and the alternative spelling is tried when one is missing.
+          # The x86_64 image happens to ship most of QtWebEngine's runtime
+          # dependencies already; the arm64 one is leaner and does not, so
+          # importing the app died there while passing on x86_64. Everything
+          # QtWebEngine actually dlopen()s is therefore asked for explicitly
+          # rather than relied on being present.
           for pkg in libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
-                     libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libnss3 \
-                     libdbus-1-3; do
+                     libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
+                     libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 \
+                     libxcb-xkb1 libxcb-image0 libxcb-sync1 libxcb-xfixes0 \
+                     libnss3 libnspr4 libdbus-1-3 libxcomposite1 libxdamage1 \
+                     libxrandr2 libxtst6 libxi6 libxshmfence1 libdrm2 \
+                     libgbm1 libcups2 libatk1.0-0 libatk-bridge2.0-0 \
+                     libpango-1.0-0 libpangocairo-1.0-0 libcairo2 \
+                     libfontconfig1 libfreetype6; do
             sudo apt-get install -y "$pkg" || echo "skipped $pkg"
           done
-          sudo apt-get install -y libasound2t64 \
-            || sudo apt-get install -y libasound2 \
-            || echo "no libasound package under either name"
+          # Renamed under the 64-bit time_t transition; ask for both spellings.
+          for pair in "libasound2t64 libasound2" "libcups2t64 libcups2" \
+                      "libatk1.0-0t64 libatk1.0-0" \
+                      "libatk-bridge2.0-0t64 libatk-bridge2.0-0"; do
+            set -- $pair
+            sudo apt-get install -y "$1" || sudo apt-get install -y "$2" \
+              || echo "no package for $1 under either name"
+          done
 
       - name: Install dependencies
         run: |
@@ -78,10 +100,37 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          python -c "
-          import gamut_app
-          print('the application imports, including QtWebEngine')
-          "
+          # Import the pieces one at a time and say which one failed. A bare
+          # "import gamut_app" that dies gives an ImportError naming a Python
+          # module, when the real cause is almost always a missing SYSTEM
+          # library underneath Qt -- and on a cancelled run the log can be
+          # discarded before anybody reads it. So the diagnosis is printed
+          # here, while the job is running, rather than reconstructed later.
+          python - <<'PROBE'
+          import subprocess, sys, traceback
+          for step, module in (("Qt core", "PyQt6.QtCore"),
+                               ("Qt widgets", "PyQt6.QtWidgets"),
+                               ("QtWebEngine", "PyQt6.QtWebEngineWidgets"),
+                               ("the application", "gamut_app")):
+              try:
+                  __import__(module)
+                  print(f"ok   {step} ({module})")
+              except BaseException:
+                  print(f"FAIL {step} ({module})")
+                  traceback.print_exc()
+                  try:
+                      import PyQt6, pathlib
+                      root = pathlib.Path(PyQt6.__file__).parent
+                      for lib in sorted(root.rglob("libQt6WebEngineCore*")):
+                          print(f"--- ldd {lib} ---")
+                          print(subprocess.run(["ldd", str(lib)],
+                                               capture_output=True,
+                                               text=True).stdout)
+                  except Exception as exc:
+                      print(f"(could not inspect the Qt libraries: {exc})")
+                  sys.exit(1)
+          print("the whole graphical stack loads, including QtWebEngine")
+          PROBE
 
       - name: Run the tests
         working-directory: python
