@@ -50,9 +50,10 @@ from typing import Literal
 import numpy as np
 
 __all__ = ["Gamut", "build_gamut", "coverage", "mesh_volume", "outside_of", "slice_at", "delta_e_2000", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
-           "lab_to_lch_cartesian", "WHITE_POINTS"]
+           "lab_to_lch_cartesian", "WHITE_POINTS",
+           "xyz_to_luv", "luv_to_xyz", "SPACES", "AXES"]
 
-Space = Literal["xyz", "lab"]
+Space = Literal["xyz", "lab", "luv"]
 
 #: CIE 1931 2° white points, XYZ normalised to Y = 1.
 WHITE_POINTS: dict[str, np.ndarray] = {
@@ -129,6 +130,58 @@ def lab_to_xyz(lab, white_point="D50") -> np.ndarray:
     return r * _as_white_point(white_point)
 
 
+def xyz_to_luv(xyz, white_point="D50") -> np.ndarray:
+    """CIE XYZ (Y = 1 for white) to CIE 1976 L*u*v* under *white_point*.
+
+    CIELUV shares CIELAB's lightness exactly — the same L* from the same Y —
+    and differs in how it places the colour. It is built on the u', v'
+    chromaticity diagram, which is the one that mixes additively: a blend of
+    two lights lies on the straight line between them. That makes it the space
+    displays and light sources are usually discussed in, and it stretches the
+    blues and greens noticeably compared with CIELAB.
+
+    The u', v' denominator vanishes only for XYZ = (0, 0, 0), which is black;
+    there u* = v* = 0 is the right answer, so it is substituted rather than
+    left as a division warning.
+    """
+    xyz = np.asarray(xyz, dtype=float)
+    white = _as_white_point(white_point)
+    yr = xyz[..., 1] / white[1]
+    ell = np.where(yr > _DELTA3, 116.0 * np.cbrt(np.abs(yr)) - 16.0,
+                   _KAPPA * yr)
+
+    def _uv(c):
+        d = c[..., 0] + 15.0 * c[..., 1] + 3.0 * c[..., 2]
+        safe = np.where(d == 0.0, 1.0, d)
+        return (np.where(d == 0.0, 0.0, 4.0 * c[..., 0] / safe),
+                np.where(d == 0.0, 0.0, 9.0 * c[..., 1] / safe))
+
+    up, vp = _uv(xyz)
+    upn, vpn = _uv(white[None, :])
+    return np.stack([ell,
+                     13.0 * ell * (up - upn),
+                     13.0 * ell * (vp - vpn)], axis=-1)
+
+
+def luv_to_xyz(luv, white_point="D50") -> np.ndarray:
+    """The inverse of :func:`xyz_to_luv`."""
+    luv = np.asarray(luv, dtype=float)
+    white = _as_white_point(white_point)
+    ell = luv[..., 0]
+    d = white[0] + 15.0 * white[1] + 3.0 * white[2]
+    upn, vpn = 4.0 * white[0] / d, 9.0 * white[1] / d
+    y = np.where(ell > _KAPPA * _DELTA3, ((ell + 16.0) / 116.0) ** 3,
+                 ell / _KAPPA) * white[1]
+    safe = np.where(ell == 0.0, 1.0, 13.0 * ell)
+    up = np.where(ell == 0.0, upn, luv[..., 1] / safe + upn)
+    vp = np.where(ell == 0.0, vpn, luv[..., 2] / safe + vpn)
+    vsafe = np.where(vp == 0.0, 1.0, vp)
+    x = np.where(vp == 0.0, 0.0, 9.0 * y * up / (4.0 * vsafe))
+    z = np.where(vp == 0.0, 0.0,
+                 (9.0 * y - (15.0 * vp * y) - (vp * x)) / (3.0 * vsafe))
+    return np.stack([x, y, z], axis=-1)
+
+
 def xyz_to_srgb(xyz, white_point="D50", clip: bool = True) -> np.ndarray:
     """CIE XYZ to non-linear sRGB in 0..1, for painting a vertex its own colour.
 
@@ -151,6 +204,35 @@ def xyz_to_srgb(xyz, white_point="D50", clip: bool = True) -> np.ndarray:
                     12.92 * linear,
                     1.055 * np.power(np.abs(linear), 1 / 2.4) - 0.055)
     return np.clip(srgb, 0.0, 1.0) if clip else srgb
+
+
+#: The spaces a gamut can be built and drawn in, and what each is good for.
+#: Every conversion goes through XYZ, so a space needs only a pair of
+#: functions here to be usable everywhere in the app.
+SPACES = ("lab", "luv", "xyz")
+
+_TO_XYZ = {
+    "xyz": lambda c, wp: np.asarray(c, dtype=float),
+    "lab": lab_to_xyz,
+    "luv": luv_to_xyz,
+}
+_FROM_XYZ = {
+    "xyz": lambda c, wp: np.asarray(c, dtype=float),
+    "lab": xyz_to_lab,
+    "luv": xyz_to_luv,
+}
+
+#: How each space is drawn: the three axis titles, and whether the two colour
+#: axes are rearranged into a hue circle around a lightness axis. XYZ has no
+#: lightness and no hue, so it is plotted exactly as measured.
+AXES = {
+    "lab": dict(cylindrical=True, x="a*  (chroma →)", y="b*", z="L*",
+                units="cubic Lab units"),
+    "luv": dict(cylindrical=True, x="u*  (chroma →)", y="v*", z="L*",
+                units="cubic Luv units"),
+    "xyz": dict(cylindrical=False, x="X", y="Y", z="Z",
+                units="cubic XYZ units"),
+}
 
 
 def lab_to_lch_cartesian(lab) -> np.ndarray:
@@ -185,9 +267,16 @@ class Gamut:
     mode: str
 
     def cylindrical(self) -> np.ndarray:
-        """``vertices`` laid out as (C·cos h, C·sin h, L). Lab only."""
-        if self.space != "lab":
-            raise ValueError("cylindrical() needs a Lab gamut")
+        """``vertices`` laid out as (C·cos h, C·sin h, L).
+
+        Both of the opponent spaces arrange the same way: two colour axes and
+        lightness up the middle. XYZ has no lightness axis and no hue angle,
+        so it is plotted as it is and asking for this is a mistake worth
+        reporting rather than quietly returning the wrong picture.
+        """
+        if self.space not in ("lab", "luv"):
+            raise ValueError(
+                f"cylindrical() needs a Lab or Luv gamut, not {self.space!r}")
         return lab_to_lch_cartesian(self.vertices)
 
 
@@ -237,8 +326,10 @@ def build_gamut(colors, drive_values=None, *, space: Space = "lab",
                       consistent units (0..1 or 0..255). Supplying them selects
                       mode 2, which follows the device's real boundary instead
                       of throwing a convex hull around it. Strongly preferred.
-    ``space``         the space to build in: "lab" (default) or "xyz".
-    ``input_space``   what ``colors`` already are: "xyz" (default) or "lab".
+    ``space``         the space to build and draw in: "lab" (default),
+                      "luv" or "xyz".
+    ``input_space``   what ``colors`` already are: "xyz" (default), "lab"
+                      or "luv".
     ``white_point``   name or XYZ triple; D50 for print, D65 for display.
 
     Rows that are NaN or infinite are dropped — a failed patch reading should
@@ -265,16 +356,16 @@ def build_gamut(colors, drive_values=None, *, space: Space = "lab",
         raise ValueError(
             f"need at least 4 usable colours to enclose a volume, got {len(colors)}")
 
-    # Into the space we are building in, and keep XYZ for painting.
-    if input_space == space:
-        pts = colors
-    elif input_space == "xyz" and space == "lab":
-        pts = xyz_to_lab(colors, white_point)
-    elif input_space == "lab" and space == "xyz":
-        pts = lab_to_xyz(colors, white_point)
-    else:
-        raise ValueError(f"cannot go from {input_space!r} to {space!r}")
-    xyz = colors if input_space == "xyz" else lab_to_xyz(colors, white_point)
+    # Into the space we are building in, and keep XYZ for painting. Everything
+    # goes through XYZ rather than each pair of spaces knowing about each
+    # other: three spaces would otherwise need six conversions, and adding a
+    # fourth would need eight more.
+    for name, value in (("space", space), ("input_space", input_space)):
+        if value not in SPACES:
+            raise ValueError(
+                f"{name} must be one of {', '.join(SPACES)}, got {value!r}")
+    xyz = _TO_XYZ[input_space](colors, white_point)
+    pts = colors if input_space == space else _FROM_XYZ[space](xyz, white_point)
 
     try:
         hull = ConvexHull(pts)

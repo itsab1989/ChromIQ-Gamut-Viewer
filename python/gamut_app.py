@@ -46,12 +46,12 @@ import numpy as np
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
 from PyQt6.QtCore import (QRect, QSettings, QSize, QStandardPaths, Qt,
-                          QUrl)
+                          QUrl, pyqtSignal)
 from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QPainter,
                          QPen, QPixmap)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel,
-                             QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider,
+                             QDialog, QMainWindow, QPushButton, QScrollArea, QSlider,
                              QDialogButtonBox, QListView, QSizeGrip,
                              QSizePolicy, QStyle,
                              QButtonGroup, QGridLayout, QRadioButton, QToolButton,
@@ -212,14 +212,38 @@ QSlider::handle:horizontal {{ width: 13px; margin: -5px 0; border-radius: 7px;
    the border to draw a ring and the box grows to 22 while the radius stays 8,
    which is how a circle turns into a rounded square. The checked state keeps
    the same 1px border and simply fills. */
-QRadioButton {{ spacing: 7px; }}
+/* A floor under the row height. The 14px indicator plus its border makes a
+   radio 16px tall, but in a grid the rows were allotted 15px and the buttons
+   drew one pixel into each other. Reserving 20px gives the row more than the
+   widget needs, so the grid can never squeeze two rows into touching. */
+QRadioButton {{ spacing: 7px; min-height: 20px; }}
 QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 8px;
                           border: 1px solid {c["line_soft"]};
                           background: {c["panel"]}; }}
 QRadioButton::indicator:checked {{ background: {c["accent"]};
                                   border: 1px solid {c["accent"]}; }}
 QRadioButton::indicator:hover {{ border: 1px solid {c["accent"]}; }}
+/* The window's own message box. The card carries the background so the
+   frameless dialog has a visible edge, and the heading is the only bold
+   thing in it — a body that is entirely bold emphasises nothing. */
+QDialog#notice {{ background: transparent; }}
+QFrame#noticeCard {{ background: {c["panel"]}; border: 1px solid {c["line"]};
+                     border-radius: 10px; }}
+QLabel#noticeTitle {{ font-size: 15px; font-weight: 600; color: {c["text"]};
+                      background: transparent; }}
+QLabel#noticeBody {{ font-size: 12px; font-weight: 400; color: {c["dim"]};
+                     background: transparent; }}
+QFrame#noticeCard QScrollArea {{ background: transparent; }}
+QFrame#noticeCard QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QLabel#hint {{ color: {c["faint"]}; font-size: 11px; }}
+/* The line that unfolds an explanation. Quiet enough that it never competes
+   with the control it belongs to, but it takes the accent colour on hover so
+   it is visibly something you can click rather than another caption. */
+QToolButton#hintToggle {{ color: {c["faint"]}; font-size: 11px;
+                          border: none; background: transparent;
+                          padding: 1px 0; text-align: left; }}
+QToolButton#hintToggle:hover {{ color: {c["accent"]}; }}
+QToolButton#hintToggle:checked {{ color: {c["dim"]}; }}
 QLabel#volume {{ font-size: 21px; font-weight: 600; color: {c["text"]}; }}
 QLabel#slot {{ color: {c["dim"]}; }}
 QScrollArea {{ border: none; background: {c["bg"]}; }}
@@ -376,14 +400,29 @@ class WrappedLabel(QLabel):
     which also means a translation twice the length of the English still fits.
     """
 
-    def __init__(self, text: str = "", parent=None) -> None:
+    def __init__(self, text: str = "", parent=None, *,
+                 hide_when_empty: bool = False) -> None:
         super().__init__(text, parent)
+        self._hide_when_empty = hide_when_empty
         self.setWordWrap(True)
         self.setSizePolicy(QSizePolicy.Policy.Preferred,
                            QSizePolicy.Policy.MinimumExpanding)
         self._refit()
 
     def _refit(self) -> None:
+        # A readout with nothing to say should take no room. Empty text still
+        # measures one line high, which left a blank band under the Compare
+        # with box before anything had been chosen, and another where the
+        # coverage figures appear. Opt-in, because a hint's label is hidden
+        # while it is folded even though it has plenty of text -- showing it
+        # again here would unfold it behind the user's back.
+        if self._hide_when_empty:
+            has_text = bool(self.text().strip())
+            if self.isVisibleTo(self.parentWidget()) != has_text:
+                self.setVisible(has_text)
+            if not has_text:
+                self.setMinimumHeight(0)
+                return
         width = max(60, self.width())
         rect = self.fontMetrics().boundingRect(
             QRect(0, 0, width, 10_000),
@@ -400,6 +439,212 @@ class WrappedLabel(QLabel):
     def setText(self, text: str) -> None:      # noqa: N802 (Qt naming)
         super().setText(text)
         self._refit()
+
+
+class Notice(QDialog):
+    """The window's own message box, instead of the system one.
+
+    A native QMessageBox looked wrong here for three reasons, all visible at
+    once in a single screenshot of the reset question:
+
+    * Its heading text is drawn bold *and* the whole body inherits that, so
+      five sentences arrive shouting with nothing standing out from anything
+      else.
+    * Its standard "?" glyph is painted for the system appearance, not this
+      window's, so in dark mode it was a near-black question mark on a
+      near-black panel — a smudge.
+    * On macOS the frame follows the *system* appearance while the panel
+      follows *this window's* setting, so a dark dialog wore a light title
+      bar.
+
+    This draws the panel itself: a real heading, an unbolded body under it,
+    and the same buttons the rest of the window uses. Frameless, so the title
+    bar cannot contradict the appearance the user chose. Escape still cancels,
+    because QDialog rejects on Escape and the cancelling button is the one
+    that carries the default.
+    """
+
+    def __init__(self, parent, title: str, body: str, *, rich: bool = False,
+                 ok: str = "OK", cancel: str | None = None,
+                 scroll: bool = False) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.setObjectName("notice")
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        card = QFrame(self)
+        card.setObjectName("noticeCard")
+        outer.addWidget(card)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(26, 22, 26, 20)
+        lay.setSpacing(0)
+
+        head = QLabel(title, card)
+        head.setObjectName("noticeTitle")
+        head.setWordWrap(True)
+        head.setSizePolicy(QSizePolicy.Policy.Preferred,
+                           QSizePolicy.Policy.Minimum)
+        lay.addWidget(head)
+        lay.addSpacing(10)      # heading to body: they belong together
+
+        # A plain wrapping label, NOT the WrappedLabel used in the side panel.
+        # That one claims MinimumExpanding height so it survives a scroll area
+        # whose width keeps changing; in a dialog of fixed width it simply
+        # grows, and the message ends up floating in the middle of a window
+        # twice the height it needs.
+        text = QLabel(body, card)
+        text.setObjectName("noticeBody")
+        text.setWordWrap(True)
+        text.setSizePolicy(QSizePolicy.Policy.Preferred,
+                           QSizePolicy.Policy.Minimum)
+        if rich:
+            text.setTextFormat(Qt.TextFormat.RichText)
+        text.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        if scroll:
+            # Only the glossary is long enough to need this; everything else
+            # would gain a scroll bar it never uses.
+            area = QScrollArea(card)
+            area.setWidgetResizable(True)
+            area.setWidget(text)
+            area.setMinimumHeight(360)
+            lay.addWidget(area, 1)
+        else:
+            lay.addWidget(text)
+
+        lay.addSpacing(20)      # body to buttons: a clear break before acting
+        buttons = QHBoxLayout()
+        buttons.setSpacing(10)
+        buttons.addStretch(1)
+        if cancel is not None:
+            no = QPushButton(cancel, card)
+            no.setObjectName("secondary")
+            no.clicked.connect(self.reject)
+            buttons.addWidget(no)
+            no.setDefault(True)          # Enter cancels; the safe way round
+        yes = QPushButton(ok, card)
+        yes.clicked.connect(self.accept)
+        buttons.addWidget(yes)
+        if cancel is None:
+            yes.setDefault(True)
+        lay.addLayout(buttons)
+        # A width chosen before the text is laid out, not after. A dialog that
+        # sizes itself to its longest sentence gives a different shape for
+        # every message; a fixed measure keeps them all recognisably the same
+        # window and keeps the lines short enough to read comfortably.
+        self.setFixedWidth(470)
+        # Fixed to exactly what the content needs. With only a minimum, the
+        # dialog opened taller than its text and QVBoxLayout handed the spare
+        # height to the labels, which pushed the heading away from the body it
+        # introduces and left a band of nothing under both.
+        lay.setSizeConstraint(
+            QVBoxLayout.SizeConstraint.SetMinimumSize if scroll
+            else QVBoxLayout.SizeConstraint.SetFixedSize)
+
+    # The three shapes the window actually uses, named for what they do.
+    @staticmethod
+    def say(parent, title: str, body: str) -> None:
+        """Tell the user something that needs no decision."""
+        Notice(parent, title, body).exec()
+
+    @staticmethod
+    def warn(parent, title: str, body: str) -> None:
+        """Explain something that did not work. Never a bare error string."""
+        Notice(parent, title, body).exec()
+
+    @staticmethod
+    def ask(parent, title: str, body: str, *, ok: str = "Yes",
+            cancel: str = "Cancel") -> bool:
+        """Ask before doing something the user cannot undo with one click."""
+        return Notice(parent, title, body, ok=ok,
+                      cancel=cancel).exec() == QDialog.DialogCode.Accepted
+
+
+class Hint(QWidget):
+    """One paragraph of help, folded away behind a line you can click.
+
+    The explanations here are written for somebody meeting a printer gamut for
+    the first time, so they are long on purpose. Shown all at once they are
+    also most of the column: eighteen paragraphs push the controls they
+    describe off the bottom of the window, and somebody who has read them once
+    has to scroll past them for ever after.
+
+    So each one starts folded behind its own "What this does" line, and stays
+    wherever it is left — reading an explanation is a thing you do once, and
+    the window should remember that you did. Nothing is hidden that cannot be
+    reached in one click, and the arrow shows which way it goes.
+    """
+
+    #: Named to match QCheckBox, so the one persistence table can drive a
+    #: Hint and a checkbox through the same branch instead of growing a
+    #: special case for a widget that behaves identically.
+    stateChanged = pyqtSignal(int)
+
+    def __init__(self, text: str, parent=None) -> None:
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
+        self._toggle = QToolButton(self)
+        self._toggle.setObjectName("hintToggle")
+        self._toggle.setText("What this does")
+        self._toggle.setCheckable(True)
+        self._toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self._toggle.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        # Qt draws the arrow to fill the icon rect, which at the default size
+        # is a chunky triangle beside 11px text. This is a quiet disclosure
+        # marker, not a button, so it wants to be smaller than the words.
+        self._toggle.setIconSize(QSize(8, 8))
+        self._toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._toggle.setToolTip("Show or hide the explanation for this setting")
+        self._toggle.toggled.connect(self._on_toggled)
+        lay.addWidget(self._toggle, 0, Qt.AlignmentFlag.AlignLeft)
+        self._label = WrappedLabel(text, self)
+        self._label.setObjectName("hint")
+        self._label.setVisible(False)
+        lay.addWidget(self._label)
+
+    def _on_toggled(self, on: bool) -> None:
+        # The arrow is the only thing telling somebody the text is still
+        # there when it is folded, so it has to follow the state exactly.
+        self._toggle.setArrowType(Qt.ArrowType.DownArrow if on
+                                  else Qt.ArrowType.RightArrow)
+        self._label.setVisible(on)
+        if on:
+            self._label._refit()
+        self.stateChanged.emit(1 if on else 0)
+
+    # A checkbox-shaped face, so the one persistence table drives these too
+    # rather than needing a second mechanism that could fall out of step.
+    def isChecked(self) -> bool:
+        return self._toggle.isChecked()
+
+    def setChecked(self, on: bool) -> None:
+        self._toggle.setChecked(bool(on))
+
+    def setText(self, text: str) -> None:
+        self._label.setText(text)
+        self._label._refit()
+
+    def text(self) -> str:
+        return self._label.text()
+
+
+def _profile_label(path: Path) -> str:
+    """What to call a profile in the readouts, so it cannot be mistaken for
+    a measurement.
+
+    A profile built from a chart usually carries the chart's own name, so
+    comparing the two produced sentences like "97.2% of what Glossy-paper can
+    print also fits inside Glossy-paper" — which reads as nonsense and hides
+    the one distinction this whole window exists to draw. Saying "(profile)"
+    keeps described and measured apart on every line that mentions them.
+    """
+    kind = "gamut file" if path.suffix.lower() == ".gam" else "profile"
+    return f"{path.stem} ({kind})"
 
 
 def _wrapped(label: QLabel, width: int = 0) -> QLabel:
@@ -478,6 +723,11 @@ class GamutApp(QMainWindow):
                   room.top() + max(0, (room.height() - self.height()) // 2))
         self._slots: list[tuple[Path, object]] = []      # (path, Gamut, Measurement)
         self._reference: tuple[str, object] | None = None   # (name, Gamut)
+        # Where an ICC or .gam comparison came from. Remembered so that
+        # changing the space or the white point can rebuild it in the new
+        # one instead of asking for the file again -- or, worse, leaving a
+        # comparison behind in the space it was first built in.
+        self._reference_path: Path | None = None
         self._tmp = Path(tempfile.mkdtemp(prefix="gamutview-"))
         #: Where the last file came from, so the next dialog opens there.
         self._last_folder = ""
@@ -537,6 +787,7 @@ class GamutApp(QMainWindow):
         self.setCentralWidget(central)
         self.setAcceptDrops(True)      # drop a .ti3 anywhere on the window
         self._restore_everything()
+        self._apply_space_availability()
         self._apply_mode()
         self._show_placeholder()
         # Anything the user moves is written straight away, so a crash or a
@@ -619,7 +870,7 @@ class GamutApp(QMainWindow):
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setVisible(False)
         fv.addWidget(self._clear_btn)
-        hint = WrappedLabel(
+        hint = Hint(
             "Open the .ti3 file ArgyllCMS saved when you measured a printed "
             "chart — or simply drag it onto this window. Open a second one and "
             "both are drawn together, so you can see which paper holds more "
@@ -628,7 +879,7 @@ class GamutApp(QMainWindow):
             "profile is not a measurement, so it goes into Compare with "
             "below rather than here — it is what your printer is described "
             "as being able to do, next to what it actually did.", g_files)
-        hint.setObjectName("hint"); _wrapped(hint)
+        hint.setObjectName("hint_hint")
         fv.addWidget(hint)
         v.addWidget(g_files)
 
@@ -640,7 +891,7 @@ class GamutApp(QMainWindow):
         self._mode.addItem("Wrap it in a simple skin", "hull")
         self._mode.currentIndexChanged.connect(self._rebuild)
         bv.addWidget(self._mode)
-        mode_hint = WrappedLabel(
+        mode_hint = Hint(
             "Follow the real edge is the one to use. The edge of what a printer "
             "can print is not smooth — it has real "
             "dents in it, most noticeably in the deep blues. The recommended "
@@ -650,7 +901,7 @@ class GamutApp(QMainWindow):
             "skin over the whole thing, which looks tidier but claims more "
             "colour than your printer really has. Switch between them to see "
             "the difference.", g_build)
-        mode_hint.setObjectName("hint"); _wrapped(mode_hint)
+        mode_hint.setObjectName("hint_mode_hint")
         bv.addWidget(mode_hint)
         v.addWidget(g_build)
 
@@ -665,17 +916,17 @@ class GamutApp(QMainWindow):
         self._compare.addItem("Everything the eye can see", ("visible", None))
         self._compare.currentIndexChanged.connect(self._on_compare_changed)
         cvv.addWidget(self._compare)
-        self._compare_note = WrappedLabel("", g_cmp)
+        self._compare_note = WrappedLabel("", g_cmp, hide_when_empty=True)
         self._compare_note.setObjectName("hint"); _wrapped(self._compare_note)
         cvv.addWidget(self._compare_note)
-        cmp_hint = WrappedLabel(
+        cmp_hint = Hint(
             "Comparing with a second measurement asks which of two papers can "
             "print more. Comparing with a standard space asks whether the "
             "images people send you will survive on this paper. Comparing with "
             "every visible colour asks how much of what your eyes can see this "
             "paper can hold at all. They are three different questions and the "
             "answers are not interchangeable.", g_cmp)
-        cmp_hint.setObjectName("hint"); _wrapped(cmp_hint)
+        cmp_hint.setObjectName("hint_cmp_hint")
         cvv.addWidget(cmp_hint)
         v.addWidget(g_cmp)
 
@@ -685,20 +936,48 @@ class GamutApp(QMainWindow):
         self._white = QComboBox(g_cs)
         self._white.addItem("Daylight D50 — for print", "D50")
         self._white.addItem("Daylight D65 — for screens", "D65")
-        self._white.currentIndexChanged.connect(self._rebuild)
+        self._white.currentIndexChanged.connect(self._on_white_changed)
         cv.addWidget(self._white)
         self._relative = QCheckBox("Judge each paper against its own white", g_cs)
         self._relative.stateChanged.connect(self._rebuild)
         cv.addWidget(self._relative)
-        rel_hint = WrappedLabel(
+        rel_hint = Hint(
             "Papers are not equally bright — a warm rag paper starts off duller "
             "than a bright glossy one. Tick this and each paper is judged "
             "against its own white, so two papers can be compared fairly on "
             "shape rather than on brightness. This is what happens anyway when "
             "you print with a normal profile. Leave it unticked to see the raw "
             "numbers your instrument reported.", g_cs)
-        rel_hint.setObjectName("hint"); _wrapped(rel_hint)
+        rel_hint.setObjectName("hint_rel_hint")
         cv.addWidget(rel_hint)
+
+        cv.addWidget(QLabel("Draw it in", g_cs))
+        self._space = QComboBox(g_cs)
+        self._space.addItem("CIELAB — how far apart colours look", "lab")
+        self._space.addItem("CIELUV — the space displays are described in", "luv")
+        self._space.addItem("CIE XYZ — the raw measurement", "xyz")
+        self._space.currentIndexChanged.connect(self._on_space_changed)
+        cv.addWidget(self._space)
+        space_hint = Hint(
+            "CIELAB is the one to use for print, and the one every number in "
+            "this window is quoted in unless you change it. It is built so "
+            "that moving the same distance anywhere in it looks like the same "
+            "size of change, which is what makes a volume worth comparing.\n\n"
+            "CIELUV has exactly the same lightness but arranges the colours "
+            "differently. It is the space displays and light sources are "
+            "usually described in, and it stretches the blues and greens, so "
+            "the same paper looks like a different shape.\n\n"
+            "CIE XYZ is the measurement before any of that is applied. It is "
+            "the honest raw form and it is deliberately not uniform: equal "
+            "distances in it do not look equally different, so shapes drawn "
+            "in it are hard to judge by eye. It has no lightness axis and no "
+            "grey axis either, so the slice, the rings and the greys are not "
+            "available while it is chosen.\n\n"
+            "Volumes and percentages are only comparable within one space. "
+            "Change this and every number changes with it — that is expected, "
+            "not a fault.", g_cs)
+        space_hint.setObjectName("hint_space_hint")
+        cv.addWidget(space_hint)
         v.addWidget(g_cs)
 
         # --- appearance -------------------------------------------------------
@@ -711,7 +990,7 @@ class GamutApp(QMainWindow):
         self._target.addItem("Set this for: the comparison", 2)
         self._target.currentIndexChanged.connect(self._on_target_changed)
         lv.addWidget(self._target)
-        target_hint = WrappedLabel(
+        target_hint = Hint(
             "Everything below applies to whatever is chosen here. Leave it on "
             "all shapes together and one change moves them all, which is what "
             "you want most of the time. Pick a single shape and only that one "
@@ -719,7 +998,7 @@ class GamutApp(QMainWindow):
             "fully opaque while the thing you are comparing against is a faint "
             "outline behind it. A shape you have set on its own keeps its own "
             "value and stops following the shared one.", g_look)
-        target_hint.setObjectName("hint")
+        target_hint.setObjectName("hint_target_hint")
         lv.addWidget(target_hint)
         orow = QHBoxLayout()
         orow.addWidget(QLabel("See-through", g_look))
@@ -746,7 +1025,7 @@ class GamutApp(QMainWindow):
         self._aspect.addItem("Even up the box", "cube")
         self._aspect.currentIndexChanged.connect(self._redraw)
         lv.addWidget(self._aspect)
-        aspect_hint = WrappedLabel(
+        aspect_hint = Hint(
             "To scale, one step of colour difference is drawn the same length "
             "whichever direction it goes in, which is what makes the shape and "
             "the amount below honest. Printers have roughly twice as much "
@@ -754,7 +1033,7 @@ class GamutApp(QMainWindow):
             "really is wide and flat — that is your printer, not a drawing "
             "error. Evening up the box is easier on the eye but no longer to "
             "scale.", g_look)
-        aspect_hint.setObjectName("hint"); _wrapped(aspect_hint)
+        aspect_hint.setObjectName("hint_aspect_hint")
         lv.addWidget(aspect_hint)
         self._style_mine = QComboBox(g_look)
         self._style_second = QComboBox(g_look)
@@ -774,14 +1053,14 @@ class GamutApp(QMainWindow):
         # An outer shape starts as a cage so whatever is inside stays visible.
         self._style_second.setCurrentIndex(2)
         self._style_other.setCurrentIndex(2)
-        style_hint = WrappedLabel(
+        style_hint = Hint(
             "Each shape on screen is drawn its own way. A solid shape hides "
             "whatever is inside it, so the outer one starts as an outline — "
             "which is the only way to look at your printer sitting inside "
             "sRGB, or inside everything the eye can see, and still see your "
             "printer. Swap them round when the other one is the shape you want "
             "to look into.", g_look)
-        style_hint.setObjectName("hint")
+        style_hint.setObjectName("hint_style_hint")
         lv.addWidget(style_hint)
         self._slice_on = QCheckBox("Slice it at one lightness", g_look)
         self._slice_on.stateChanged.connect(self._redraw)
@@ -799,14 +1078,14 @@ class GamutApp(QMainWindow):
         self._slice_lbl.setFixedWidth(46)
         srow.addWidget(self._slice_lbl)
         lv.addLayout(srow)
-        slice_hint = WrappedLabel(
+        slice_hint = Hint(
             "Cuts straight through every shape at the lightness you choose and "
             "draws the result flat, looking down. Two shapes in 3D hide each "
             "other and depth is hard to judge on a screen; two outlines side by "
             "side are simply readable — which one reaches further into the "
             "cyans at this lightness is a glance rather than a guess. Move the "
             "slider from dark to light to see how the shape changes.", g_look)
-        slice_hint.setObjectName("hint")
+        slice_hint.setObjectName("hint_slice_hint")
         lv.addWidget(slice_hint)
         drow = QHBoxLayout()
         drow.addWidget(QLabel("Depth", g_look))
@@ -821,14 +1100,14 @@ class GamutApp(QMainWindow):
         self._depth_lbl.setFixedWidth(46)
         drow.addWidget(self._depth_lbl)
         lv.addLayout(drow)
-        depth_hint = WrappedLabel(
+        depth_hint = Hint(
             "How much the surface is shaded. At nothing it is lit evenly and "
             "you see only its colours, which is the honest picture; turning it "
             "up trades some of that for shading, which is what makes a rounded "
             "thing look rounded and a dent look like a dent. It moves as you "
             "drag, so you can stop wherever the shape reads best to you.",
             g_look)
-        depth_hint.setObjectName("hint")
+        depth_hint.setObjectName("hint_depth_hint")
         lv.addWidget(depth_hint)
 
         self._manual_light = QCheckBox("Set the lighting myself", g_look)
@@ -860,7 +1139,7 @@ class GamutApp(QMainWindow):
             lv.addWidget(row)
             self._light_rows.append(row)
             self._light_sliders[key] = (slider, lo, hi)
-        light_hint = WrappedLabel(
+        light_hint = Hint(
             "These are the five numbers the 3D view actually takes. Ambient is "
             "light arriving from every direction, so more of it flattens the "
             "shape and shows its colours plainly. Diffuse is light the surface "
@@ -868,8 +1147,8 @@ class GamutApp(QMainWindow):
             "the shiny highlight and roughness decides how soft that highlight "
             "is. Fresnel adds a glow around the edges. Every one of them moves "
             "the picture as you drag.", g_look)
-        light_hint.setObjectName("hint")
-        light_hint.setVisible(False)
+        light_hint.setVisible(False)   # only under "Set the lighting myself"
+        light_hint.setObjectName("hint_light_hint")
         lv.addWidget(light_hint)
         self._light_rows.append(light_hint)
 
@@ -879,25 +1158,45 @@ class GamutApp(QMainWindow):
         self._paint_radios = {}
         paint_grid = QGridLayout()
         paint_grid.setContentsMargins(0, 0, 0, 0)
+        # Real space between the rows. Without it the grid was handed one
+        # pixel less than the buttons are tall and they touched.
+        paint_grid.setVerticalSpacing(6)
         for i, (key, label) in enumerate(PAINTS):
             radio = QRadioButton(label, g_look)
+            # Set here, not only in the stylesheet. A QSS min-height is applied
+            # at polish, which happens AFTER the grid has worked out its row
+            # heights from the unstyled metrics -- so the rows were sized for a
+            # 14px button that then drew 20px tall and ran into the row below.
+            radio.setMinimumHeight(20)
             self._paint_group.addButton(radio)
             radio.toggled.connect(
                 lambda on, which=key: self._set_paint(which) if on else None)
             self._paint_radios[key] = radio
             paint_grid.addWidget(radio, i // 2, i % 2)
         lv.addLayout(paint_grid)
+        # Directly under the radios it describes. It used to sit further down
+        # the column, immediately below the rings explanation, so two "What
+        # this does" lines stacked up and the lower one pointed at a control
+        # three settings away.
+        paint_hint = Hint(
+            "True colours paints every point the colour it represents, which "
+            "is the honest picture of one gamut. One colour each is easier "
+            "when two shapes overlap — you can tell at a glance which is "
+            "which. By lightness and by chroma throw away the hue on purpose, "
+            "so the shape itself is what you see.", g_look)
+        paint_hint.setObjectName("hint_paint_hint")
+        lv.addWidget(paint_hint)
         self._mesh_colour = QCheckBox("Colour the outlines too", g_look)
         self._mesh_colour.stateChanged.connect(
             lambda: self._after_shape_setting("mesh_paint"))
         lv.addWidget(self._mesh_colour)
-        mesh_hint = WrappedLabel(
+        mesh_hint = Hint(
             "Outlines are drawn in one plain grey by default, which reads "
             "clearly on top of a solid shape without competing with the "
             "colours underneath. Tick this and they are painted the same way "
             "the solid shapes are, which is worth it when a shape is shown as "
             "an outline on its own.", g_look)
-        mesh_hint.setObjectName("hint")
+        mesh_hint.setObjectName("hint_mesh_hint")
         lv.addWidget(mesh_hint)
 
         rrow = QHBoxLayout()
@@ -917,23 +1216,15 @@ class GamutApp(QMainWindow):
         self._rings_lbl.setFixedWidth(28)
         rrow.addWidget(self._rings_lbl)
         lv.addLayout(rrow)
-        rings_hint = WrappedLabel(
+        rings_hint = Hint(
             "A cage shows only the outer surface, because that is what a "
             "gamut is — a solid with a boundary rather than something with "
             "structure inside. These rings are cross-sections stacked within "
             "it, which show how the shape narrows between black and white: "
             "that is what tells you whether your mid-tones or your highlights "
             "are the tight part.", g_look)
-        rings_hint.setObjectName("hint")
+        rings_hint.setObjectName("hint_rings_hint")
         lv.addWidget(rings_hint)
-        paint_hint = WrappedLabel(
-            "True colours paints every point the colour it represents, which "
-            "is the honest picture of one gamut. One colour each is easier "
-            "when two shapes overlap — you can tell at a glance which is "
-            "which. By lightness and by chroma throw away the hue on purpose, "
-            "so the shape itself is what you see.", g_look)
-        paint_hint.setObjectName("hint")
-        lv.addWidget(paint_hint)
         detrow = QHBoxLayout()
         detrow.addWidget(QLabel("Detail", g_look))
         self._detail = QSlider(Qt.Orientation.Horizontal, g_look)
@@ -947,37 +1238,37 @@ class GamutApp(QMainWindow):
         self._detail_lbl.setFixedWidth(64)
         detrow.addWidget(self._detail_lbl)
         lv.addLayout(detrow)
-        detail_hint = WrappedLabel(
+        detail_hint = Hint(
             "How finely the shape you compare against is built. Normal is "
             "accurate to within a twentieth of a percent and draws in about a "
             "second; fine is smoother to look at; rough is there for a slow "
             "computer. Your own measured chart is not affected — its detail "
             "comes from how many patches you measured.", g_look)
-        detail_hint.setObjectName("hint")
+        detail_hint.setObjectName("hint_detail_hint")
         lv.addWidget(detail_hint)
         self._show_lost = QCheckBox("Show me what the comparison cannot print",
                                     g_look)
         self._show_lost.stateChanged.connect(self._redraw)
         lv.addWidget(self._show_lost)
-        lost_hint = WrappedLabel(
+        lost_hint = Hint(
             "Paints your chart by what the thing you are comparing against "
             "cannot reproduce: red where the colour is out of its reach, grey "
             "where it is fine. A percentage tells you how much you lose; this "
             "tells you which colours, so you can decide whether it matters for "
             "the pictures you actually print.", g_look)
-        lost_hint.setObjectName("hint")
+        lost_hint.setObjectName("hint_lost_hint")
         lv.addWidget(lost_hint)
         self._neutral = QCheckBox("Show the greys", g_look)
         self._neutral.stateChanged.connect(self._redraw)
         lv.addWidget(self._neutral)
-        neutral_hint = WrappedLabel(
+        neutral_hint = Hint(
             "Draws a line through the patches where you asked for an equal "
             "amount of every colour — the greys. What comes back is rarely "
             "neutral: paper is warm or cool, inks are never perfectly "
             "balanced, and the drift is usually worst in the shadows. The "
             "shape of a gamut cannot show this at all, and it is what people "
             "notice first in a black-and-white print.", g_look)
-        neutral_hint.setObjectName("hint")
+        neutral_hint.setObjectName("hint_neutral_hint")
         lv.addWidget(neutral_hint)
         self._points = QCheckBox("Show every patch I measured", g_look)
         self._points.stateChanged.connect(self._redraw)
@@ -989,12 +1280,12 @@ class GamutApp(QMainWindow):
         vv = QVBoxLayout(g_vol)
         self._volume = QLabel("—", g_vol); self._volume.setObjectName("volume")
         vv.addWidget(self._volume)
-        self._coverage = WrappedLabel("", g_vol)
+        self._coverage = WrappedLabel("", g_vol, hide_when_empty=True)
         self._coverage.setObjectName("hint"); _wrapped(self._coverage)
         vv.addWidget(self._coverage)
-        self._volume_hint = WrappedLabel(
+        self._volume_hint = Hint(
             "Open a chart to see how much colour it holds.", g_vol)
-        self._volume_hint.setObjectName("hint"); _wrapped(self._volume_hint)
+        self._volume_hint.setObjectName("hint_volume_hint")
         vv.addWidget(self._volume_hint)
         v.addWidget(g_vol)
 
@@ -1002,12 +1293,12 @@ class GamutApp(QMainWindow):
         # the way until there are two charts open.
         self._drift_box = QGroupBox("Has anything changed?", col)
         dv = QVBoxLayout(self._drift_box)
-        self._drift = WrappedLabel("", self._drift_box)
+        self._drift = WrappedLabel("", self._drift_box, hide_when_empty=True)
         dv.addWidget(self._drift)
-        self._drift_worst = WrappedLabel("", self._drift_box)
+        self._drift_worst = WrappedLabel("", self._drift_box, hide_when_empty=True)
         self._drift_worst.setObjectName("hint")
         dv.addWidget(self._drift_worst)
-        drift_hint = WrappedLabel(
+        drift_hint = Hint(
             "When both charts are two readings of the SAME chart — the same "
             "paper measured on two days, or before and after a nozzle clean — "
             "this compares them patch by patch. The gamut above answers how "
@@ -1018,7 +1309,7 @@ class GamutApp(QMainWindow):
             "careful eye finds it on a smooth gradient. Above 3 it is plain, "
             "and worth investigating before you print anything that matters.",
             self._drift_box)
-        drift_hint.setObjectName("hint")
+        drift_hint.setObjectName("hint_drift_hint")
         dv.addWidget(drift_hint)
         self._drift_box.setVisible(False)
         v.addWidget(self._drift_box)
@@ -1062,10 +1353,12 @@ class GamutApp(QMainWindow):
         scheme_grid = QGridLayout()
         scheme_grid.setContentsMargins(0, 0, 0, 0)
         scheme_grid.setHorizontalSpacing(4)
+        scheme_grid.setVerticalSpacing(6)
         self._scheme_group = QButtonGroup(self)
         self._scheme_radios = {}
         for i, name in enumerate(SCHEMES):
             radio = QRadioButton(name, g_prefs)
+            radio.setMinimumHeight(20)
             self._scheme_group.addButton(radio)
             radio.setToolTip(f"Use the {name.lower()} accent colour")
             radio.toggled.connect(
@@ -1131,6 +1424,7 @@ class GamutApp(QMainWindow):
             ("rings", self._rings, "slider", 6),
             ("aspect", self._aspect, "combo", "data"),
             ("white", self._white, "combo", "D50"),
+            ("space", self._space, "combo", "lab"),
             ("shape_mode", self._mode, "combo", "device"),
             ("style_first", self._style_mine, "combo", "solid"),
             ("style_second", self._style_second, "combo", "mesh"),
@@ -1138,7 +1432,14 @@ class GamutApp(QMainWindow):
         ) + tuple(
             (f"light_{key}", self._light_sliders[key][0], "slider",
              int(round((start - lo) / (hi - lo) * 100)))
-            for key, _label, lo, hi, start in LIGHT_CONTROLS)
+            for key, _label, lo, hi, start in LIGHT_CONTROLS
+        ) + tuple(
+            # Whether each explanation is folded open. Found rather than
+            # listed, so a hint added to the window is remembered without
+            # anybody having to remember to add it here as well. Every one
+            # defaults to False: folded, which is what a second visit wants.
+            (h.objectName(), h, "check", False)
+            for h in self.findChildren(Hint) if h.objectName())
 
     def _remember_everything(self) -> None:
         """Write the current state of every remembered control."""
@@ -1218,17 +1519,16 @@ class GamutApp(QMainWindow):
 
     def _reset_defaults(self) -> None:
         """Put every setting back to its starting value, after asking."""
-        answer = QMessageBox.question(
-            self, "Start again with the standard settings?",
-            "Every setting in this window goes back to how it started: the "
-            "appearance, the accent colour, how the shapes are drawn and "
-            "coloured, the lighting, and everything else. Any shape you set "
-            "on its own goes back to following the shared settings.\n\n"
-            "The charts you have open stay open, and no file of yours is "
-            "touched.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel)
-        if answer != QMessageBox.StandardButton.Yes:
+        if not Notice.ask(
+                self, "Start again with the standard settings?",
+                "Every setting in this window goes back to how it started: "
+                "the appearance, the accent colour, how the shapes are drawn "
+                "and coloured, the lighting, and everything else. Any shape "
+                "you set on its own goes back to following the shared "
+                "settings.\n\n"
+                "The charts you have open stay open, and no file of yours is "
+                "touched.",
+                ok="Reset the settings", cancel="Keep my settings"):
             return
         for key, widget, kind, default in self._persisted():
             widget.blockSignals(True)
@@ -1242,6 +1542,7 @@ class GamutApp(QMainWindow):
                     widget.setCurrentIndex(index)
             widget.blockSignals(False)
         self._appearance, self._scheme, self._paint = "dark", "Magenta", "true"
+        self._apply_space_availability()
         self._per_shape = {0: {}, 1: {}, 2: {}}    # every shape shares again
         self._shared = dict(opacity=1.0, depth=0.35, rings=0,
                             mesh_paint="plain", paint="true")
@@ -1348,10 +1649,12 @@ class GamutApp(QMainWindow):
         ref = "the paper's own white" if self._relative.isChecked() else (
             f"{self._white.currentData()} absolute")
         rows.append(("measured against", ref, ""))
+        rows.append(("drawn in", self._space.currentText(),
+                     self._volume_units()))
         for path, g, m in self._slots:
             rows.append((f"{path.stem}: patches", m.n_patches, m.instrument))
-            rows.append((f"{path.stem}: colour held", f"{g.volume:.0f}",
-                         "cubic Lab units"))
+            rows.append((f"{path.stem}: colour held", self._fmt_volume(g.volume),
+                         self._volume_units()))
             lab, _labels = neutral_axis(m)
             if len(lab):
                 cast = float(np.hypot(lab[:, 1], lab[:, 2]).max())
@@ -1359,8 +1662,8 @@ class GamutApp(QMainWindow):
                              f"worst colour cast {cast:.1f}"))
         if self._reference is not None:
             name, g = self._reference
-            rows.append((f"{name}: colour held", f"{g.volume:.0f}",
-                         "cubic Lab units"))
+            rows.append((f"{name}: colour held", self._fmt_volume(g.volume),
+                         self._volume_units()))
         pair = None
         if self._reference is not None and self._slots:
             pair = ((self._slots[0][0].stem, self._slots[0][1]),
@@ -1392,9 +1695,9 @@ class GamutApp(QMainWindow):
             with open(target, "w", newline="", encoding="utf-8") as handle:
                 csv.writer(handle).writerows(rows)
         except OSError as exc:
-            QMessageBox.warning(self, "That could not be saved", str(exc))
+            Notice.warn(self, "That could not be saved", str(exc))
             return
-        QMessageBox.information(
+        Notice.say(
             self, "Saved",
             f"Written to\n{target}\n\nIt opens in any spreadsheet, and every "
             "row says what it is and what the units are.")
@@ -1408,11 +1711,8 @@ class GamutApp(QMainWindow):
         """
         body = "".join(
             f"<p><b>{term}</b><br>{text}</p>" for term, text in GLOSSARY)
-        box = QMessageBox(self)
-        box.setWindowTitle("What do these words mean?")
-        box.setTextFormat(Qt.TextFormat.RichText)
-        box.setText("<div style='max-width:34em'>" + body + "</div>")
-        box.exec()
+        Notice(self, "What do these words mean?", body,
+               rich=True, ok="Close", scroll=True).exec()
 
     def _on_compare_changed(self) -> None:
         """Build whatever the user chose to compare against, and say what it is.
@@ -1423,6 +1723,8 @@ class GamutApp(QMainWindow):
         """
         choice = self._compare.currentData()
         self._reference = None
+        if not (choice and choice[0] == "icc"):
+            self._reference_path = None
         self._compare_note.setText("")
         try:
             if choice is None:
@@ -1431,7 +1733,8 @@ class GamutApp(QMainWindow):
                 name = choice[1]
                 self._reference = (name, reference_gamut(
                     name, white_point=self._white.currentData(),
-                    steps=self._detail.value()))
+                    steps=self._detail.value(),
+                    space=self._space.currentData()))
                 self._compare_note.setText(REFERENCE_SPACES[name]["note"])
             elif choice[0] == "icc":
                 dlg = self._file_dialog(
@@ -1443,8 +1746,10 @@ class GamutApp(QMainWindow):
                     return
                 path = dlg.selectedFiles()[0]
                 self._last_folder = str(Path(path).parent)
-                self._reference = (Path(path).stem, icc_gamut(
-                    path, white_point=self._white.currentData()))
+                self._reference_path = Path(path)
+                self._reference = (_profile_label(Path(path)), icc_gamut(
+                    path, white_point=self._white.currentData(),
+                    space=self._space.currentData()))
                 self._compare_note.setText(
                     "The gamut this profile describes, asked of the profile "
                     "itself.")
@@ -1455,12 +1760,13 @@ class GamutApp(QMainWindow):
                 lab = xyz_to_lab(v, self._white.currentData())
                 self._reference = ("Every visible colour",
                                    build_gamut(lab, input_space="lab",
+                                               space=self._space.currentData(),
                                                white_point=self._white.currentData()))
                 self._compare_note.setText(
                     "Every colour a printed surface could possibly show under "
                     "this light. No printer comes close, and that is normal.")
         except Exception as exc:      # noqa: BLE001 — always explain, never crash
-            QMessageBox.warning(
+            Notice.warn(
                 self, "That comparison could not be prepared", str(exc))
             self._reference = None
             self._compare.setCurrentIndex(0)
@@ -1531,7 +1837,7 @@ class GamutApp(QMainWindow):
         self._refresh_slot_labels()
         self._show_placeholder()
         self._volume.setText("—")
-        self._volume_hint.setText("cubic Lab units")
+        self._volume_hint.setText(self._volume_units())
         self._clear_btn.setVisible(False)
         self._save.setEnabled(False)
 
@@ -1559,9 +1865,9 @@ class GamutApp(QMainWindow):
                        patches=clouds, styles=styles, lost=lost,
                        **self._render_options())
         except OSError as exc:
-            QMessageBox.warning(self, "That could not be saved", str(exc))
+            Notice.warn(self, "That could not be saved", str(exc))
             return
-        QMessageBox.information(
+        Notice.say(
             self, "Saved",
             f"Written to\n{target}\n\nIt opens in any browser and needs no "
             "network — the viewer travels inside the page.")
@@ -1579,7 +1885,7 @@ class GamutApp(QMainWindow):
         try:
             g, m = self._build_one(path)
         except Exception as exc:               # noqa: BLE001 — always explain
-            QMessageBox.warning(
+            Notice.warn(
                 self, "This file could not be used",
                 f"{path.name}\n\n{exc}\n\nA measured chart is a .ti3 file — the "
                 "one ArgyllCMS writes after you read a printed chart. A .ti1 or "
@@ -1598,13 +1904,15 @@ class GamutApp(QMainWindow):
         try:
             reader = (gam_gamut if path.suffix.lower() == ".gam"
                       else icc_gamut)
-            g = reader(path, white_point=self._white.currentData())
+            g = reader(path, white_point=self._white.currentData(),
+                       space=self._space.currentData())
         except Exception as exc:      # noqa: BLE001 — always explain
-            QMessageBox.warning(
+            Notice.warn(
                 self, "This profile could not be used",
                 f"{path.name}\n\n{exc}")
             return
-        self._reference = (path.stem, g)
+        self._reference = (_profile_label(path), g)
+        self._reference_path = path
         self._compare.blockSignals(True)
         self._compare.setCurrentIndex(
             self._compare.findData(("icc", None)))
@@ -1619,6 +1927,7 @@ class GamutApp(QMainWindow):
                              self._relative.isChecked())
         drive = None if self._mode.currentData() == "hull" else m.device
         g = build_gamut(m.lab, drive, input_space="lab",
+                        space=self._space.currentData(),
                         white_point=self._white.currentData())
         return g, m
 
@@ -1641,7 +1950,7 @@ class GamutApp(QMainWindow):
         if m.n_patches >= self.TOO_FEW_PATCHES:
             return
         patches = "1 patch" if m.n_patches == 1 else f"{m.n_patches} patches"
-        QMessageBox.information(
+        Notice.say(
             self, "This chart is very small",
             f"{path.name} holds only {patches}.\n\n"
             "That is too few to show what a printer can really print. The "
@@ -1653,6 +1962,94 @@ class GamutApp(QMainWindow):
             "this. For a true picture, open a full profiling measurement: "
             "those usually hold several hundred patches or more.")
 
+    def _on_white_changed(self) -> None:
+        """A different white point: the charts and the comparison both move.
+
+        Lab and Luv are both defined against a white point, so a comparison
+        left in the old one would be a different shape from the charts it is
+        drawn beside.
+        """
+        self._rebuild()
+        self._rebuild_reference()
+        self._redraw()
+
+    def _on_space_changed(self) -> None:
+        """A different space to draw in: everything on screen has to move.
+
+        The charts, the comparison and the numbers are all expressed in the
+        chosen space, so rebuilding only the charts would leave a comparison
+        sitting in the space it was first built in and quietly compare two
+        different geometries.
+        """
+        self._apply_space_availability()
+        self._rebuild()
+        self._rebuild_reference()
+        self._redraw()
+
+    def _apply_space_availability(self) -> None:
+        """Turn off the tools that need a lightness axis when there is none.
+
+        The slice, the rings and the grey axis are all defined against
+        lightness and the neutral centre, which CIELAB and CIELUV both have
+        and CIE XYZ does not. Rather than draw something meaningless in XYZ,
+        the three controls are switched off and say why. They come back
+        exactly as they were when an opponent space is chosen again.
+        """
+        from gamutview import AXES
+        usable = AXES[self._space.currentData()]["cylindrical"]
+        why = ("" if usable else
+               "Not available in CIE XYZ — it has no lightness axis and no "
+               "grey axis to measure from. Choose CIELAB or CIELUV under "
+               "Draw it in to use this.")
+        for widget in (self._slice_on, self._slice_at, self._rings_on,
+                       self._rings, self._neutral):
+            widget.setEnabled(usable)
+            widget.setToolTip(why)
+        if not usable:
+            # Untick rather than leave them ticked-but-dead, so the picture
+            # always matches the controls.
+            for box in (self._slice_on, self._rings_on, self._neutral):
+                box.blockSignals(True)
+                box.setChecked(False)
+                box.blockSignals(False)
+
+    def _rebuild_reference(self) -> None:
+        """Rebuild the comparison in the current space and white point.
+
+        Silent about a comparison that is simply not set, and never opens a
+        file dialog: this runs in response to a setting being changed, and
+        being asked for a file again because you changed the white point
+        would be baffling.
+        """
+        choice = self._compare.currentData()
+        if choice is None:
+            return
+        try:
+            if choice[0] == "space":
+                self._reference = (choice[1], reference_gamut(
+                    choice[1], white_point=self._white.currentData(),
+                    steps=self._detail.value(),
+                    space=self._space.currentData()))
+            elif choice[0] == "icc" and self._reference_path is not None:
+                path = self._reference_path
+                reader = (gam_gamut if path.suffix.lower() == ".gam"
+                          else icc_gamut)
+                self._reference = (_profile_label(path), reader(
+                    path, white_point=self._white.currentData(),
+                    space=self._space.currentData()))
+            elif choice[0] == "visible":
+                v, _f = optimal_colour_solid(
+                    "D50" if self._white.currentData() == "D50" else "D65",
+                    max(24, self._detail.value() * 3))
+                lab = xyz_to_lab(v, self._white.currentData())
+                self._reference = ("Every visible colour", build_gamut(
+                    lab, input_space="lab", space=self._space.currentData(),
+                    white_point=self._white.currentData()))
+        except Exception as exc:      # noqa: BLE001 — always explain
+            Notice.warn(self, "That comparison could not be rebuilt", str(exc))
+            self._reference = None
+            self._compare.setCurrentIndex(0)
+
     def _rebuild(self) -> None:
         """A setting that changes the shape — rebuild every loaded measurement."""
         if not self._slots:
@@ -1663,7 +2060,7 @@ class GamutApp(QMainWindow):
                 g, m = self._build_one(path)
                 rebuilt.append((path, g, m))
             except Exception as exc:            # noqa: BLE001
-                QMessageBox.warning(self, "That setting cannot be used here",
+                Notice.warn(self, "That setting cannot be used here",
                                     f"{path.name}\n\n{exc}")
                 return
         self._slots = rebuilt
@@ -2069,17 +2466,45 @@ class GamutApp(QMainWindow):
             f"Of those, {summary}. The ones that moved most:\n"
             + "\n".join(lines))
 
+    @staticmethod
+    def _fmt_volume(value: float) -> str:
+        """A volume with enough figures to be worth reading.
+
+        Lab and Luv run 0..100 per axis, so their volumes are hundreds of
+        thousands and want thousands separators. XYZ runs 0..1, so the same
+        format rounded every real answer to "0". The number of significant
+        figures follows the size rather than the space, which also keeps a
+        very small measured gamut readable in any of them.
+        """
+        if value >= 1000:
+            return f"{value:,.0f}"
+        if value >= 1:
+            return f"{value:,.2f}"
+        return f"{value:.4f}"
+
+    def _volume_units(self) -> str:
+        """What the volume figure is counted in, for the space now chosen.
+
+        Never hard-coded to Lab: a number labelled "cubic Lab units" beside a
+        shape drawn in Luv or XYZ would be wrong, and volumes are not
+        comparable between spaces.
+        """
+        from gamutview import AXES
+        return AXES[self._space.currentData()]["units"]
+
     def _update_volume(self) -> None:
         if len(self._slots) == 1:
             g = self._slots[0][1]
-            self._volume.setText(f"{g.volume:,.0f}")
+            self._volume.setText(self._fmt_volume(g.volume))
             self._volume_hint.setText(
-                "This is the same measure ArgyllCMS reports. It is useful for "
+                f"Measured in {self._volume_units()}. It is useful for "
                 "comparing two papers measured the same way — on its own the "
-                "number does not mean much.")
+                "number does not mean much, and it cannot be compared with a "
+                "figure from another space.")
         else:
             (_, a, _), (_, b, _) = self._slots
-            self._volume.setText(f"{a.volume:,.0f}  ·  {b.volume:,.0f}")
+            self._volume.setText(
+                f"{self._fmt_volume(a.volume)}  ·  {self._fmt_volume(b.volume)}")
             big, small = max(a.volume, b.volume), min(a.volume, b.volume)
             which = (self._slots[0][0].stem if a.volume > b.volume
                      else self._slots[1][0].stem)

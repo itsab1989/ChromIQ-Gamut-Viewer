@@ -243,7 +243,22 @@ def neutral_axis(measurement, tolerance: float = 0.02):
     return lab, labels
 
 
-def _neutral_trace(measurement, name: str, colour: str):
+def _to_plot_space(lab, space: str) -> np.ndarray:
+    """Lab values to plotted coordinates in *space*.
+
+    Both the grey axis and the patch cloud are computed in Lab -- that is what
+    a measurement gives and what "neutral" is defined in -- so drawing them
+    beside a gamut built in another space means converting them the same way
+    the gamut was.
+    """
+    from gamutview import AXES, _FROM_XYZ, lab_to_lch_cartesian, lab_to_xyz
+    pts = (np.asarray(lab, float) if space == "lab"
+           else _FROM_XYZ[space](lab_to_xyz(lab, "D50"), "D50"))
+    return lab_to_lch_cartesian(pts) if AXES[space]["cylindrical"] else pts
+
+
+def _neutral_trace(measurement, name: str, colour: str,
+                   space: str = "lab"):
     """The grey axis as a line through the solid, with its patches marked."""
     import plotly.graph_objects as go
 
@@ -252,7 +267,7 @@ def _neutral_trace(measurement, name: str, colour: str):
     lab, labels = neutral_axis(measurement)
     if len(lab) < 2:
         return []
-    pts = lab_to_lch_cartesian(lab)
+    pts = _to_plot_space(lab, space)
     return [go.Scatter3d(
         x=pts[:, 0], y=pts[:, 1], z=pts[:, 2], mode="lines+markers",
         line=dict(color=colour, width=5),
@@ -261,6 +276,21 @@ def _neutral_trace(measurement, name: str, colour: str):
         text=[f"{lbl}: a* {p[1]:+.1f}, b* {p[2]:+.1f}"
               for lbl, p in zip(labels, lab)],
         hoverinfo="text")]
+
+
+def _plot_points(gamut) -> np.ndarray:
+    """Where each vertex goes on screen, for whichever space it is in.
+
+    CIELAB and CIELUV are both opponent spaces: two colour axes and lightness,
+    which read best rearranged into a hue circle around a vertical L*. CIE XYZ
+    is not -- it has no lightness axis and no hue angle -- so it is drawn
+    exactly as measured. Asking for a hue circle there would invent structure
+    that is not in the space.
+    """
+    from gamutview import AXES
+    if AXES[gamut.space]["cylindrical"]:
+        return gamut.cylindrical()
+    return gamut.vertices
 
 
 def _rings(gamut, name: str, count: int, colour: str, width: float = 1.5):
@@ -330,7 +360,7 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
     underneath it.
     """
     import plotly.graph_objects as go
-    v = gamut.cylindrical() if gamut.space == "lab" else gamut.vertices
+    v = _plot_points(gamut)
     f = gamut.faces
     seen = set()
     xs, ys, zs = [], [], []
@@ -392,7 +422,7 @@ def _mesh_lost(gamut, name: str, opacity: float, lost,
                kept: str = _KEPT, depth: float = 0.35) -> "list":
     """The gamut painted by what the comparison cannot reproduce."""
     import plotly.graph_objects as go
-    v = gamut.cylindrical() if gamut.space == "lab" else gamut.vertices
+    v = _plot_points(gamut)
     colours = [_LOST if bad else kept for bad in lost]
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
@@ -524,7 +554,7 @@ def _mesh(gamut, name: str, opacity: float, wireframe: bool,
           paint: str = "true", index: int = 0, depth: float = 0.35):
     """One Plotly mesh for a gamut, painted the way the user asked."""
     import plotly.graph_objects as go
-    v = gamut.cylindrical()
+    v = _plot_points(gamut)
     chosen = _paint_vertices(gamut, paint, index)
     colours = chosen if chosen is not None else [
         f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
@@ -540,11 +570,11 @@ def _mesh(gamut, name: str, opacity: float, wireframe: bool,
     )
 
 
-def _patch_cloud(lab, name: str):
+def _patch_cloud(lab, name: str, space: str = "lab"):
     """Every measured patch as a dot, in its own colour — the raw evidence."""
     import plotly.graph_objects as go
-    from gamutview import lab_to_lch_cartesian, xyz_to_srgb, lab_to_xyz
-    v = lab_to_lch_cartesian(lab)
+    from gamutview import xyz_to_srgb, lab_to_xyz
+    v = _to_plot_space(lab, space)
     rgb = xyz_to_srgb(lab_to_xyz(lab, "D50"), "D50")
     return go.Scatter3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2], mode="markers",
@@ -655,6 +685,7 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
     """
     import plotly.graph_objects as go
     c = SCENE_COLOURS["light" if mode == "light" else "dark"]
+    _axes_space = gamuts[0][1].space if gamuts else "lab"
     fig = go.Figure()
     base = opacity if opacity is not None else (1.0 if len(gamuts) == 1 else 0.55)
     for i, (name, g) in enumerate(gamuts):
@@ -687,14 +718,20 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
             for trace in _rings(g, name, rings_i, c["wire"]):
                 fig.add_trace(trace)
         if neutrals is not None and i < len(neutrals) and neutrals[i] is not None:
-            for trace in _neutral_trace(neutrals[i], name, "#ff6b6b"):
+            for trace in _neutral_trace(neutrals[i], name, "#ff6b6b",
+                                        _axes_space):
                 fig.add_trace(trace)
         if points and patches is not None and i < len(patches):
-            fig.add_trace(_patch_cloud(patches[i], name))
+            fig.add_trace(_patch_cloud(patches[i], name, _axes_space))
+    from gamutview import AXES
+    # The axes are named for the space the gamuts were built in, so a
+    # picture can never be read against the wrong labels.
+    _axes = AXES[_axes_space]
     fig.update_layout(
         title=title,
         scene=dict(
-            xaxis_title="a*  (chroma →)", yaxis_title="b*", zaxis_title="L*",
+            xaxis_title=_axes["x"], yaxis_title=_axes["y"],
+            zaxis_title=_axes["z"],
             aspectmode=aspect,
             # START A LITTLE FURTHER BACK, AND ABOVE. Plotly's default camera
             # frames the data tightly, which on a wide, flat gamut crops the

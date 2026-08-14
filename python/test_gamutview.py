@@ -242,3 +242,95 @@ def test_delta_e_refuses_mismatched_sets():
     from gamutview import delta_e_2000
     with pytest.raises(ValueError, match="cannot compare"):
         delta_e_2000(np.zeros((3, 3)), np.zeros((4, 3)))
+
+
+# --- the three spaces a gamut can be drawn in -------------------------------
+
+def test_luv_white_is_the_definition():
+    """Its own white point must give L*=100 with no colour, in every white."""
+    from gamutview import WHITE_POINTS, xyz_to_luv
+    for wp in ("D50", "D65", "A"):
+        luv = xyz_to_luv(WHITE_POINTS[wp][None, :], wp)[0]
+        assert luv[0] == pytest.approx(100.0, abs=1e-9), wp
+        assert luv[1] == pytest.approx(0.0, abs=1e-9), wp
+        assert luv[2] == pytest.approx(0.0, abs=1e-9), wp
+
+
+def test_luv_round_trip_including_black_and_below_the_knee():
+    """The u', v' denominator vanishes at black, which is the one input that
+    can turn this into a division by zero rather than a colour."""
+    from gamutview import luv_to_xyz, xyz_to_luv
+    rng = np.random.default_rng(11)
+    xyz = np.abs(rng.normal(size=(600, 3))) * 0.7
+    xyz[:40] *= 1e-4                    # under the linear-segment knee
+    xyz[0] = 0.0                        # exactly black
+    back = luv_to_xyz(xyz_to_luv(xyz, "D50"), "D50")
+    assert np.isfinite(back).all()
+    assert np.abs(back - xyz).max() < 1e-9
+
+
+def test_luv_shares_cielab_lightness_exactly():
+    """Both are defined from Y through the same curve; if they ever disagree,
+    one of the two implementations has drifted."""
+    from gamutview import xyz_to_lab, xyz_to_luv
+    rng = np.random.default_rng(12)
+    xyz = np.abs(rng.normal(size=(400, 3))) * 0.6
+    assert np.abs(xyz_to_lab(xyz, "D50")[:, 0]
+                  - xyz_to_luv(xyz, "D50")[:, 0]).max() < 1e-12
+
+
+@pytest.mark.parametrize("space", ["lab", "luv", "xyz"])
+def test_a_gamut_can_be_built_in_each_space(space):
+    rgb, xyz = rgb_cube(6)
+    g = build_gamut(xyz, rgb, space=space, white_point="D65")
+    assert g.space == space
+    assert g.volume > 0
+    assert np.isfinite(g.vertices).all()
+
+
+def test_the_spaces_are_genuinely_different_shapes():
+    """If two spaces gave the same volume, the choice would be doing nothing."""
+    rgb, xyz = rgb_cube(6)
+    vols = {s: build_gamut(xyz, rgb, space=s, white_point="D65").volume
+            for s in ("lab", "luv", "xyz")}
+    assert len({round(v, 6) for v in vols.values()}) == 3, vols
+
+
+def test_only_the_opponent_spaces_have_a_hue_circle():
+    """XYZ has no lightness axis and no hue angle, so asking for the
+    cylindrical arrangement is a mistake worth reporting rather than a
+    silently wrong picture."""
+    rgb, xyz = rgb_cube(5)
+    for space in ("lab", "luv"):
+        assert build_gamut(xyz, rgb, space=space).cylindrical().shape[1] == 3
+    with pytest.raises(ValueError, match="Lab or Luv"):
+        build_gamut(xyz, rgb, space="xyz").cylindrical()
+
+
+def test_every_space_round_trips_through_build_gamut():
+    """Feeding a gamut's own vertices back in, saying which space they are in,
+    must land on the same shape — this is what lets a reference built in one
+    space be rebuilt in another."""
+    rgb, xyz = rgb_cube(5)
+    for space in ("lab", "luv", "xyz"):
+        a = build_gamut(xyz, space=space, white_point="D50")
+        b = build_gamut(a.vertices, input_space=space, space=space,
+                        white_point="D50")
+        assert b.volume == pytest.approx(a.volume, rel=1e-9)
+
+
+def test_an_unknown_space_names_the_ones_that_work():
+    _, xyz = rgb_cube(4)
+    with pytest.raises(ValueError, match="lab"):
+        build_gamut(xyz, space="hsv")
+    with pytest.raises(ValueError, match="lab"):
+        build_gamut(xyz, input_space="hsv")
+
+
+def test_every_space_says_how_to_draw_and_label_it():
+    """A space with no entry here would reach the plotting code and fail
+    there instead, with no axis names."""
+    from gamutview import AXES, SPACES
+    for space in SPACES:
+        assert set(AXES[space]) == {"cylindrical", "x", "y", "z", "units"}
+        assert AXES[space]["units"].startswith("cubic")

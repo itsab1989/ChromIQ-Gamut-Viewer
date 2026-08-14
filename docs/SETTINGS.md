@@ -87,9 +87,40 @@ device values, which every `.ti3` carries alongside the measurements.
 |---|---|---|---|
 | White point | `"D50"`, `"D65"` | `"D50"` | `white_point=` on every conversion |
 | Judge against the paper's own white | on / off | off | `relative=` on `read_ti3` |
+| Draw it in | `"lab"`, `"luv"`, `"xyz"` | `"lab"` | `space=` on `build_gamut`, `reference_gamut`, `icc_gamut`, `gam_gamut` |
 
 D50 is the ICC connection-space illuminant and what print measurement normally
 uses; D65 is for display work.
+
+### The three spaces, and what changes with them
+
+`gamutview.SPACES` lists them and `gamutview.AXES` says how each is drawn and
+labelled. A space needs only a pair of conversions in `_TO_XYZ` / `_FROM_XYZ`
+and one entry in `AXES` to work everywhere — everything converts through XYZ,
+so spaces never need to know about each other.
+
+| Space | Axes | Hue circle | Volume in | Use it for |
+|---|---|---|---|---|
+| CIELAB | `a*`, `b*`, `L*` | yes | cubic Lab units | print — the default, and what every other number here assumes |
+| CIELUV | `u*`, `v*`, `L*` | yes | cubic Luv units | displays and light sources; same lightness as CIELAB, blues and greens stretched |
+| CIE XYZ | `X`, `Y`, `Z` | no | cubic XYZ units | the raw measurement, before any uniform space is applied |
+
+Three consequences the code has to honour, and does:
+
+1. **Volumes are only comparable within one space.** On the demo chart:
+   702,327 in Lab, 931,617 in Luv, 0.0786 in XYZ — the same paper each time.
+   The units string comes from `AXES[space]["units"]` and is never hard-coded,
+   and the reported figure switches to more decimal places below 1,000 so the
+   XYZ answer does not round to `0`.
+2. **The comparison must be rebuilt in the same space as the charts**, or two
+   different geometries get drawn on one pair of axes. `_rebuild_reference()`
+   does this for a reference space, an ICC profile (from the remembered path,
+   so it never re-asks for the file) and the visible solid. Changing the
+   **white point** rebuilds it for the same reason.
+3. **The slice, the rings and the greys need a lightness axis and a neutral
+   centre.** CIELAB and CIELUV have both; XYZ has neither. In XYZ those three
+   controls are disabled and carry a tooltip saying why, rather than drawing
+   something meaningless — see `_apply_space_availability()`.
 
 ### A correction worth reading before removing this control
 
@@ -175,6 +206,32 @@ Notes worth carrying over:
 * **Reset must write before it reads.** Setting the widgets back and then
   restoring from the store re-read the values being reset, so the sliders
   quietly returned to where they had just been moved from.
+* **Every explanation folds.** The eighteen help paragraphs are `Hint`
+  widgets: a "What this does" line with an arrow, folded by default, and each
+  one is remembered separately under `hint_<name>`. They are discovered with
+  `findChildren(Hint)` rather than listed by hand, so a new one is remembered
+  without anybody having to add it to the table. Folded they cost one 19px row
+  each; open they are 47% of the column — 3,527px against 1,871px measured on
+  the real window. Reset folds them all again.
+* **Each explanation sits under the control it explains.** Obvious, and it was
+  wrong once: the shape-colouring paragraph was added after the rings
+  paragraph, so two "What this does" lines stacked and the lower one pointed
+  three settings up the column.
+* **A QSS `min-height` is applied at polish**, which is *after* a `QGridLayout`
+  has worked out its row heights. The radio rows were sized for a 14px button
+  that then drew 20px tall and ran into the row below, so the minimum is set in
+  Python with `setMinimumHeight(20)` as well.
+* **The message boxes are the window's own** (`Notice`), not `QMessageBox`.
+  The native one drew its whole body bold, painted a system "?" glyph that was
+  near-black on a near-black panel, and on macOS wore a title bar following the
+  *system* appearance while the panel followed this window's. `Notice` is
+  frameless with a real heading, an unbolded body, and the same buttons as the
+  rest of the window; `say` / `warn` / `ask` are the three shapes used.
+* **An empty readout takes no room.** `WrappedLabel(hide_when_empty=True)`
+  hides itself when its text is blank — otherwise the Compare-with box and the
+  coverage box each reserved a blank line before anything had been chosen. It
+  is opt-in because a folded hint's label is hidden while still holding plenty
+  of text, and showing it again would unfold it behind the user's back.
 
 ---
 

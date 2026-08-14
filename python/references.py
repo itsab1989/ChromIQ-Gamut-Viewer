@@ -75,8 +75,10 @@ def _rgb_to_xyz_matrix(primaries, white) -> np.ndarray:
     return m * scale
 
 
-def reference_gamut(name: str, *, white_point: str = "D50", steps: int = 20):
-    """The gamut of a standard RGB working space, in Lab under *white_point*.
+def reference_gamut(name: str, *, white_point: str = "D50", steps: int = 20,
+                    space: str = "lab"):
+    """The gamut of a standard RGB working space, in *space* under
+    *white_point*.
 
     Built as the six faces of its own RGB cube — the same construction used for
     a printer's measured gamut — so the two are directly comparable rather than
@@ -108,11 +110,11 @@ def reference_gamut(name: str, *, white_point: str = "D50", steps: int = 20):
     if not np.allclose(src, dst):
         xyz = xyz @ _bradford_adapt(src, dst).T
 
-    return build_gamut(xyz_to_lab(xyz, white_point), rgb, input_space="lab",
+    return build_gamut(xyz, rgb, input_space="xyz", space=space,
                        white_point=white_point)
 
 
-def gam_gamut(path, *, white_point: str = "D50"):
+def gam_gamut(path, *, white_point: str = "D50", space: str = "lab"):
     """A gamut straight out of an ArgyllCMS ``.gam`` file.
 
     ``iccgamut``, ``tiffgamut`` and ChromIQ itself all write these, and
@@ -135,10 +137,17 @@ def gam_gamut(path, *, white_point: str = "D50"):
     from scipy.spatial import ConvexHull
 
     from gamutview import Gamut, lab_to_xyz, xyz_to_srgb
+    # The file always holds Lab. Drawing in another space moves every
+    # vertex, and the volume has to be recomputed there -- a number carried
+    # over from Lab would be in the wrong units for the picture beside it.
+    xyz = lab_to_xyz(verts, white_point)
+    if space != "lab":
+        from gamutview import _FROM_XYZ
+        verts = _FROM_XYZ[space](xyz, white_point)
     return Gamut(vertices=verts, faces=faces,
-                 colors=xyz_to_srgb(lab_to_xyz(verts, white_point), white_point),
+                 colors=xyz_to_srgb(xyz, white_point),
                  volume=float(ConvexHull(verts).volume),
-                 space="lab", mode="argyll-gam")
+                 space=space, mode="argyll-gam")
 
 
 def _find_iccgamut() -> "str | None":
@@ -182,7 +191,8 @@ def _read_gam(path) -> "tuple[np.ndarray, np.ndarray]":
     return verts, faces
 
 
-def icc_gamut(path, *, white_point: str = "D50", intent: str = "r", **_ignored):
+def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
+              space: str = "lab", **_ignored):
     """The gamut of any ICC profile, computed by ArgyllCMS itself.
 
     Asks ``iccgamut`` — the same tool ChromIQ uses — rather than pushing a grid
@@ -240,7 +250,14 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r", **_ignored):
         raise ValueError(f"{path.name} describes no usable volume")
     from scipy.spatial import ConvexHull
     from gamutview import Gamut, lab_to_xyz, xyz_to_srgb
+    # The file always holds Lab. Drawing in another space moves every
+    # vertex, and the volume has to be recomputed there -- a number carried
+    # over from Lab would be in the wrong units for the picture beside it.
+    xyz = lab_to_xyz(verts, white_point)
+    if space != "lab":
+        from gamutview import _FROM_XYZ
+        verts = _FROM_XYZ[space](xyz, white_point)
     return Gamut(vertices=verts, faces=faces,
-                 colors=xyz_to_srgb(lab_to_xyz(verts, white_point), white_point),
+                 colors=xyz_to_srgb(xyz, white_point),
                  volume=float(ConvexHull(verts).volume),
-                 space="lab", mode="icc-profile")
+                 space=space, mode="icc-profile")
