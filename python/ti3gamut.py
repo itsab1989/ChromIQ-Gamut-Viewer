@@ -610,7 +610,11 @@ def _legend_swatch(colours, page: str) -> str:
         return float(0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2])
     page_rgb = np.array([int(page[i:i + 2], 16) / 255.0 for i in (1, 3, 5)])
     dark_page = lum(page_rgb) < 0.5
-    target = 0.45 if dark_page else 0.55
+    # Plotly shades the legend key with the trace's own lighting, so it
+    # draws DARKER than the colour given. Aiming at what looks right
+    # unshaded leaves a key that is still hard to see, so the dark-page
+    # target is set well above it.
+    target = 0.68 if dark_page else 0.42
     have = lum(mean)
     if dark_page and have < target:
         mean = mean + (1.0 - mean) * ((target - have) / max(1e-6, 1.0 - have))
@@ -667,13 +671,17 @@ _SLICE_COLOURS = ("#e8175d", "#3aa8d0", "#f2c744", "#6bd07a")
 #: The scene's own colours, per appearance. Passed in rather than looked up,
 #: so the page and the window around it can never disagree about which mode it
 #: is showing.
+#: The 3D scene's own colours. The page matches the fill ChromIQ gives its
+#: gamut viewer exactly (gamut_panel.py:86) -- #111111 dark, #efebe6 light --
+#: so a scene dropped into that panel has no seam at its edge, and the text
+#: and grid come from ChromIQ's own tokens for the same reason.
 SCENE_COLOURS = {
-    "dark": dict(page="#111318", plot="#15181e", grid="#262b34",
-                 text="#e8ecf2", axis="#3a4150", kept="rgb(105,112,126)",
+    "dark": dict(page="#111111", plot="#141414", grid="#262626",
+                 text="#e6e6e6", axis="#333333", kept="rgb(105,112,126)",
                  wire="#9aa3b2"),
-    "light": dict(page="#f7f7f5", plot="#ffffff", grid="#e4e4de",
-                  text="#1c1b18", axis="#c4c4be", kept="rgb(176,180,188)",
-                  wire="#6f6f68"),
+    "light": dict(page="#efebe6", plot="#f7f4ef", grid="#e0ddd7",
+                  text="#22211f", axis="#d0ccc6", kept="rgb(176,180,188)",
+                  wire="#7a7570"),
 }
 
 _PAGE_BACKGROUND = "#111318"

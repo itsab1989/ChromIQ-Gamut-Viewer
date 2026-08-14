@@ -72,20 +72,38 @@ from ti3gamut import (CONVERTERS, compare_measurements, neutral_axis,
 #: Every colour the window uses, once per appearance. Two palettes rather than
 #: two stylesheets: the shapes are identical, only the paint differs, so a new
 #: control cannot end up styled in one mode and forgotten in the other.
+#: ChromIQ's own tokens, value for value, from its ui/styles.py (dark) and
+#: ui/light_styles.py (light) -- the name each carries there is in the comment.
+#: Not approximations: two windows meant to look like one application have to
+#: be the same colours, and "nearly" reads as a copy rather than a companion.
 PALETTES = {
     "dark": dict(
-        bg="#111318", panel="#1a1e26", line="#2a2f3a", line_soft="#3a4150",
-        text="#e8ecf2", dim="#9fb3c8", faint="#7b828e",
-        accent="#e8175d", accent_hot="#ff2e73", on_accent="#ffffff",
-        second="#232833", second_hover="#2e3440",
-        plot_bg="#15181e", grid="#262b34", arrow="#e0e0e0",
+        bg="#181818",            # BG_PANEL     — window and group fill
+        panel="#101010",         # BG_DARK      — the darker inset
+        line="#333333",          # BORDER
+        line_soft="#4a4a4a",     # BORDER_HI
+        text="#e6e6e6",          # TEXT_MAIN
+        dim="#8a8a8a",           # TEXT_DIM
+        faint="#8a8a8a",         # TEXT_DIM
+        accent="#ff4573", accent_hot="#ff6b90", on_accent="#ffffff",
+        second="#262626",        # BG_WIDGET    — default button fill
+        second_hover="#3a3a3a",
+        plot_bg="#111111",       # the 3D viewer fill, gamut_panel.py:86
+        grid="#262626", arrow="#e6e6e6",
         kept="rgb(105,112,126)"),
     "light": dict(
-        bg="#f7f7f5", panel="#ffffff", line="#d9d9d4", line_soft="#c4c4be",
-        text="#1c1b18", dim="#4a4a44", faint="#6f6f68",
-        accent="#e8175d", accent_hot="#c9134f", on_accent="#ffffff",
-        second="#ececE7", second_hover="#e0e0da",
-        plot_bg="#ffffff", grid="#e4e4de", arrow="#1c1b18",
+        bg="#eeece8",            # LM_BG_WINDOW
+        panel="#f7f4ef",         # LM_BG_SURFACE — group-box fill
+        line="#d0ccc6",          # LM_BORDER
+        line_soft="#b0aba4",     # LM_BORDER_HI
+        text="#22211f",          # LM_TEXT_MAIN
+        dim="#7a7570",           # LM_TEXT_DIM
+        faint="#a8a4a0",         # LM_TEXT_FAINT
+        accent="#ff4573", accent_hot="#e02a58", on_accent="#ffffff",
+        second="#edebe6",        # LM_BG_WIDGET
+        second_hover="#e0ded8",
+        plot_bg="#efebe6",       # LM_BG_VIEWER, gamut_panel.py:86
+        grid="#e4e1db", arrow="#22211f",
         kept="rgb(176,180,188)"),
 }
 
@@ -178,7 +196,8 @@ def stylesheet(mode: str, scheme: str = "Magenta",
     c["accent_hot"] = (chosen["light_hot"] if mode == "light"
                        else chosen["dark_hot"])
     return f"""
-QWidget {{ background: {c["bg"]}; color: {c["text"]}; font-size: 13px; }}
+QWidget {{ background: {c["bg"]}; color: {c["text"]};
+           font-family: "Inter"; font-size: 13px; }}
 QGroupBox {{ border: 1px solid {c["line"]}; border-radius: 6px; margin-top: 10px;
             padding: 10px 8px 8px 8px; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px;
@@ -252,8 +271,7 @@ QLabel#hint {{ color: {c["faint"]}; font-size: 11px; }}
 QLabel#eyebrow {{ color: {c["dim"]}; font-size: 10px; font-weight: 600;
                   letter-spacing: 1.4px; }}
 QFrame#mastheadRule {{ background: {c["accent"]}; border: none; }}
-QLabel#mastheadTitle {{ color: {c["text"]}; font-size: 25px; font-weight: 600;
-                        font-family: "Georgia", "Times New Roman", serif; }}
+QLabel#mastheadTitle {{ color: {c["text"]}; background: transparent; }}
 QToolButton#hintIcon {{ background: transparent; border: none; padding: 0; }}
 QToolButton#hintIcon:hover {{ background: rgba(128,128,128,40);
                               border-radius: 11px; }}
@@ -932,7 +950,7 @@ class GamutApp(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         # Eyebrow names the family, title names this window.
-        self._masthead = Masthead("ChromIQ", "Measured gamut", central)
+        self._masthead = Masthead("CHROMIQ", "Measured gamut", central)
         outer.addWidget(self._masthead)
         body = QWidget(central)
         outer.addWidget(body, 1)
@@ -958,8 +976,8 @@ class GamutApp(QMainWindow):
         # instant on every reload, which reads as a bright frame round a dark
         # scene and as a flash when anything changes. Both the widget and the
         # page it shows are told to be the same dark as the rest of the window.
-        self._view.setStyleSheet("background: #111318;")
-        self._view.page().setBackgroundColor(QColor("#111318"))
+        self._view.setStyleSheet("background: #111111;")
+        self._view.page().setBackgroundColor(QColor("#111111"))
         frame = self._frame = QFrame(body)
         fl = QVBoxLayout(frame)
         fl.setContentsMargins(1, 1, 1, 1)
@@ -1260,7 +1278,8 @@ class GamutApp(QMainWindow):
             combo.addItem(f"{label}: outline only", "mesh")
             combo.currentIndexChanged.connect(self._redraw)
             combo.setVisible(False)
-            lv.addWidget(combo)
+            if combo is not self._style_combos[-1][0]:
+                lv.addWidget(combo)      # the last one is added with its ⓘ
         # An outer shape starts as a cage so whatever is inside stays visible.
         self._style_second.setCurrentIndex(2)
         self._style_other.setCurrentIndex(2)
@@ -1272,7 +1291,12 @@ class GamutApp(QMainWindow):
             "printer. Swap them round when the other one is the shape you want "
             "to look into.", g_look)
         style_hint.setObjectName("hint_style_hint")
-        lv.addWidget(style_hint)
+        # One explanation covers all three combos, so it goes beside the last
+        # of them rather than on a row of its own underneath the group.
+        _sr = QHBoxLayout(); _sr.setContentsMargins(0, 0, 0, 0); _sr.setSpacing(6)
+        _sr.addWidget(self._style_combos[-1][0], 1)
+        _sr.addWidget(style_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_sr)
         self._slice_on = QCheckBox("Slice it at one lightness", g_look)
         self._slice_on.stateChanged.connect(self._redraw)
         lv.addWidget(self._slice_on)
@@ -1906,7 +1930,10 @@ class GamutApp(QMainWindow):
             chosen.blockSignals(True)
             chosen.setChecked(True)
             chosen.blockSignals(False)
-        colour = PALETTES[self._appearance]["bg"]
+        # The viewer fill, not the window fill: the page inside it paints
+        # itself this colour too (SCENE_COLOURS), so matching them means no
+        # seam shows at the edge of the scene while a page is loading.
+        colour = PALETTES[self._appearance]["plot_bg"]
         self._view.setStyleSheet(f"background: {colour};")
         page = self._view.page()
         if page is not None:
