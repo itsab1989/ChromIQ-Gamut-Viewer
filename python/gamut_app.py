@@ -240,7 +240,7 @@ QPushButton:disabled {{ background: {c["second"]}; color: {c["faint"]}; }}
    that answers to nothing the user chose. */
 QProgressBar {{ background: {c["second"]}; border: 1px solid {c["line_soft"]};
                border-radius: 5px; text-align: center; color: {c["text"]};
-               min-height: 16px; }}
+               min-height: 18px; margin: 4px 0 10px 0; }}
 QProgressBar::chunk {{ background: {c["accent"]}; border-radius: 4px; }}
 QProgressDialog {{ background: {c["bg"]}; }}
 QProgressDialog QLabel {{ color: {c["text"]}; }}
@@ -3114,6 +3114,10 @@ class GamutApp(QMainWindow):
         progress = QProgressDialog("Taking the frames…", "Stop",
                                    0, len(angles), self)
         progress.setWindowTitle("Saving a moving picture")
+        # ROOM BETWEEN THE BAR AND THE BUTTON. Qt lays a progress dialog out
+        # tightly enough that the two touch, which reads as one broken control
+        # rather than two.
+        progress.setMinimumWidth(360)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setAutoClose(False)
