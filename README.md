@@ -216,6 +216,28 @@ white print, and it is invisible in the overall shape.
 
 ## Reading the picture
 
+### Or give each one a room of its own
+
+Two shapes in one picture shows where one reaches past the other. It is the
+wrong way to judge either on its own, though — the shape in front hides the
+one behind, and whichever is drawn on top looks bigger than it is.
+
+Tick **Show them in two rooms, side by side** and each gets its own scene:
+
+<img src="docs/screenshots/14-side-by-side.webp" width="880" alt="Two measured papers drawn in two separate 3D scenes side by side">
+
+Turn one and the other turns with it, so you are always comparing the same
+face of both — that is what makes two rooms worth having. Untick **Keep both
+rooms pointing the same way** to move each on its own.
+
+### Tint it into the accent
+
+**How the shapes are coloured → In the accent colours** paints the gamut in
+the colour family the rest of the window uses. Each point keeps its own
+lightness, so the shape still reads as a shape; only the palette changes.
+
+<img src="docs/screenshots/15-accent-colours.webp" width="880" alt="A measured gamut tinted into the application's accent colours">
+
 ### Turn it, or cut it open
 
 The 3D view can be spun, zoomed and panned with the mouse. When two shapes
