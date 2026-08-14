@@ -142,7 +142,56 @@ def read_ti3(path: Path, white_point: str = "D50",
                        instrument=instrument, n_patches=len(rows))
 
 
-def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0):
+def _rings(gamut, name: str, count: int, colour: str, width: float = 1.5):
+    """Contour rings stacked inside a gamut, at evenly spaced lightnesses.
+
+    The wire cage shows only the outer surface, because that is what a gamut
+    is -- a solid with a boundary, not a lattice with structure inside. But an
+    empty cage tells you nothing about how the shape narrows between black and
+    white, which is exactly what decides whether mid-tones or highlights are
+    the tight part. Stacking the cross-sections inside the cage shows that,
+    and reuses the same slicing the flat view uses, so the two always agree.
+    """
+    import plotly.graph_objects as go
+
+    from gamutview import lab_to_lch_cartesian, slice_at
+
+    lows, highs = gamut.vertices[:, 0].min(), gamut.vertices[:, 0].max()
+    xs, ys, zs = [], [], []
+    for step in range(1, count + 1):
+        level = lows + (highs - lows) * step / (count + 1)
+        try:
+            ring = slice_at(gamut, level, steps=90)
+        except Exception:      # noqa: BLE001 — one bad level is not fatal
+            continue
+        if not len(ring):
+            continue
+        lab = np.column_stack([np.full(len(ring), level), ring])
+        pts = lab_to_lch_cartesian(lab)
+        pts = np.vstack([pts, pts[:1]])          # close the loop
+        xs += list(pts[:, 0]) + [None]
+        ys += list(pts[:, 1]) + [None]
+        zs += list(pts[:, 2]) + [None]
+    if not xs:
+        return []
+    return [go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
+                         line=dict(color=colour, width=width),
+                         name=f"{name} (rings inside)", showlegend=True,
+                         hoverinfo="name")]
+
+
+def _band(colour: str, steps: int = 32) -> str:
+    """A colour rounded to a coarse band, so a cage needs few traces."""
+    try:
+        r, g, b = (int(v) for v in colour[4:-1].split(","))
+    except (ValueError, IndexError):
+        return colour
+    q = [min(255, (v // steps) * steps + steps // 2) for v in (r, g, b)]
+    return f"rgb({q[0]},{q[1]},{q[2]})"
+
+
+def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
+           paint: str = "plain", index: int = 0):
     """The triangle edges of a gamut, as a wire cage.
 
     A solid shape hides whatever is inside it. Drawn as a cage instead, an
@@ -151,6 +200,13 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0):
     still see the printer. Every edge is drawn once — a triangle mesh shares
     each edge between two triangles, and drawing both doubles the work for an
     identical picture.
+
+    The cage can be painted the same ways the solid can. Plotly gives a line
+    one colour per trace rather than per point, so a coloured cage is drawn as
+    several traces -- one per band of colour. Plain grey stays the default: it
+    is a single trace, by far the cheapest, and on top of a solid shape a grey
+    cage reads more clearly than a coloured one competing with the colours
+    underneath it.
     """
     import plotly.graph_objects as go
     v = gamut.cylindrical() if gamut.space == "lab" else gamut.vertices
@@ -166,10 +222,42 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0):
             xs += [v[a, 0], v[b, 0], None]
             ys += [v[a, 1], v[b, 1], None]
             zs += [v[a, 2], v[b, 2], None]
-    return go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
-                        line=dict(color=colour, width=width),
-                        name=f"{name} (outline)", showlegend=True,
-                        hoverinfo="name")
+    if paint == "plain":
+        return [go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
+                             line=dict(color=colour, width=width),
+                             name=f"{name} (outline)", showlegend=True,
+                             hoverinfo="name")]
+
+    per_vertex = _paint_vertices(gamut, paint, index)
+    if per_vertex is None:                       # "true": each point's colour
+        per_vertex = [f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
+                      for r, g, b in gamut.colors]
+    bands: dict = {}
+    seen_again = set()
+    for tri in f:
+        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            key = (a, b) if a < b else (b, a)
+            if key in seen_again:
+                continue
+            seen_again.add(key)
+            # Group by a COARSENED colour: one trace per distinct colour gave
+            # 491 traces for a single cage, which the browser draws slowly for
+            # a picture the eye reads as a smooth gradient anyway. Rounding
+            # each channel to the nearest 32 leaves a few dozen bands.
+            bands.setdefault(_band(per_vertex[a]), []).append((a, b))
+    traces = []
+    for i, (edge_colour, edges) in enumerate(sorted(bands.items())):
+        bx, by, bz = [], [], []
+        for a, b in edges:
+            bx += [v[a, 0], v[b, 0], None]
+            by += [v[a, 1], v[b, 1], None]
+            bz += [v[a, 2], v[b, 2], None]
+        traces.append(go.Scatter3d(
+            x=bx, y=by, z=bz, mode="lines",
+            line=dict(color=edge_colour, width=width),
+            name=f"{name} (outline)", legendgroup=f"{name}-outline",
+            showlegend=(i == 0), hoverinfo="name"))
+    return traces
 
 
 #: Colour used for the part of a gamut that the comparison cannot reach. A
@@ -362,7 +450,8 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
                points: bool = False, patches=None,
                aspect: str = "data", styles=None, lost=None,
                mode: str = "dark", paint: str = "true",
-               depth: float = 0.35) -> Path:
+               depth: float = 0.35, mesh_paint: str = "plain",
+               rings: int = 0, per_shape=None) -> Path:
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -375,16 +464,34 @@ def write_html(gamuts, out: Path, title: str, opacity: float | None = None,
     fig = go.Figure()
     base = opacity if opacity is not None else (1.0 if len(gamuts) == 1 else 0.55)
     for i, (name, g) in enumerate(gamuts):
+        # Each shape may carry its own settings. Anything it does not name
+        # falls back to the window-wide value, so a caller that knows nothing
+        # about per-shape settings still gets exactly what it asked for.
+        own = (per_shape[i] if per_shape is not None and i < len(per_shape)
+               else {})
+        paint_i = own.get("paint", paint)
+        base_i = own.get("opacity", base)
+        depth_i = own.get("depth", depth)
+        rings_i = own.get("rings", rings)
+        mesh_paint_i = own.get("mesh_paint", mesh_paint)
         how = (styles[i] if styles is not None and i < len(styles) else "solid")
         marked = lost[i] if lost is not None and i < len(lost) else None
         if marked is not None:
-            fig.add_trace(_mesh_lost(g, name, base, marked, c["kept"], depth))
+            fig.add_trace(_mesh_lost(g, name, base_i, marked, c["kept"],
+                                     depth_i))
         elif how in ("solid", "solid+mesh"):
-            fig.add_trace(_mesh(g, name, opacity=base, wireframe=False,
-                                paint=paint, index=i, depth=depth))
+            fig.add_trace(_mesh(g, name, opacity=base_i, wireframe=False,
+                                paint=paint_i, index=i, depth=depth_i))
         if how in ("mesh", "solid+mesh"):
-            fig.add_trace(_edges(g, name, colour=c["wire"],
-                                 width=1.0 if how == "mesh" else 0.7))
+            for trace in _edges(g, name, colour=c["wire"],
+                                width=1.0 if how == "mesh" else 0.7,
+                                paint=("plain" if mesh_paint_i == "plain"
+                                       else paint_i),
+                                index=i):
+                fig.add_trace(trace)
+        if rings_i:
+            for trace in _rings(g, name, rings_i, c["wire"]):
+                fig.add_trace(trace)
         if points and patches is not None and i < len(patches):
             fig.add_trace(_patch_cloud(patches[i], name))
     fig.update_layout(

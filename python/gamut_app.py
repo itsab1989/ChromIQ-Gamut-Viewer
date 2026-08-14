@@ -21,6 +21,7 @@ wheels on all three.
 """
 from __future__ import annotations
 
+import json
 import sys
 
 # ASKING THE VERSION SHOULD NOT NEED A BROWSER ENGINE. Everything below pulls
@@ -42,7 +43,8 @@ from pathlib import Path
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
 from PyQt6.QtCore import (QRect, QSettings, QSize, QStandardPaths, Qt,
                           QUrl)
-from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QPainter,
+                         QPixmap)
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel,
                              QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider,
@@ -137,6 +139,11 @@ QPushButton:disabled {{ background: {c["second"]}; color: {c["faint"]}; }}
 QPushButton#secondary {{ background: {c["second"]}; color: {c["text"]};
                         font-weight: 500; }}
 QPushButton#secondary:hover {{ background: {c["second_hover"]}; }}
+QPushButton#closer {{ background: transparent; color: {c["faint"]};
+                     border: none; border-radius: 11px; padding: 0;
+                     font-size: 17px; font-weight: 500; min-height: 0; }}
+QPushButton#closer:hover {{ background: {c["second_hover"]};
+                           color: {c["text"]}; }}
 QComboBox {{ background: {c["panel"]}; border: 1px solid {c["line"]};
             border-radius: 5px; padding: 5px 8px; }}
 QComboBox QAbstractItemView {{ background: {c["panel"]};
@@ -420,6 +427,16 @@ class GamutApp(QMainWindow):
         self._last_folder = ""
         #: Renders so far, so each one gets a URL the view has not seen.
         self._render_count = 0
+        #: Per-shape overrides, by slot (0, 1) and 2 for the comparison. A key
+        #: is present only when that shape has been set on its own; otherwise
+        #: it follows the shared value, so "global" needs no bookkeeping.
+        self._per_shape = {0: {}, 1: {}, 2: {}}
+        #: The values every shape follows unless it has its own. Held apart
+        #: from the sliders on purpose: while a single shape is selected the
+        #: sliders show THAT shape, so reading the shared value off a slider
+        #: would hand one shape's setting to all the others.
+        self._shared = dict(opacity=1.0, depth=0.35, rings=0,
+                            mesh_paint="plain", paint="true")
         #: Light or dark. Remembered between runs, because an appearance you
         #: have to set again every time is not really a setting.
         self._store = QSettings("MeasuredGamutViewer", "MeasuredGamutViewer")
@@ -574,9 +591,15 @@ class GamutApp(QMainWindow):
             lab = WrappedLabel("", row)
             lab.setObjectName("slot")
             rl.addWidget(lab, 1)
-            shut = QPushButton("Close", row)
-            shut.setObjectName("secondary")
-            shut.setFixedWidth(64)
+            # A small × rather than a "Close" button: it sits beside the name
+            # of the chart it closes, so the word adds nothing that the
+            # position does not already say, and a full-width button there
+            # competes with "Open a measured chart" for attention.
+            shut = QPushButton("×", row)
+            shut.setObjectName("closer")
+            shut.setFixedSize(22, 22)
+            shut.setToolTip("Close this chart")
+            shut.setCursor(Qt.CursorShape.PointingHandCursor)
             shut.clicked.connect(lambda _checked=False, which=i:
                                  self._close_one(which))
             rl.addWidget(shut, 0)
@@ -674,6 +697,23 @@ class GamutApp(QMainWindow):
         # --- appearance -------------------------------------------------------
         g_look = QGroupBox("How it looks", col)
         lv = QVBoxLayout(g_look)
+        self._target = QComboBox(g_look)
+        self._target.addItem("Set this for: all shapes together", "all")
+        self._target.addItem("Set this for: the first chart", 0)
+        self._target.addItem("Set this for: the second chart", 1)
+        self._target.addItem("Set this for: the comparison", 2)
+        self._target.currentIndexChanged.connect(self._on_target_changed)
+        lv.addWidget(self._target)
+        target_hint = WrappedLabel(
+            "Everything below applies to whatever is chosen here. Leave it on "
+            "all shapes together and one change moves them all, which is what "
+            "you want most of the time. Pick a single shape and only that one "
+            "changes — so you can, for instance, have your own chart solid and "
+            "fully opaque while the thing you are comparing against is a faint "
+            "outline behind it. A shape you have set on its own keeps its own "
+            "value and stops following the shared one.", g_look)
+        target_hint.setObjectName("hint")
+        lv.addWidget(target_hint)
         orow = QHBoxLayout()
         orow.addWidget(QLabel("See-through", g_look))
         self._opacity = QSlider(Qt.Orientation.Horizontal, g_look)
@@ -684,6 +724,8 @@ class GamutApp(QMainWindow):
         # they are; the slider is there for looking inside two shapes at once.
         self._opacity.setRange(15, 100); self._opacity.setValue(100)
         self._opacity.valueChanged.connect(self._on_opacity_changed)
+        self._opacity.sliderReleased.connect(
+            lambda: self._after_shape_setting("opacity"))
         orow.addWidget(self._opacity, 1)
         self._opacity_lbl = QLabel("100%", g_look)
         self._opacity_lbl.setFixedWidth(38)
@@ -765,6 +807,8 @@ class GamutApp(QMainWindow):
         self._depth.setRange(0, 100)
         self._depth.setValue(35)
         self._depth.valueChanged.connect(self._on_depth_changed)
+        self._depth.sliderReleased.connect(
+            lambda: self._after_shape_setting("depth"))
         drow.addWidget(self._depth, 1)
         self._depth_lbl = QLabel("35%", g_look)
         self._depth_lbl.setFixedWidth(46)
@@ -836,6 +880,45 @@ class GamutApp(QMainWindow):
             self._paint_radios[key] = radio
             paint_grid.addWidget(radio, i // 2, i % 2)
         lv.addLayout(paint_grid)
+        self._mesh_colour = QCheckBox("Colour the outlines too", g_look)
+        self._mesh_colour.stateChanged.connect(
+            lambda: self._after_shape_setting("mesh_paint"))
+        lv.addWidget(self._mesh_colour)
+        mesh_hint = WrappedLabel(
+            "Outlines are drawn in one plain grey by default, which reads "
+            "clearly on top of a solid shape without competing with the "
+            "colours underneath. Tick this and they are painted the same way "
+            "the solid shapes are, which is worth it when a shape is shown as "
+            "an outline on its own.", g_look)
+        mesh_hint.setObjectName("hint")
+        lv.addWidget(mesh_hint)
+
+        rrow = QHBoxLayout()
+        self._rings_on = QCheckBox("Show rings inside", g_look)
+        self._rings_on.stateChanged.connect(
+            lambda: self._after_shape_setting("rings"))
+        rrow.addWidget(self._rings_on)
+        self._rings = QSlider(Qt.Orientation.Horizontal, g_look)
+        self._rings.setRange(1, 20)
+        self._rings.setValue(6)
+        self._rings.valueChanged.connect(
+            lambda v: self._rings_lbl.setText(str(v)))
+        self._rings.sliderReleased.connect(
+            lambda: self._after_shape_setting("rings"))
+        rrow.addWidget(self._rings, 1)
+        self._rings_lbl = QLabel("6", g_look)
+        self._rings_lbl.setFixedWidth(28)
+        rrow.addWidget(self._rings_lbl)
+        lv.addLayout(rrow)
+        rings_hint = WrappedLabel(
+            "A cage shows only the outer surface, because that is what a "
+            "gamut is — a solid with a boundary rather than something with "
+            "structure inside. These rings are cross-sections stacked within "
+            "it, which show how the shape narrows between black and white: "
+            "that is what tells you whether your mid-tones or your highlights "
+            "are the tight part.", g_look)
+        rings_hint.setObjectName("hint")
+        lv.addWidget(rings_hint)
         paint_hint = WrappedLabel(
             "True colours paints every point the colour it represents, which "
             "is the honest picture of one gamut. One colour each is easier "
@@ -941,6 +1024,9 @@ class GamutApp(QMainWindow):
             ("show_lost", self._show_lost, "check", False),
             ("relative", self._relative, "check", False),
             ("manual_light", self._manual_light, "check", False),
+            ("mesh_colour", self._mesh_colour, "check", False),
+            ("rings_on", self._rings_on, "check", False),
+            ("rings", self._rings, "slider", 6),
             ("aspect", self._aspect, "combo", "data"),
             ("white", self._white, "combo", "D50"),
             ("shape_mode", self._mode, "combo", "device"),
@@ -964,6 +1050,15 @@ class GamutApp(QMainWindow):
         self._store.setValue("appearance", self._appearance)
         self._store.setValue("scheme", self._scheme)
         self._store.setValue("paint", self._paint)
+        # Per-shape overrides as JSON: a nested dictionary is not something a
+        # settings store keeps faithfully on every platform, and one string
+        # that either parses or does not is easier to reason about than three
+        # half-restored dictionaries.
+        self._store.setValue(
+            "per_shape",
+            json.dumps({str(k): v for k, v in self._per_shape.items()}))
+        self._store.setValue("target", self._target.currentData())
+        self._store.setValue("shared", json.dumps(self._shared))
 
     def _restore_everything(self) -> None:
         """Put every remembered control back where it was left.
@@ -988,6 +1083,26 @@ class GamutApp(QMainWindow):
                 pass          # a stored value we cannot use: keep the default
             finally:
                 widget.blockSignals(False)
+        raw = self._store.value("per_shape", "")
+        if raw:
+            try:
+                stored = json.loads(raw)
+                self._per_shape = {int(k): dict(v) for k, v in stored.items()}
+                for i in (0, 1, 2):
+                    self._per_shape.setdefault(i, {})
+            except (ValueError, TypeError, AttributeError):
+                self._per_shape = {0: {}, 1: {}, 2: {}}   # unreadable: start clean
+        shared_raw = self._store.value("shared", "")
+        if shared_raw:
+            try:
+                self._shared.update(json.loads(shared_raw))
+            except (ValueError, TypeError):
+                pass                       # unreadable: keep the defaults
+        index = self._target.findData(self._store.value("target", "all"))
+        if index >= 0:
+            self._target.blockSignals(True)
+            self._target.setCurrentIndex(index)
+            self._target.blockSignals(False)
         self._sync_slider_labels()
         self._on_manual_light()
 
@@ -997,6 +1112,7 @@ class GamutApp(QMainWindow):
         self._depth_lbl.setText(f"{self._depth.value()}%")
         self._detail_lbl.setText(f"{self._detail.value()} steps")
         self._slice_lbl.setText(f"L* {self._slice_at.value()}")
+        self._rings_lbl.setText(str(self._rings.value()))
 
     def _reset_defaults(self) -> None:
         """Put every setting back to its starting value, after asking."""
@@ -1004,7 +1120,8 @@ class GamutApp(QMainWindow):
             self, "Start again with the standard settings?",
             "Every setting in this window goes back to how it started: the "
             "appearance, the accent colour, how the shapes are drawn and "
-            "coloured, the lighting, and everything else.\n\n"
+            "coloured, the lighting, and everything else. Any shape you set "
+            "on its own goes back to following the shared settings.\n\n"
             "The charts you have open stay open, and no file of yours is "
             "touched.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
@@ -1023,6 +1140,12 @@ class GamutApp(QMainWindow):
                     widget.setCurrentIndex(index)
             widget.blockSignals(False)
         self._appearance, self._scheme, self._paint = "dark", "Magenta", "true"
+        self._per_shape = {0: {}, 1: {}, 2: {}}    # every shape shares again
+        self._shared = dict(opacity=1.0, depth=0.35, rings=0,
+                            mesh_paint="plain", paint="true")
+        self._target.blockSignals(True)
+        self._target.setCurrentIndex(0)
+        self._target.blockSignals(False)
         # Write the fresh values out BEFORE anything reads them back. Restoring
         # first re-read the store, which still held what was being reset, so
         # the sliders quietly went back to where they had just been moved from.
@@ -1033,12 +1156,18 @@ class GamutApp(QMainWindow):
         if self._slots:
             self._redraw()
 
+    def _after_shape_setting(self, key: str) -> None:
+        """Record a per-shape (or shared) value, then repaint."""
+        self._remember_shape_setting(key)
+        self._redraw()
+
     def _set_paint(self, which: str) -> None:
         """Change how the shapes themselves are coloured, and remember it."""
         if which == self._paint:
             return
         self._paint = which
         self._store.setValue("paint", which)
+        self._remember_shape_setting("paint")
         if self._slots:
             self._redraw()
 
@@ -1242,11 +1371,8 @@ class GamutApp(QMainWindow):
         try:
             gamuts, clouds, styles, lost = self._scene_contents()
             write_html(gamuts, Path(target), self._scene_title(),
-                       opacity=self._opacity.value() / 100.0,
-                       points=self._points.isChecked(), patches=clouds,
-                       aspect=self._aspect.currentData(), styles=styles, lost=lost,
-                   mode=self._appearance, paint=self._paint,
-                   depth=self._depth.value() / 100.0)
+                       patches=clouds, styles=styles, lost=lost,
+                       **self._render_options())
         except OSError as exc:
             QMessageBox.warning(self, "That could not be saved", str(exc))
             return
@@ -1381,7 +1507,17 @@ class GamutApp(QMainWindow):
                            else f"{m.n_patches} patches")
                 measured = (f", measured with your {m.instrument}"
                             if m.instrument else "")
-                lab.setText(f"● {path.stem}\n   {patches}{measured}")
+                # A chart name is usually one long token with no spaces, so
+                # word wrap cannot break it and the end simply disappears off
+                # the edge. Shortening it in the MIDDLE keeps both the part
+                # that says which printer and the part that says which paper
+                # or date -- the two halves people actually tell files apart
+                # by. The full name is on the tooltip.
+                shown = QFontMetrics(lab.font()).elidedText(
+                    path.stem, Qt.TextElideMode.ElideMiddle,
+                    max(120, lab.width() - 18))
+                lab.setText(f"● {shown}\n   {patches}{measured}")
+                lab.setToolTip(str(path))
             else:
                 # Nothing to say about a slot that holds nothing: an empty
                 # placeholder under a real chart reads as if something failed.
@@ -1498,14 +1634,96 @@ class GamutApp(QMainWindow):
             self._update_coverage()
             return
         write_html(gamuts, out, self._scene_title(),
-                   opacity=self._opacity.value() / 100.0,
-                   points=self._points.isChecked(), patches=clouds,
-                   aspect=self._aspect.currentData(), styles=styles, lost=lost,
-                   mode=self._appearance, paint=self._paint,
-                   depth=self._depth.value() / 100.0)
+                   patches=clouds, styles=styles, lost=lost,
+                   **self._render_options())
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
         self._update_volume()
         self._update_coverage()
+
+    #: The controls that can belong to one shape rather than all of them, as
+    #: key → (widget, how to read it). Anything not here is window-wide by
+    #: nature: the appearance, the accent, the proportions of the axes.
+    def _shape_controls(self) -> dict:
+        return {
+            "opacity": (self._opacity, lambda w: w.value() / 100.0),
+            "depth": (self._depth, lambda w: w.value() / 100.0),
+            "rings": (self._rings, lambda w: (w.value()
+                                              if self._rings_on.isChecked()
+                                              else 0)),
+            "mesh_paint": (self._mesh_colour,
+                           lambda w: "colour" if w.isChecked() else "plain"),
+            "paint": (None, lambda _w: self._paint),
+        }
+
+    def _remember_shape_setting(self, key: str) -> None:
+        """Record a control's value against whatever it is currently setting."""
+        widget, read = self._shape_controls()[key]
+        value = read(widget)
+        target = self._target.currentData()
+        if target == "all":
+            # Shared again: drop any per-shape override so nothing is left
+            # quietly disagreeing with the control the user just moved.
+            self._shared[key] = value
+            for own in self._per_shape.values():
+                own.pop(key, None)
+        else:
+            self._per_shape[target][key] = value
+
+    def _on_target_changed(self) -> None:
+        """Show the values that belong to whichever shape is now selected."""
+        target = self._target.currentData()
+        for key, (widget, _read) in self._shape_controls().items():
+            if widget is None:
+                continue
+            own = (self._shared if target == "all"
+                   else self._per_shape.get(target, {}))
+            if key not in own:
+                own = self._shared          # this shape follows the shared value
+            if key not in own:
+                continue
+            widget.blockSignals(True)
+            if key == "opacity":
+                widget.setValue(int(round(own[key] * 100)))
+            elif key == "depth":
+                widget.setValue(int(round(own[key] * 100)))
+            elif key == "rings":
+                widget.setValue(max(1, int(own[key])))
+                self._rings_on.blockSignals(True)
+                self._rings_on.setChecked(bool(own[key]))
+                self._rings_on.blockSignals(False)
+            elif key == "mesh_paint":
+                widget.setChecked(own[key] == "colour")
+            widget.blockSignals(False)
+        self._sync_slider_labels()
+
+    def _per_shape_list(self) -> list:
+        """Per-shape overrides in the order the shapes are drawn."""
+        out = [dict(self._per_shape[i]) for i in range(len(self._slots))]
+        if self._reference is not None:
+            out.append(dict(self._per_shape[2]))
+        return out
+
+    def _render_options(self) -> dict:
+        """Every option the renderer takes, from the controls, in one place.
+
+        The live view and the saved page both use this. Keeping two copies of
+        the argument list is how new options twice reached the save route and
+        never the screen: the two calls look almost identical, so an edit meant
+        for one silently landed on the other.
+        """
+        return dict(
+            # The SHARED values, not whatever the sliders happen to show --
+            # while one shape is selected the sliders describe that shape.
+            opacity=self._shared["opacity"],
+            points=self._points.isChecked(),
+            aspect=self._aspect.currentData(),
+            mode=self._appearance,
+            paint=self._shared["paint"],
+            depth=self._shared["depth"],
+            mesh_paint=self._shared["mesh_paint"],
+            rings=self._shared["rings"],
+            per_shape=self._per_shape_list(),
+        )
 
     def _scene_contents(self):
         """What goes into the picture: the shapes, their patches, their styles.

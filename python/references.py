@@ -201,8 +201,9 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r", **_ignored):
             detail = (done.stderr or done.stdout or "").strip().splitlines()
             why = detail[-1] if detail else f"exit code {done.returncode}"
             raise ValueError(
-                f"{path.name} could not be read as a colour profile: {why}. "
-                "CMYK and device-link profiles are not supported here.")
+                f"{path.name} could not be read as a colour profile: "
+                f"{why}.\n\nDevice-link and abstract profiles do not describe "
+                "a gamut, so there is nothing to draw for them.")
         verts, faces = _read_gam(gam)
 
     if len(verts) < 4:
