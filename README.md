@@ -237,8 +237,9 @@ opacity, colouring and depth.
 
 <img src="docs/screenshots/11-controls.webp" width="880" alt="The controls column, with two explanations unfolded">
 
-Every explanation in the column folds away behind a **What this does** line and
-starts folded, so the controls stay reachable; open ones are remembered.
+Every setting has an **ⓘ** beside it. Hover for a one-line answer, click for
+the full explanation in a window wide enough to read it. An option that is
+hidden takes its ⓘ with it.
 
 ### Light and dark
 
@@ -312,6 +313,24 @@ which explanations you left open. **Start again with the standard settings**
 puts every one of them back, and never touches a file of yours.
 
 ---
+
+## Where your settings and log live
+
+Your settings are remembered automatically and survive a restart.
+**Start again with standard settings** puts every one of them back, and never
+touches a file of yours.
+
+There is also a plain-text log, so a fault that happened once can still be
+looked at afterwards:
+
+| | |
+|---|---|
+| macOS | `~/Library/Logs/ChromIQ Gamut Viewer/gamut-viewer.log` |
+| Windows | `%LOCALAPPDATA%\ChromIQ Gamut Viewer\logs\` |
+| Linux | `$XDG_STATE_HOME/chromiq-gamut-viewer/` |
+
+It never leaves your machine, and it cannot grow beyond **10 MB** — 2 MB a
+file, five files kept. You can read or delete it whenever you like.
 
 ## Colour science, stated plainly
 
