@@ -138,42 +138,14 @@ jobs:
       - name: Check the whole graphical stack loads
         # Separate from the version check on purpose: this is the one that can
         # legitimately fail on a platform where QtWebEngine will not load, and
-        # it should say so loudly rather than hide inside another step.
+        # it should say so loudly rather than hide inside another step. The
+        # probe is a real file, not an inline snippet: a shell heredoc is
+        # bash-only and the Windows runner uses PowerShell, so an inline
+        # version failed there while working on Linux and macOS.
         working-directory: python
         env:
           QT_QPA_PLATFORM: offscreen
-        run: |
-          # Import the pieces one at a time and say which one failed. A bare
-          # "import gamut_app" that dies gives an ImportError naming a Python
-          # module, when the real cause is almost always a missing SYSTEM
-          # library underneath Qt -- and on a cancelled run the log can be
-          # discarded before anybody reads it. So the diagnosis is printed
-          # here, while the job is running, rather than reconstructed later.
-          python - <<'PROBE'
-          import subprocess, sys, traceback
-          for step, module in (("Qt core", "PyQt6.QtCore"),
-                               ("Qt widgets", "PyQt6.QtWidgets"),
-                               ("QtWebEngine", "PyQt6.QtWebEngineWidgets"),
-                               ("the application", "gamut_app")):
-              try:
-                  __import__(module)
-                  print(f"ok   {step} ({module})")
-              except BaseException:
-                  print(f"FAIL {step} ({module})")
-                  traceback.print_exc()
-                  try:
-                      import PyQt6, pathlib
-                      root = pathlib.Path(PyQt6.__file__).parent
-                      for lib in sorted(root.rglob("libQt6WebEngineCore*")):
-                          print(f"--- ldd {lib} ---")
-                          print(subprocess.run(["ldd", str(lib)],
-                                               capture_output=True,
-                                               text=True).stdout)
-                  except Exception as exc:
-                      print(f"(could not inspect the Qt libraries: {exc})")
-                  sys.exit(1)
-          print("the whole graphical stack loads, including QtWebEngine")
-          PROBE
+        run: python ../.github/check_graphics.py
 
       - name: Run the tests
         working-directory: python
