@@ -206,7 +206,23 @@ Notes worth carrying over:
 * **Reset must write before it reads.** Setting the widgets back and then
   restoring from the store re-read the values being reset, so the sliders
   quietly returned to where they had just been moved from.
-* **Every explanation folds.** The eighteen help paragraphs are `Hint`
+* **Every explanation is behind an ⓘ.** The twenty help paragraphs are
+  `Hint` widgets: ChromIQ's own info icon — an 18px circle with an italic
+  serif *i*, painted and cached per (colour, device pixel ratio) — sitting at
+  the end of the row its control is on. Hovering shows the first sentence;
+  clicking opens the full text in a `Notice`, which is wide enough to read it
+  properly rather than squeezing it into a 346px column. The icon follows the
+  chosen accent.
+* **The window wears ChromIQ's masthead.** Eyebrow, title and the spectrum
+  stripe, with ChromIQ's own metrics rather than an impression of them: a
+  22x2 accent rule, the eyebrow in Menlo 12px at `#808080`, the title in
+  Georgia 30px with letter spacing at 85%. The five accent choices are
+  ChromIQ's own `SPEC_*` values, so the two applications are literally the
+  same colours.
+* **The stripe is NOT derived from the accent.** It is always the five
+  `TAB_COLORS`, identical in light and dark. The stripe is the family mark; it
+  stays the family's colours whichever accent this window is wearing.
+* **Superseded: every explanation folds.** The eighteen help paragraphs are `Hint`
   widgets: a "What this does" line with an arrow, folded by default, and each
   one is remembered separately under `hint_<name>`. They are discovered with
   `findChildren(Hint)` rather than listed by hand, so a new one is remembered

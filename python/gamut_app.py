@@ -115,12 +115,25 @@ PAINTS = (
 #: text and the backgrounds stay put, because they are what makes the window
 #: readable and an accent is what makes it yours. Each is picked to hold up
 #: against both the dark and the light background at the same weight.
+#: ChromIQ's own five spectrum hues, verbatim from its ui/styles.py, so the
+#: two applications are literally the same colours rather than near misses.
+SPEC_MAGENTA = "#ff4573"
+SPEC_AMBER   = "#ffb42d"
+SPEC_GREEN   = "#56d6a5"
+SPEC_CYAN    = "#37bcd6"
+SPEC_VIOLET  = "#9f82ff"
+
+#: The stripe under the title. Five plain spectrum blocks, identical in light
+#: and dark -- ChromIQ paints only the chrome around them per theme, so this
+#: needs no per-mode palette either.
+TAB_COLORS = (SPEC_MAGENTA, SPEC_AMBER, SPEC_GREEN, SPEC_CYAN, SPEC_VIOLET)
+
 SCHEMES = {
-    "Magenta": dict(accent="#e8175d", dark_hot="#ff2e73", light_hot="#c9134f"),
-    "Teal": dict(accent="#0f9b8e", dark_hot="#17b9aa", light_hot="#0c7d72"),
-    "Amber": dict(accent="#d98324", dark_hot="#f09a3c", light_hot="#b56a17"),
-    "Violet": dict(accent="#7d5ba6", dark_hot="#9670c4", light_hot="#66478a"),
-    "Slate": dict(accent="#4a6b8a", dark_hot="#5f83a6", light_hot="#3a5670"),
+    "Magenta": dict(accent=SPEC_MAGENTA, dark_hot="#ff6b90", light_hot="#e02a58"),
+    "Cyan": dict(accent=SPEC_CYAN, dark_hot="#5ad0e8", light_hot="#2597ad"),
+    "Amber": dict(accent=SPEC_AMBER, dark_hot="#ffc75c", light_hot="#d8930f"),
+    "Violet": dict(accent=SPEC_VIOLET, dark_hot="#b9a3ff", light_hot="#7e5fe0"),
+    "Green": dict(accent=SPEC_GREEN, dark_hot="#7ce3bb", light_hot="#33b184"),
 }
 
 
@@ -236,6 +249,14 @@ QLabel#noticeBody {{ font-size: 12px; font-weight: 400; color: {c["dim"]};
 QFrame#noticeCard QScrollArea {{ background: transparent; }}
 QFrame#noticeCard QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QLabel#hint {{ color: {c["faint"]}; font-size: 11px; }}
+QLabel#eyebrow {{ color: {c["dim"]}; font-size: 10px; font-weight: 600;
+                  letter-spacing: 1.4px; }}
+QFrame#mastheadRule {{ background: {c["accent"]}; border: none; }}
+QLabel#mastheadTitle {{ color: {c["text"]}; font-size: 25px; font-weight: 600;
+                        font-family: "Georgia", "Times New Roman", serif; }}
+QToolButton#hintIcon {{ background: transparent; border: none; padding: 0; }}
+QToolButton#hintIcon:hover {{ background: rgba(128,128,128,40);
+                              border-radius: 11px; }}
 /* The line that unfolds an explanation. Quiet enough that it never competes
    with the control it belongs to, but it takes the accent colour on hover so
    it is visibly something you can click rather than another caption. */
@@ -441,6 +462,82 @@ class WrappedLabel(QLabel):
         self._refit()
 
 
+class SpectrumStripe(QWidget):
+    """A thin full-width band of the five ChromIQ tab hues, painted as equal
+    blocks -- the same stripe ChromIQ's masthead and chart-design windows use.
+
+    The hues are plain spectrum colours, identical in light and dark mode;
+    only the chrome around them changes per theme, so this needs no per-mode
+    palette. They are deliberately NOT derived from the chosen accent: the
+    stripe is the family mark, and it stays the family's colours whichever
+    accent this window happens to be wearing.
+    """
+
+    HEIGHT = 4
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFixedHeight(self.HEIGHT)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Fixed)
+
+    def paintEvent(self, _event) -> None:      # noqa: N802 (Qt naming)
+        painter = QPainter(self)
+        width = self.width()
+        n = len(TAB_COLORS)
+        for i, colour in enumerate(TAB_COLORS):
+            x0 = int(round(i * width / n))
+            x1 = int(round((i + 1) * width / n)) if i < n - 1 else width
+            painter.fillRect(x0, 0, x1 - x0, self.HEIGHT, QColor(colour))
+        painter.end()
+
+
+class Masthead(QWidget):
+    """Eyebrow, title and the spectrum stripe -- ChromIQ's own masthead.
+
+    The metrics are ChromIQ's, not an impression of them: a 22x2 accent rule
+    before the eyebrow, the eyebrow in Menlo 12px at #808080, and the title in
+    Georgia 30px with letter spacing at 85%. Matching them exactly is the
+    point -- these two windows are meant to look like one family, and
+    "close enough" reads as a copy rather than a companion.
+    """
+
+    def __init__(self, eyebrow: str, title: str, parent=None) -> None:
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        inner = QVBoxLayout()
+        inner.setContentsMargins(22, 18, 22, 12)
+        inner.setSpacing(4)
+
+        step_row = QHBoxLayout()
+        step_row.setContentsMargins(0, 0, 0, 0)
+        step_row.setSpacing(8)
+        self._rule = QFrame(self)
+        self._rule.setFixedSize(22, 2)
+        self._rule.setObjectName("mastheadRule")
+        step_row.addWidget(self._rule, 0, Qt.AlignmentFlag.AlignVCenter)
+        eyebrow_label = QLabel(eyebrow, self)
+        eyebrow_label.setStyleSheet(
+            "color: #808080; background: transparent;"
+            " font-family: Menlo; font-size: 12px; font-weight: 300;")
+        step_row.addWidget(eyebrow_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        step_row.addStretch(1)
+        inner.addLayout(step_row)
+
+        title_label = QLabel(title, self)
+        title_label.setObjectName("mastheadTitle")
+        title_label.setStyleSheet(
+            "background: transparent; font-family: Georgia; font-size: 30px;")
+        font = QFont()
+        font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 85)
+        title_label.setFont(font)
+        inner.addWidget(title_label)
+        lay.addLayout(inner)
+        lay.addWidget(SpectrumStripe(self))
+
+
 class Notice(QDialog):
     """The window's own message box, instead of the system one.
 
@@ -562,75 +659,98 @@ class Notice(QDialog):
                       cancel=cancel).exec() == QDialog.DialogCode.Accepted
 
 
-class Hint(QWidget):
-    """One paragraph of help, folded away behind a line you can click.
+class Hint(QToolButton):
+    """The ⓘ beside a control: click it and the explanation opens.
 
-    The explanations here are written for somebody meeting a printer gamut for
-    the first time, so they are long on purpose. Shown all at once they are
-    also most of the column: eighteen paragraphs push the controls they
-    describe off the bottom of the window, and somebody who has read them once
-    has to scroll past them for ever after.
+    These explanations are long on purpose -- they are written for somebody
+    meeting a printer gamut for the first time. Eighteen long paragraphs laid
+    into a 310px column is most of the column, and folding each one away still
+    spent a row on every one.
 
-    So each one starts folded behind its own "What this does" line, and stays
-    wherever it is left — reading an explanation is a thing you do once, and
-    the window should remember that you did. Nothing is hidden that cannot be
-    reached in one click, and the arrow shows which way it goes.
+    A single ⓘ says the same thing in one glyph, in the place the eye already
+    looks for help, and the full text then arrives in a window wide enough to
+    read it. It is also the convention ChromIQ uses throughout, which matters
+    because these two are meant to sit beside each other.
+
+    Hovering shows the first sentence, so the common question is answered
+    without a click at all.
     """
 
-    #: Named to match QCheckBox, so the one persistence table can drive a
-    #: Hint and a checkbox through the same branch instead of growing a
-    #: special case for a widget that behaves identically.
+    #: Kept so the persistence table needs no special case. Nothing about an
+    #: ⓘ is worth remembering between sessions, so it never fires.
     stateChanged = pyqtSignal(int)
 
-    def __init__(self, text: str, parent=None) -> None:
+    #: ChromIQ draws its ⓘ at 18 logical pixels; matched so the two sit at
+    #: the same weight beside the same kind of control.
+    ICON = 18
+
+    #: One QIcon per (colour, device pixel ratio). A window has twenty of
+    #: these and they share a handful of colours, so all but the first draw
+    #: of each becomes a dict lookup instead of a repaint.
+    _CACHE: "dict[tuple, QIcon]" = {}
+
+    def __init__(self, text: str, parent=None, *, title: str = "") -> None:
         super().__init__(parent)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(2)
-        self._toggle = QToolButton(self)
-        self._toggle.setObjectName("hintToggle")
-        self._toggle.setText("What this does")
-        self._toggle.setCheckable(True)
-        self._toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self._toggle.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        # Qt draws the arrow to fill the icon rect, which at the default size
-        # is a chunky triangle beside 11px text. This is a quiet disclosure
-        # marker, not a button, so it wants to be smaller than the words.
-        self._toggle.setIconSize(QSize(8, 8))
-        self._toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._toggle.setToolTip("Show or hide the explanation for this setting")
-        self._toggle.toggled.connect(self._on_toggled)
-        lay.addWidget(self._toggle, 0, Qt.AlignmentFlag.AlignLeft)
-        self._label = WrappedLabel(text, self)
-        self._label.setObjectName("hint")
-        self._label.setVisible(False)
-        lay.addWidget(self._label)
+        self._text = text
+        self._title = title or "About this setting"
+        self.setObjectName("hintIcon")
+        self.setFixedSize(QSize(Hint.ICON + 4, Hint.ICON + 4))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setToolTip(self._summary())
+        self.setAccessibleName("Explain this setting")
+        self.clicked.connect(self._open)
+        self.set_colour(SPEC_MAGENTA)
 
-    def _on_toggled(self, on: bool) -> None:
-        # The arrow is the only thing telling somebody the text is still
-        # there when it is folded, so it has to follow the state exactly.
-        self._toggle.setArrowType(Qt.ArrowType.DownArrow if on
-                                  else Qt.ArrowType.RightArrow)
-        self._label.setVisible(on)
-        if on:
-            self._label._refit()
-        self.stateChanged.emit(1 if on else 0)
+    def set_colour(self, colour: str) -> None:
+        """Repaint the icon in *colour*, cached per colour and screen."""
+        dpr = float(self.devicePixelRatioF() or 1.0)
+        key = (colour, round(dpr, 3))
+        icon = Hint._CACHE.get(key)
+        if icon is None:
+            phys = round(Hint.ICON * dpr)
+            pix = QPixmap(phys, phys)
+            pix.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pix)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            qc = QColor(colour)
+            painter.setPen(QPen(qc, max(1.0, phys * 0.10)))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            margin = int(phys * 0.07)
+            painter.drawEllipse(margin, margin,
+                                phys - 2 * margin, phys - 2 * margin)
+            font = QFont()
+            font.setFamilies(["Georgia", "Times New Roman", "serif"])
+            font.setItalic(True)
+            font.setBold(True)
+            font.setPixelSize(max(8, int(phys * 0.54)))
+            painter.setFont(font)
+            painter.setPen(qc)
+            painter.drawText(
+                QRect(0, 0, phys, int(phys * 1.05)),
+                int(Qt.AlignmentFlag.AlignHCenter
+                    | Qt.AlignmentFlag.AlignVCenter), "i")
+            painter.end()
+            pix.setDevicePixelRatio(dpr)
+            icon = QIcon(pix)
+            Hint._CACHE[key] = icon
+        self.setIcon(icon)
+        self.setIconSize(QSize(Hint.ICON, Hint.ICON))
 
-    # A checkbox-shaped face, so the one persistence table drives these too
-    # rather than needing a second mechanism that could fall out of step.
+    def _summary(self) -> str:
+        """The first sentence, for the hover tooltip."""
+        first = self._text.strip().split(chr(10) + chr(10))[0]
+        cut = first.find(". ")
+        return (first[:cut + 1] if cut > 0 else first)[:200]
+
+    def _open(self) -> None:
+        Notice.say(self.window(), self._title, self._text)
+
     def isChecked(self) -> bool:
-        return self._toggle.isChecked()
+        return False
 
     def setChecked(self, on: bool) -> None:
-        self._toggle.setChecked(bool(on))
-
-    def setText(self, text: str) -> None:
-        self._label.setText(text)
-        self._label._refit()
-
-    def text(self) -> str:
-        return self._label.text()
+        return
 
 
 def _join_words(words) -> str:
@@ -808,21 +928,31 @@ class GamutApp(QMainWindow):
             self._paint = "true"
 
         central = QWidget(self)
-        row = QHBoxLayout(central)
-        row.setContentsMargins(14, 14, 14, 14)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        # Eyebrow names the family, title names this window.
+        self._masthead = Masthead("ChromIQ", "Measured gamut", central)
+        outer.addWidget(self._masthead)
+        body = QWidget(central)
+        outer.addWidget(body, 1)
+        row = QHBoxLayout(body)
+        row.setContentsMargins(14, 12, 14, 14)
         row.setSpacing(14)
         # The column scrolls: its help text is as long as it needs to be, and
         # on a short screen that is taller than the window. Scrolling keeps
         # every control reachable instead of trimming the explanations.
-        controls = QScrollArea(central)
+        controls = QScrollArea(body)
         controls.setWidget(self._build_controls())
         controls.setWidgetResizable(True)
-        controls.setFixedWidth(330)
+        # 330 fitted before each control gained an 18px icon and 6px of spacing
+        # beside it; several combo labels were clipped at the old width.
+        controls.setFixedWidth(366)
         controls.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         row.addWidget(controls, 0)
 
-        self._view = QWebEngineView(central)
+        self._view = QWebEngineView(body)
         self._view.setMinimumWidth(560)
         # A web view paints white until a page has loaded, and again for an
         # instant on every reload, which reads as a bright frame round a dark
@@ -830,7 +960,7 @@ class GamutApp(QMainWindow):
         # page it shows are told to be the same dark as the rest of the window.
         self._view.setStyleSheet("background: #111318;")
         self._view.page().setBackgroundColor(QColor("#111318"))
-        frame = self._frame = QFrame(central)
+        frame = self._frame = QFrame(body)
         fl = QVBoxLayout(frame)
         fl.setContentsMargins(1, 1, 1, 1)
         fl.addWidget(self._view)
@@ -839,6 +969,8 @@ class GamutApp(QMainWindow):
         self.setAcceptDrops(True)      # drop a .ti3 anywhere on the window
         self._restore_everything()
         self._apply_space_availability()
+        for icon in self.findChildren(Hint):
+            icon.set_colour(SCHEMES.get(self._scheme, SCHEMES['Magenta'])['accent'])
         self._apply_mode()
         self._show_placeholder()
         # Anything the user moves is written straight away, so a crash or a
@@ -874,7 +1006,7 @@ class GamutApp(QMainWindow):
     # ---------------------------------------------------------------- controls
     def _build_controls(self) -> QWidget:
         col = QWidget(self)
-        col.setFixedWidth(310)
+        col.setFixedWidth(346)
         v = QVBoxLayout(col)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(12)
@@ -927,7 +1059,6 @@ class GamutApp(QMainWindow):
         self._clear_btn.setObjectName("secondary")
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setVisible(False)
-        fv.addWidget(self._clear_btn)
         hint = Hint(
             "Open the .ti3 file ArgyllCMS saved when you measured a printed "
             "chart — or simply drag it onto this window. Open a second one and "
@@ -938,7 +1069,11 @@ class GamutApp(QMainWindow):
             "below rather than here — it is what your printer is described "
             "as being able to do, next to what it actually did.", g_files)
         hint.setObjectName("hint_hint")
-        fv.addWidget(hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._clear_btn, 1)
+        _r.addWidget(hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        fv.addLayout(_r)
         v.addWidget(g_files)
 
         # --- how it is built --------------------------------------------------
@@ -948,7 +1083,6 @@ class GamutApp(QMainWindow):
         self._mode.addItem("Follow the real edge", "device")
         self._mode.addItem("Wrap it in a simple skin", "hull")
         self._mode.currentIndexChanged.connect(self._rebuild)
-        bv.addWidget(self._mode)
         mode_hint = Hint(
             "Follow the real edge is the one to use. The edge of what a printer "
             "can print is not smooth — it has real "
@@ -960,7 +1094,11 @@ class GamutApp(QMainWindow):
             "colour than your printer really has. Switch between them to see "
             "the difference.", g_build)
         mode_hint.setObjectName("hint_mode_hint")
-        bv.addWidget(mode_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._mode, 1)
+        _r.addWidget(mode_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        bv.addLayout(_r)
         v.addWidget(g_build)
 
         # --- what to compare against -----------------------------------------
@@ -976,7 +1114,6 @@ class GamutApp(QMainWindow):
         cvv.addWidget(self._compare)
         self._compare_note = WrappedLabel("", g_cmp, hide_when_empty=True)
         self._compare_note.setObjectName("hint"); _wrapped(self._compare_note)
-        cvv.addWidget(self._compare_note)
         cmp_hint = Hint(
             "Comparing with a second measurement asks which of two papers can "
             "print more. Comparing with a standard space asks whether the "
@@ -985,7 +1122,11 @@ class GamutApp(QMainWindow):
             "paper can hold at all. They are three different questions and the "
             "answers are not interchangeable.", g_cmp)
         cmp_hint.setObjectName("hint_cmp_hint")
-        cvv.addWidget(cmp_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._compare_note, 1)
+        _r.addWidget(cmp_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        cvv.addLayout(_r)
         v.addWidget(g_cmp)
 
         # --- colour science ---------------------------------------------------
@@ -998,7 +1139,6 @@ class GamutApp(QMainWindow):
         cv.addWidget(self._white)
         self._relative = QCheckBox("Judge each paper against its own white", g_cs)
         self._relative.stateChanged.connect(self._rebuild)
-        cv.addWidget(self._relative)
         rel_hint = Hint(
             "Papers are not equally bright — a warm rag paper starts off duller "
             "than a bright glossy one. Tick this and each paper is judged "
@@ -1007,15 +1147,18 @@ class GamutApp(QMainWindow):
             "you print with a normal profile. Leave it unticked to see the raw "
             "numbers your instrument reported.", g_cs)
         rel_hint.setObjectName("hint_rel_hint")
-        cv.addWidget(rel_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._relative, 1)
+        _r.addWidget(rel_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        cv.addLayout(_r)
 
         cv.addWidget(QLabel("Draw it in", g_cs))
         self._space = QComboBox(g_cs)
-        self._space.addItem("CIELAB — how far apart colours look", "lab")
-        self._space.addItem("CIELUV — the space displays are described in", "luv")
+        self._space.addItem("CIELAB — for print", "lab")
+        self._space.addItem("CIELUV — for displays", "luv")
         self._space.addItem("CIE XYZ — the raw measurement", "xyz")
         self._space.currentIndexChanged.connect(self._on_space_changed)
-        cv.addWidget(self._space)
         space_hint = Hint(
             "CIELAB is the one to use for print, and the one every number in "
             "this window is quoted in unless you change it. It is built so "
@@ -1035,7 +1178,11 @@ class GamutApp(QMainWindow):
             "Change this and every number changes with it — that is expected, "
             "not a fault.", g_cs)
         space_hint.setObjectName("hint_space_hint")
-        cv.addWidget(space_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._space, 1)
+        _r.addWidget(space_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        cv.addLayout(_r)
         v.addWidget(g_cs)
 
         # --- appearance -------------------------------------------------------
@@ -1047,7 +1194,6 @@ class GamutApp(QMainWindow):
         self._target.addItem("Set this for: the second chart", 1)
         self._target.addItem("Set this for: the comparison", 2)
         self._target.currentIndexChanged.connect(self._on_target_changed)
-        lv.addWidget(self._target)
         target_hint = Hint(
             "Everything below applies to whatever is chosen here. Leave it on "
             "all shapes together and one change moves them all, which is what "
@@ -1057,7 +1203,11 @@ class GamutApp(QMainWindow):
             "outline behind it. A shape you have set on its own keeps its own "
             "value and stops following the shared one.", g_look)
         target_hint.setObjectName("hint_target_hint")
-        lv.addWidget(target_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._target, 1)
+        _r.addWidget(target_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_r)
         orow = QHBoxLayout()
         orow.addWidget(QLabel("See-through", g_look))
         self._opacity = QSlider(Qt.Orientation.Horizontal, g_look)
@@ -1082,7 +1232,6 @@ class GamutApp(QMainWindow):
         self._aspect.addItem("True proportions", "data")
         self._aspect.addItem("Even up the box", "cube")
         self._aspect.currentIndexChanged.connect(self._redraw)
-        lv.addWidget(self._aspect)
         aspect_hint = Hint(
             "To scale, one step of colour difference is drawn the same length "
             "whichever direction it goes in, which is what makes the shape and "
@@ -1092,7 +1241,11 @@ class GamutApp(QMainWindow):
             "error. Evening up the box is easier on the eye but no longer to "
             "scale.", g_look)
         aspect_hint.setObjectName("hint_aspect_hint")
-        lv.addWidget(aspect_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._aspect, 1)
+        _r.addWidget(aspect_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_r)
         self._style_mine = QComboBox(g_look)
         self._style_second = QComboBox(g_look)
         self._style_other = QComboBox(g_look)
@@ -1247,7 +1400,6 @@ class GamutApp(QMainWindow):
         self._mesh_colour = QCheckBox("Colour the outlines too", g_look)
         self._mesh_colour.stateChanged.connect(
             lambda: self._after_shape_setting("mesh_paint"))
-        lv.addWidget(self._mesh_colour)
         mesh_hint = Hint(
             "Outlines are drawn in one plain grey by default, which reads "
             "clearly on top of a solid shape without competing with the "
@@ -1255,7 +1407,11 @@ class GamutApp(QMainWindow):
             "the solid shapes are, which is worth it when a shape is shown as "
             "an outline on its own.", g_look)
         mesh_hint.setObjectName("hint_mesh_hint")
-        lv.addWidget(mesh_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._mesh_colour, 1)
+        _r.addWidget(mesh_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_r)
 
         rrow = QHBoxLayout()
         self._rings_on = QCheckBox("Show rings inside", g_look)
@@ -1304,10 +1460,9 @@ class GamutApp(QMainWindow):
             "comes from how many patches you measured.", g_look)
         detail_hint.setObjectName("hint_detail_hint")
         lv.addWidget(detail_hint)
-        self._show_lost = QCheckBox("Show me what the comparison cannot print",
+        self._show_lost = QCheckBox("Show what the comparison cannot print",
                                     g_look)
         self._show_lost.stateChanged.connect(self._redraw)
-        lv.addWidget(self._show_lost)
         lost_hint = Hint(
             "Paints your chart by what the thing you are comparing against "
             "cannot reproduce: red where the colour is out of its reach, grey "
@@ -1315,10 +1470,13 @@ class GamutApp(QMainWindow):
             "tells you which colours, so you can decide whether it matters for "
             "the pictures you actually print.", g_look)
         lost_hint.setObjectName("hint_lost_hint")
-        lv.addWidget(lost_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._show_lost, 1)
+        _r.addWidget(lost_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_r)
         self._neutral = QCheckBox("Show the greys", g_look)
         self._neutral.stateChanged.connect(self._redraw)
-        lv.addWidget(self._neutral)
         neutral_hint = Hint(
             "Draws a line through the patches where you asked for an equal "
             "amount of every colour — the greys. What comes back is rarely "
@@ -1327,7 +1485,11 @@ class GamutApp(QMainWindow):
             "shape of a gamut cannot show this at all, and it is what people "
             "notice first in a black-and-white print.", g_look)
         neutral_hint.setObjectName("hint_neutral_hint")
-        lv.addWidget(neutral_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._neutral, 1)
+        _r.addWidget(neutral_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_r)
         self._points = QCheckBox("Show every patch I measured", g_look)
         self._points.stateChanged.connect(self._redraw)
         lv.addWidget(self._points)
@@ -1361,7 +1523,6 @@ class GamutApp(QMainWindow):
         pv2.addWidget(self._shared_lbl)
         self._reach = WrappedLabel("", self._pair_box, hide_when_empty=True)
         self._reach.setObjectName("hint")
-        pv2.addWidget(self._reach)
         pair_hint = Hint(
             "How much of everything either one can print is printable by "
             "both. The two percentages above answer \"does this one fit "
@@ -1377,7 +1538,11 @@ class GamutApp(QMainWindow):
             "small is neither visible nor worth trusting.",
             self._pair_box)
         pair_hint.setObjectName("hint_pair_hint")
-        pv2.addWidget(pair_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._reach, 1)
+        _r.addWidget(pair_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        pv2.addLayout(_r)
         self._pair_box.setVisible(False)
         v.addWidget(self._pair_box)
 
@@ -1389,7 +1554,6 @@ class GamutApp(QMainWindow):
         dv.addWidget(self._drift)
         self._drift_worst = WrappedLabel("", self._drift_box, hide_when_empty=True)
         self._drift_worst.setObjectName("hint")
-        dv.addWidget(self._drift_worst)
         drift_hint = Hint(
             "When both charts are two readings of the SAME chart — the same "
             "paper measured on two days, or before and after a nozzle clean — "
@@ -1402,7 +1566,11 @@ class GamutApp(QMainWindow):
             "and worth investigating before you print anything that matters.",
             self._drift_box)
         drift_hint.setObjectName("hint_drift_hint")
-        dv.addWidget(drift_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._drift_worst, 1)
+        _r.addWidget(drift_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        dv.addLayout(_r)
         self._drift_box.setVisible(False)
         v.addWidget(self._drift_box)
 
@@ -1486,7 +1654,6 @@ class GamutApp(QMainWindow):
         # being read -- so the button is always available and only the
         # unattended check has to be switched on deliberately.
         self._auto_update.setChecked(False)
-        v.addWidget(self._auto_update)
         update_hint = Hint(
             "Looks at the project's releases page and tells you whether a "
             "newer version has been published. It never downloads or installs "
@@ -1500,7 +1667,11 @@ class GamutApp(QMainWindow):
             "app reaches the network is when you press the button, or after "
             "you tick this box.", col)
         update_hint.setObjectName("hint_update_hint")
-        v.addWidget(update_hint)
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._auto_update, 1)
+        _r.addWidget(update_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        v.addLayout(_r)
         self._save = QPushButton("Save this view as a web page…", col)
         self._save.setObjectName("secondary")
         self._save.clicked.connect(self._on_save)
@@ -1700,6 +1871,8 @@ class GamutApp(QMainWindow):
             return
         self._scheme = which
         self._store.setValue("scheme", which)
+        # The bar is built FROM the accent, so it is rebuilt when the accent
+        # changes -- otherwise a new accent leaves the old bar behind.
         self._apply_mode()
 
     def _apply_mode(self) -> None:

@@ -133,8 +133,7 @@ The first says how much of your paper an sRGB workflow can even address. The
 second says how much of an incoming sRGB image your paper can reproduce. A
 single "similarity" figure would hide exactly that difference.
 
-To see **where** the colour is lost rather than how much, tick **Show me what
-the comparison cannot print**. Everything the comparison cannot reach turns
+To see **where** the colour is lost rather than how much, tick **Show what the comparison cannot print**. Everything the comparison cannot reach turns
 warm red against muted grey:
 
 <img src="docs/screenshots/03-where-lost.webp" width="880" alt="The same shape with the regions the comparison cannot reproduce highlighted in red">
