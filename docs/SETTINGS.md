@@ -494,3 +494,18 @@ there is something in that direction to scroll to, and is painted in the
 panel's own colour — `#181818` dark, `#eeece8` light — so it dissolves into
 the background rather than sitting on top of it. Ported from ChromIQ's
 `ui/fade_scroll.py`.
+
+### The two links at the foot
+
+| | |
+|---|---|
+| **♥ Support ChromIQ** | opens `ko-fi.com/itsab1989` |
+| **ChromIQ website** | opens `itsab1989.github.io/ChromIQ/` |
+
+**They are drawn in the accent, not in grey.** A link that only becomes
+colourful when the pointer is on it is a link nobody knows is there. They take
+the brighter accent and an underline on hover.
+
+Both open in the system browser and neither is ever pressed by the
+application. The tooltip says plainly that the app is free and stays fully
+featured whether or not anybody uses the Ko-fi link.

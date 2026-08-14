@@ -291,10 +291,14 @@ QLabel#hint {{ color: {c["faint"]}; font-size: 11px; }}
 /* The two links at the foot of the column. Not buttons competing with the
    controls above: quiet text that takes the accent when pointed at, the way
    a link does. */
+/* Links, and they look like links: in the accent at rest, so they are
+   findable, and brighter when pointed at. Grey text that only turns
+   colourful under the pointer is a link nobody knows is there. */
 QPushButton#footLink {{ background: transparent; border: none; padding: 2px 0;
-                        color: {c["faint"]}; font-size: 11px;
+                        color: {c["accent"]}; font-size: 11px;
                         text-align: left; min-height: 0; }}
-QPushButton#footLink:hover {{ color: {c["accent"]}; }}
+QPushButton#footLink:hover {{ color: {c["accent_hot"]};
+                              text-decoration: underline; }}
 QLabel#eyebrow {{ color: {c["dim"]}; font-size: 10px; font-weight: 600;
                   letter-spacing: 1.4px; }}
 QFrame#mastheadRule {{ background: {c["accent"]}; border: none; }}
