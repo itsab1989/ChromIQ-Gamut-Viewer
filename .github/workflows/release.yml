@@ -72,7 +72,10 @@ jobs:
                      libxrandr2 libxtst6 libxi6 libxshmfence1 libdrm2 \
                      libgbm1 libcups2 libatk1.0-0 libatk-bridge2.0-0 \
                      libpango-1.0-0 libpangocairo-1.0-0 libcairo2 \
-                     libfontconfig1 libfreetype6; do
+                     libfontconfig1 libfreetype6 \
+                     libopus0 libminizip1 libwebp7 libsnappy1v5 \
+                     libevent-2.1-7 libxslt1.1 liblcms2-2 \
+                     libharfbuzz0b libgraphite2-3; do
             sudo apt-get install -y "$pkg" || echo "skipped $pkg"
           done
           # Renamed under the 64-bit time_t transition; ask for both spellings.
@@ -88,6 +91,46 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r python/requirements.txt pyinstaller
+
+      # QtWebEngine links a long tail of media and compression libraries, and
+      # which of them the runner image happens to ship differs by image and
+      # changes over time -- libopus and libminizip were both missing from the
+      # arm64 image while present on x86_64. Guessing the list and pushing a
+      # new tag for each miss costs a build cycle every time, so the job asks
+      # the library itself what it is missing and installs whatever provides
+      # it. This runs after pip, because the .so being interrogated arrives
+      # with PyQt6.
+      - name: Resolve any remaining QtWebEngine libraries
+        if: runner.os == 'Linux'
+        run: |
+          CORE=$(python -c "
+          import pathlib, PyQt6
+          hits = sorted(pathlib.Path(PyQt6.__file__).parent.rglob('libQt6WebEngineCore.so*'))
+          print(hits[0] if hits else '')
+          ")
+          if [ -z "$CORE" ]; then
+            echo "QtWebEngine core library not found; nothing to resolve"
+            exit 0
+          fi
+          MISSING=$(ldd "$CORE" | awk '/not found/ {print $1}' | sort -u)
+          if [ -z "$MISSING" ]; then
+            echo "every QtWebEngine dependency is already satisfied"
+            exit 0
+          fi
+          echo "missing: $MISSING"
+          sudo apt-get install -y apt-file
+          sudo apt-file update
+          for so in $MISSING; do
+            pkg=$(apt-file search -l -x "/${so}$" | head -1)
+            if [ -n "$pkg" ]; then
+              echo "$so is in $pkg"
+              sudo apt-get install -y "$pkg" || echo "could not install $pkg"
+            else
+              echo "nothing provides $so"
+            fi
+          done
+          echo "--- still missing after resolving ---"
+          ldd "$CORE" | awk '/not found/ {print $1}' | sort -u
 
       - name: Check it reports its version
         run: python python/gamut_app.py --version

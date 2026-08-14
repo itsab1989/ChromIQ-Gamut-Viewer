@@ -17,6 +17,33 @@ measurements — which a `.ti3` already contains — the surface keeps those den
 instead of throwing a convex hull over them and claiming more colour than you
 have. You can switch between the two and see the difference.
 
+### What you can find out
+
+| Question | What you get |
+|---|---|
+| What can this paper print? | The shape, its volume, and how dark the blacks reach against the paper white |
+| Will an image survive on it? | Coverage against sRGB, Adobe RGB, Display P3, ProPhoto RGB, Rec. 2020 or any ICC profile — **in both directions**, because they answer different questions |
+| *Where* does it fall short? | The regions the comparison cannot reproduce, picked out in red on the shape itself |
+| Which of two papers? | How much they share, and which one reaches further in each hue family |
+| Has my printer drifted? | Two readings compared patch by patch in ΔE2000, naming the patches that moved most |
+| Does my profile match reality? | The measured gamut against the gamut of the profile built from it |
+| Are my greys grey? | The neutral axis drawn through the solid, with every grey's colour cast |
+
+Also: a cross-section at any lightness for reading two shapes against each
+other, contour rings inside the cage, CIELAB / CIELUV / CIE XYZ to draw in,
+light and dark appearance, five accent colours, per-shape styling so each
+gamut can be shown its own way, and every setting remembered between sessions.
+
+Anything that might be jargon has a plain-language entry under **What do these
+words mean?**
+
+### It opens more than `.ti3`
+
+`.cxf`, `.mxf` and `.txt` measurements are converted with ArgyllCMS's own
+`cxf2ti3` / `txt2ti3`; `.icc`, `.icm` and `.gam` are read as comparisons, ICC
+profiles through ArgyllCMS `iccgamut`. Converted copies go to a temporary
+folder, never beside your original.
+
 ### Which file to download
 
 | Your computer | File |
