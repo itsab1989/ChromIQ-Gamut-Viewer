@@ -1,5 +1,32 @@
 # Changelog
 
+## v2.0.1
+
+### 🐞 Fixed
+
+- **The look chooser was cut off.** Measured: the left-hand column is 346
+  pixels, and a chooser sharing a row with three small buttons is left about
+  116 for its text while *For a white document* needs 133. The buttons now sit
+  under it, which costs nothing and gives it the width.
+
+- **The percentage sat a pixel and a half high on Windows**, where the font is
+  substituted for one this was never measured on. The ink rectangle is now
+  used exactly as the font reports it rather than assumed to sit on the
+  baseline.
+
+### 📖 Documentation
+
+- **The loops are now two to a page**, across five pages you can step through,
+  each at 1100 pixels and quality 95 with every frame kept. Nine of them, up
+  from six, including the neutral grey axis, two papers in rooms of their own,
+  and one with **no background at all** — that one takes on whatever page it
+  lands on, so it is dark on GitHub's dark theme and white on its light one.
+
+- The sRGB comparison loop is withdrawn. It never showed what its caption
+  claimed, and re-exporting it properly turned up something worth
+  understanding first: with a comparison loaded the axes stretch until L* runs
+  from −100 to 100 and the picture flattens to edge-on.
+
 ## v2.0.0
 
 ### ✨ New

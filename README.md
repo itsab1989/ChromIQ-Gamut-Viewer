@@ -17,8 +17,7 @@ printer?
 
 <p align="center"><sub>A real measured gamut, turning. Made by the
 application itself — <b>Turn it by itself</b>, then <b>Save this view as a
-picture…</b>. <a href="docs/MOTION.md">Five more, with the settings behind
-each →</a></sub></p>
+picture…</b>. <a href="docs/MOTION.md">Eight more, two to a page →</a></sub></p>
 
 <p align="center">
   <a href="https://ko-fi.com/itsab1989"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support this on Ko-fi" height="36"></a>
@@ -451,7 +450,7 @@ with the application, so there is nothing to install.
 The loop closes exactly — the file holds one complete journey fitted into the
 seconds you chose — so it never jumps as it comes round.
 
-**[Five more loops, with every setting behind each one →](docs/MOTION.md)**
+**[Eight more loops, two to a page, each at full size and quality →](docs/MOTION.md)**
 
 ### Everything around the shape is yours
 
@@ -473,8 +472,8 @@ somebody a file, and using one they sent is putting it in that folder.
 Removing one never deletes it; it moves into an `old` folder with the date on
 it.
 
-*(There is [one dressed for a white document](docs/MOTION.md#dressed-for-a-white-page)
-on the loops page, so this one stays light to load.)*
+*(There is [one dressed for a white document](docs/motion/page-4.md) on the
+loops pages, so this one stays light to load.)*
 
 ### A picture with nothing around it
 
