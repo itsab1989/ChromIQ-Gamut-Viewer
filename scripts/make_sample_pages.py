@@ -41,6 +41,16 @@ CHART = DEMO / "verification-chart-480.ti1"
 
 failures: list[str] = []
 
+#: What the save dialog ticks for a new export: the controls that were always
+#: there. Anything added since is opt-in, so nobody's exports change shape
+#: without them asking.
+DEFAULT_OFFER = {"play": True, "speed": True, "lr": True, "ud": True,
+                 "reset": True, "remember": True}
+
+#: Everything the page can carry, for the one sample that shows it off.
+EVERY_CONTROL = dict(DEFAULT_OFFER, speed_each=True, grid=True, labels=True,
+                     key=True, appearance=True, speed=False)
+
 #: How many bytes one number takes, per the dtype names plotly writes.
 _WIDTH = {"f8": 8, "f4": 4, "i8": 8, "i4": 4, "i2": 2, "i1": 1,
           "u1": 1, "u2": 2, "u4": 4}
@@ -151,7 +161,7 @@ def main() -> int:
     # screen waiting for a click that never comes, which is how an earlier
     # run of this appeared to hang.
     def save_to(target: pathlib.Path, carry: bool = True,
-                numbers: bool = False) -> None:
+                numbers: bool = False, offer=None) -> None:
         from PyQt6.QtWidgets import QDialog
 
         class Options:
@@ -162,7 +172,10 @@ def main() -> int:
                 return QDialog.DialogCode.Accepted.value
 
             def choices(self):
-                return {"carry_viewer": carry, "numbers": numbers}
+                return {"carry_viewer": carry, "numbers": numbers,
+                        "controls": offer is not False,
+                        "offer": (offer if isinstance(offer, dict) else
+                                  DEFAULT_OFFER)}
 
         class Files:
             def __init__(self, *a, **k):
@@ -439,6 +452,25 @@ def main() -> int:
     w._slice_on.setChecked(False)
     pump(1.5)
 
+    # ---------------------------------------------------------------- 11
+    print("\n11 — a page that hands over everything")
+    fresh()
+    w._load(GLOSSY)
+    pump(2.0)
+    w._load(MATTE)
+    pump(2.5)
+    spin(on=True, turn="round", turn_speed=7, tilt="swing",
+         tilt_speed=4, tilt_sweep=22)
+    p = page("11-everything-handed-over.html")
+    save_to(p, numbers=True, offer=EVERY_CONTROL)
+    made.append(("11", p))
+    body = p.read_text(encoding="utf-8")
+    for wanted in ("speed_each", "grid", "labels", "key", "appearance"):
+        check("11", f"the page was given the {wanted} control",
+              f'"{wanted}": true' in body)
+    check("11", "and it carries both sets of page colours, to switch between",
+          '"palettes"' in body and "#efebe6" in body and "#111111" in body)
+
     # ------------------------------------------------------------ all of them
     print("\nevery page")
     for name, path in made:
@@ -453,7 +485,9 @@ def main() -> int:
         check(name, "paints its controls rather than inheriting a colour",
               '"ink":' in body and '"paper":' in body)
         check(name, "offers the reader a way back to the opening view",
-              'data-cq="home"' in body)
+              '"reset"' in body and 'button("home", "reset view"' in body)
+        check(name, "was given the controls that were chosen for it",
+              '"show":' in body)
 
     print("\n" + "=" * 68)
     if failures:

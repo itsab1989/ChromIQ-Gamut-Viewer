@@ -104,6 +104,10 @@ PALETTES = {
         second_hover="#3a3a3a",
         plot_bg="#111111",       # the 3D viewer fill, gamut_panel.py:86
         grid="#262626", arrow="#e6e6e6",
+        # THE INSIDE OF ANYTHING YOU OPEN OR TYPE IN -- a list, a number box,
+        # an empty tickbox. On a dark window that is an inset, darker than the
+        # surface around it, which is what BG_DARK already was.
+        field="#101010",
         kept="rgb(105,112,126)"),
     "light": dict(
         bg="#eeece8",            # LM_BG_WINDOW
@@ -118,6 +122,13 @@ PALETTES = {
         second_hover="#e0ded8",
         plot_bg="#efebe6",       # LM_BG_VIEWER, gamut_panel.py:86
         grid="#e4e1db", arrow="#22211f",
+        # AND ON A LIGHT WINDOW IT IS WHITE, because the idea inverts: a field
+        # is lighter than what surrounds it, not darker. This used to be the
+        # group-box fill, which meant a list sitting on a group box was
+        # painted the identical colour -- reported as looking greyed out, and
+        # it did. A new name rather than a change to `panel`, so the surfaces
+        # still match ChromIQ's own light styling exactly.
+        field="#ffffff",
         kept="rgb(176,180,188)"),
 }
 
@@ -267,7 +278,7 @@ QPushButton#closer {{ background: transparent; color: {c["faint"]};
                      font-size: 17px; font-weight: 500; min-height: 0; }}
 QPushButton#closer:hover {{ background: {c["second_hover"]};
                            color: {c["text"]}; }}
-QComboBox {{ background: {c["panel"]}; border: 1px solid {c["line"]};
+QComboBox {{ background: {c["field"]}; border: 1px solid {c["line"]};
             border-radius: 5px; padding: 5px 28px 5px 8px; }}
 /* Qt draws the drop-down as its own sub-button inside the box: it paints a
    second border beside the arrow and squares off the rounded right-hand
@@ -291,13 +302,27 @@ QCheckBox::indicator:focus {{ border: 1px solid {c["accent"]}; }}
 QSlider::handle:horizontal:hover {{ background: {c["accent_hot"]}; }}
 QPushButton#secondary:focus {{ border: 1px solid {c["accent"]}; }}
 {arrow_rule}
-QComboBox QAbstractItemView {{ background: {c["panel"]};
+QComboBox QAbstractItemView {{ background: {c["field"]};
                               selection-background-color: {c["accent"]}; }}
 QCheckBox::indicator {{ width: 15px; height: 15px; border-radius: 3px;
                        border: 1px solid {c["line_soft"]};
-                       background: {c["panel"]}; }}
+                       background: {c["field"]}; }}
 QCheckBox::indicator:checked {{ background: {c["accent"]};
                                border-color: {c["accent"]}; }}
+QSpinBox, QDoubleSpinBox {{ background: {c["field"]};
+                           border: 1px solid {c["line"]}; border-radius: 5px;
+                           padding: 3px 6px; color: {c["text"]};
+                           selection-background-color: {c["accent"]};
+                           selection-color: {c["on_accent"]}; }}
+QSpinBox:hover, QDoubleSpinBox:hover {{ border-color: {c["accent"]}; }}
+QSpinBox:focus, QDoubleSpinBox:focus {{ border-color: {c["accent"]}; }}
+QSpinBox:disabled, QDoubleSpinBox:disabled {{ color: {c["faint"]}; }}
+QLineEdit, QPlainTextEdit, QTextEdit {{ background: {c["field"]};
+                           border: 1px solid {c["line"]}; border-radius: 5px;
+                           padding: 3px 6px; color: {c["text"]};
+                           selection-background-color: {c["accent"]};
+                           selection-color: {c["on_accent"]}; }}
+QLineEdit:focus {{ border-color: {c["accent"]}; }}
 QSlider::groove:horizontal {{ height: 4px; background: {c["line"]};
                              border-radius: 2px; }}
 QSlider::handle:horizontal {{ width: 12px; height: 12px; margin: -4px 0;
@@ -316,7 +341,7 @@ QRadioButton {{ spacing: 7px; min-height: 20px; }}
 QCheckBox {{ spacing: 8px; min-height: 20px; }}
 QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 8px;
                           border: 1px solid {c["line_soft"]};
-                          background: {c["panel"]}; }}
+                          background: {c["field"]}; }}
 QRadioButton::indicator:checked {{ background: {c["accent"]};
                                   border: 1px solid {c["accent"]}; }}
 QRadioButton::indicator:hover {{ border: 1px solid {c["accent"]}; }}
@@ -2111,6 +2136,148 @@ class WebPageDialog(QDialog):
         numbers_hint.follow(self._numbers)
 
         outer.addLayout(rows)
+
+        # WHAT THE PERSON OPENING IT CAN CHANGE.
+        #
+        # A saved page is read by somebody who does not have this window, and
+        # until now it arrived with one fixed set of buttons. Which of them
+        # make sense depends entirely on where the page is going: one for a
+        # printer to turn over and look at wants everything; one embedded in a
+        # website beside a paragraph of text may want no strip at all.
+        #
+        # The four that were always there stay ticked, so a person who never
+        # opens this section gets exactly the page they got before.
+        self._offer: dict = {}
+        offers = [
+            ("play", "Stop and start the movement", True,
+             "Puts a Play and Pause button on the page.\n\n"
+             "Worth keeping on for anything that moves. A shape turning by "
+             "itself is what makes somebody look at it in the first place, "
+             "but it is also the thing that gets in the way the moment they "
+             "want to study one corner of it — and without this they can only "
+             "grab it and hold it still with the mouse.\n\n"
+             "On a page you saved standing still it reads Play, and pressing "
+             "it sets the shape turning. Nothing ever starts moving on its "
+             "own."),
+            ("speed", "One speed for the movement", True,
+             "A minus and a plus, so whoever opens the page can slow the "
+             "movement down or speed it up.\n\n"
+             "One number covers both directions, and it keeps them in the "
+             "proportion you saved them in: if you set a quick turn with a "
+             "slow tip under it, that is what they get, only faster or "
+             "slower altogether.\n\n"
+             "Turn this off and switch on a speed for each direction below "
+             "if you would rather they could set the two apart."),
+            ("speed_each", "A speed for each direction", False,
+             "Gives left-and-right and up-and-down a speed of their own, "
+             "instead of one number for both.\n\n"
+             "This is what this window itself offers you, and it is worth "
+             "handing on when the pairing matters — a slow tip under a "
+             "quicker turn shows the dents in a surface far better than "
+             "either on its own, and somebody who cannot set them apart "
+             "cannot find that.\n\n"
+             "It costs two more buttons in the panel. If in doubt, leave "
+             "this off and keep the single speed above: most people only "
+             "want it a bit slower."),
+            ("lr", "Turn left and right on or off", True,
+             "A switch for the turning — the movement most people mean by "
+             "“spin it”.\n\n"
+             "Switching it off and on again brings back the turning you "
+             "saved rather than a guess at one, so nothing is lost by "
+             "trying it."),
+            ("ud", "Tip up and down on or off", True,
+             "A switch for the tipping: the shape leaning towards the "
+             "viewer and away again.\n\n"
+             "A little of this alongside the turning is what shows a surface "
+             "is dented rather than smooth. On its own it can be unsettling "
+             "to watch, which is exactly why it is worth letting somebody "
+             "turn it off."),
+            ("reset", "Put the view back", True,
+             "A reset button that returns the shape to the way the page "
+             "opened.\n\n"
+             "Worth keeping on. It is easy to drag a shape somewhere you did "
+             "not mean to, or to zoom until nothing makes sense, and on a "
+             "page that arrived by email there is no obvious way back — "
+             "most people would not think to reload it.\n\n"
+             "It undoes only their own turning and zooming. Nothing is "
+             "closed and no figure changes."),
+            ("grid", "Show or hide the box and its grid", False,
+             "Lets whoever opens the page take away the ruled box around the "
+             "shape, and put it back.\n\n"
+             "The walls are what let somebody judge where a bulge actually "
+             "sits — without them a shape floats with nothing to measure it "
+             "against. But they are also clutter if the picture is going "
+             "into a document that explains itself, and a bare shape on a "
+             "plain background makes a much cleaner screenshot.\n\n"
+             "Letting them choose costs nothing: the measurement is the same "
+             "either way."),
+            ("labels", "Show or hide the lettering", False,
+             "Lets them take away the numbers and the axis names.\n\n"
+             "Useful in two opposite situations. When the page is going "
+             "beside text that already says what the axes are, the lettering "
+             "is noise. And when somebody is going to take a screenshot for "
+             "a forum, small text that cannot quite be read is worse than no "
+             "text at all.\n\n"
+             "The shape and its colours are untouched — only the writing "
+             "around the edge goes."),
+            ("key", "Show or hide the names underneath", False,
+             "Lets them hide the list of names under the picture.\n\n"
+             "Those names are also switches — clicking one hides that shape, "
+             "double-clicking shows it on its own — so hiding the list takes "
+             "that away too. Best kept for a page with a single shape on it, "
+             "where the list says nothing they cannot already see."),
+            ("appearance", "Switch the page light or dark", False,
+             "Puts a light-or-dark switch on the page, so whoever opens it "
+             "can match it to whatever they are reading it in.\n\n"
+             "The measured colours themselves never change — only the paper "
+             "they are drawn on. A gamut is the same gamut on either.\n\n"
+             "You still choose which one it opens as, under This window. "
+             "This only decides whether they can change it afterwards. It "
+             "adds a second set of page colours to the file, which is a few "
+             "hundred bytes."),
+            ("remember", "Remember what they chose", True,
+             "The page keeps whatever the reader set — paused, faster, "
+             "tipping switched off — and opens that way next time they come "
+             "back to it.\n\n"
+             "This matters most when somebody has several of your pages to "
+             "look through: without it, every one of them has to be paused "
+             "again by hand, which is the sort of small annoyance that stops "
+             "people looking properly.\n\n"
+             "It is kept by their own browser, for that page alone. Nothing "
+             "is sent anywhere and nothing about them is stored."),
+        ]
+        strip = QCheckBox("Give them controls at all", self)
+        strip.setChecked(True)
+        self._strip = strip
+        rows.addWidget(strip, 2, 0, 1, 2)
+        strip_hint = Hint(
+            "Whether the page carries the row of controls along the bottom "
+            "at all.\n\n"
+            "Leave it on for anything you are sending to a person. Turn it "
+            "off when the page is going to sit inside a website beside your "
+            "own text, where a row of buttons you did not design would look "
+            "out of place — the shape can still be dragged, zoomed and its "
+            "names clicked, exactly as before. Only the buttons go.", self)
+        strip_hint.setObjectName("hint_strip_hint")
+        rows.addWidget(strip_hint, 2, 2, Qt.AlignmentFlag.AlignVCenter)
+        strip_hint.follow(strip)
+
+        box = QGroupBox("What the person opening it can change", self)
+        grid = QGridLayout(box)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(0, 1)
+        for i, (name, label, default, why) in enumerate(offers):
+            check = QCheckBox(label, box)
+            check.setChecked(default)
+            self._offer[name] = check
+            grid.addWidget(check, i, 0)
+            hint = Hint(why, box)
+            hint.setObjectName(f"hint_offer_{name}")
+            grid.addWidget(hint, i, 1, Qt.AlignmentFlag.AlignVCenter)
+            hint.follow(check)
+        strip.toggled.connect(box.setEnabled)
+        outer.addWidget(box)
         note = WrappedLabel(
             "The page opens in any browser and keeps everything you can do "
             "here: turning it, zooming in, and reading a name by pointing at "
@@ -2132,7 +2299,10 @@ class WebPageDialog(QDialog):
 
     def choices(self) -> dict:
         return {"carry_viewer": bool(self._carry.currentData()),
-                "numbers": self._numbers.isChecked()}
+                "numbers": self._numbers.isChecked(),
+                "controls": self._strip.isChecked(),
+                "offer": {name: box.isChecked()
+                          for name, box in self._offer.items()}}
 
 
 class Notice(QDialog):
@@ -6670,7 +6840,8 @@ class GamutApp(QMainWindow):
             # four arrangements this window can show wrote a different picture
             # than the one on screen, from a button that says "this view".
             self._write_scene(gamuts, clouds, styles, lost, target,
-                              controls=True,
+                              controls=chosen.get("controls", True),
+                              offer=chosen.get("offer"),
                               carry_viewer=chosen["carry_viewer"],
                               notes=(self._readout_text()
                                      if chosen["numbers"] else ""))
@@ -7745,7 +7916,7 @@ class GamutApp(QMainWindow):
 
     def _write_scene(self, gamuts, clouds, styles, lost, out, *,
                      controls: bool = False, carry_viewer: bool = True,
-                     notes: str = "") -> bool:
+                     notes: str = "", offer=None) -> bool:
         """Write whatever is on screen, whichever of the four it is.
 
         ONE PLACE, BECAUSE THERE WERE TWO AND THEY DISAGREED. This window can
@@ -7774,7 +7945,7 @@ class GamutApp(QMainWindow):
             return True
         if self._side_by_side.isChecked() and len(gamuts) >= 2:
             self._write_two_rooms(gamuts, out, clouds, lost,
-                                  controls=controls)
+                                  controls=controls, offer=offer)
         else:
             write_html(gamuts, out, self._scene_title(),
                        spin=self._spin_options(),
@@ -7782,7 +7953,7 @@ class GamutApp(QMainWindow):
                        # movement controls, and a second set over the picture
                        # is two controls for one thing that can disagree.
                        # The strip is for a page somebody was sent.
-                       controls=controls,
+                       controls=controls, offer=offer,
                        carry_viewer=carry_viewer, notes=notes,
                        patches=clouds, styles=styles, lost=lost,
                        **self._render_options())
@@ -7812,7 +7983,7 @@ class GamutApp(QMainWindow):
                                 linked=self._link_cameras.isChecked())
 
     def _write_two_rooms(self, gamuts, out, clouds, lost,
-                         controls: bool = False) -> None:
+                         controls: bool = False, offer=None) -> None:
         """One page, two scenes, each holding a single shape.
 
         Each is built by the same code that builds the single view, so the two
@@ -7854,7 +8025,7 @@ class GamutApp(QMainWindow):
         write_side_by_side_html(figures, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked(),
                                 spin=self._spin_options(),
-                                controls=controls)
+                                controls=controls, offer=offer)
 
     #: The controls that can belong to one shape rather than all of them, as
     #: key → (widget, how to read it). Anything not here is window-wide by

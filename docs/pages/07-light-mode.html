@@ -4062,58 +4062,35 @@ window.cqSpinControls = function (settings) {
   var saved = {turn: Object.assign({}, settings.turn || {}),
                tilt: Object.assign({}, settings.tilt || {})};
   var turn = Object.assign({}, saved.turn), tilt = Object.assign({}, saved.tilt);
-  // THE TWO DIRECTIONS USUALLY RUN AT DIFFERENT SPEEDS, and a slow tip under a
-  // quicker turn is the pairing that reads best -- five of the eight published
-  // sample pages were saved that way. One control for both therefore has to
-  // scale them TOGETHER, keeping their proportion, rather than flatten them to
-  // a single number. Flattening is what the first version did, and because the
-  // bar pushes its settings as soon as the page opens, those pages arrived
-  // running their tipping 20-40% faster than the sender ever saw. A page that
-  // does not show what was saved is the one thing this feature must not do.
-  var base = {turn: saved.turn.speed || 0, tilt: saved.tilt.speed || 0};
-  var start = Math.round(Math.max(base.turn, base.tilt)) || 6;
-  var speed = start;
+  // WHICH CONTROLS THIS PAGE WAS GIVEN. Chosen when it was saved, so one page
+  // can be a bare picture with a Pause button and the next can hand over
+  // everything. Anything not named here is simply not built.
+  var show = settings.show || {};
+  function on(what, fallback) {
+    return show[what] === undefined ? fallback : !!show[what];
+  }
+  var speeds = {turn: saved.turn.speed || 6, tilt: saved.tilt.speed || 6};
+  // ONE SPEED OR TWO. With the per-direction speeds switched off, the single
+  // speed scales both together and keeps the proportion the page was saved
+  // with -- a slow tip under a quicker turn stays a slow tip under a quicker
+  // turn. Switched on, each direction is simply its own number.
+  var both = Math.round(Math.max(speeds.turn, speeds.tilt)) || 6;
+  var start = both;
   function speedFor(which) {
-    if (!base[which]) return speed;      // nothing saved to hold in proportion
-    return Math.max(0.5, base[which] * speed / start);
+    if (on("speed_each", false)) return speeds[which];
+    if (!saved[which].speed) return both;
+    return Math.max(0.5, saved[which].speed * both / start);
   }
   var running = !!settings.on;
-  // A PAGE SAVED STILL HAS NOTHING TO TURN. Pressing Play on one has to do
-  // something, so it falls back to turning all the way round — the movement
-  // somebody means when they press Play on a shape.
-  function wake() {
-    if ((!turn.mode || turn.mode === "off") &&
-        (!tilt.mode || tilt.mode === "off")) {
-      turn.mode = "round";
-      if (!turn.range) turn.range = 60;
-    }
-  }
-  var bar = document.createElement("div");
-  bar.className = "cq-spin-bar";
-  bar.innerHTML =
-    '<button type="button" data-cq="play" title="Stop the movement, or start '
-    + 'it again. You can always drag the shape yourself, moving or not.">'
-    + 'Pause</button>'
-    + '<button type="button" data-cq="slower" title="Turn more slowly.">'
-    + '&minus;</button>'
-    + '<span data-cq="speed">speed ' + speed + '</span>'
-    + '<button type="button" data-cq="faster" title="Turn more quickly.">'
-    + '+</button>'
-    + '<button type="button" data-cq="lr" title="Turn left and right, or stop '
-    + 'turning that way.">left &amp; right</button>'
-    + '<button type="button" data-cq="ud" title="Tip up and down, or stop '
-    + 'tipping.">up &amp; down</button>'
-    + '<button type="button" data-cq="home" title="Put the shape back the way '
-    + 'the page opened. Only your own turning and zooming is undone — nothing '
-    + 'is closed and no figure changes.">reset view</button>';
-  // COLOURS, NOT INHERITANCE. The page sets a background and no text colour,
-  // so `color: inherit` resolved to the browser default -- black -- and on a
-  // dark page the whole strip came out at 1.04:1 against it. Invisible, on
-  // seven of the eight pages published to show the feature off. The palette
-  // travels with the settings now, and the strip is painted from it.
   var ink = settings.ink || "#e6e6e6";
   var paper = settings.paper || "#111111";
-  function tint(hex, alpha) {           // #rrggbb -> rgba(), for the pill
+  // BOTH PALETTES TRAVEL when the page offers a light/dark switch, because
+  // the page has to be able to become the other one without asking anybody.
+  var palettes = settings.palettes || null;
+  var mode = settings.mode || "dark";
+  var picture = {grid: true, labels: true, key: true};
+
+  function tint(hex, alpha) {
     var h = String(hex).replace("#", "");
     if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
     var n = parseInt(h, 16);
@@ -4121,51 +4098,186 @@ window.cqSpinControls = function (settings) {
     return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + ","
            + (n & 255) + "," + alpha + ")";
   }
+  function scenes() {
+    return (settings.ids || []).map(function (id) {
+      return document.getElementById(id);
+    }).filter(function (gd) { return gd && gd.layout; });
+  }
+  function relayout(patch) {
+    scenes().forEach(function (gd) {
+      if (window.Plotly) window.Plotly.relayout(gd, patch);
+    });
+  }
+
+  // WHAT THE READER IS ALLOWED TO REMEMBER. Comparing four papers means
+  // opening four pages, and pressing Pause on every one of them is the sort
+  // of small annoyance that stops somebody looking properly. Kept per page,
+  // so one page's choices never surprise another.
+  var STORE = "cq-view:" + (location.pathname || "page");
+  function remember() {
+    try {
+      localStorage.setItem(STORE, JSON.stringify(
+        {running: running, both: both, speeds: speeds, picture: picture,
+         mode: mode, turn: turn.mode, tilt: tilt.mode}));
+    } catch (e) {}
+  }
+  function recall() {
+    try {
+      var was = JSON.parse(localStorage.getItem(STORE) || "null");
+      if (!was) return;
+      running = !!was.running;
+      both = was.both || both;
+      if (was.speeds) speeds = was.speeds;
+      if (was.picture) picture = was.picture;
+      if (was.turn !== undefined) turn.mode = was.turn;
+      if (was.tilt !== undefined) tilt.mode = was.tilt;
+      if (was.mode) mode = was.mode;
+    } catch (e) {}
+  }
+  if (on("remember", true)) recall();
+
+  var bar = document.createElement("div");
+  bar.className = "cq-spin-bar";
+  var panel = document.createElement("div");
+  panel.className = "cq-spin-panel";
+  panel.hidden = true;
+
+  function button(what, label, title) {
+    return '<button type="button" data-cq="' + what + '" title="' + title
+           + '">' + label + '</button>';
+  }
+  function row(what, label, title, extra) {
+    return '<div class="cq-row"><span>' + label + '</span>'
+           + '<span class="cq-ctl">'
+           + button(what, "on", title) + (extra || "") + '</span></div>';
+  }
+
+  var head = "";
+  if (on("play", true))
+    head += button("play", "Pause", "Stop the movement, or start it again. "
+      + "You can always drag the shape yourself, moving or not.");
+  if (on("speed", true) && !on("speed_each", false))
+    head += button("slower", "&minus;", "Turn more slowly.")
+          + '<span data-cq="speed">speed ' + both + '</span>'
+          + button("faster", "+", "Turn more quickly.");
+  if (on("reset", true))
+    head += button("home", "reset view", "Put the shape back the way the page "
+      + "opened. Only your own turning and zooming is undone — nothing is "
+      + "closed and no figure changes.");
+  var HAS_PANEL = on("lr", true) || on("ud", true) || on("speed_each", false)
+    || on("grid", false) || on("labels", false) || on("key", false)
+    || on("appearance", false);
+  if (HAS_PANEL)
+    head += button("more", "more…", "Everything else you can change about "
+      + "this picture: which way it moves and how fast, whether the box and "
+      + "its lettering are drawn, whether the names are shown, and whether "
+      + "the page is light or dark.");
+  bar.innerHTML = head;
+
+  var body = "";
+  if (on("lr", true))
+    body += '<div class="cq-row"><span>left &amp; right</span>'
+      + '<span class="cq-ctl">'
+      + button("lr", "on", "Turn the shape left and right, or stop it turning "
+        + "that way. This is the movement most people mean by “spin it”.")
+      + (on("speed_each", false)
+         ? button("turn-slower", "&minus;", "Turn left and right more slowly.")
+           + '<span data-cq="turn-speed">' + Math.round(speeds.turn) + '</span>'
+           + button("turn-faster", "+", "Turn left and right more quickly.")
+         : "")
+      + '</span></div>';
+  if (on("ud", true))
+    body += '<div class="cq-row"><span>up &amp; down</span>'
+      + '<span class="cq-ctl">'
+      + button("ud", "on", "Tip the shape towards you and away again, or stop "
+        + "it tipping. A little of this alongside the turning is what shows "
+        + "the dents in a surface.")
+      + (on("speed_each", false)
+         ? button("tilt-slower", "&minus;", "Tip more slowly.")
+           + '<span data-cq="tilt-speed">' + Math.round(speeds.tilt) + '</span>'
+           + button("tilt-faster", "+", "Tip more quickly.")
+         : "")
+      + '</span></div>';
+  if (on("grid", false))
+    body += row("grid", "walls &amp; grid",
+      "Draw the box around the shape, with its ruled walls, or take it away. "
+      + "The walls are what let you judge where a bulge actually sits; "
+      + "without them you get the shape on its own, which is the tidier "
+      + "picture to drop into a document.");
+  if (on("labels", false))
+    body += row("labels", "lettering",
+      "Show or hide the numbers and the axis names around the picture. "
+      + "Hiding them leaves the shape and nothing else — useful when the "
+      + "picture is going beside text that already explains it, and when you "
+      + "want nobody reading numbers off a small screenshot.");
+  if (on("key", false))
+    body += row("key", "the names",
+      "Show or hide the list of names under the picture. Each name is also a "
+      + "switch: click one to hide that shape and click it again to bring it "
+      + "back, or double-click to see that one on its own.");
+  if (on("appearance", false))
+    body += '<div class="cq-row"><span>light or dark</span>'
+      + '<span class="cq-ctl">'
+      + button("appearance", mode === "light" ? "light" : "dark",
+        "Put the page on a light background or a dark one. The measured "
+        + "colours themselves never change — only the paper they are drawn "
+        + "on — so you can match the page to whatever you are reading it in.")
+      + '</span></div>';
+  panel.innerHTML = body;
+
   var css = document.createElement("style");
-  // ITS OWN BACKGROUND, and the text at full strength on top of it. Fading the
-  // whole strip was what kept it out of the way before, and it took the text
-  // down with it: 2.4:1 even on the light page, which is under what anybody
-  // with ordinary eyesight can read. Only the pill fades now, and at three
-  // quarters it still clears 4.5:1 with the brightest possible shape behind.
   // IN THE FLOW, NOT FLOATING OVER THE PICTURE. It used to be fixed to the
   // bottom of the window, which is exactly the band the drawing library puts
   // the key in -- so the strip sat on top of the names, and those names are
   // switches a reader is told to click. Measured at five viewports it covered
-  // two rows on a desktop and all four on a phone, where it was also wider
-  // than the screen and wrapped to two lines. Reported from a phone.
+  // two rows on a desktop and all four on a phone.
   //
   // Sitting under the picture instead, whatever height it needs is reserved
   // for it automatically -- one line or two, at any width -- so it cannot
-  // cover anything at any size. No breakpoint, no reserved strip of pixels to
-  // keep in step with a wrapping rule, and nothing to get wrong on the next
-  // screen size somebody invents.
-  css.textContent =
-    ".cq-spin-bar{flex:0 0 auto;display:flex;gap:6px;align-items:center;"
-    + "justify-content:center;flex-wrap:wrap;margin:0 auto;max-width:100%;"
-    + "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
-    + "padding:8px 10px;color:" + ink + ";"
-    + "background:" + paper + ";"
-    + "border-top:1px solid " + tint(ink, 0.14) + "}"
-    + ".cq-spin-bar button{font:inherit;cursor:pointer;border-radius:999px;"
-    + "padding:5px 10px;border:1px solid " + tint(ink, 0.45) + ";"
-    + "background:transparent;color:inherit}"
-    + ".cq-spin-bar button:hover{border-color:" + ink + "}"
-    // A KEYBOARD MUST BE ABLE TO SEE WHERE IT IS. The browser's own focus ring
-    // is drawn in its own colour and disappears against a dark page.
-    + ".cq-spin-bar button:focus-visible{outline:2px solid " + ink + ";"
-    + "outline-offset:2px}"
-    + ".cq-spin-bar button[aria-pressed=false]{opacity:.55}"
-    + ".cq-spin-bar span{opacity:.85;min-width:64px;text-align:center}";
+  // cover anything at any size.
+  css.id = "cq-spin-css";
+  function paint() {
+    css.textContent =
+      ".cq-spin-bar{flex:0 0 auto;display:flex;gap:6px;align-items:center;"
+      + "justify-content:center;flex-wrap:wrap;margin:0 auto;max-width:100%;"
+      + "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+      + "padding:8px 10px;color:" + ink + ";background:" + paper + ";"
+      + "border-top:1px solid " + tint(ink, 0.14) + "}"
+      + ".cq-spin-bar button{font:inherit;cursor:pointer;border-radius:999px;"
+      + "padding:5px 10px;border:1px solid " + tint(ink, 0.45) + ";"
+      + "background:transparent;color:inherit}"
+      + ".cq-spin-bar button:hover{border-color:" + ink + "}"
+      // A KEYBOARD MUST BE ABLE TO SEE WHERE IT IS. The browser's own focus
+      // ring is drawn in its own colour and disappears against a dark page.
+      + ".cq-spin-bar button:focus-visible,.cq-spin-panel button:focus-visible"
+      + "{outline:2px solid " + ink + ";outline-offset:2px}"
+      + ".cq-spin-bar button[aria-pressed=false]{opacity:.55}"
+      + ".cq-spin-bar span{opacity:.85;min-width:64px;text-align:center}"
+      + ".cq-spin-panel{flex:0 0 auto;color:" + ink + ";background:" + paper
+      + ";border-top:1px solid " + tint(ink, 0.14) + ";padding:10px 14px 12px;"
+      + "font:12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+      + "display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));"
+      + "gap:8px 22px;max-width:900px;margin:0 auto;width:100%;"
+      + "box-sizing:border-box}"
+      + ".cq-spin-panel .cq-row{display:flex;align-items:center;"
+      + "justify-content:space-between;gap:10px}"
+      + ".cq-spin-panel .cq-ctl{display:flex;gap:5px;align-items:center}"
+      + ".cq-spin-panel span{opacity:.9}"
+      + ".cq-spin-panel button{font:inherit;cursor:pointer;border-radius:999px;"
+      + "padding:4px 9px;border:1px solid " + tint(ink, 0.45) + ";"
+      + "background:transparent;color:inherit;min-width:34px}"
+      + ".cq-spin-panel button[aria-pressed=false]{opacity:.5}";
+  }
+  paint();
   document.head.appendChild(css);
+  document.body.appendChild(panel);
   document.body.appendChild(bar);
 
   // AND NOW TELL THE DRAWING LIBRARY THE PICTURE IS SHORTER. A plot measures
   // its box once, when it is created, and only looks again on a window
   // resize. Adding this strip takes about seventy pixels off the bottom of
   // that box -- so the key went on being drawn where it would have gone in
-  // the taller one, which put it straight back over the strip. The layout was
-  // right and the picture had not been told. Same trap the two-room page
-  // documents, on the page that had no resize call of its own.
+  // the taller one, which put it straight back over the strip.
   function fit() {
     if (!window.Plotly) return;
     (settings.ids || []).forEach(function (id) {
@@ -4174,32 +4286,111 @@ window.cqSpinControls = function (settings) {
     });
   }
   fit();
-  window.setTimeout(fit, 60);          // after the strip's own fonts land
+  window.setTimeout(fit, 60);
   window.addEventListener("resize", fit);
   // Turning a phone sideways is a resize the event above can miss.
   window.addEventListener("orientationchange", function () {
     window.setTimeout(fit, 120);
   });
 
+  // A PAGE SAVED STILL HAS NOTHING TO TURN. Pressing Play on one has to do
+  // something, so it falls back to turning all the way round.
+  function wake() {
+    if ((!turn.mode || turn.mode === "off") &&
+        (!tilt.mode || tilt.mode === "off")) {
+      turn.mode = "round";
+      if (!turn.range) turn.range = 60;
+    }
+  }
+  function press(what, state) {
+    var el = bar.querySelector('[data-cq=' + what + ']')
+          || panel.querySelector('[data-cq=' + what + ']');
+    if (el) el.setAttribute("aria-pressed", state ? "true" : "false");
+  }
+  function say(what, text) {
+    var el = bar.querySelector('[data-cq=' + what + ']')
+          || panel.querySelector('[data-cq=' + what + ']');
+    if (el) el.textContent = text;
+  }
+  function applyPicture() {
+    relayout({"scene.xaxis.showgrid": picture.grid,
+              "scene.yaxis.showgrid": picture.grid,
+              "scene.zaxis.showgrid": picture.grid,
+              "scene.xaxis.showbackground": picture.grid,
+              "scene.yaxis.showbackground": picture.grid,
+              "scene.zaxis.showbackground": picture.grid,
+              "scene.xaxis.showticklabels": picture.labels,
+              "scene.yaxis.showticklabels": picture.labels,
+              "scene.zaxis.showticklabels": picture.labels,
+              "scene.xaxis.title.font.size": picture.labels ? 12 : 1,
+              "scene.yaxis.title.font.size": picture.labels ? 12 : 1,
+              "scene.zaxis.title.font.size": picture.labels ? 12 : 1,
+              "showlegend": picture.key});
+    press("grid", picture.grid);
+    press("labels", picture.labels);
+    press("key", picture.key);
+  }
+  function applyMode() {
+    if (!palettes) return;
+    var p = palettes[mode] || palettes.dark;
+    if (!p) return;
+    ink = p.text; paper = p.page;
+    paint();
+    document.documentElement.style.background = p.page;
+    document.body.style.background = p.page;
+    relayout({"paper_bgcolor": p.page, "plot_bgcolor": p.plot,
+              "font.color": p.text,
+              "scene.xaxis.backgroundcolor": p.plot,
+              "scene.yaxis.backgroundcolor": p.plot,
+              "scene.zaxis.backgroundcolor": p.plot,
+              "scene.xaxis.gridcolor": p.grid,
+              "scene.yaxis.gridcolor": p.grid,
+              "scene.zaxis.gridcolor": p.grid,
+              "scene.xaxis.color": p.caption,
+              "scene.yaxis.color": p.caption,
+              "scene.zaxis.color": p.caption,
+              "legend.font.color": p.text,
+              "title.font.color": p.caption});
+    say("appearance", mode === "light" ? "light" : "dark");
+  }
+
   function push() {
     window.cqSpin.set(
       {on: running,
        turn: {mode: turn.mode, range: turn.range, speed: speedFor("turn")},
        tilt: {mode: tilt.mode, range: tilt.range, speed: speedFor("tilt")}});
-    bar.querySelector('[data-cq=speed]').textContent = "speed " + speed;
-    bar.querySelector('[data-cq=play]').textContent = running ? "Pause" : "Play";
-    bar.querySelector('[data-cq=lr]').setAttribute(
-      "aria-pressed", turn.mode && turn.mode !== "off" ? "true" : "false");
-    bar.querySelector('[data-cq=ud]').setAttribute(
-      "aria-pressed", tilt.mode && tilt.mode !== "off" ? "true" : "false");
+    say("speed", "speed " + both);
+    say("turn-speed", String(Math.round(speeds.turn)));
+    say("tilt-speed", String(Math.round(speeds.tilt)));
+    say("play", running ? "Pause" : "Play");
+    press("lr", turn.mode && turn.mode !== "off");
+    press("ud", tilt.mode && tilt.mode !== "off");
+    if (on("remember", true)) remember();
   }
-  bar.addEventListener("click", function (ev) {
+
+  function step(which, by) {
+    speeds[which] = Math.min(12, Math.max(1, Math.round(speeds[which] + by)));
+  }
+  function handler(ev) {
     var what = ev.target.getAttribute("data-cq");
     if (!what) return;
-    if (what === "home") { if (window.cqSpin.reset) window.cqSpin.reset(); return; }
+    if (what === "more") {
+      panel.hidden = !panel.hidden;
+      say("more", panel.hidden ? "more…" : "less…");
+      fit();
+      return;
+    }
+    if (what === "home") {
+      if (window.cqSpin.reset) window.cqSpin.reset();
+      return;
+    }
     if (what === "play") { running = !running; if (running) wake(); }
-    if (what === "slower") speed = Math.max(1, speed - 1);
-    if (what === "faster") speed = Math.min(12, speed + 1);
+    if (what === "slower") both = Math.max(1, both - 1);
+    if (what === "faster") both = Math.min(12, both + 1);
+    if (what === "turn-slower") step("turn", -1);
+    if (what === "turn-faster") step("turn", 1);
+    if (what === "tilt-slower") step("tilt", -1);
+    if (what === "tilt-faster") step("tilt", 1);
     // REMEMBERS WHAT IT WAS, so switching an axis off and on again brings back
     // the movement the page was saved with rather than a guess at one.
     if (what === "lr") turn.mode = (turn.mode && turn.mode !== "off")
@@ -4208,10 +4399,21 @@ window.cqSpinControls = function (settings) {
     if (what === "ud") tilt.mode = (tilt.mode && tilt.mode !== "off")
       ? "off" : (saved.tilt.mode && saved.tilt.mode !== "off"
                  ? saved.tilt.mode : "swing");
+    if (what === "grid") { picture.grid = !picture.grid; applyPicture(); }
+    if (what === "labels") { picture.labels = !picture.labels; applyPicture(); }
+    if (what === "key") { picture.key = !picture.key; applyPicture(); }
+    if (what === "appearance") {
+      mode = (mode === "light") ? "dark" : "light";
+      applyMode();
+    }
     push();
-  });
+  }
+  bar.addEventListener("click", handler);
+  panel.addEventListener("click", handler);
+  applyPicture();
+  if (mode !== (settings.mode || "dark")) applyMode();
   push();
 };
 
-window.addEventListener('load', function () {window.cqSpin.set({"on": true, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "swing", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#22211f", "paper": "#efebe6"});window.cqSpinControls({"on": true, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "swing", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#22211f", "paper": "#efebe6"});});</script></body>
+window.addEventListener('load', function () {window.cqSpin.set({"on": true, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "swing", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#22211f", "paper": "#efebe6", "mode": "light", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true}});window.cqSpinControls({"on": true, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "swing", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#22211f", "paper": "#efebe6", "mode": "light", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true}});});</script></body>
 </html>

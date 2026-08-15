@@ -690,6 +690,24 @@ nothing moving until they ask.
 
 <p align="center"><img src="docs/screenshots/21-a-saved-page-as-its-reader-sees-it.webp" width="880" alt="A saved page open in a browser: a measured paper in CIELAB, the name of the paper underneath it, the figures below that, and a strip of controls along the bottom reading Pause, minus, speed 6, plus, left and right, up and down, reset view"></p>
 
+**You choose which controls the page carries**, each time you save it. The
+save dialog has a section — *What the person opening it can change* — with a
+switch for each one, and an explanation of when it is worth handing over:
+
+<p align="center"><img src="docs/screenshots/22-choosing-what-the-reader-can-change.webp" width="470" alt="The save dialog, showing a list of switches under the heading What the person opening it can change: stop and start the movement, one speed for the movement, a speed for each direction, turn left and right on or off, tip up and down on or off, put the view back, show or hide the box and its grid, show or hide the lettering, show or hide the names underneath, switch the page light or dark, and remember what they chose"></p>
+
+The six that were always there stay ticked, so a page you save without opening
+that section is exactly the page you would have got before. Beyond those you
+can hand over **a speed for each direction** (what this window itself gives
+you), **the box and its grid**, **the lettering**, **the list of names**, and
+**a light-or-dark switch for the page**. Everything past Play, speed and reset
+lives behind a **more…** button, so the strip stays one line on a phone.
+
+You can also turn the strip off altogether — for a page going inside a website
+beside your own text, where a row of buttons you did not design would look out
+of place. The shape can still be dragged, zoomed and its names clicked; only
+the buttons go.
+
 **reset view** is the one worth knowing about. It is easy to drag a shape
 somewhere you did not mean to, and on a page that arrived by email there is no
 obvious way back — it puts the view exactly where the sender left it.

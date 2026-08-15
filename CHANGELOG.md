@@ -1,5 +1,49 @@
 # Changelog
 
+## v2.8.0
+
+### ✨ You choose what the person opening a page can change
+
+**Save this view as a web page…** now has a section of its own — *What the
+person opening it can change* — with a switch for each control the page can
+carry and an explanation of when it is worth handing over. Which controls make
+sense depends entirely on where the page is going: one for a printer to turn
+over wants everything, one embedded in a website beside your own text may want
+no strip at all.
+
+**The six that were always there stay ticked**, so a page saved without opening
+that section is exactly the page you would have got before.
+
+Beyond those, a page can now hand over:
+
+- **A speed for each direction** — what this window itself has always given
+  you, and worth passing on: a slow tip under a quicker turn shows the dents
+  in a surface far better than either on its own, and somebody with one speed
+  for both cannot find that.
+- **The box and its grid** — the walls are what let somebody judge where a
+  bulge sits, and clutter when the picture is going into a document that
+  explains itself.
+- **The lettering** — the numbers and axis names around the edge.
+- **The list of names** — remembering that each name is also a switch.
+- **A light-or-dark switch for the page**, so it can be matched to whatever it
+  is being read in. The measured colours never change; only the paper.
+- **Remembering what they chose**, kept by their own browser for that page
+  alone, so somebody working through several of your pages does not have to
+  press Pause on every one.
+
+Everything past Play, speed and reset lives behind a **more…** button, so the
+strip stays one line on a phone. The strip can also be switched off entirely.
+
+### 🧹 Fixed
+
+- **In light mode, lists and empty tickboxes are white inside.** They were
+  painted the same colour as the group box behind them, four levels apart from
+  the window itself, which made them read as greyed out. The dark window was
+  always right — an inset there is *darker* than the surface, and the idea
+  simply inverts on a light one. Number boxes and text fields had no rule at
+  all and fell back to whatever the platform painted; they follow now too. The
+  surface colours are untouched, so they still match ChromIQ exactly.
+
 ## v2.7.0
 
 ### 🔴 The key beside the picture was a decoration, not a switch

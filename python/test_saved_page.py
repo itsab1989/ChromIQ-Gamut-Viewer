@@ -174,13 +174,13 @@ def test_the_two_directions_keep_their_own_speeds():
     arrived tipping at 7 -- forty per cent fast, on four of eight published
     pages. The whole promise of a saved page is that it shows what was saved."""
     js = ti3gamut._SPIN_CONTROLS_JS
-    assert "speed: speedFor(\"turn\")" in js
-    assert "speed: speedFor(\"tilt\")" in js
-    assert "base[which] * speed / start" in js
+    assert 'speed: speedFor("turn")' in js
+    assert 'speed: speedFor("tilt")' in js
+    assert "saved[which].speed * both / start" in js
 
 
 def test_a_reader_can_get_the_view_back():
-    assert 'data-cq="home"' in ti3gamut._SPIN_CONTROLS_JS
+    assert 'button("home", "reset view"' in ti3gamut._SPIN_CONTROLS_JS
     assert "reset: reset" in ti3gamut._SPIN_JS
     # Captured before the first movement is applied, or "back" is wherever it
     # had already turned to.
