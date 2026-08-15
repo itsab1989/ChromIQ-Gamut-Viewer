@@ -446,3 +446,48 @@ def test_a_gap_in_the_chart_shows_up_as_the_largest_gap():
 
 def test_a_chart_too_small_to_say_anything_says_nothing():
     assert chart.spread(np.zeros((2, 3))) is None
+
+
+def _a_cmyk_profile():
+    """Whatever four-ink profile this machine happens to carry."""
+    import glob
+    for pattern in ("/System/Library/ColorSync/Profiles/*.icc",
+                    "/Library/ColorSync/Profiles/*.icc",
+                    "/usr/share/color/icc/**/*.icc"):
+        for path in glob.glob(pattern, recursive=True):
+            try:
+                from icc_read import describe
+                if describe(path)["space"] == "CMYK":
+                    return path
+            except Exception:                      # noqa: BLE001
+                continue
+    return None
+
+
+def test_a_four_ink_chart_goes_through_a_four_ink_profile(tmp_path):
+    """The CMYK path all the way through, on a real profile. Four inks are not
+    a cube — the same colour can be mixed several ways — so this exercises a
+    different route through the placing than any RGB chart does."""
+    profile = _a_cmyk_profile()
+    if profile is None:
+        pytest.skip("this machine carries no CMYK profile")
+    from icc_read import profile_gamut
+
+    axis = np.linspace(0, 100, 4)
+    device = np.stack(np.meshgrid(*[axis] * 4, indexing="ij"),
+                      axis=-1).reshape(-1, 4)
+    rows = "\n".join(f"{i + 1} " + " ".join(f"{v:.4f}" for v in quad)
+                     for i, quad in enumerate(device))
+    where = tmp_path / "four-ink.ti1"
+    where.write_text(
+        'CTI1\nCOLOR_REP "CMYK"\nNUMBER_OF_FIELDS 5\nBEGIN_DATA_FORMAT\n'
+        "SAMPLE_ID CMYK_C CMYK_M CMYK_Y CMYK_K\nEND_DATA_FORMAT\n"
+        f"NUMBER_OF_SETS {len(device)}\nBEGIN_DATA\n{rows}\nEND_DATA\n")
+
+    read = chart.read_chart(where)
+    assert read.channels == ("C", "M", "Y", "K")
+    placed = chart.through_profile(read, profile)
+    assert placed.tag in ("A2B1", "A2B0")
+    assert np.isfinite(placed.lab).all()
+    report = chart.outside_report(placed.lab, profile_gamut(profile, steps=9))
+    assert report.n_beyond == 0, (report.n_beyond, report.worst)
