@@ -1285,6 +1285,38 @@ window.cqSpin = (function () {
   function rest() {
     axes.turn.phase = 0; axes.tilt.phase = 0;
   }
+  // WHERE EACH SHAPE WAS WHEN THE PAGE OPENED. A reader who drags a shape
+  // into a corner, or zooms until it fills the screen, otherwise has no way
+  // back but reloading -- and reloading on a page that arrived by email is
+  // not obvious either. Captured before the first movement is applied rather
+  // than polled for, so it is the view the sender chose to the last decimal.
+  var home = {};
+  function keep(id, cam) {
+    if (home[id] || !cam || !cam.eye) return;
+    home[id] = {up: {x: (cam.up || {}).x, y: (cam.up || {}).y, z: (cam.up || {}).z},
+                center: {x: (cam.center || {}).x, y: (cam.center || {}).y,
+                         z: (cam.center || {}).z},
+                eye: {x: cam.eye.x, y: cam.eye.y, z: cam.eye.z}};
+  }
+  // A STILL PAGE NEVER STEPS, so it would never capture anything. Poll until
+  // the drawing library has built each scene, then stop.
+  function remember(tries) {
+    var missing = false;
+    for (var i = 0; i < ids.length; i++) {
+      var gd = scene(ids[i]);
+      if (gd) keep(ids[i], liveCam(gd));
+      if (!home[ids[i]]) missing = true;
+    }
+    if (missing && (tries || 0) < 60)
+      window.setTimeout(function () { remember((tries || 0) + 1); }, 120);
+  }
+  function reset() {
+    rest();
+    for (var i = 0; i < ids.length; i++) {
+      var gd = scene(ids[i]);
+      if (gd && home[ids[i]]) setCam(gd, home[ids[i]]);
+    }
+  }
   function hold() { held = Date.now(); rest(); }
   function watch(gd) {
     if (gd._cqSpinWatched) return;
@@ -1315,6 +1347,8 @@ window.cqSpin = (function () {
     var gd = scene(id); if (!gd) return;
     watch(gd);
     var cam = liveCam(gd); if (!cam || !cam.eye) return;
+    keep(id, cam);                // before anything is applied to it
+
     var c = cam.center || {x: 0, y: 0, z: 0};
     var e = [cam.eye.x - c.x, cam.eye.y - c.y, cam.eye.z - c.z];
     var u = cam.up ? [cam.up.x, cam.up.y, cam.up.z] : [0, 0, 1];
@@ -1359,7 +1393,7 @@ window.cqSpin = (function () {
     for (var i = 0; i < ids.length; i++) step(ids[i], turn, tilt);
   }
   function set(o) {
-    if (o.ids !== undefined) { ids = o.ids; rest(); }
+    if (o.ids !== undefined) { ids = o.ids; rest(); remember(0); }
     ["turn", "tilt"].forEach(function (which) {
       var got = o[which]; if (!got) return;
       var a = axes[which];
@@ -1373,7 +1407,7 @@ window.cqSpin = (function () {
       raf = window.requestAnimationFrame(frame);
     }
   }
-  return {set: set, nudge: nudge};
+  return {set: set, nudge: nudge, reset: reset};
 })();
 """
 
@@ -1422,6 +1456,19 @@ def _escape_title(text: str) -> str:
             .replace(">", "&gt;").strip() or "Measured gamut")
 
 
+#: Endings this module puts after a shape's own name when it draws that shape
+#: more than one way. They belong in the key beside the picture, where they say
+#: which of two entries is which -- and nowhere near the browser tab, where
+#: "Glossy-paper and Matte-paper (outline)" is a mouthful that answers nothing.
+#:
+#: A LIST RATHER THAN A PATTERN, deliberately. Stripping anything in brackets
+#: would eat a measurement the user themselves called "Canon (matte)", and the
+#: name a person chose is the one thing the tab must keep. Only the endings
+#: this file adds are removed, and `test_title_knows_every_suffix` fails if a
+#: new one is added to the drawing code without being added here.
+_OWN_SUFFIXES = (" (outline)", " (rings inside)")
+
+
 def _page_title(fig) -> str:
     """What the browser tab should say: the things in the picture, by name.
 
@@ -1443,6 +1490,10 @@ def _page_title(fig) -> str:
             # Traces are named "<thing> — outline", "<thing> — outside" and so
             # on; the thing is what matters and it appears several times.
             base = str(raw).split(" — ")[0].strip()
+            for ending in _OWN_SUFFIXES:
+                if base.endswith(ending):
+                    base = base[: -len(ending)].strip()
+                    break
             if base and base not in seen:
                 seen.add(base)
                 names.append(base)
@@ -1473,18 +1524,41 @@ def _titled(html: str, title: str) -> str:
     return html.replace("<body", full + "<body", 1)
 
 
-def _spin_script(ids, spin) -> str:
+def _spin_script(ids, spin, mode: str = "dark",
+                 controls: bool = True) -> str:
     """The turning engine plus the settings the window had when it was written.
 
     A saved page keeps whatever was on screen when it was saved, so a page sent
     to somebody arrives doing what the sender was looking at.
+
+    *mode* is which paper the page is on, and it is passed down because the
+    control strip has to paint itself: the document sets a background and no
+    text colour, so anything inheriting its colour comes out browser-default
+    black -- which on the dark page is very nearly the background.
+
+    *controls* is the strip a reader gets along the bottom, and it is FALSE
+    for the application's own view. That view is not a page somebody was sent:
+    the window already has movement controls, with better labels than a strip
+    can fit ("45 s a turn" rather than "speed 7"), and a second set floating
+    over the picture is two controls for one thing. Worse, they can disagree
+    -- a nudge of the speed slider goes straight to the engine, so the strip
+    goes on showing a number that is no longer true and pressing + on it
+    yanks the movement back to that stale figure. The engine still travels
+    into the live view; only the strip stays out of it.
     """
     if not spin:
         return ""
     import json
 
+    colours = SCENE_COLOURS["light" if mode == "light" else "dark"]
     settings = dict(spin)
     settings["ids"] = list(ids)
+    settings["ink"] = colours["text"]
+    settings["paper"] = colours["page"]
+    if not controls:
+        return (f"<script>{_SPIN_JS}\n"
+                f"window.addEventListener('load', function () "
+                f"{{window.cqSpin.set({json.dumps(settings)});}});</script>")
     return (f"<script>{_SPIN_JS}\n{_SPIN_CONTROLS_JS}\n"
             f"window.addEventListener('load', function () "
             f"{{window.cqSpin.set({json.dumps(settings)});"
@@ -1514,7 +1588,21 @@ window.cqSpinControls = function (settings) {
   var saved = {turn: Object.assign({}, settings.turn || {}),
                tilt: Object.assign({}, settings.tilt || {})};
   var turn = Object.assign({}, saved.turn), tilt = Object.assign({}, saved.tilt);
-  var speed = Math.max(turn.speed || 0, tilt.speed || 0) || 6;
+  // THE TWO DIRECTIONS USUALLY RUN AT DIFFERENT SPEEDS, and a slow tip under a
+  // quicker turn is the pairing that reads best -- five of the eight published
+  // sample pages were saved that way. One control for both therefore has to
+  // scale them TOGETHER, keeping their proportion, rather than flatten them to
+  // a single number. Flattening is what the first version did, and because the
+  // bar pushes its settings as soon as the page opens, those pages arrived
+  // running their tipping 20-40% faster than the sender ever saw. A page that
+  // does not show what was saved is the one thing this feature must not do.
+  var base = {turn: saved.turn.speed || 0, tilt: saved.tilt.speed || 0};
+  var start = Math.round(Math.max(base.turn, base.tilt)) || 6;
+  var speed = start;
+  function speedFor(which) {
+    if (!base[which]) return speed;      // nothing saved to hold in proportion
+    return Math.max(0.5, base[which] * speed / start);
+  }
   var running = !!settings.on;
   // A PAGE SAVED STILL HAS NOTHING TO TURN. Pressing Play on one has to do
   // something, so it falls back to turning all the way round — the movement
@@ -1540,27 +1628,62 @@ window.cqSpinControls = function (settings) {
     + '<button type="button" data-cq="lr" title="Turn left and right, or stop '
     + 'turning that way.">left &amp; right</button>'
     + '<button type="button" data-cq="ud" title="Tip up and down, or stop '
-    + 'tipping.">up &amp; down</button>';
+    + 'tipping.">up &amp; down</button>'
+    + '<button type="button" data-cq="home" title="Put the shape back the way '
+    + 'the page opened. Only your own turning and zooming is undone — nothing '
+    + 'is closed and no figure changes.">reset view</button>';
+  // COLOURS, NOT INHERITANCE. The page sets a background and no text colour,
+  // so `color: inherit` resolved to the browser default -- black -- and on a
+  // dark page the whole strip came out at 1.04:1 against it. Invisible, on
+  // seven of the eight pages published to show the feature off. The palette
+  // travels with the settings now, and the strip is painted from it.
+  var ink = settings.ink || "#e6e6e6";
+  var paper = settings.paper || "#111111";
+  function tint(hex, alpha) {           // #rrggbb -> rgba(), for the pill
+    var h = String(hex).replace("#", "");
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var n = parseInt(h, 16);
+    if (!isFinite(n)) return "rgba(0,0,0," + alpha + ")";
+    return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + ","
+           + (n & 255) + "," + alpha + ")";
+  }
   var css = document.createElement("style");
+  // ITS OWN BACKGROUND, and the text at full strength on top of it. Fading the
+  // whole strip was what kept it out of the way before, and it took the text
+  // down with it: 2.4:1 even on the light page, which is under what anybody
+  // with ordinary eyesight can read. Only the pill fades now, and at three
+  // quarters it still clears 4.5:1 with the brightest possible shape behind.
   css.textContent =
     ".cq-spin-bar{position:fixed;left:50%;transform:translateX(-50%);"
     + "bottom:14px;display:flex;gap:6px;align-items:center;z-index:9;"
     + "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
-    + "padding:6px 8px;border-radius:999px;opacity:.35;transition:opacity .2s}"
-    + ".cq-spin-bar:hover{opacity:1}"
+    + "padding:6px 8px;border-radius:999px;color:" + ink + ";"
+    + "background:" + tint(paper, 0.75) + ";"
+    + "border:1px solid " + tint(ink, 0.22) + ";"
+    + "transition:background .2s,border-color .2s}"
+    + ".cq-spin-bar:hover{background:" + tint(paper, 0.94) + ";"
+    + "border-color:" + tint(ink, 0.34) + "}"
+    // A TOUCH SCREEN HAS NO HOVER. Left to the rule above, every phone and
+    // tablet would get the resting look for ever and never the clearer one.
+    + "@media (hover:none){.cq-spin-bar{background:" + tint(paper, 0.94) + "}}"
     + ".cq-spin-bar button{font:inherit;cursor:pointer;border-radius:999px;"
-    + "padding:5px 10px;border:1px solid currentColor;background:transparent;"
-    + "color:inherit;opacity:.85}"
-    + ".cq-spin-bar button:hover{opacity:1}"
-    + ".cq-spin-bar button[aria-pressed=false]{opacity:.45}"
-    + ".cq-spin-bar span{opacity:.7;min-width:64px;text-align:center}";
+    + "padding:5px 10px;border:1px solid " + tint(ink, 0.45) + ";"
+    + "background:transparent;color:inherit}"
+    + ".cq-spin-bar button:hover{border-color:" + ink + "}"
+    // A KEYBOARD MUST BE ABLE TO SEE WHERE IT IS. The browser's own focus ring
+    // is drawn in its own colour and disappears against a dark page.
+    + ".cq-spin-bar button:focus-visible{outline:2px solid " + ink + ";"
+    + "outline-offset:2px}"
+    + ".cq-spin-bar button[aria-pressed=false]{opacity:.55}"
+    + ".cq-spin-bar span{opacity:.85;min-width:64px;text-align:center}";
   document.head.appendChild(css);
   document.body.appendChild(bar);
 
   function push() {
-    window.cqSpin.set({on: running,
-                       turn: {mode: turn.mode, range: turn.range, speed: speed},
-                       tilt: {mode: tilt.mode, range: tilt.range, speed: speed}});
+    window.cqSpin.set(
+      {on: running,
+       turn: {mode: turn.mode, range: turn.range, speed: speedFor("turn")},
+       tilt: {mode: tilt.mode, range: tilt.range, speed: speedFor("tilt")}});
     bar.querySelector('[data-cq=speed]').textContent = "speed " + speed;
     bar.querySelector('[data-cq=play]').textContent = running ? "Pause" : "Play";
     bar.querySelector('[data-cq=lr]').setAttribute(
@@ -1571,6 +1694,7 @@ window.cqSpinControls = function (settings) {
   bar.addEventListener("click", function (ev) {
     var what = ev.target.getAttribute("data-cq");
     if (!what) return;
+    if (what === "home") { if (window.cqSpin.reset) window.cqSpin.reset(); return; }
     if (what === "play") { running = !running; if (running) wake(); }
     if (what === "slower") speed = Math.max(1, speed - 1);
     if (what === "faster") speed = Math.min(12, speed + 1);
@@ -1590,7 +1714,8 @@ window.cqSpinControls = function (settings) {
 
 
 def write_side_by_side_html(pages, out: Path, mode: str = "dark",
-                            linked: bool = True, spin=None) -> Path:
+                            linked: bool = True, spin=None,
+                            controls: bool = True) -> Path:
     """Two scenes in one page, each with its own shape, side by side.
 
     Overlaying two gamuts is the right way to see where one reaches past the
@@ -1666,13 +1791,14 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
           font-family:Menlo,Consolas,"Courier New",monospace;
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
  .half > div:last-child {{ flex:1 1 auto; min-height:0; }}
-</style></head><body><div class="row">{''.join(blocks)}</div>{resize}{link}{_spin_script(ids, None if flat else spin)}</body></html>"""
+</style></head><body><div class="row">{''.join(blocks)}</div>{resize}{link}{_spin_script(ids, None if flat else spin, mode, controls)}</body></html>"""
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
 
 
 def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
-                     carry_viewer: bool = True, notes: str = "") -> Path:
+                     carry_viewer: bool = True, notes: str = "",
+                     controls: bool = True) -> Path:
     """Write the figure as a page whose paper matches the application.
 
     *carry_viewer* decides whether the drawing library travels inside the file.
@@ -1694,8 +1820,38 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     # says what the picture is, so it is what the tab says too.
     html = _titled(html, _page_title(fig))
     _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]
+    # HIDING THE OVERFLOW HIDES THE NUMBERS. A single full-bleed scene should
+    # not scroll -- there is nothing under it and a stray scrollbar only makes
+    # the picture jump. But the written-out figures are appended AFTER the
+    # scene, which is already the full height of the window, so they land
+    # entirely below the fold; with the overflow hidden a reader could not
+    # reach them at all. Fifteen real wheel notches on the published page 03
+    # moved it not one pixel, and those figures are the whole reason that page
+    # exists. So: hidden when there is only a picture, scrollable when there
+    # is something to scroll to.
+    _overflow = "auto" if notes else "hidden"
     style = (f"<style>html,body{{background:{_PAGE_BACKGROUND};margin:0;"
-             f"padding:0;overflow:hidden;}}</style>")
+             f"padding:0;overflow:{_overflow};}}</style>")
+    if notes:
+        # AND THE PICTURE HAS TO MAKE ROOM FOR THEM. Letting the page scroll
+        # is not enough on its own: the scene is the full height of the
+        # window, a 3D scene takes the wheel for zooming, and there is no
+        # other part of the page to put the pointer over -- so fifteen wheel
+        # notches zoomed the shape and moved the page not one pixel. Giving
+        # the scene rather less than the window puts the figures on screen
+        # from the start, where they can simply be read.
+        #
+        # THE WRAPPER, NOT THE PLOT. Plotly puts its graph div inside a plain
+        # <div style="height:100%"> of its own, so shrinking the inner one
+        # leaves the outer one still filling the window and the figures still
+        # below it -- which is what the first attempt at this did, and the
+        # measurement said so before it was published. The inner div is 100%
+        # of the outer, so the outer is the only one that has to be told.
+        #
+        # !important because that height is written inline, and an inline
+        # style beats a rule that does not say so.
+        style += ("<style>body > div:first-of-type"
+                  "{height:76vh !important;}</style>")
     if "</head>" in html:
         html = html.replace("</head>", style + "</head>", 1)
     else:
@@ -1707,11 +1863,11 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
         colours = SCENE_COLOURS["light" if mode == "light" else "dark"]
         block = ("<div style=\"font:13px/1.6 -apple-system,Segoe UI,Roboto,"
                  f"sans-serif;color:{colours['text']};background:"
-                 f"{colours['page']};padding:14px 22px 22px;white-space:pre-wrap"
+                 f"{colours['page']};padding:14px 22px 78px;white-space:pre-wrap"
                  f"\">{notes}</div>")
         html = (html.replace("</body>", block + "</body>", 1)
                 if "</body>" in html else html + block)
-    turn = _spin_script(["scene0"], spin)
+    turn = _spin_script(["scene0"], spin, mode, controls)
     if turn:
         html = (html.replace("</body>", turn + "</body>", 1)
                 if "</body>" in html else html + turn)
@@ -1838,8 +1994,10 @@ def write_html(gamuts, out: Path, title: str, **kwargs) -> Path:
     spin = kwargs.pop("spin", None)
     carry = kwargs.pop("carry_viewer", True)
     notes = kwargs.pop("notes", "")
+    controls = kwargs.pop("controls", True)
     return _write_dark_html(build_figure(gamuts, title, **kwargs), out, mode,
-                            spin=spin, carry_viewer=carry, notes=notes)
+                            spin=spin, carry_viewer=carry, notes=notes,
+                            controls=controls)
 
 
 def build_figure(gamuts, title: str, opacity: float | None = None,

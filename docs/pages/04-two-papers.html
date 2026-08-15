@@ -1,5 +1,5 @@
 <html>
-<head><title>Glossy-paper and Matte-paper (outline) — ChromIQ Gamut Viewer</title><meta charset="utf-8" /><style>html,body{background:#111111;margin:0;padding:0;overflow:hidden;}</style></head>
+<head><title>Glossy-paper and Matte-paper — ChromIQ Gamut Viewer</title><meta charset="utf-8" /><style>html,body{background:#111111;margin:0;padding:0;overflow:hidden;}</style></head>
 <body>
     <div style="height:100%; width:100%;">                        <script>window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
         <script>/**
@@ -3927,6 +3927,38 @@ window.cqSpin = (function () {
   function rest() {
     axes.turn.phase = 0; axes.tilt.phase = 0;
   }
+  // WHERE EACH SHAPE WAS WHEN THE PAGE OPENED. A reader who drags a shape
+  // into a corner, or zooms until it fills the screen, otherwise has no way
+  // back but reloading -- and reloading on a page that arrived by email is
+  // not obvious either. Captured before the first movement is applied rather
+  // than polled for, so it is the view the sender chose to the last decimal.
+  var home = {};
+  function keep(id, cam) {
+    if (home[id] || !cam || !cam.eye) return;
+    home[id] = {up: {x: (cam.up || {}).x, y: (cam.up || {}).y, z: (cam.up || {}).z},
+                center: {x: (cam.center || {}).x, y: (cam.center || {}).y,
+                         z: (cam.center || {}).z},
+                eye: {x: cam.eye.x, y: cam.eye.y, z: cam.eye.z}};
+  }
+  // A STILL PAGE NEVER STEPS, so it would never capture anything. Poll until
+  // the drawing library has built each scene, then stop.
+  function remember(tries) {
+    var missing = false;
+    for (var i = 0; i < ids.length; i++) {
+      var gd = scene(ids[i]);
+      if (gd) keep(ids[i], liveCam(gd));
+      if (!home[ids[i]]) missing = true;
+    }
+    if (missing && (tries || 0) < 60)
+      window.setTimeout(function () { remember((tries || 0) + 1); }, 120);
+  }
+  function reset() {
+    rest();
+    for (var i = 0; i < ids.length; i++) {
+      var gd = scene(ids[i]);
+      if (gd && home[ids[i]]) setCam(gd, home[ids[i]]);
+    }
+  }
   function hold() { held = Date.now(); rest(); }
   function watch(gd) {
     if (gd._cqSpinWatched) return;
@@ -3957,6 +3989,8 @@ window.cqSpin = (function () {
     var gd = scene(id); if (!gd) return;
     watch(gd);
     var cam = liveCam(gd); if (!cam || !cam.eye) return;
+    keep(id, cam);                // before anything is applied to it
+
     var c = cam.center || {x: 0, y: 0, z: 0};
     var e = [cam.eye.x - c.x, cam.eye.y - c.y, cam.eye.z - c.z];
     var u = cam.up ? [cam.up.x, cam.up.y, cam.up.z] : [0, 0, 1];
@@ -4001,7 +4035,7 @@ window.cqSpin = (function () {
     for (var i = 0; i < ids.length; i++) step(ids[i], turn, tilt);
   }
   function set(o) {
-    if (o.ids !== undefined) { ids = o.ids; rest(); }
+    if (o.ids !== undefined) { ids = o.ids; rest(); remember(0); }
     ["turn", "tilt"].forEach(function (which) {
       var got = o[which]; if (!got) return;
       var a = axes[which];
@@ -4015,7 +4049,7 @@ window.cqSpin = (function () {
       raf = window.requestAnimationFrame(frame);
     }
   }
-  return {set: set, nudge: nudge};
+  return {set: set, nudge: nudge, reset: reset};
 })();
 
 
@@ -4028,7 +4062,21 @@ window.cqSpinControls = function (settings) {
   var saved = {turn: Object.assign({}, settings.turn || {}),
                tilt: Object.assign({}, settings.tilt || {})};
   var turn = Object.assign({}, saved.turn), tilt = Object.assign({}, saved.tilt);
-  var speed = Math.max(turn.speed || 0, tilt.speed || 0) || 6;
+  // THE TWO DIRECTIONS USUALLY RUN AT DIFFERENT SPEEDS, and a slow tip under a
+  // quicker turn is the pairing that reads best -- five of the eight published
+  // sample pages were saved that way. One control for both therefore has to
+  // scale them TOGETHER, keeping their proportion, rather than flatten them to
+  // a single number. Flattening is what the first version did, and because the
+  // bar pushes its settings as soon as the page opens, those pages arrived
+  // running their tipping 20-40% faster than the sender ever saw. A page that
+  // does not show what was saved is the one thing this feature must not do.
+  var base = {turn: saved.turn.speed || 0, tilt: saved.tilt.speed || 0};
+  var start = Math.round(Math.max(base.turn, base.tilt)) || 6;
+  var speed = start;
+  function speedFor(which) {
+    if (!base[which]) return speed;      // nothing saved to hold in proportion
+    return Math.max(0.5, base[which] * speed / start);
+  }
   var running = !!settings.on;
   // A PAGE SAVED STILL HAS NOTHING TO TURN. Pressing Play on one has to do
   // something, so it falls back to turning all the way round — the movement
@@ -4054,27 +4102,62 @@ window.cqSpinControls = function (settings) {
     + '<button type="button" data-cq="lr" title="Turn left and right, or stop '
     + 'turning that way.">left &amp; right</button>'
     + '<button type="button" data-cq="ud" title="Tip up and down, or stop '
-    + 'tipping.">up &amp; down</button>';
+    + 'tipping.">up &amp; down</button>'
+    + '<button type="button" data-cq="home" title="Put the shape back the way '
+    + 'the page opened. Only your own turning and zooming is undone — nothing '
+    + 'is closed and no figure changes.">reset view</button>';
+  // COLOURS, NOT INHERITANCE. The page sets a background and no text colour,
+  // so `color: inherit` resolved to the browser default -- black -- and on a
+  // dark page the whole strip came out at 1.04:1 against it. Invisible, on
+  // seven of the eight pages published to show the feature off. The palette
+  // travels with the settings now, and the strip is painted from it.
+  var ink = settings.ink || "#e6e6e6";
+  var paper = settings.paper || "#111111";
+  function tint(hex, alpha) {           // #rrggbb -> rgba(), for the pill
+    var h = String(hex).replace("#", "");
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var n = parseInt(h, 16);
+    if (!isFinite(n)) return "rgba(0,0,0," + alpha + ")";
+    return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + ","
+           + (n & 255) + "," + alpha + ")";
+  }
   var css = document.createElement("style");
+  // ITS OWN BACKGROUND, and the text at full strength on top of it. Fading the
+  // whole strip was what kept it out of the way before, and it took the text
+  // down with it: 2.4:1 even on the light page, which is under what anybody
+  // with ordinary eyesight can read. Only the pill fades now, and at three
+  // quarters it still clears 4.5:1 with the brightest possible shape behind.
   css.textContent =
     ".cq-spin-bar{position:fixed;left:50%;transform:translateX(-50%);"
     + "bottom:14px;display:flex;gap:6px;align-items:center;z-index:9;"
     + "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
-    + "padding:6px 8px;border-radius:999px;opacity:.35;transition:opacity .2s}"
-    + ".cq-spin-bar:hover{opacity:1}"
+    + "padding:6px 8px;border-radius:999px;color:" + ink + ";"
+    + "background:" + tint(paper, 0.75) + ";"
+    + "border:1px solid " + tint(ink, 0.22) + ";"
+    + "transition:background .2s,border-color .2s}"
+    + ".cq-spin-bar:hover{background:" + tint(paper, 0.94) + ";"
+    + "border-color:" + tint(ink, 0.34) + "}"
+    // A TOUCH SCREEN HAS NO HOVER. Left to the rule above, every phone and
+    // tablet would get the resting look for ever and never the clearer one.
+    + "@media (hover:none){.cq-spin-bar{background:" + tint(paper, 0.94) + "}}"
     + ".cq-spin-bar button{font:inherit;cursor:pointer;border-radius:999px;"
-    + "padding:5px 10px;border:1px solid currentColor;background:transparent;"
-    + "color:inherit;opacity:.85}"
-    + ".cq-spin-bar button:hover{opacity:1}"
-    + ".cq-spin-bar button[aria-pressed=false]{opacity:.45}"
-    + ".cq-spin-bar span{opacity:.7;min-width:64px;text-align:center}";
+    + "padding:5px 10px;border:1px solid " + tint(ink, 0.45) + ";"
+    + "background:transparent;color:inherit}"
+    + ".cq-spin-bar button:hover{border-color:" + ink + "}"
+    // A KEYBOARD MUST BE ABLE TO SEE WHERE IT IS. The browser's own focus ring
+    // is drawn in its own colour and disappears against a dark page.
+    + ".cq-spin-bar button:focus-visible{outline:2px solid " + ink + ";"
+    + "outline-offset:2px}"
+    + ".cq-spin-bar button[aria-pressed=false]{opacity:.55}"
+    + ".cq-spin-bar span{opacity:.85;min-width:64px;text-align:center}";
   document.head.appendChild(css);
   document.body.appendChild(bar);
 
   function push() {
-    window.cqSpin.set({on: running,
-                       turn: {mode: turn.mode, range: turn.range, speed: speed},
-                       tilt: {mode: tilt.mode, range: tilt.range, speed: speed}});
+    window.cqSpin.set(
+      {on: running,
+       turn: {mode: turn.mode, range: turn.range, speed: speedFor("turn")},
+       tilt: {mode: tilt.mode, range: tilt.range, speed: speedFor("tilt")}});
     bar.querySelector('[data-cq=speed]').textContent = "speed " + speed;
     bar.querySelector('[data-cq=play]').textContent = running ? "Pause" : "Play";
     bar.querySelector('[data-cq=lr]').setAttribute(
@@ -4085,6 +4168,7 @@ window.cqSpinControls = function (settings) {
   bar.addEventListener("click", function (ev) {
     var what = ev.target.getAttribute("data-cq");
     if (!what) return;
+    if (what === "home") { if (window.cqSpin.reset) window.cqSpin.reset(); return; }
     if (what === "play") { running = !running; if (running) wake(); }
     if (what === "slower") speed = Math.max(1, speed - 1);
     if (what === "faster") speed = Math.min(12, speed + 1);
@@ -4101,5 +4185,5 @@ window.cqSpinControls = function (settings) {
   push();
 };
 
-window.addEventListener('load', function () {window.cqSpin.set({"on": true, "turn": {"mode": "swing", "speed": 8.0, "range": 90.0}, "tilt": {"mode": "off", "speed": 6.0, "range": 25.0}, "ids": ["scene0"]});window.cqSpinControls({"on": true, "turn": {"mode": "swing", "speed": 8.0, "range": 90.0}, "tilt": {"mode": "off", "speed": 6.0, "range": 25.0}, "ids": ["scene0"]});});</script></body>
+window.addEventListener('load', function () {window.cqSpin.set({"on": true, "turn": {"mode": "swing", "speed": 8.0, "range": 90.0}, "tilt": {"mode": "off", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#e6e6e6", "paper": "#111111"});window.cqSpinControls({"on": true, "turn": {"mode": "swing", "speed": 8.0, "range": 90.0}, "tilt": {"mode": "off", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#e6e6e6", "paper": "#111111"});});</script></body>
 </html>

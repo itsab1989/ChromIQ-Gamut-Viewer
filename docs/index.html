@@ -40,9 +40,11 @@ afterwards. They are here so you can see what that button gives you before
 installing anything.</p>
 
 <p><b>They are not pictures.</b> Drag to turn the shape, scroll to zoom, and
-click a name in the key underneath to hide or show it. Where a page is moving,
-the strip along the bottom stops it, changes its speed, and switches the two
-directions of movement on and off.</p>
+click a name in the key underneath to hide or show it. The strip along the
+bottom is yours on every page, moving or not: it starts and stops the
+movement, changes its speed, switches turning and tipping on and off, and
+puts the shape back the way it opened if you have turned it somewhere you did
+not mean to.</p>
 
 <p>Each one is a single self-contained file of about 5 MB. The 3D viewer travels
 inside it, so once it has loaded it needs no internet at all — it works from a
@@ -68,9 +70,11 @@ memory stick, from an email attachment, or in ten years.</p>
 <h2>Two papers, compared</h2>
 
 <a class="card" href="pages/04-two-papers.html">
-  <b>A glossy paper inside a matte one's outline</b>
-  <span>Which paper should you use? The one that holds more colour is only
-  half the answer — see how much of each fits inside the other.</span></a>
+  <b>A matte paper's outline around a glossy one</b>
+  <span>Which paper should you use? Every colour the matte one holds fits
+  inside the glossy — but only 76.4% of the glossy fits inside the matte, and
+  the quarter that does not is what you would give up. Turn it and you can see
+  exactly where the glossy one pushes out through the matte one's cage.</span></a>
 
 <h2>A chart, before anything has been printed</h2>
 
@@ -93,10 +97,10 @@ memory stick, from an email attachment, or in ten years.</p>
   page can match the document it is going into.</span></a>
 
 <a class="card" href="pages/08-without-the-viewer.html">
-  <b>The small one — 80 kB instead of 5 MB</b>
-  <span>The same scene saved <i>without</i> the viewer inside it, which it
-  fetches instead. Sixty times smaller, and it needs the internet. Worth it for
-  a page on a website; not for one you email.</span></a>
+  <b>The small one — 56 kB instead of 4.9 MB</b>
+  <span>A measured paper saved <i>without</i> the viewer inside it, which it
+  fetches instead. Ninety times smaller, and it needs the internet. Worth it
+  for a page on a website; not for one you email.</span></a>
 
 <div class="note">
 <p><b>What this is for.</b> A picture shows somebody your angle. A page like
@@ -108,7 +112,11 @@ measurement to a printer, a client or a forum, and they do not have the app.</p>
 <p>Made by <a href="https://github.com/itsab1989/ChromIQ-Gamut-Viewer">ChromIQ
 Gamut Viewer</a>, a free companion to
 <a href="https://github.com/itsab1989/ChromIQ">ChromIQ</a>. The measurements
-behind these pages are the demo files that travel with the source.</p>
+behind these pages are the demo files in <code>demo/</code>, which travel with
+the source, so you can make every page here yourself:
+<code>python scripts/make_sample_pages.py</code>. That script drives the real
+window and then reads each page back to check it still shows what this page
+says it does — including the patch counts quoted above.</p>
 </footer>
 
 </main>

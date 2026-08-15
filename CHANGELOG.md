@@ -1,5 +1,80 @@
 # Changelog
 
+## v2.5.0
+
+### 🔴 The strip on a saved page could not be seen
+
+The controls added in v2.4.0 were painted with `color: inherit`, and a saved
+page sets a background but no text colour — so they inherited the browser's
+default black and came out at **1.04:1 against the dark page**. Invisible, on
+seven of the eight pages published to show the feature off. On the light page
+they reached 2.4:1, which is still under what anybody with ordinary eyesight
+can read.
+
+Measured in a real browser rather than reasoned about, and measured again
+after: **15.13:1 on the dark page, 13.56:1 on the light one.** The strip now
+carries the page's own palette and its own background, so the text is at full
+strength whatever the shape behind it is doing. Two things came out of the
+same look:
+
+- **A touch screen has no hover**, so the rule that revealed the strip on
+  hover left every phone and tablet with the resting look for ever.
+- **A keyboard could not see where it was.** The browser's own focus ring is
+  drawn in its own colour and vanishes against a dark page.
+
+### 🔴 A saved page did not run at the speed it was saved at
+
+The strip flattened both directions of movement to a single speed and pushed
+it as soon as the page opened — so a page saved turning at 7 while tipping at
+5 arrived **tipping at 7, forty per cent fast**. Four of the eight published
+pages were affected. The two speeds are kept in proportion now: slower and
+faster scale them together, and a page opens showing exactly what was saved.
+
+### 🔴 The numbers written under a picture could not be reached
+
+**Save this view as a web page… → include the numbers** appends the figures
+after a scene that is already the full height of the window, so they landed
+entirely below the fold — and the page had `overflow: hidden`. Fifteen real
+wheel notches moved the published page not one pixel.
+
+Letting it scroll was not enough on its own, and the measurement said so: a 3D
+scene takes the wheel for zooming, and it filled the window, so there was
+nowhere left to scroll from. The picture now makes room for the figures, which
+are simply on screen where they can be read.
+
+### ✨ New
+
+- **reset view**, on the strip of every saved page. A reader who has turned or
+  zoomed a shape somewhere they did not mean to had no way back but reloading
+  — and reloading a page that arrived by email is not obvious either. It
+  restores the view the page opened with, captured before the first movement
+  is applied, so it is the view the sender chose.
+- **The demo measurements now travel with the source**, in `demo/`. The
+  showcase said they did and they did not, so nobody who cloned the repository
+  could open anything or reproduce a single sample page.
+- **`scripts/make_sample_pages.py`** writes all eight showcase pages by
+  driving the real window through its own Save button, then reads each one
+  back and checks it still shows what `docs/index.html` claims about it —
+  including the patch counts. Run it after any change to the export.
+
+### 🧹 Fixed
+
+- **The reader's strip no longer appears inside the application itself.** The
+  window has its own movement controls, with better labels than a strip can
+  fit, and a second set floating over the picture was two controls for one
+  thing — which could disagree, because a nudge of a panel slider goes
+  straight to the engine and left the strip showing a number that was no
+  longer true.
+- **How a shape is drawn no longer follows its name into the browser tab.** A
+  published page was called *Glossy-paper and Matte-paper (outline)*. Only the
+  endings this application invents are removed, so a measurement somebody
+  named *Canon (matte)* keeps its name.
+- **Two claims on the showcase were wrong** and are corrected: the small page
+  is 56 kB against 4.9 MB (ninety times smaller, not sixty), and the two
+  papers were the wrong way round — the matte one fits entirely inside the
+  glossy, not the reverse. Both are now checked by the generator rather than
+  written by hand.
+
 ## v2.4.0
 
 ### 🏷 Saved pages now have a name

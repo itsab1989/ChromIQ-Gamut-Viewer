@@ -37,7 +37,7 @@ sys.argv = ["drive_all_combinations"]
 import numpy as np                                          # noqa: E402
 
 DEMO = pathlib.Path(os.environ.get(
-    "GAMUTVIEW_DEMO", str(HERE.parent.parent / "demo")))
+    "GAMUTVIEW_DEMO", str(HERE.parent / "demo")))
 BIG_CHART = pathlib.Path(os.environ.get("GAMUTVIEW_BIG_CHART", ""))
 
 failures: list = []

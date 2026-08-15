@@ -33,7 +33,7 @@ from PyQt6.QtCore import QSettings                           # noqa: E402
 from PyQt6.QtWidgets import QApplication                     # noqa: E402
 
 DEMO = pathlib.Path(os.environ.get(
-    "GAMUTVIEW_DEMO", str(HERE.parent.parent / "demo")))
+    "GAMUTVIEW_DEMO", str(HERE.parent / "demo")))
 #: A bigger chart to fall back on, named by an environment
 #: variable rather than a path — a path here would publish
 #: whatever somebody happened to call their own project.

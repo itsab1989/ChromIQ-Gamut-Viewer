@@ -7746,6 +7746,11 @@ class GamutApp(QMainWindow):
         else:
             write_html(gamuts, out, self._scene_title(),
                        spin=self._spin_options(),
+                       # NO FLOATING STRIP IN HERE. This window has its own
+                       # movement controls, and a second set over the picture
+                       # is two controls for one thing that can disagree.
+                       # The strip is for a page somebody was sent.
+                       controls=False,
                        patches=clouds, styles=styles, lost=lost,
                        **self._render_options())
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
@@ -7818,7 +7823,8 @@ class GamutApp(QMainWindow):
                 **options)))
         write_side_by_side_html(figures, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked(),
-                                spin=self._spin_options())
+                                spin=self._spin_options(),
+                                controls=False)   # this window has its own
 
     #: The controls that can belong to one shape rather than all of them, as
     #: key → (widget, how to read it). Anything not here is window-wide by

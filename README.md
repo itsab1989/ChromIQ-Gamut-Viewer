@@ -683,9 +683,19 @@ a memory stick, from an email attachment, on a plane, in ten years.
 What the person you send it to gets is not a picture — it is the scene. They
 can drag it round, zoom in, click the names underneath to hide and show shapes,
 and use the strip along the bottom to **start it turning, stop it, change the
-speed, and switch the left-and-right and up-and-down movement on and off**.
-That works on every page, including one you saved standing still: it simply
-opens with the button reading **Play** and nothing moving until they ask.
+speed, switch the left-and-right and up-and-down movement on and off, and put
+the shape back the way it opened**. That works on every page, including one you
+saved standing still: it simply opens with the button reading **Play** and
+nothing moving until they ask.
+
+<p align="center"><img src="docs/screenshots/21-a-saved-page-as-its-reader-sees-it.webp" width="880" alt="A saved page open in a browser: a measured paper in CIELAB, the name of the paper underneath it, the figures below that, and a strip of controls along the bottom reading Pause, minus, speed 6, plus, left and right, up and down, reset view"></p>
+
+**reset view** is the one worth knowing about. It is easy to drag a shape
+somewhere you did not mean to, and on a page that arrived by email there is no
+obvious way back — it puts the view exactly where the sender left it.
+
+If you ticked **include the numbers** when you saved, they are written under
+the picture, on screen, where they can simply be read.
 
 That makes it the right thing for one job in particular: **sending a paper
 measurement to somebody who does not have the app** — a printer, a client, a
@@ -835,16 +845,38 @@ g = build_gamut(m.lab, m.device, input_space="lab")   # the dented boundary
 print(f"{g.volume:,.0f} cubic Lab units from {m.n_patches} patches")
 ```
 
+**There is something to open in `demo/`** — two measured papers, a profile and
+a 480-patch chart — so the window has something in it the moment you start it,
+and so everything below can be run without hunting for files of your own.
+
 Tests:
 
 ```bash
-cd python && python -m pytest . -q          # 68 tests
+cd python && python -m pytest . -q          # 374 tests
 ```
 
 They check the colour science against published reference values rather than
 against themselves — CIEDE2000 against the Sharma/Wu/Dalal pairs, CIELAB and
 CIELUV against their definitions at three white points, mesh volumes against a
 cube and a sphere whose answers are known from arithmetic.
+
+Some things a unit test cannot answer, because they are questions about the
+whole window rather than about a function. Those are driven on screen, in the
+real application, and each one states what should happen before it looks:
+
+```bash
+python scripts/audit_panel.py             # every control, 24 states, nothing clipped
+python scripts/drive_ink_amounts.py       # 27 scenarios through the ink-amount view
+python scripts/drive_all_combinations.py  # 6,912 combinations, 60,076 checks
+python scripts/make_sample_pages.py       # the eight showcase pages, and their claims
+```
+
+The last one is worth knowing about even if you never publish anything. It
+writes each page by pressing the window's own **Save** button, then reads the
+page back and checks it still shows what
+[the showcase](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/) says it does
+— down to the patch counts. Two claims there had quietly gone wrong before it
+existed.
 
 ---
 
