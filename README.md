@@ -17,7 +17,7 @@ printer?
 
 <p align="center"><sub>A real measured gamut, turning. Made by the
 application itself — <b>Turn it by itself</b>, then <b>Save this view as a
-picture…</b>. <a href="docs/MOTION.md">Twelve more, two to a page →</a></sub></p>
+picture…</b>. <a href="docs/MOTION.md">Seventeen more, two to a page →</a></sub></p>
 
 <p align="center">
   <a href="https://ko-fi.com/itsab1989"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support this on Ko-fi" height="36"></a>

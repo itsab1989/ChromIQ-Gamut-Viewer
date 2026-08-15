@@ -6,7 +6,8 @@ Nothing was recorded another way, and every setting behind them is one you
 have — each caption says exactly which.
 
 Two to a page, so each one can be full size and full quality rather than
-squeezed to fit a dozen onto one. **Depth is genuinely hard to judge on a flat
+squeezed to fit a dozen onto one. Page 7 is all charts — patch sets before
+anything has been printed. **Depth is genuinely hard to judge on a flat
 screen**: a dent in the deep blues and a shadow look exactly alike in a still
 picture, and half a turn settles it in a second.
 
@@ -16,7 +17,7 @@ for. That is what stops a loop jumping every time it comes round.
 
 ---
 
-*Page 1 of 6*
+*Page 1 of 7*
 
 ---
 

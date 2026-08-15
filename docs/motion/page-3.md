@@ -1,6 +1,6 @@
 # It moves — nothing around it, and one paper inside another
 
-*Page 3 of 6*
+*Page 3 of 7*
 
 ---
 
@@ -32,4 +32,4 @@ Glossy holds more colour than matte, so drawing both as solids means the bigger 
 
 [← Previous](page-2.md) · [The README](../../README.md) · [Next →](page-4.md)
 
-*[1](../MOTION.md) · [2](page-2.md) · **3** · [4](page-4.md) · [5](page-5.md) · [6](page-6.md)*
+*[1](../MOTION.md) · [2](page-2.md) · **3** · [4](page-4.md) · [5](page-5.md) · [6](page-6.md) · [7](page-7.md)*

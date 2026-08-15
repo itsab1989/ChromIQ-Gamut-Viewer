@@ -34,7 +34,10 @@ from PyQt6.QtWidgets import QApplication                     # noqa: E402
 
 DEMO = pathlib.Path(os.environ.get(
     "GAMUTVIEW_DEMO", str(HERE.parent.parent / "demo")))
-HOME_CHARTS = pathlib.Path.home() / "ChromIQ"
+#: A bigger chart to fall back on, named by an environment
+#: variable rather than a path — a path here would publish
+#: whatever somebody happened to call their own project.
+BIG_CHART = pathlib.Path(os.environ.get("GAMUTVIEW_BIG_CHART", ""))
 
 results: list = []
 
@@ -74,7 +77,7 @@ def main() -> int:
         pump(2.5)
 
     chart_480 = DEMO / "verification-chart-480.ti1"
-    chart_big = HOME_CHARTS / "knut" / "knut.ti1"
+    chart_big = BIG_CHART
     glossy_icc = DEMO / "Glossy-paper.icc"
     glossy_ti3 = DEMO / "Glossy-paper.ti3"
     matte_ti3 = DEMO / "Matte-paper.ti3"
@@ -203,8 +206,8 @@ def main() -> int:
 
     # ----------------------------------------------------------------- 6
     # A four-ink chart cannot go on three axes, and says so.
-    cmyk = next(iter(sorted(HOME_CHARTS.glob("cmyk/*.ti1"))), None)
-    if cmyk is not None and cmyk.is_file():
+    cmyk = pathlib.Path(os.environ.get("GAMUTVIEW_CMYK_CHART", ""))
+    if cmyk.name and cmyk.is_file():
         w._close_chart()
         pump(1)
         w._open_chart_file(cmyk)

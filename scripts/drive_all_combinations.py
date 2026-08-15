@@ -38,7 +38,7 @@ import numpy as np                                          # noqa: E402
 
 DEMO = pathlib.Path(os.environ.get(
     "GAMUTVIEW_DEMO", str(HERE.parent.parent / "demo")))
-HOME = pathlib.Path.home() / "ChromIQ"
+BIG_CHART = pathlib.Path(os.environ.get("GAMUTVIEW_BIG_CHART", ""))
 
 failures: list = []
 checked = 0
@@ -73,7 +73,7 @@ def phase_a():
 
     chart_file = DEMO / "verification-chart-480.ti1"
     if not chart_file.is_file():
-        chart_file = HOME / "knut" / "knut.ti1"
+        chart_file = BIG_CHART
     c = cm.read_chart(chart_file)
     device = cm.device_positions(c)
     placed = cm.through_profile(c, DEMO / "Glossy-paper.icc")

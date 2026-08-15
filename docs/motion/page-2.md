@@ -1,6 +1,6 @@
 # It moves — over the top, and the greys hiding inside
 
-*Page 2 of 6*
+*Page 2 of 7*
 
 ---
 
@@ -32,4 +32,4 @@ The shell is turned down to about a third solid, because at full strength it is 
 
 [← Previous](../MOTION.md) · [The README](../../README.md) · [Next →](page-3.md)
 
-*[1](../MOTION.md) · **2** · [3](page-3.md) · [4](page-4.md) · [5](page-5.md) · [6](page-6.md)*
+*[1](../MOTION.md) · **2** · [3](page-3.md) · [4](page-4.md) · [5](page-5.md) · [6](page-6.md) · [7](page-7.md)*

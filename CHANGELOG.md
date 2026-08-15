@@ -49,6 +49,18 @@
   against them. So does the white point: the dots are painted through a
   profile and counted against a paper, and both read colour against a white.
 
+### 🎞 Six new loops, and a page of their own
+
+`docs/motion/page-7.md` is all charts — patch sets before anything has been
+printed. A chart alone with no profile at all, the same patches with a profile
+asked what colour they will be (not one dot moves), the outer shell a matte
+paper cannot reach, the chart's own reach as a solid, the same chart and paper
+in CIELAB for the contrast, and one in light mode with the skin in the accent
+colour. All WebP, so they start on their own with nothing to click.
+
+The README link now sits between Previous and Next on every one of the seven
+pages; page 5 had it after Next, the only one out of order.
+
 ### 🩹 Two faults found by crossing the options
 
 Every option had its own test and they all passed. Crossing 6,912 combinations
