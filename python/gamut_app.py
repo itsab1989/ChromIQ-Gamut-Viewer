@@ -2525,6 +2525,9 @@ class GamutApp(QMainWindow):
         self._last_folder = ""
         #: Renders so far, so each one gets a URL the view has not seen.
         self._render_count = 0
+        # Papers rebuilt in CIELAB for judging, keyed by everything that
+        # changes the shape. See _in_lab.
+        self._lab_gamuts: dict = {}
         #: Per-shape overrides, by slot (0, 1) and 2 for the comparison. A key
         #: is present only when that shape has been set on its own; otherwise
         #: it follows the shared value, so "global" needs no bookkeeping.
@@ -6242,7 +6245,8 @@ class GamutApp(QMainWindow):
         had placed them, and printed the wrong verdict under it. Caught by
         driving the window with exactly that pair of files open.
         """
-        out = [(p.stem, g, p, m is not None) for p, g, m in self._slots]
+        out = [(p.stem, self._in_lab(g, p, m), p, m is not None)
+               for p, g, m in self._slots]
         if self._reference is not None:
             # A comparison built from a file is a measurement when it is one;
             # a standard colour space or the visible solid is not, and neither
@@ -6250,9 +6254,83 @@ class GamutApp(QMainWindow):
             measured = (self._reference_path is not None
                         and self._reference_path.suffix.lower()
                         not in (".icc", ".icm", ".gam"))
-            out.append((self._reference[0], self._reference[1],
+            out.append((self._reference[0],
+                        self._in_lab(self._reference[1],
+                                     self._reference_path, None),
                         self._reference_path, measured))
         return out
+
+    def _chart_marked_against(self, chart, gamut):
+        """The chart, with its lost patches worked out against *this* shape.
+
+        Each room in the side-by-side view holds one paper, and the chart in
+        it has to answer for that paper — which is the whole reason somebody
+        put two rooms up. Returns the chart unchanged when there is nothing to
+        judge it by, and never raises: a marking that cannot be worked out
+        leaves the patches unmarked rather than taking the picture down.
+        """
+        if chart is None or gamut is None:
+            return chart
+        name, lab, _old, device = chart
+        if lab is None:
+            return chart
+        import chart as chart_mod
+        try:
+            marked = chart_mod.outside_report(
+                lab, self._in_lab(gamut)).beyond
+        except Exception:          # noqa: BLE001 — a view must never crash
+            marked = None
+        return (name, lab, marked, device)
+
+    def _in_lab(self, gamut, path=None, measurement=None):
+        """The same paper as a gamut BUILT in CIELAB, whatever is being drawn.
+
+        JUDGING IS NOT A DRAWING QUESTION. "Can this paper reach this patch"
+        is about colour, so its answer must be the same whichever space the
+        picture happens to be using — and the distance quoted beside it is
+        ΔE2000, which is defined on CIELAB and on nothing else.
+
+        Left alone the shape is built in whatever is chosen under Draw it in,
+        while a chart's patches are always Lab. Held against each other those
+        disagree: quietly in CIELUV, and catastrophically in CIE XYZ where a
+        gamut runs 0 to 1 and the patches run 0 to 100, so every patch lands
+        outside. On the demo files the same chart and paper answered 240
+        outside in CIELAB, 178 in CIELUV and 480 in CIE XYZ — three answers
+        to a question that has one.
+
+        IT IS REBUILT RATHER THAN CONVERTED, and the difference is real. A
+        convex hull is not convex any more once it has been through the
+        Lab↔XYZ curve, so converting the drawn shape's vertices gives a
+        surface that is close to the Lab one and not the same: on random
+        points the two hulls kept 47 and 51 vertices. Close is not the
+        standard for a number quoted in ΔE, so the Lab shape is built from
+        the same measurements the drawn one came from, and cached — the
+        answer then cannot depend on the picture at all.
+        """
+        if gamut.space == "lab":
+            return gamut
+        white = self._white.currentData()
+        key = (str(path), white, self._relative.isChecked(),
+               self._mode.currentData(), self._detail.value())
+        hit = self._lab_gamuts.get(key)
+        if hit is not None:
+            return hit
+        try:
+            if measurement is not None:
+                drive = (None if self._mode.currentData() == "hull"
+                         else measurement.device)
+                built = build_gamut(measurement.lab, drive, input_space="lab",
+                                    space="lab", white_point=white)
+            elif path is not None:
+                reader = (gam_gamut if Path(path).suffix.lower() == ".gam"
+                          else icc_gamut)
+                built = reader(Path(path), white_point=white, space="lab")
+            else:
+                return gamut
+        except Exception:          # noqa: BLE001 — never take the view down
+            return gamut
+        self._lab_gamuts[key] = built
+        return built
 
     def _update_chart_numbers(self) -> None:
         """The three questions, answered against whatever else is open."""
@@ -7568,6 +7646,13 @@ class GamutApp(QMainWindow):
         from ti3gamut import build_figure, write_side_by_side_html
 
         options = self._render_options()
+        # THE CHART IS MARKED PER ROOM, not once for both. Left alone, every
+        # room got the same chart — and its red patches are worked out against
+        # the FIRST shape on screen, so the right-hand room showed a chart
+        # judged against the LEFT-hand room's paper while sitting inside its
+        # own. Two rooms exist precisely to compare two papers, so a chart
+        # that answers for the wrong one is worse than no chart at all.
+        chart = options.pop("chart", None)
         figures = []
         for i, (name, gamut) in enumerate(gamuts[:2]):
             figures.append((name, build_figure(
@@ -7575,6 +7660,7 @@ class GamutApp(QMainWindow):
                 patches=[clouds[i]] if clouds and i < len(clouds) else None,
                 styles=["solid"],
                 lost=[lost[i]] if lost and i < len(lost) else None,
+                chart=self._chart_marked_against(chart, gamut),
                 **options)))
         write_side_by_side_html(figures, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked(),

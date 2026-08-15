@@ -335,3 +335,65 @@ def test_the_old_three_item_chart_still_works(app):
     lab = np.column_stack([np.linspace(10, 90, 8), np.zeros(8), np.zeros(8)])
     figure = ti3gamut.build_figure([], "t", chart=("mine", lab, None))
     assert len(figure.data[0].x) == 8
+
+
+# --------------------------------------------------------------------------
+# Judging is about colour, never about how the picture is drawn
+# --------------------------------------------------------------------------
+
+def test_a_hull_does_not_survive_the_trip_through_another_space(app):
+    """WHY the judging shape is rebuilt rather than converted.
+
+    The obvious fix for a gamut built in the wrong space is to convert its
+    vertices back to Lab. It is not good enough: a convex hull stops being
+    convex once it has been through the Lab-XYZ curve, so the converted
+    surface is CLOSE to the Lab one and not the same. Close is not the
+    standard for a figure quoted in ΔE, which is why _in_lab builds from the
+    measurements instead. This pins the reason, so nobody simplifies it back.
+    """
+    import numpy as np
+    from gamutview import _TO_XYZ, build_gamut, xyz_to_lab
+
+    rng = np.random.default_rng(3)
+    lab = np.column_stack([rng.uniform(5, 95, 300),
+                           rng.uniform(-70, 70, 300),
+                           rng.uniform(-70, 70, 300)])
+    in_lab = build_gamut(lab, input_space="lab", space="lab",
+                         white_point="D50")
+    in_xyz = build_gamut(lab, input_space="lab", space="xyz",
+                         white_point="D50")
+    converted = xyz_to_lab(_TO_XYZ["xyz"](in_xyz.vertices, "D50"), "D50")
+    assert len(converted) != len(in_lab.vertices), (
+        "if these ever match, converting would be exact and the rebuild "
+        "could be simplified away — check before doing it")
+
+
+def test_a_chart_is_marked_against_the_shape_it_is_shown_with(app):
+    """Two rooms exist to compare two papers, so a chart in the right-hand
+    room must answer for the right-hand paper. It was answering for the
+    left-hand one, because the mask is worked out once against the first
+    shape on screen and both rooms were handed the same chart."""
+    import numpy as np
+
+    import gamut_app
+    from references import reference_gamut
+
+    lab = np.column_stack([np.linspace(20, 90, 40),
+                           np.linspace(-60, 60, 40),
+                           np.linspace(-50, 50, 40)])
+    chart = ("c", lab, np.zeros(40, dtype=bool), None)
+    small = reference_gamut("sRGB")
+    wide = reference_gamut("ProPhoto RGB")
+
+    class _Win:
+        _white = SimpleNamespace(currentData=lambda: "D50")
+        _in_lab = gamut_app.GamutApp._in_lab
+        _chart_marked_against = gamut_app.GamutApp._chart_marked_against
+
+    win = _Win()
+    against_small = _Win._chart_marked_against(win, chart, small)[2]
+    against_wide = _Win._chart_marked_against(win, chart, wide)[2]
+    # A wider space loses fewer of them: the two answers must differ, or one
+    # of the rooms is showing the other one's verdict.
+    assert int(against_small.sum()) > int(against_wide.sum()), (
+        int(against_small.sum()), int(against_wide.sum()))
