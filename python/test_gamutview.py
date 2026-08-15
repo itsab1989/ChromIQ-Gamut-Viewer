@@ -471,6 +471,7 @@ class _FakeApp:
             setattr(self, name, None)
         for name in ("_slice_on", "_points", "_show_lost", "_relative",
                      "_manual_light", "_mesh_colour", "_rings_on", "_neutral",
+                     "_ideal_neutral",
                      "_auto_update", "_side_by_side", "_link_cameras"):
             setattr(self, name, None)
         for name in ("_aspect", "_white", "_space", "_mode", "_style_mine",
@@ -1077,3 +1078,160 @@ def test_a_cut_on_its_own_needs_no_separator_before_the_lightness():
     from ti3gamut import build_slice_figure
     fig = build_slice_figure(_two_gamuts()[:1], 50.0, "")
     assert "·" not in str(fig.layout.title.text).split("lightness")[0]
+
+
+# --------------------------------------------------------------------------
+# The perfectly neutral line the measured greys are compared against
+# --------------------------------------------------------------------------
+
+def test_the_ideal_grey_axis_has_no_colour_in_it_at_all():
+    """That is the whole definition: a* and b* both nought, at every
+    lightness. Anything else is not neutral."""
+    import numpy as np
+
+    from ti3gamut import ideal_neutral_axis
+
+    measured = np.array([[12.0, 1.4, -2.2], [50.0, -0.8, 3.1],
+                         [95.0, 0.3, 4.9]])
+    got = ideal_neutral_axis(measured)
+    assert len(got) > 8, "a curve needs sampling, not two ends"
+    assert np.allclose(got[:, 1], 0.0)
+    assert np.allclose(got[:, 2], 0.0)
+
+
+def test_it_covers_the_range_the_printer_actually_reached():
+    """Not 0 to 100. A printer cannot reach either end, and a reference line
+    running past both invites the reading that it failed to."""
+    import numpy as np
+
+    from ti3gamut import ideal_neutral_axis
+
+    measured = np.array([[12.0, 1.4, -2.2], [50.0, -0.8, 3.1],
+                         [95.0, 0.3, 4.9]])
+    got = ideal_neutral_axis(measured)
+    assert abs(float(got[:, 0].min()) - 12.0) < 1e-9
+    assert abs(float(got[:, 0].max()) - 95.0) < 1e-9
+
+
+def test_the_lightness_runs_evenly_from_one_end_to_the_other():
+    import numpy as np
+
+    from ti3gamut import ideal_neutral_axis
+
+    got = ideal_neutral_axis(np.array([[20.0, 0.0, 0.0], [80.0, 0.0, 0.0]]),
+                             steps=7)
+    assert len(got) == 7
+    steps = np.diff(got[:, 0])
+    assert np.allclose(steps, steps[0])
+
+
+def test_a_chart_with_no_greys_gets_no_line_rather_than_a_wrong_one():
+    """Some charts have no equal-value patches at all. Inventing an axis for
+    one would be drawing something nobody measured."""
+    import numpy as np
+
+    from ti3gamut import ideal_neutral_axis
+
+    assert len(ideal_neutral_axis(np.empty((0, 3)))) == 0
+    assert len(ideal_neutral_axis(np.array([[50.0, 1.0, 1.0]]))) == 0
+
+
+def test_the_measured_greys_are_never_touched_by_it():
+    """The reference is drawn beside the measurement, never instead of it."""
+    import numpy as np
+
+    from ti3gamut import ideal_neutral_axis
+
+    measured = np.array([[12.0, 1.4, -2.2], [50.0, -0.8, 3.1]])
+    before = measured.copy()
+    ideal_neutral_axis(measured)
+    assert np.array_equal(measured, before)
+
+
+def test_showing_the_greys_makes_room_to_see_them(monkeypatch):
+    """A line inside an opaque solid cannot be seen, so ticking the box would
+    appear to do nothing at all. It drops the shape to a third — but only from
+    full strength, because a value somebody chose is theirs."""
+    import gamut_app
+
+    class Slider:
+        def __init__(self, value):
+            self._value = value
+        def value(self):
+            return self._value
+        def setValue(self, value):
+            self._value = value
+
+    class Box:
+        def __init__(self, on=False):
+            self.on = on
+            self.enabled = False
+        def isChecked(self):
+            return self.on
+        def setChecked(self, on):
+            self.on = on
+        def setEnabled(self, on):
+            self.enabled = on
+        def blockSignals(self, _on):
+            pass
+
+    class Stand:
+        def __init__(self, opacity):
+            self._opacity = Slider(opacity)
+            self._ideal_neutral = Box()
+            self.redrawn = []
+        def _on_opacity_changed(self, value):
+            self.redrawn.append(value)
+        _make_room_to_see_inside = gamut_app.GamutApp._make_room_to_see_inside
+        _follow_neutral = gamut_app.GamutApp._follow_neutral
+
+    full = Stand(100)
+    full._follow_neutral(True)
+    assert full._opacity.value() == 38, "an opaque shape hides the line"
+    assert full.redrawn == [38], "the picture has to be redrawn to show it"
+
+    chosen = Stand(70)
+    chosen._follow_neutral(True)
+    assert chosen._opacity.value() == 70, "a value somebody chose is theirs"
+    assert chosen.redrawn == []
+
+
+def test_turning_the_greys_off_does_not_put_the_shape_back():
+    """By then the number is theirs — quietly restoring it would undo a change
+    they may have made on purpose in between."""
+    import gamut_app
+
+    class Box:
+        def __init__(self):
+            self.on = True
+            self.enabled = True
+        def isChecked(self):
+            return self.on
+        def setChecked(self, on):
+            self.on = on
+        def setEnabled(self, on):
+            self.enabled = on
+        def blockSignals(self, _on):
+            pass
+
+    class Slider:
+        def __init__(self):
+            self._value = 38
+        def value(self):
+            return self._value
+        def setValue(self, value):
+            self._value = value
+
+    class Stand:
+        def __init__(self):
+            self._opacity = Slider()
+            self._ideal_neutral = Box()
+        def _on_opacity_changed(self, _value):
+            pass
+        _make_room_to_see_inside = gamut_app.GamutApp._make_room_to_see_inside
+        _follow_neutral = gamut_app.GamutApp._follow_neutral
+
+    stand = Stand()
+    stand._follow_neutral(False)
+    assert stand._opacity.value() == 38
+    assert not stand._ideal_neutral.isChecked()

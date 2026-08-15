@@ -260,6 +260,58 @@ def _to_plot_space(lab, space: str) -> np.ndarray:
     return lab_to_lch_cartesian(pts) if AXES[space]["cylindrical"] else pts
 
 
+def ideal_neutral_axis(lab, steps: int = 48):
+    """A perfectly neutral axis over the same lightness range, as Lab.
+
+    WHAT "IDEAL" MEANS HERE, precisely: a* = 0 and b* = 0 at every lightness —
+    no colour at all, only lightness. That is the definition of neutral under
+    the white point everything else on screen is already measured against, so
+    the two are directly comparable and nothing is being assumed.
+
+    IT IS DRAWN OVER THE MEASURED RANGE, not from 0 to 100. A printer cannot
+    reach either end: its blackest black might be L* 12 and its paper white
+    L* 95, and a reference line running past both would invite the reading
+    that the printer "failed" to reach lightnesses no paper of that kind can.
+    The question this answers is how far the greys LEAN, not how far they
+    reach.
+
+    SAMPLED RATHER THAN DRAWN END TO END. In CIELAB a neutral axis really is a
+    straight line, but this application also draws in CIE XYZ, where equal
+    lightness steps are not equally spaced and the same axis is a curve. Two
+    endpoints would be a straight line through the wrong place.
+    """
+    lab = np.asarray(lab, float)
+    if len(lab) < 2:
+        return np.empty((0, 3))
+    low, high = float(lab[:, 0].min()), float(lab[:, 0].max())
+    lightness = np.linspace(low, high, max(2, int(steps)))
+    return np.column_stack([lightness, np.zeros_like(lightness),
+                            np.zeros_like(lightness)])
+
+
+def _ideal_neutral_trace(measurement, name: str, colour: str,
+                         space: str = "lab"):
+    """The perfectly neutral line, drawn as a reference rather than as data.
+
+    Deliberately quiet — thin, dashed and unmarked — because it is not a
+    measurement of anything. The eye should read it as the wall the measured
+    greys are leaning away from.
+    """
+    import plotly.graph_objects as go
+
+    lab, _labels = neutral_axis(measurement)
+    ideal = ideal_neutral_axis(lab)
+    if not len(ideal):
+        return []
+    pts = _to_plot_space(ideal, space)
+    return [go.Scatter3d(
+        x=pts[:, 0], y=pts[:, 1], z=pts[:, 2], mode="lines",
+        line=dict(color=colour, width=3, dash="dot"),
+        name=f"{name} — perfectly neutral", showlegend=True,
+        hovertext=f"a* 0, b* 0 — no colour at all, only lightness",
+        hoverinfo="text")]
+
+
 def _neutral_trace(measurement, name: str, colour: str,
                    space: str = "lab"):
     """The grey axis as a line through the solid, with its patches marked."""
@@ -1444,6 +1496,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                  mode: str = "dark", paint: str = "true",
                  depth: float = 0.35, mesh_paint: str = "plain",
                  rings: int = 0, per_shape=None, neutrals=None,
+                 ideal_neutrals: bool = False,
                  light=None, grid: bool = True):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
@@ -1491,6 +1544,12 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             for trace in _rings(g, name, rings_i, c["wire"], key=c["mark"]):
                 fig.add_trace(trace)
         if neutrals is not None and i < len(neutrals) and neutrals[i] is not None:
+            if ideal_neutrals:
+                # THE REFERENCE GOES DOWN FIRST, so the measured greys are
+                # drawn over it rather than hidden behind it.
+                for trace in _ideal_neutral_trace(neutrals[i], name,
+                                                  "#9aa3b2", _axes_space):
+                    fig.add_trace(trace)
             for trace in _neutral_trace(neutrals[i], name, "#ff6b6b",
                                         _axes_space):
                 fig.add_trace(trace)

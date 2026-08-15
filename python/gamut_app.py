@@ -2614,6 +2614,7 @@ class GamutApp(QMainWindow):
         self._restore_look()
         self._restore_everything()
         self._apply_space_availability()
+        self._follow_neutral(self._neutral.isChecked())
         # Settle the turning controls: fill in the value labels and hide the
         # rows that do not apply yet. Nothing is loaded, so this only tidies
         # the column -- but an empty label beside a slider looks broken.
@@ -3255,19 +3256,61 @@ class GamutApp(QMainWindow):
         lv.addLayout(_r)
         self._neutral = QCheckBox("Show the greys", g_look)
         self._neutral.stateChanged.connect(self._redraw)
+        self._neutral.toggled.connect(self._follow_neutral)
         neutral_hint = Hint(
             "Draws a line through the patches where you asked for an equal "
             "amount of every colour — the greys. What comes back is rarely "
             "neutral: paper is warm or cool, inks are never perfectly "
             "balanced, and the drift is usually worst in the shadows. The "
             "shape of a gamut cannot show this at all, and it is what people "
-            "notice first in a black-and-white print.", g_look)
+            "notice first in a black-and-white print.\n\n"
+            "The line runs up the INSIDE of the shape, so the shape is turned "
+            "down to about a third when you tick this — at full strength it is "
+            "an opaque solid and the line is hidden behind it. **How solid it "
+            "looks** is yours to set from there; it will not be changed "
+            "again.", g_look)
         neutral_hint.setObjectName("hint_neutral_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
         _r.setSpacing(6)
         _r.addWidget(self._neutral, 1)
         _r.addWidget(neutral_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
+
+        self._ideal_neutral = QCheckBox("…and a perfectly neutral line",
+                                        g_look)
+        self._ideal_neutral.setEnabled(False)      # nothing to compare yet
+        self._ideal_neutral.toggled.connect(
+            lambda on: self._make_room_to_see_inside() if on else None)
+        self._ideal_neutral.stateChanged.connect(self._redraw)
+        ideal_hint = Hint(
+            "Adds a second, quieter line: where the greys would run if they "
+            "were perfectly neutral — no colour at all, only lightness.\n\n"
+            "IT IS THERE TO LEAN AGAINST. On its own, a wandering grey line is "
+            "hard to read: you cannot tell by eye whether it is drifting or "
+            "whether you are looking at it from an angle. With a straight one "
+            "beside it the answer is immediate, and so is which way and at "
+            "which lightness — a lean towards yellow in the midtones and back "
+            "towards blue in the shadows is a very different fault from a "
+            "steady warm cast all the way up, and they are told apart at a "
+            "glance rather than by squinting.\n\n"
+            "It runs over exactly the range your own greys cover — from your "
+            "blackest black to your paper white — and not from black to white "
+            "in the abstract. Your printer cannot reach either extreme and "
+            "nothing here suggests it should have: the question this answers "
+            "is how far the greys LEAN, not how far they reach.\n\n"
+            "It is dotted and pale on purpose. It is not a measurement of "
+            "anything you printed — it is the definition of neutral, drawn in "
+            "the same space, so the two can be compared directly.\n\n"
+            "Turn the shape down with **How solid it looks** to see both "
+            "lines properly: at full strength the surface is opaque and "
+            "everything inside it is hidden.", g_look)
+        ideal_hint.setObjectName("hint_ideal_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(16, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._ideal_neutral, 1)
+        _r.addWidget(ideal_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_r)
+
         self._points = QCheckBox("Show every patch I measured", g_look)
         self._points.stateChanged.connect(self._redraw)
         lv.addWidget(self._points)
@@ -4175,8 +4218,14 @@ class GamutApp(QMainWindow):
             "Writing the file…\nThis is the part that takes a moment."
             if writer.can_stop_while_writing else
             "Writing the file…\nThis last step cannot be stopped part way.")
-        progress.setCancelButtonText("Stop" if writer.can_stop_while_writing
-                                     else "Working…")
+        # THE BUTTON KEEPS ITS WORD AND LOSES ITS POWER, rather than the
+        # other way about. Changing the text of a button on a dialog that is
+        # already showing leaves it at the width it was sized for, so the
+        # longer word arrived clipped. A greyed-out Stop says the same thing,
+        # stays the same size, and matches the sentence above it.
+        if not writer.can_stop_while_writing:
+            for button in progress.findChildren(QPushButton):
+                button.setEnabled(False)
         QApplication.processEvents()
 
         thread = threading.Thread(target=work, daemon=True)
@@ -4676,6 +4725,7 @@ class GamutApp(QMainWindow):
             ("mesh_colour", self._mesh_colour, "check", False),
             ("rings_on", self._rings_on, "check", False),
             ("neutral", self._neutral, "check", False),
+            ("ideal_neutral", self._ideal_neutral, "check", False),
             ("spin_on", self._spin_on, "check", False),
             ("turn_mode", self._turn_mode, "combo", "swing"),
             ("turn_speed", self._turn_speed, "slider", 8),
@@ -5388,16 +5438,18 @@ class GamutApp(QMainWindow):
                "grey axis to measure from. Choose CIELAB or CIELUV under "
                "Draw it in to use this.")
         for widget in (self._slice_on, self._slice_at, self._rings_on,
-                       self._rings, self._neutral):
+                       self._rings, self._neutral, self._ideal_neutral):
             widget.setEnabled(usable)
             widget.setToolTip(why)
         if not usable:
             # Untick rather than leave them ticked-but-dead, so the picture
             # always matches the controls.
-            for box in (self._slice_on, self._rings_on, self._neutral):
+            for box in (self._slice_on, self._rings_on, self._neutral,
+                        self._ideal_neutral):
                 box.blockSignals(True)
                 box.setChecked(False)
                 box.blockSignals(False)
+        self._follow_neutral(usable and self._neutral.isChecked())
 
     def _rebuild_reference(self) -> None:
         """Rebuild the comparison in the current space and white point.
@@ -6166,6 +6218,38 @@ class GamutApp(QMainWindow):
             widget.blockSignals(False)
         self._sync_slider_labels()
 
+    def _make_room_to_see_inside(self) -> None:
+        """Turn the shape down when something is drawn inside it.
+
+        A LINE INSIDE AN OPAQUE SOLID CANNOT BE SEEN, so ticking Show the
+        greys on a shape at full strength appears to do nothing at all — the
+        line is there, behind a wall. Rather than leave somebody to discover
+        How solid it looks for themselves, the shape drops to a third the
+        first time it is needed.
+
+        Only from FULL strength, and only downwards. Somebody who has already
+        chosen a value has said what they want, and this must not overrule it;
+        and it is never put back, because by then the number is theirs.
+        """
+        if self._opacity.value() >= 100:
+            self._opacity.setValue(38)
+            self._on_opacity_changed(38)
+
+    def _follow_neutral(self, on: bool) -> None:
+        """A line to compare the greys against means nothing without them.
+
+        Greyed out rather than hidden, so it is clear the choice exists and
+        what turns it on — and unticked when the greys go, so the picture
+        always matches the boxes.
+        """
+        self._ideal_neutral.setEnabled(on)
+        if on:
+            self._make_room_to_see_inside()
+        if not on and self._ideal_neutral.isChecked():
+            self._ideal_neutral.blockSignals(True)
+            self._ideal_neutral.setChecked(False)
+            self._ideal_neutral.blockSignals(False)
+
     def _neutral_list(self) -> list:
         """The measurement behind each shape, or None for a reference.
 
@@ -6225,6 +6309,8 @@ class GamutApp(QMainWindow):
             per_shape=self._per_shape_list(),
             neutrals=(self._neutral_list() if self._neutral.isChecked()
                       else None),
+            ideal_neutrals=(self._neutral.isChecked()
+                            and self._ideal_neutral.isChecked()),
             light=self._light_position(),
             grid=self._grid_on.isChecked(),
         )

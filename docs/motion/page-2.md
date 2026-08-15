@@ -26,7 +26,7 @@ Mostly up and down rather than round. A printer gamut is about twice as wide in 
 
 The shell is turned down to about a third solid, because at full strength it is an opaque object and the line inside it simply cannot be seen. Anything drawn *inside* the shape needs this.
 
-**How:** **Show the greys** on, **How solid it looks** at 38. Left and right *back and forth* 58° at speed 7, up and down *back and forth* 14° at speed 4. Seven seconds.
+**How:** **Show the greys** on, and **…and a perfectly neutral line** under it — the dotted line is where the greys would run with no colour in them at all, so the lean is read against something straight rather than guessed at. Ticking either turns the shape down to 38 for you, because a line inside an opaque solid cannot be seen. Left and right *back and forth* 58° at speed 7, up and down *back and forth* 14° at speed 4. Seven seconds.
 
 ---
 

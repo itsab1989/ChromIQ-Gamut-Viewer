@@ -1,5 +1,47 @@
 # Changelog
 
+## v2.1.0
+
+### ✨ New
+
+- **A perfectly neutral line to compare your greys against.** **Show the
+  greys** draws what your printer did when asked for an equal amount of every
+  colour; the new box under it adds a quiet dotted line showing where those
+  greys would run with no colour in them at all. On its own a wandering grey
+  line is hard to read — you cannot tell a drift from the angle you are
+  looking from. With a straight one beside it the lean is obvious, and so is
+  which way and at which lightness.
+
+  It runs over exactly the range your own greys cover, from your blackest
+  black to your paper white, and not from black to white in the abstract: your
+  printer cannot reach either extreme, and the question is how far the greys
+  **lean**, not how far they reach.
+
+- **Ticking either one turns the shape down for you.** Both lines run up the
+  inside of the solid, and at full strength a solid is opaque — so the box
+  appeared to do nothing at all. The shape drops to about a third the first
+  time it is needed, and only from full strength: a value you chose yourself
+  is never overruled.
+
+### 🐞 Fixed
+
+- **The Stop button under the progress bar was clipped** while the file was
+  being written. It now keeps its word and is greyed out instead, which says
+  the same thing and stays the same size.
+
+- **The How it looks section no longer runs past the column.**
+
+### 📖 Documentation
+
+- **[docs/DESIGN-ti1-ti2.md](docs/DESIGN-ti1-ti2.md)** — a full design for
+  opening `.ti1` and `.ti2` charts and checking their patches against a
+  profile, including the circularity trap that makes the obvious version of
+  that check meaningless, and the questions that need answering before any of
+  it is built.
+
+- **[docs/PORTING-TO-CHROMIQ.md](docs/PORTING-TO-CHROMIQ.md)** — what would
+  move across, and the five things that cost a day each.
+
 ## v2.0.1
 
 ### 🐞 Fixed
