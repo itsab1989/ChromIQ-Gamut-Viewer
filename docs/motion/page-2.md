@@ -24,7 +24,9 @@ Mostly up and down rather than round. A printer gamut is about twice as wide in 
 
 **Show the greys** draws the neutral axis your printer actually produced, running up the inside of the solid from the darkest black to the paper white. If it leans, your greys have a cast — and a lean is far easier to see turning than in any still, because you can watch it against the shape around it.
 
-**How:** **Show the greys** on. Left and right *back and forth* 58° at speed 7, up and down *back and forth* 14° at speed 4. Seven seconds.
+The shell is turned down to about a third solid, because at full strength it is an opaque object and the line inside it simply cannot be seen. Anything drawn *inside* the shape needs this.
+
+**How:** **Show the greys** on, **How solid it looks** at 38. Left and right *back and forth* 58° at speed 7, up and down *back and forth* 14° at speed 4. Seven seconds.
 
 ---
 
