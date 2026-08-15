@@ -49,6 +49,53 @@
   against them. So does the white point: the dots are painted through a
   profile and counted against a paper, and both read colour against a white.
 
+### 🩹 Two faults found by crossing the options
+
+Every option had its own test and they all passed. Crossing 6,912 combinations
+of space, skin, colours, opacities and dot sizes found two that no single-option
+test could see.
+
+- **The patch counts changed with the space the picture was drawn in.** A
+  chart's patches are always CIELAB; a paper was built in whatever was chosen
+  under **Draw it in**. Held against each other those disagree — and the
+  distance quoted beside them is ΔE2000, which is defined on CIELAB and nothing
+  else. The same chart and the same paper answered **240 patches outside in
+  CIELAB, 178 in CIELUV and 480 in CIE XYZ**. The XYZ answer is the worst kind
+  of wrong: a gamut there runs 0 to 1 while the patches run 0 to 100, so every
+  patch lands outside and the panel reports a total loss with nothing to
+  suggest anything is amiss. The paper is now rebuilt in CIELAB for judging, so
+  the answer cannot depend on the picture.
+
+- **A chart shown side by side was drawn into both rooms and judged against
+  one.** Two rooms exist to compare two papers, and the right-hand room was
+  showing a chart marked against the left-hand paper. Each room now marks it
+  against its own: on the demo files the matte paper loses 240 patches and the
+  glossy one 149.
+
+### 🔍 Under it
+
+- `scripts/drive_all_combinations.py` — 6,912 combinations and **60,075
+  checks**, in two phases. The first asserts what must hold of every
+  combination without exception: no look setting may move a patch, every option
+  set is the option drawn, the skin appears only when asked for and never
+  reaches past the surviving patches, and nothing in the picture is ever named
+  a gamut. The second drives the real window and compares what is on screen
+  with what a save actually writes, which is the only way to catch an option
+  that reaches one route and not the other.
+
+- **The panel audit gained the other half of its ⓘ rule.** It checked that no
+  icon was orphaned and never that a control *had* one, which is how three
+  sliders shipped with no explanation. It now reports any control with a
+  caption of its own and nothing explaining it, and it found one more:
+  **Placed through**, the control that decides whether a chart appears at all.
+
+- **File dialogs.** `QFileDialog.getExistingDirectory` is a static convenience
+  method, so it inherited nothing from the shared factory and opened the
+  system's own folder chooser for **Where ArgyllCMS is…** while every other
+  dialog in the window was the app's. The test that was supposed to prevent
+  this counted constructor calls and could not see it; it now reads every
+  static variant.
+
 ### 🐞 Fixed
 
 - **The caption above the picture claimed a measurement that had not
