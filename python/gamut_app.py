@@ -6664,12 +6664,16 @@ class GamutApp(QMainWindow):
         target = picture.next_free(Path(dlg.selectedFiles()[0]))
         try:
             gamuts, clouds, styles, lost = self._scene_contents()
-            write_html(gamuts, target, self._scene_title(),
-                       patches=clouds, styles=styles, lost=lost,
-                       spin=self._spin_options(),
-                       carry_viewer=chosen["carry_viewer"],
-                       notes=self._readout_text() if chosen["numbers"] else "",
-                       **self._render_options())
+            # THE SAME WRITER THE VIEW USES. Saving used to call the
+            # single-scene route directly, so two rooms saved as one overlaid
+            # scene and a cross-section saved as a 3D shape -- three of the
+            # four arrangements this window can show wrote a different picture
+            # than the one on screen, from a button that says "this view".
+            self._write_scene(gamuts, clouds, styles, lost, target,
+                              controls=True,
+                              carry_viewer=chosen["carry_viewer"],
+                              notes=(self._readout_text()
+                                     if chosen["numbers"] else ""))
         except OSError as exc:
             Notice.warn(self, "That could not be saved", str(exc))
             return
@@ -7730,34 +7734,59 @@ class GamutApp(QMainWindow):
         # temporary folder when the app closes.
         self._render_count += 1
         out = self._tmp / f"scene-{self._render_count}.html"
+        flat = self._write_scene(gamuts, clouds, styles, lost, out,
+                                 controls=False)
+        self._view.setUrl(QUrl.fromLocalFile(str(out)))
+        self._update_volume()
+        self._update_coverage()
+        self._update_drift()
+        if not flat:
+            self._update_chart_numbers()
+
+    def _write_scene(self, gamuts, clouds, styles, lost, out, *,
+                     controls: bool = False, carry_viewer: bool = True,
+                     notes: str = "") -> bool:
+        """Write whatever is on screen, whichever of the four it is.
+
+        ONE PLACE, BECAUSE THERE WERE TWO AND THEY DISAGREED. This window can
+        show four arrangements -- one scene, two rooms, a cross-section, two
+        cross-sections -- and only the first of them was ever reachable from
+        **Save this view as a web page…**. So somebody looking at two rooms
+        got a single overlaid scene; somebody looking at a cross-section got a
+        3D shape. The button says *this view*, and for three of the four it
+        wrote a different one.
+
+        Returns True when the page written is a flat cross-section, which has
+        no camera to move and no chart numbers to report.
+
+        *controls* is the reader's strip along the bottom: off for this
+        window's own view, on for a page somebody is sent.
+        """
         if self._slice_on.isChecked():
+            # A CROSS-SECTION IS DRAWN FLAT, LOOKING DOWN. There is no camera,
+            # so no movement settings travel with it and no strip is offered
+            # for movement that cannot happen.
             if self._side_by_side.isChecked() and len(gamuts) >= 2:
                 self._write_two_slices(gamuts, out)
             else:
                 write_slice_html(gamuts, out, float(self._slice_at.value()),
                                  self._scene_title(), mode=self._appearance)
-            self._view.setUrl(QUrl.fromLocalFile(str(out)))
-            self._update_volume()
-            self._update_coverage()
-            self._update_drift()
-            return
+            return True
         if self._side_by_side.isChecked() and len(gamuts) >= 2:
-            self._write_two_rooms(gamuts, out, clouds, lost)
+            self._write_two_rooms(gamuts, out, clouds, lost,
+                                  controls=controls)
         else:
             write_html(gamuts, out, self._scene_title(),
                        spin=self._spin_options(),
-                       # NO FLOATING STRIP IN HERE. This window has its own
+                       # NO FLOATING STRIP IN THIS WINDOW. It has its own
                        # movement controls, and a second set over the picture
                        # is two controls for one thing that can disagree.
                        # The strip is for a page somebody was sent.
-                       controls=False,
+                       controls=controls,
+                       carry_viewer=carry_viewer, notes=notes,
                        patches=clouds, styles=styles, lost=lost,
                        **self._render_options())
-        self._view.setUrl(QUrl.fromLocalFile(str(out)))
-        self._update_volume()
-        self._update_coverage()
-        self._update_drift()
-        self._update_chart_numbers()
+        return False
 
     def _write_two_slices(self, gamuts, out) -> None:
         """Two cross-sections, side by side, on one range.
@@ -7782,7 +7811,8 @@ class GamutApp(QMainWindow):
         write_side_by_side_html(pages, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked())
 
-    def _write_two_rooms(self, gamuts, out, clouds, lost) -> None:
+    def _write_two_rooms(self, gamuts, out, clouds, lost,
+                         controls: bool = False) -> None:
         """One page, two scenes, each holding a single shape.
 
         Each is built by the same code that builds the single view, so the two
@@ -7824,7 +7854,7 @@ class GamutApp(QMainWindow):
         write_side_by_side_html(figures, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked(),
                                 spin=self._spin_options(),
-                                controls=False)   # this window has its own
+                                controls=controls)
 
     #: The controls that can belong to one shape rather than all of them, as
     #: key → (widget, how to read it). Anything not here is window-wide by

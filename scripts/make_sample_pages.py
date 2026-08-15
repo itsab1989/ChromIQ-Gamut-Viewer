@@ -62,6 +62,23 @@ def _count(values) -> int:
     return len(values) if isinstance(values, list) else 0
 
 
+def scenes(body: str) -> dict:
+    """{scene id: [trace types]} for every plot drawn on the page.
+
+    How many rooms the page has, and whether they are 3D or flat, is the one
+    thing that says which of the window's four arrangements was written -- and
+    three of the four used to come out as a different one.
+    """
+    import json
+
+    out = {}
+    for m in re.finditer(r'Plotly\.newPlot\(\s*"(scene\d)",\s*(\[.*?\]),'
+                         r'\s*\{"template"', body, re.S):
+        out[m.group(1)] = sorted({t.get("type", "?")
+                                  for t in json.loads(m.group(2))})
+    return out
+
+
 def patch_counts(body: str) -> tuple[int, int]:
     """(within reach, beyond it) for the chart drawn on this page.
 
@@ -382,6 +399,46 @@ def main() -> int:
     check("08", "because it fetches the viewer instead",
           "cdn.plot.ly" in p.read_text(encoding="utf-8"))
 
+    # ---------------------------------------------------------------- 09
+    print("\n09 — two papers, a room each")
+    fresh()
+    w._load(GLOSSY)
+    pump(2.0)
+    w._load(MATTE)
+    pump(2.5)
+    w._side_by_side.setChecked(True)
+    pump(3.0)
+    spin(on=True, turn="swing", turn_speed=6, turn_sweep=70)
+    p = page("09-a-room-each.html")
+    save_to(p)
+    made.append(("09", p))
+    body = p.read_text(encoding="utf-8")
+    rooms = scenes(body)
+    check("09", "it really is two rooms and not one overlaid scene",
+          len(rooms) == 2, f"{len(rooms)} scene(s): {list(rooms)}")
+    check("09", "both are drawn in three dimensions",
+          all("mesh3d" in k or "scatter3d" in k for k in rooms.values()),
+          str(rooms))
+
+    # ---------------------------------------------------------------- 10
+    print("\n10 — one slice through both, at the same lightness")
+    w._side_by_side.setChecked(False)
+    pump(1.0)
+    w._slice_on.setChecked(True)
+    pump(3.0)
+    p = page("10-a-slice-through-both.html")
+    save_to(p)
+    made.append(("10", p))
+    body = p.read_text(encoding="utf-8")
+    rooms = scenes(body)
+    check("10", "it really is the flat cross-section, not the 3D shape",
+          bool(rooms) and all(k == ["scatter"] for k in rooms.values()),
+          str(rooms))
+    check("10", "and it offers no movement controls, having no camera",
+          "cqSpinControls" not in body)
+    w._slice_on.setChecked(False)
+    pump(1.5)
+
     # ------------------------------------------------------------ all of them
     print("\nevery page")
     for name, path in made:
@@ -391,6 +448,8 @@ def main() -> int:
               bool(title and title.group(1).strip()
                    and title.group(1) != " — ChromIQ Gamut Viewer"),
               title.group(1) if title else "none")
+        if "cqSpinControls" not in body:
+            continue          # a flat cross-section: nothing to turn, by design
         check(name, "paints its controls rather than inheriting a colour",
               '"ink":' in body and '"paper":' in body)
         check(name, "offers the reader a way back to the opening view",

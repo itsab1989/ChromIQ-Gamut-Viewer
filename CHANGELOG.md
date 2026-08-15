@@ -1,5 +1,35 @@
 # Changelog
 
+## v2.6.0
+
+### 🔴 Save this view wrote a different view
+
+This window can show four arrangements — one scene, **two rooms side by side**,
+a **cross-section**, and two cross-sections. Only the first of them was ever
+reachable from **Save this view as a web page…**: the save route called the
+single-scene writer directly instead of the one the window itself uses. So
+somebody looking at two rooms got a single overlaid scene, and somebody looking
+at a flat cross-section got a 3D shape. Three of the four wrote a different
+picture than the one on screen, from a button that says *this view*.
+
+Both routes go through one writer now, so they cannot drift apart again — which
+is the same lesson the code already had written down one level below, about the
+argument list.
+
+Two of those arrangements had therefore never been saveable, so they are now
+also in the showcase:
+
+- **The same two papers, a room each** — overlaying two shapes hides the back
+  one; two rooms show what each actually looks like, with the cameras kept
+  together so you are never comparing two different angles.
+- **A slice through both, at one lightness** — where two papers are close, a
+  gap between two outlines is obvious where a solid shows nothing. It has no
+  controls along the bottom, because a cross-section has no camera to move.
+
+`scripts/make_sample_pages.py` now checks the arrangement of every page it
+writes — how many rooms, and whether they are flat or 3D — so a page that comes
+out as the wrong kind of picture fails rather than being published.
+
 ## v2.5.0
 
 ### 🔴 The strip on a saved page could not be seen

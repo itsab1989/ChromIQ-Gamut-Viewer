@@ -678,7 +678,7 @@ about 5 MB. Double-click it and it opens in any browser — and it needs **no
 internet at all**, because the 3D viewer travels inside the page. It works from
 a memory stick, from an email attachment, on a plane, in ten years.
 
-**[▶ See eight of them, live →](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/)**
+**[▶ See ten of them, live →](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/)**
 
 What the person you send it to gets is not a picture — it is the scene. They
 can drag it round, zoom in, click the names underneath to hide and show shapes,
@@ -868,7 +868,7 @@ real application, and each one states what should happen before it looks:
 python scripts/audit_panel.py             # every control, 24 states, nothing clipped
 python scripts/drive_ink_amounts.py       # 27 scenarios through the ink-amount view
 python scripts/drive_all_combinations.py  # 6,912 combinations, 60,076 checks
-python scripts/make_sample_pages.py       # the eight showcase pages, and their claims
+python scripts/make_sample_pages.py       # the ten showcase pages, and their claims
 ```
 
 The last one is worth knowing about even if you never publish anything. It
