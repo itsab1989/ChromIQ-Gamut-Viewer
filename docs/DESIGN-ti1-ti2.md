@@ -1,7 +1,43 @@
 # Design — opening a `.ti1` / `.ti2` chart, and checking it against a profile
 
-**Status: design only. No code has been written.** This is for review before
-anything is built, and it ends with the questions that must be answered first.
+**Status: decided, not yet built.** Basti's ruling, 2026-08-15, is recorded in
+§0. The open questions at the end are answered there; what remains is the
+building.
+
+## 0. What was decided
+
+> *"I want to allow to visualise that the patches ChromIQ gave me really are
+> inside of the gamut. So those file types should be supported. It does not
+> hurt to support them since this is a separate project anyway, and even added
+> as a tool inside ChromIQ, more options are better."*
+
+**All three variants get built, A first**, and the file types are supported
+whether or not any single check is the sharpest one available.
+
+**And a correction to §2 below, which overstated its case.** Checking
+ChromIQ's patches against the profile they were built from is *not* worthless
+because it is circular. It does not verify the printer — but it verifies **the
+chart builder**, and that has real failure modes worth catching:
+
+* the builder used one rendering intent and the check another;
+* device values scaled 0–255 where the file wants 0–100;
+* patches clipped to the gamut's bounding box rather than to its surface;
+* a profile silently swapped between building and printing.
+
+Any of those puts patches outside a gamut they were promised to be inside, and
+every one of them is invisible until somebody draws the picture. What it must
+NOT do is *claim* to be a colour verification. The wording on screen carries
+that distinction:
+
+* **A** — *"Do these patches sit inside what this profile says it can print?"*
+  A check of the chart, against the profile it was made from or any other.
+* **B** — *"Do they sit inside what the paper actually achieved?"* A check of
+  the profile, against a measurement. The one that finds printer trouble.
+* **C** — *"Are they spread evenly?"* A check of the chart on its own, needing
+  no profile at all.
+
+Three questions, three answers, named so nobody mistakes one for another —
+which is principle 7, and the whole reason to write them down before building.
 
 ## 1. What is being asked
 
@@ -55,9 +91,10 @@ which are different:
   their spacing — clumping and gaps are visible immediately, and this is the
   question a chart designer actually has.
 
-**B and C are worth building. A is only worth building with the profile named
-explicitly**, so that using the same profile twice is a visible choice rather
-than an accident.
+**All three are worth building** — see §0. A must name the profile it is
+checking against on screen, so that using the same profile twice is a visible
+choice rather than an accident, and the caption must say what A does and does
+not prove.
 
 ## 3. The user's journey, click by click
 
@@ -134,18 +171,20 @@ file variants are the unknown; real vendor `.ti1` files are less uniform than
 the specification suggests. Maintainability **9** — no new reader, no new
 maths. Efficiency **9** — a few thousand points is nothing.
 
-## 9. Open questions — needed before any code
+## 9. Open questions
 
-1. Which of **A**, **B** and **C** do you actually want first? My
-   recommendation is **B**, then **C**; **A** only with the profile named.
-2. Should a chart be a *thing you open* (its own slot, like a measurement) or a
+**Answered in §0:** all three, A first, with the file types supported
+regardless.
+
+Still worth deciding while building, but none of them blocks a start:
+1. Should a chart be a *thing you open* (its own slot, like a measurement) or a
    *thing you compare with*? Opening it means it can be shown alone, which is
    right for **C** and wrong for **A**.
-3. Which intent should the prediction use — relative colorimetric, or whatever
+2. Which intent should the prediction use — relative colorimetric, or whatever
    the chart was built with, if the chart records it?
-4. Should `.ti2` sheet positions be used at all (they would allow "this corner
+3. Should `.ti2` sheet positions be used at all (they would allow "this corner
    of the sheet is where the out-of-gamut patches are"), or ignored?
-5. i1Profiler `.pxf`/`.txt` targets: convert through ArgyllCMS as now, or read
+4. i1Profiler `.pxf`/`.txt` targets: convert through ArgyllCMS as now, or read
    directly? ArgyllCMS is not always installed.
-6. Does the answer need to be exportable — a table of the outside patches — or
+5. Does the answer need to be exportable — a table of the outside patches — or
    is seeing it enough?
