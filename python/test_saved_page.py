@@ -209,7 +209,11 @@ def _page(tmp_path, notes=""):
     out = tmp_path / "p.html"
     ti3gamut._write_dark_html(fig, out, mode="dark", spin=SPIN,
                               carry_viewer=False, notes=notes)
-    return out.read_text()
+    # ENCODING NAMED, ALWAYS. Path.read_text() uses the platform default,
+    # which on Windows is cp1252 -- and this page is full of em dashes and
+    # ellipses, so every test that read one back died there while passing on
+    # macOS. The page is written as UTF-8; it has to be read as UTF-8.
+    return out.read_text(encoding="utf-8")
 
 
 def test_a_picture_on_its_own_does_not_scroll(tmp_path):
