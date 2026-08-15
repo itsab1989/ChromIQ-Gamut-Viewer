@@ -2,6 +2,21 @@
 
 ## v2.4.0
 
+### 🏷 Saved pages now have a name
+
+Every page written by **Save this view as a web page…** carries a proper
+`<title>`, so the browser tab, a bookmark and a pasted link all say what is in
+the picture — the papers, the comparison, the chart, by name. Before this there
+was no title at all and a shared link showed nothing but a file name, in the one
+feature that exists for sending a measurement to somebody else.
+
+**The names come from the legend, not from the caption**, and looking at eight
+real exports is what settled it: a measurement's caption says what the colours
+were measured *against* ("…from a D50 white"), which is true of nearly every
+page, so seven of eight tabs came out identical. Anything unusual in a name — a
+`<`, an `&` — is escaped, a very long one is trimmed, and a scene with no named
+shape falls back to the caption.
+
 ### ✨ New
 
 - **A saved web page can now be set turning by whoever opens it.** Every page

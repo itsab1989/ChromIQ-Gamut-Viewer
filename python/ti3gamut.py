@@ -1411,6 +1411,68 @@ function cqLinkAxes(idA, idB) {
 """
 
 
+def _escape_title(text: str) -> str:
+    """Plain text safe to put between <title> tags.
+
+    A measurement can be called anything at all, including something with a
+    < or an & in it, and a title is one of the few places a stray character
+    ends the element early and takes the rest of the page with it.
+    """
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").strip() or "Measured gamut")
+
+
+def _page_title(fig) -> str:
+    """What the browser tab should say: the things in the picture, by name.
+
+    THE CAPTION IS THE WRONG SOURCE and looking at eight real exports is what
+    showed it. A measurement's caption says what the colours were measured
+    *against* — "Measured gamut — lightness and colour measured from a D50
+    white" — which is true of nearly every page this application writes, so
+    seven of eight tabs came out identical and a bookmark said nothing at all.
+
+    The legend already names what is actually there: the papers, the
+    comparison, the chart. Those are what somebody is looking for in a row of
+    tabs, so those are what the tab says, with the caption kept as a fallback
+    for a scene that somehow has no named shape in it.
+    """
+    names, seen = [], set()
+    try:
+        for trace in fig.data:
+            raw = getattr(trace, "name", None) or ""
+            # Traces are named "<thing> — outline", "<thing> — outside" and so
+            # on; the thing is what matters and it appears several times.
+            base = str(raw).split(" — ")[0].strip()
+            if base and base not in seen:
+                seen.add(base)
+                names.append(base)
+    except Exception:                     # noqa: BLE001 — never take a page
+        names = []                        # down over its own title
+    if names:
+        listed = (names[0] if len(names) == 1 else
+                  " and ".join([", ".join(names[:-1]), names[-1]]))
+        return _escape_title(listed)
+    try:
+        text = fig.layout.title.text or ""
+    except Exception:                     # noqa: BLE001 — a title is not worth
+        text = ""                         # taking a page down for
+    # The caption is styled markup; the tab wants words.
+    text = re.sub(r"<[^>]+>", "", str(text)).strip()
+    if len(text) > 90:
+        text = text[:87].rstrip(" ,;—-") + "…"
+    return _escape_title(text)
+
+
+def _titled(html: str, title: str) -> str:
+    """The same document with a <title> in its head, added once."""
+    if "<title>" in html[:4000]:
+        return html
+    full = f"<title>{title} — ChromIQ Gamut Viewer</title>"
+    if "<head>" in html:
+        return html.replace("<head>", "<head>" + full, 1)
+    return html.replace("<body", full + "<body", 1)
+
+
 def _spin_script(ids, spin) -> str:
     """The turning engine plus the settings the window had when it was written.
 
@@ -1591,7 +1653,9 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
         link = (f"<script>{body}\n"
                 f"window.addEventListener('load', function() {{"
                 f"{joiner}('{ids[0]}', '{ids[1]}');}});</script>")
-    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    _t = _escape_title(" and ".join(n for n, _f in pages) or "Measured gamut")
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">\
+<title>{_t} — ChromIQ Gamut Viewer</title><style>
  html,body {{ margin:0; padding:0; height:100%; overflow:hidden;
               background:{colours['page']}; }}
  .row  {{ display:flex; height:100%; width:100%; }}
@@ -1623,6 +1687,12 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     # it afterwards.
     html = fig.to_html(include_plotlyjs="inline" if carry_viewer else "cdn",
                        full_html=True, div_id="scene0")
+    # A NAME FOR THE TAB, THE BOOKMARK AND THE PASTED LINK. Plotly writes a
+    # document with no <title> at all, so a page saved for somebody else
+    # arrived showing nothing but its file name — in the one feature that
+    # exists for sending a measurement to another person. The caption already
+    # says what the picture is, so it is what the tab says too.
+    html = _titled(html, _page_title(fig))
     _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]
     style = (f"<style>html,body{{background:{_PAGE_BACKGROUND};margin:0;"
              f"padding:0;overflow:hidden;}}</style>")
