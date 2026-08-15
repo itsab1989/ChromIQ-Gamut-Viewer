@@ -1,4 +1,4 @@
-# It moves — six loops, and one film
+# It moves — five loops, and one film
 
 Every one of these was made by the application itself: **Turn it by itself**
 to set the movement, then **Save this view as a picture… → A moving picture**.
@@ -34,23 +34,6 @@ shape.
 **How:** First shape → *outline only*, **Show every patch I measured** on.
 Left and right *back and forth* 74° at speed 10, up and down *back and forth*
 30° at speed 6. Seven seconds, 25 a second.
-
----
-
-## What sRGB cannot reach
-
-<p align="center"><img src="screenshots/m2-what-srgb-cannot-reach.webp" width="820"
-alt="A printer gamut turning through a full circle with the colours sRGB
-cannot reproduce picked out on its surface"></p>
-
-The same paper, compared against sRGB, with every part of its surface that
-sRGB cannot reproduce marked on it. A full turn, because the answer is
-different on every side — this printer beats sRGB comfortably in the cyans and
-loses to it in the deep blues, and one still picture can only ever show you
-one of those.
-
-**How:** *Compare with* → **sRGB**. Left and right *all the way round* at
-speed 8, up and down *back and forth* 20° at speed 5. Eight seconds.
 
 ---
 

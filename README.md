@@ -17,7 +17,7 @@ printer?
 
 <p align="center"><sub>A real measured gamut, turning. Made by the
 application itself — <b>Turn it by itself</b>, then <b>Save this view as a
-picture…</b>. <a href="docs/MOTION.md">Six more, with the settings behind
+picture…</b>. <a href="docs/MOTION.md">Five more, with the settings behind
 each →</a></sub></p>
 
 <p align="center">
@@ -451,7 +451,7 @@ with the application, so there is nothing to install.
 The loop closes exactly — the file holds one complete journey fitted into the
 seconds you chose — so it never jumps as it comes round.
 
-**[Six more loops, with every setting behind each one →](docs/MOTION.md)**
+**[Five more loops, with every setting behind each one →](docs/MOTION.md)**
 
 ### Everything around the shape is yours
 

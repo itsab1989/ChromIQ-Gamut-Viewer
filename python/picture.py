@@ -339,18 +339,18 @@ LIGHT_THEME = {"background": "custom", "colour": "#efebe6",
                "gridlines": "custom", "gridlines_colour": "#e0ddd7"}
 
 LOOKS = (
-    ("screen", "As it looks on screen",
+    ("screen", "As on screen now",
      "Exactly what is in the window now, nothing changed.", {}),
-    ("theme-dark", "The window's own dark",
+    ("theme-dark", "The window's dark",
      "The colours this application uses in dark mode, exactly.", DARK_THEME),
-    ("theme-light", "The window's own light",
+    ("theme-light", "The window's light",
      "The colours this application uses in light mode, exactly.", LIGHT_THEME),
     ("document", "For a white document",
      "White behind and around it, dark lettering. The safe answer for "
      "anything going into a report, a letter or a printed page.",
      {"background": "white", "walls": "white",
       "lettering": "follow", "gridlines": "follow"}),
-    ("report", "For a printed report, soft box",
+    ("report", "For a printed report",
      "White page with the box a shade of grey, so the shape sits in "
      "something rather than floating. Dark lettering.",
      {"background": "white", "walls": "custom", "wall_colour": "#f2efe9",
@@ -360,13 +360,13 @@ LOOKS = (
      "background.",
      {"background": "black", "walls": "custom", "wall_colour": "#111111",
       "lettering": "follow", "gridlines": "follow"}),
-    ("cutout-light", "Cut out — for a light page",
+    ("cutout-light", "Cut out — light page",
      "Nothing behind the shape at all, and dark lettering, so it drops "
      "straight onto a white or pale page and takes that as its own "
      "background.",
      {"background": "transparent", "walls": "transparent",
       "lettering": "dark", "gridlines": "dark"}),
-    ("cutout-dark", "Cut out — for a dark page",
+    ("cutout-dark", "Cut out — dark page",
      "The same, with light lettering, for dropping onto a dark page or a "
      "dark slide.",
      {"background": "transparent", "walls": "transparent",

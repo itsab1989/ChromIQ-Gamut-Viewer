@@ -1043,11 +1043,23 @@ class LookSection(QGroupBox):
         # in the same order and doing the same things: save what is set now,
         # take one off the list, and open the folder they live in. Somebody who
         # knows one knows the other.
+        # THE BUTTONS GO UNDER THE CHOOSER, not beside it. Measured: this
+        # column is 346 pixels wide, and a combo sharing a row with three
+        # buttons is left about 116 for its text — while "For a white
+        # document" needs 133. Something had to give, and the three small
+        # buttons giving up their place costs nothing, while the chooser
+        # losing the end of every other entry costs the point of it.
         look_holder = QWidget(self)
-        look_row = QHBoxLayout(look_holder)
+        look_stack = QVBoxLayout(look_holder)
+        look_stack.setContentsMargins(0, 0, 0, 0)
+        look_stack.setSpacing(4)
+        look_stack.addWidget(self._look)
+        under = QWidget(look_holder)
+        look_row = QHBoxLayout(under)
         look_row.setContentsMargins(0, 0, 0, 0)
         look_row.setSpacing(6)
-        look_row.addWidget(self._look, 1)
+        look_stack.addWidget(under)
+        look_row.addStretch(1)
         self._look_save = QPushButton("+", self)
         self._look_save.setObjectName("glyph")
         self._look_save.setFixedWidth(26)
