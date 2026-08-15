@@ -164,6 +164,53 @@ def audit_once(window, panel, label: str) -> list:
             problems.append(
                 f"[{label}] ORPHAN ⓘ  {hint.objectName() or 'hint'} "
                 f"explains nothing on its row")
+
+    # AND THE OTHER DIRECTION, which is the one that let three unexplained
+    # sliders ship: a control with no ⓘ anywhere near it. Reported per group,
+    # because that is the unit a person reads — a group with no explanation at
+    # all is the real fault, and a group whose ⓘ sits two rows up is fine.
+    attribute = {id(v): k for k, v in vars(window).items()}
+    for group in panel.findChildren(QGroupBox):
+        if not group.isVisible():
+            continue
+        if group.title() in gamut_app.GamutApp.NO_HINT_NEEDED:
+            continue
+        controls = [c for c in group.findChildren(INTERACTIVE)
+                    if c.isVisible() and not isinstance(c, gamut_app.Hint)]
+        if not controls:
+            continue
+        bands = [h.mapToGlobal(h.rect().center()).y()
+                 for h in group.findChildren(gamut_app.Hint) if h.isVisible()]
+        headings = [l for l in group.findChildren(QLabel)
+                    if l.isVisible() and l.text() and not l.wordWrap()
+                    and not isinstance(l, gamut_app.Hint)]
+        for control in controls:
+            mid = control.mapToGlobal(control.rect().center()).y()
+            if any(abs(b - mid) < 14 for b in bands):
+                continue
+            # ONLY CONTROLS WITH A HEADING OF THEIR OWN. A radio inside a
+            # named set, or the × on a slot, is covered by the explanation
+            # for the set — demanding one each would bury the panel in icons.
+            # A slider sitting under its own caption is a different thing:
+            # the caption names it and nothing says what it is for, which is
+            # exactly how three of them shipped unexplained.
+            top = control.mapToGlobal(control.rect().topLeft()).y()
+            mine = [h for h in headings
+                    if 0 <= top - h.mapToGlobal(h.rect().bottomLeft()).y() <= 14]
+            if not mine:
+                continue
+            # A ⓘ ON THE HEADING counts. That is the app's other convention:
+            # one icon beside the caption that names a set, explaining the
+            # whole set beneath it. Reading only the control's own row called
+            # four correctly-explained controls unexplained.
+            if any(abs(b - h.mapToGlobal(h.rect().center()).y()) < 14
+                   for h in mine for b in bands):
+                continue
+            name = attribute.get(id(control)) or control.objectName()
+            problems.append(
+                f"[{label}] NO ⓘ  {name or text_of(control)!r} "
+                f"under {group.title()!r} has its own caption and no "
+                f"explanation on its row")
     return problems
 
 

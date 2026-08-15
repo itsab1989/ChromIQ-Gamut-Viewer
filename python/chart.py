@@ -739,6 +739,45 @@ def can_draw_in_ink(chart: "Chart") -> tuple:
         f"axes colour has.")
 
 
+def skin(points):
+    """A closed surface over *points*, as ``(vertices, faces)``.
+
+    WHAT IT IS: the convex hull of the patches themselves — how far out into
+    the space this chart reaches, which is a real question about the chart and
+    is hard to judge from a cloud of dots alone.
+
+    WHAT IT IS NOT, and the reason this returns bare arrays instead of a
+    :class:`gamutview.Gamut`: it is not a gamut, of the printer or of anything
+    else, and nothing in this application should be able to treat it as one.
+    A gamut carries a volume, feeds the coverage figures and joins the
+    comparison; a chart's skin must do none of those, because a chart only
+    samples wherever its author chose to put patches. Measured on the demo
+    files: the skin over the patches a glossy paper can reach comes out at
+    663,257 cubic Lab units against the paper's own measured 724,277 — 8%
+    smaller, purely because the chart does not put a patch on every part of
+    the boundary. Quoted as a gamut it would understate the paper every time.
+    Keeping it out of the ``Gamut`` type is what makes that impossible rather
+    than merely discouraged.
+
+    Returns ``(None, None)`` for anything too small or too flat to enclose a
+    volume — four points at minimum, and not all in one plane.
+    """
+    from scipy.spatial import ConvexHull, QhullError
+
+    pts = np.asarray(points, dtype=float)
+    pts = pts[np.isfinite(pts).all(axis=1)]
+    pts = np.unique(pts.round(9), axis=0)
+    if len(pts) < 4:
+        return None, None
+    try:
+        hull = ConvexHull(pts)
+    except QhullError:
+        # Every patch on one plane — a grey ramp, a single hue sweep. There is
+        # no solid to draw and saying so beats drawing a degenerate one.
+        return None, None
+    return pts, hull.simplices
+
+
 @dataclass(frozen=True)
 class Spread:
     """How evenly a chart samples the space it is placed in."""

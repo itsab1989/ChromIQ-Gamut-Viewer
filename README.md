@@ -397,6 +397,63 @@ draw a chart that was never in the file. The panel says so and sends you to
 CIELAB, where a profile can place any number of inks into the three axes
 colour has.
 
+### A skin over the patches
+
+A cloud of dots is hard to judge for reach. **How the patches are drawn** puts a
+closed surface over them — **Outline only** to start with, which shows the shape
+without hiding anything inside it, then **Mesh** or **Solid** with its own
+colour and opacity.
+
+<img src="docs/screenshots/20-a-skin-over-the-patches.webp" width="620" alt="A chart's patches in ink amounts with a mesh skin over the ones that survive">
+
+**It is not a gamut, and the window is careful never to let it become one.** A
+gamut is the boundary of everything a paper can print. This is a skin over the
+patches *one chart happens to ask for*, and a chart only samples wherever its
+author put a patch. On the demo files the skin comes out **8% smaller** than the
+paper's own measured gamut — 663,257 against 724,277 cubic Lab units — purely
+because the chart puts no patch on some parts of the boundary. So it never joins
+**How much colour it holds**, never joins a comparison, and is labelled *a skin
+over the patches* in the legend.
+
+**With a paper open the skin covers only the patches that paper can reach.**
+There is deliberately no skin over the ones out of reach, and the reason is
+measured rather than aesthetic: those patches are the furthest out, so they
+*wrap around* the rest. On the demo chart a shape drawn round them comes to
+**100%** of a shape drawn round the whole chart — it would fill the picture
+entirely and read as "all of this is lost" on a chart where a third of it is.
+There is no honest shape for a set of points that surrounds another set, so none
+is offered.
+
+A chart whose patches all lie on one plane — a grey ramp, a single hue sweep —
+encloses no solid, so no skin is drawn for it.
+
+### Why the zero lines sometimes meet and sometimes do not
+
+A fair question about the grid on the three walls. The lines marking **zero** are
+drawn brighter than the rest, and whether they join up depends entirely on
+whether zero is *inside* that axis's range or *at the end* of it.
+
+| | range on the demo paper | where zero falls |
+|---|---|---|
+| a\* | −78.96 … 82.11 | **inside** — the line crosses the middle of the wall |
+| b\* | −72.50 … 117.21 | **inside** — same |
+| L\* | 3.92 … 93.83 | **outside the range** — no zero line is drawn at all |
+
+So in CIELAB you see the a\* and b\* zero lines cross in the middle of the floor,
+and nothing horizontal meets them on the vertical walls — because a real paper's
+blackest patch is L\* 3.92 and the axis simply never reaches L\* 0.
+
+In **ink amounts** every axis runs 0 to 100, so zero is at the *end* of all
+three. Each zero line lands on an edge of the box and they all meet at the same
+near corner — which is why those axes look like they share one source.
+
+**The hairline gap** you can see along some of those edges is the two walls each
+drawing their own zero line for the same edge: Plotly sets each wall a fraction
+outside the data box, so the two lines run side by side instead of on top of one
+another. Nothing is misaligned and no number is affected — it is two correct
+lines at almost the same place. Untick **Show the box and its grid** and all of
+it goes, walls and numbers included.
+
 ### Every word explained
 
 Anything that might be jargon has a plain-language entry under **What do these

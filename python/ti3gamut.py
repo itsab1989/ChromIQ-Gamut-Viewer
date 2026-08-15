@@ -969,6 +969,58 @@ def _mesh(gamut, name: str, opacity: float, wireframe: bool,
     )
 
 
+def _chart_skin(points, colours, name: str, style: str, opacity: float,
+                page: str = "#111318", light=None, depth: float = 0.35):
+    """A closed surface over a chart's patches — never over the lost ones.
+
+    ONLY EVER THE ONES THAT SURVIVE, and that is a measured decision rather
+    than a preference. The out-of-reach patches are the ones furthest out, so
+    they *wrap around* the ones that fit: a hull over them came to 87% of a
+    hull over the whole chart in ink amounts and 77% in CIELAB. A shape drawn
+    round them would fill nearly the entire picture and read as "almost all of
+    this is lost" on a chart where a third of it is. There is no honest shape
+    for a set of points that surrounds another set, so none is offered.
+
+    *style* is ``"solid"``, ``"mesh"`` or ``"outline"``. ``colours`` may be
+    ``None`` for a plain grey skin, which is the readable choice when the dots
+    inside it are already carrying the colour.
+    """
+    import plotly.graph_objects as go
+
+    verts, faces = points, None
+    if isinstance(points, tuple):
+        verts, faces = points
+    if verts is None or faces is None or not len(faces):
+        return []
+    verts = np.asarray(verts, float)
+    faces = np.asarray(faces, int)
+    wire = style in ("mesh", "outline")
+    common = dict(
+        x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
+        i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+        name=f"{name} — a skin over the patches", showlegend=True,
+        hoverinfo="name", flatshading=False,
+        lighting=_lighting(depth), lightposition=light or _LIGHT_OVERHEAD,
+        contour=dict(show=wire, color="#888", width=2),
+    )
+    if style == "outline":
+        # The cage alone: no filled facets at all, so everything inside stays
+        # readable. Opacity near zero rather than a separate trace type keeps
+        # the contour lines that carry the shape.
+        common["opacity"] = 0.02
+    else:
+        common["opacity"] = float(opacity)
+    if colours is None:
+        common["color"] = "#8b93a3"
+    elif isinstance(colours, str):
+        # One colour for the whole skin — the window's accent.
+        common["color"] = colours
+    else:
+        common["vertexcolor"] = colours
+        common["color"] = _legend_swatch([(0.5, 0.55, 0.6)], page)
+    return [go.Mesh3d(**common)]
+
+
 def _patch_cloud(lab, name: str, space: str = "lab"):
     """Every measured patch as a dot, in its own colour — the raw evidence."""
     import plotly.graph_objects as go
@@ -983,7 +1035,10 @@ def _patch_cloud(lab, name: str, space: str = "lab"):
 
 
 def _chart_cloud(lab, name: str, outside=None, space: str = "lab",
-                 device=None):
+                 device=None, size: float = 3.2, show_inside: bool = True,
+                 show_outside: bool = True, with_positions: bool = False,
+                 dot_opacity: float = 1.0, out_size: float = 5.5,
+                 out_opacity: float = 1.0):
     """A chart's patches: dots where a profile says each one would land.
 
     DOTS, NEVER A SURFACE, and that is the whole design rather than a
@@ -1040,21 +1095,28 @@ def _chart_cloud(lab, name: str, outside=None, space: str = "lab",
 
     traces = []
     inside = ~outside
-    if inside.any():
+    if inside.any() and show_inside:
         traces.append(go.Scatter3d(
             x=v[inside, 0], y=v[inside, 1], z=v[inside, 2], mode="markers",
-            marker=dict(size=3.2,
+            marker=dict(size=size, opacity=dot_opacity,
                         color=[c for c, keep in zip(colours, inside) if keep],
                         line=dict(width=0)),
             name=f"{name} — to be printed", showlegend=True,
             hoverinfo="name"))
-    if outside.any():
+    if outside.any() and show_outside:
         traces.append(go.Scatter3d(
             x=v[outside, 0], y=v[outside, 1], z=v[outside, 2], mode="markers",
-            marker=dict(size=5.5, color=_LOST, symbol="circle",
-                        line=dict(width=0)),
+            marker=dict(size=out_size, opacity=out_opacity, color=_LOST,
+                        symbol="circle", line=dict(width=0)),
             name=f"{name} — outside", showlegend=True, hoverinfo="name"))
-    return traces
+    if not with_positions:
+        return traces
+    # THE POINTS A SKIN MAY GO OVER: the ones that survive, never the lost
+    # ones — see _chart_skin for the measurement behind that. Handed back
+    # rather than recomputed so the skin and the dots cannot disagree.
+    keep = inside if outside.any() else np.ones(n, dtype=bool)
+    positions = (v[keep], [c for c, k in zip(colours, keep) if k])
+    return traces, positions
 
 
 #: Colours for the outlines in a slice, in the order gamuts are given.
@@ -1591,7 +1653,8 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                  depth: float = 0.35, mesh_paint: str = "plain",
                  rings: int = 0, per_shape=None, neutrals=None,
                  ideal_neutrals: bool = False, chart=None,
-                 light=None, grid: bool = True, space=None):
+                 light=None, grid: bool = True, space=None,
+                 chart_look=None):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -1669,8 +1732,38 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # cannot be drawn in ink amounts, which is what they meant.
         chart_name, chart_lab, chart_outside = chart[:3]
         chart_device = chart[3] if len(chart) > 3 else None
-        for trace in _chart_cloud(chart_lab, chart_name, chart_outside,
-                                  _axes_space, device=chart_device):
+        look = dict(skin="none", skin_opacity=0.30, skin_colour="grey",
+                    dot_size=3.2, dot_opacity=1.0, out_dot_size=5.5,
+                    out_dot_opacity=1.0, accent="#ff4573",
+                    show_inside=True, show_outside=True)
+        look.update(chart_look or {})
+        # THE SKIN GOES DOWN FIRST so the dots read over it rather than
+        # through it, and it is built from the very same positions the dots
+        # are drawn at — passed back out of _chart_cloud rather than worked
+        # out again here, so the two cannot describe different points.
+        traces, positions = _chart_cloud(
+            chart_lab, chart_name, chart_outside, _axes_space,
+            device=chart_device, size=look["dot_size"],
+            dot_opacity=look["dot_opacity"], out_size=look["out_dot_size"],
+            out_opacity=look["out_dot_opacity"],
+            show_inside=look["show_inside"], show_outside=look["show_outside"],
+            with_positions=True)
+        if look["skin"] != "none" and positions is not None:
+            import chart as _chart_mod
+            surviving, colours = positions
+            verts, faces = _chart_mod.skin(surviving)
+            # NOT called `how`: that name is already the per-gamut style
+            # inside this function, and quietly reusing it is how a later
+            # edit ends up reading the wrong one.
+            skin_how = look["skin_colour"]
+            skin_paint = (None if skin_how == "grey" else
+                          look["accent"] if skin_how == "accent" else colours)
+            for trace in _chart_skin(
+                    (verts, faces), skin_paint,
+                    chart_name, look["skin"], look["skin_opacity"],
+                    page=c["page"], light=light, depth=depth):
+                fig.add_trace(trace)
+        for trace in traces:
             fig.add_trace(trace)
     from gamutview import AXES
     # The axes are named for the space the gamuts were built in, so a

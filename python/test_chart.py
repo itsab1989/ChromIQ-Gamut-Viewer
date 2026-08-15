@@ -578,3 +578,63 @@ def test_spacing_in_ink_amounts_is_measured_in_ink_amounts():
     assert s.closest == pytest.approx(25.0)
     assert s.largest_gap == pytest.approx(25.0)
     assert s.median_gap == pytest.approx(25.0)
+
+
+# --------------------------------------------------------------------------
+# A skin over the patches — what it is, and what it must never become
+# --------------------------------------------------------------------------
+
+def test_a_skin_is_bare_arrays_and_never_a_gamut():
+    """The type is the safeguard.
+
+    A Gamut carries a volume, feeds the coverage figures and joins the
+    comparison. A chart's skin must do none of those, because a chart samples
+    only where its author put patches. Returning bare arrays is what makes
+    that impossible rather than merely discouraged.
+    """
+    import gamutview
+    verts, faces = chart.skin(_grid_chart(4).device * 100.0)
+    assert isinstance(verts, np.ndarray) and isinstance(faces, np.ndarray)
+    assert not isinstance(verts, gamutview.Gamut)
+    assert faces.shape[1] == 3 and len(faces) > 0
+
+
+def test_a_skin_over_a_cube_of_patches_encloses_that_cube():
+    from scipy.spatial import ConvexHull
+    verts, _faces = chart.skin(_grid_chart(5).device * 100.0)
+    # 5 steps from 0 to 100: the hull is the unit cube scaled up.
+    assert ConvexHull(verts).volume == pytest.approx(100.0 ** 3, rel=1e-9)
+
+
+def test_a_flat_chart_gets_no_skin_rather_than_a_broken_one():
+    """A grey ramp is a line; a single hue sweep is a plane. Neither encloses
+    a solid, and Qhull raises rather than guessing."""
+    ramp = np.repeat(np.linspace(0, 100, 12)[:, None], 3, axis=1)
+    assert chart.skin(ramp) == (None, None)
+    plane = np.column_stack([np.linspace(0, 100, 20),
+                             np.linspace(0, 100, 20), np.zeros(20)])
+    assert chart.skin(plane) == (None, None)
+    assert chart.skin(np.zeros((3, 3))) == (None, None)
+
+
+def test_the_lost_patches_wrap_around_the_rest_so_they_get_no_skin():
+    """The measurement behind refusing an out-of-reach skin.
+
+    The patches a paper cannot reach are the ones furthest out, so a shape
+    drawn round them swallows the ones that fit as well. Here it comes to more
+    than three quarters of a shape round the whole chart — on a chart where
+    only a third is lost. Drawing it would read as "almost all of this is
+    gone".
+    """
+    from scipy.spatial import ConvexHull
+    device = _grid_chart(6).device * 100.0
+    centre = np.array([50.0, 50.0, 50.0])
+    far = np.linalg.norm(device - centre, axis=1)
+    lost = far > np.quantile(far, 0.67)          # the outer third
+    whole = ConvexHull(np.unique(device.round(9), axis=0)).volume
+    around_lost = ConvexHull(np.unique(device[lost].round(9), axis=0)).volume
+    # A regular grid puts many patches at exactly the same distance, so the
+    # cut lands at 26% rather than the 33% asked for. Asserted as measured —
+    # the share is not the point, the ratio below it is.
+    assert 0.2 < lost.mean() < 0.35
+    assert around_lost / whole > 0.75

@@ -525,7 +525,12 @@ class _FakeApp:
                      "_auto_update", "_side_by_side", "_link_cameras"):
             setattr(self, name, None)
         for name in ("_aspect", "_white", "_space", "_mode", "_style_mine",
-                     "_style_second", "_style_other"):
+                     "_style_second", "_style_other",
+                     # How the chart's patches are drawn.
+                     "_chart_dot", "_chart_show_outside", "_chart_skin",
+                     "_chart_dot_opacity", "_chart_out_dot",
+                     "_chart_out_opacity",
+                     "_chart_skin_colour", "_chart_skin_opacity"):
             setattr(self, name, None)
         self._light_sliders = {k: (None,) for k, *_ in gamut_app.LIGHT_CONTROLS}
         # The movement controls are read, not just listed, so these answer.

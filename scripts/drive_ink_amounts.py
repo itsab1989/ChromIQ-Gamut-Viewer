@@ -278,6 +278,80 @@ def main() -> int:
               and "Lab" in w._volume_units(),
               f"{len(w._scene_contents()[0])} shapes, units={w._volume_units()!r}")
 
+    # ----------------------------------------------------------------- 9
+    # The skin over the patches, and the shape that must never be drawn.
+    w._on_clear(); pump(2)
+    space("rgb")
+    w._open_chart_file(a_chart); pump(3)
+    check("23. the skin controls appear only with a chart",
+          "the group is on screen now, and the out-of-reach row is not — "
+          "nothing is judging yet",
+          w._chart_look_box.isVisible()
+          and not w._chart_outside_row.isVisible(),
+          f"group={w._chart_look_box.isVisible()} "
+          f"outside row={w._chart_outside_row.isVisible()}")
+    check("24. the skin's own settings appear only with a skin",
+          "no colour or opacity row while the skin is set to none",
+          not w._chart_skin_row.isVisible(),
+          f"skin row={w._chart_skin_row.isVisible()}")
+    w._chart_skin.setCurrentIndex(w._chart_skin.findData("solid")); pump(4)
+    check("25. choosing a skin brings its settings with it",
+          "the colour and opacity rows appear",
+          w._chart_skin_row.isVisible(),
+          f"skin row={w._chart_skin_row.isVisible()}")
+
+    if glossy_icc.is_file() and matte_ti3.is_file():
+        w._chart_profile = glossy_icc; w._fill_chart_profiles()
+        w._place_chart(); pump(4)
+        w._load(matte_ti3); pump(12)
+        check("26. the out-of-reach row appears once something judges",
+              "a paper is open, so there is something to be out of reach of",
+              w._chart_outside_row.isVisible(),
+              f"outside row={w._chart_outside_row.isVisible()}")
+        import chart as _cm
+        marked = w._chart_cloud()[2]
+        dev = _cm.device_positions(w._chart[1])
+        from scipy.spatial import ConvexHull
+        import numpy as _np
+        def _vol(pts):
+            pts = _np.unique(_np.asarray(pts).round(6), axis=0)
+            return ConvexHull(pts).volume
+        skinned = _vol(dev[~marked]); whole = _vol(dev)
+        lost_hull = _vol(dev[marked])
+        check("27. the skin covers only what survives",
+              "a shape over the surviving patches is clearly smaller than one "
+              "over the whole chart",
+              skinned < whole * 0.95,
+              f"survivors {skinned:,.0f} vs whole {whole:,.0f} "
+              f"= {skinned/whole:.0%}")
+        check("28. and there is no skin over the lost ones, for a reason",
+              "a shape round the lost patches would be most of the whole "
+              "chart, because they wrap around the rest — so none is offered",
+              lost_hull / whole > 0.75,
+              f"round the lost ones {lost_hull:,.0f} = {lost_hull/whole:.0%} "
+              f"of the whole chart")
+        names = [t["name"] for t in
+                 __import__("ti3gamut").build_figure(
+                     [], "t", space="rgb", chart=w._chart_cloud(),
+                     chart_look=w._chart_look()).data]
+        check("29. nothing in the picture is called a gamut",
+              "the skin is named for what it is, and never joins the volume "
+              "figures or the comparison",
+              any("a skin over the patches" in n for n in names)
+              and not any("gamut" in n.lower() for n in names),
+              str(names))
+        w._chart_show_outside.setChecked(False); pump(5)
+        after = [t["name"] for t in
+                 __import__("ti3gamut").build_figure(
+                     [], "t", space="rgb", chart=w._chart_cloud(),
+                     chart_look=w._chart_look()).data]
+        check("30. the lost patches can be hidden without losing the skin",
+              "the red dots go, the skin and the survivors stay",
+              not any("outside" in n for n in after)
+              and any("skin" in n for n in after),
+              str(after))
+        w._chart_show_outside.setChecked(True); pump(3)
+
     print()
     bad = [r for r in results if not r[2]]
     print(f"{len(results) - len(bad)}/{len(results)} scenarios met their "

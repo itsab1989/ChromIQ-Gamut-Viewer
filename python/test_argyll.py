@@ -226,3 +226,43 @@ def test_every_dialog_is_ours_rather_than_the_systems():
     assert source.count("QFileDialog(") == 1
     whole = inspect.getsource(gamut_app.GamutApp)
     assert whole.count("QFileDialog(") == 1, "a second dialog is built somewhere"
+
+
+def test_the_static_shortcuts_ask_for_our_dialog_too():
+    """The gap the check above cannot see.
+
+    ``QFileDialog.getExistingDirectory`` and its siblings are static
+    convenience methods: they build their own dialog and inherit nothing from
+    the shared factory, so counting ``QFileDialog(`` never notices them. One
+    of them was opening the system's folder chooser for "Where ArgyllCMS is…"
+    while every other dialog in the window was ours — the kind of difference
+    somebody feels without being able to name it.
+
+    Every one of them must be passed DontUseNativeDialog explicitly, and this
+    reads the call rather than the file so a new one cannot be added quietly.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    import gamut_app
+    STATIC = {"getExistingDirectory", "getOpenFileName", "getOpenFileNames",
+              "getSaveFileName", "getOpenFileUrl", "getSaveFileUrl",
+              "getExistingDirectoryUrl"}
+    tree = ast.parse(textwrap.dedent(inspect.getsource(gamut_app)))
+    found = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr in STATIC):
+            continue
+        owner = getattr(func.value, "id", "")
+        if owner != "QFileDialog":
+            continue
+        found += 1
+        text = ast.unparse(node)
+        assert "DontUseNativeDialog" in text, (
+            f"{func.attr} opens the system's dialog: {text[:120]}")
+    # If this ever drops to zero the check has quietly stopped checking.
+    assert found >= 1, "no static QFileDialog call found — has one been renamed?"

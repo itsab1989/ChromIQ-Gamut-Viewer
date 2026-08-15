@@ -39,6 +39,6 @@ The red is where its surface passes the paper. The spikes are what a camera catc
 
 ---
 
-[← Previous](page-4.md) · [Next →](page-6.md) · [The README](../../README.md)
+[← Previous](page-4.md) · [The README](../../README.md) · [Next →](page-6.md)
 
 *[1](../MOTION.md) · [2](page-2.md) · [3](page-3.md) · [4](page-4.md) · **5** · [6](page-6.md)*

@@ -2954,7 +2954,35 @@ class GamutApp(QMainWindow):
         # entry you are already on changes no index, so choosing "another
         # profile…" a second time would do nothing at all.
         self._chart_through.activated.connect(lambda _i: self._on_chart_profile())
-        tl.addWidget(self._chart_through)
+        through_hint = Hint(
+            "Which ICC profile should be asked where these patches will land. "
+            "Choose the profile the chart was built for — usually the one for "
+            "the printer and paper you are about to print it on.\n\n"
+            "WHY IT IS NEEDED AT ALL. A chart file holds ink amounts, not "
+            "colours: \"70% red, 40% green, 20% blue\" is an instruction to a "
+            "printer, and what colour comes out of it depends entirely on "
+            "which printer and which paper. A profile is the only thing that "
+            "can answer that, so until one is chosen there is nowhere in "
+            "colour space to draw the patches.\n\n"
+            "IT IS OPTIONAL IN ONE VIEW. Choose Ink amounts under Draw it in "
+            "and the patches appear with no profile at all, because there the "
+            "axes are the ink amounts themselves and the file already holds "
+            "them. A profile is still worth choosing there — it is what "
+            "paints each dot the colour it will really print as, and it lets "
+            "the patches be counted against a paper you have open.\n\n"
+            "The list offers every profile you already have open, so the "
+            "usual answer is one click. Choose another profile… to pick any "
+            "file on your computer.\n\n"
+            "A profile with no relative colorimetric table is used through "
+            "its perceptual one instead, and the panel says so when that "
+            "happens — perceptual squeezes the whole space to fit, which "
+            "moves patches that are perfectly reachable.",
+            self._chart_through_row)
+        through_hint.setObjectName("hint_chart_through_hint")
+        _tr = QHBoxLayout(); _tr.setContentsMargins(0, 0, 0, 0); _tr.setSpacing(6)
+        _tr.addWidget(self._chart_through, 1)
+        _tr.addWidget(through_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        tl.addLayout(_tr)
         self._chart_through_row.setVisible(False)
         chv.addWidget(self._chart_through_row)
 
@@ -2997,6 +3025,236 @@ class GamutApp(QMainWindow):
         _r.addWidget(chart_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         chv.addLayout(_r)
         v.addWidget(g_chart)
+
+        # --- how the chart's patches are drawn --------------------------------
+        # A whole group that only exists while there is a chart to apply it to.
+        # Every row inside it appears on the same rule: the out-of-reach
+        # controls need something to be out of reach OF, and the skin's own
+        # settings need a skin. A control that cannot do anything is worse
+        # than a missing one — it invites a click and answers with nothing.
+        self._chart_look_box = QGroupBox("How the patches are drawn", col)
+        clv = QVBoxLayout(self._chart_look_box)
+
+        clv.addWidget(QLabel("How big the dots are",
+                             self._chart_look_box))
+        self._chart_dot = NoScrollSlider(Qt.Orientation.Horizontal,
+                                         self._chart_look_box)
+        self._chart_dot.setRange(20, 100)      # tenths, so 2.0 to 10.0
+        self._chart_dot.setValue(32)
+        self._chart_dot.valueChanged.connect(lambda _v: self._redraw())
+        dot_hint = Hint(
+            "How large each patch is drawn. This changes nothing about the "
+            "chart itself — only how easy its patches are to see.\n\n"
+            "Small dots suit a big chart: a 1,000-patch target drawn large "
+            "becomes a solid mass with nothing visible inside it. Larger dots "
+            "suit a small chart, or a picture meant to be looked at from "
+            "across a room.\n\n"
+            "The patches that are out of reach are always drawn a little "
+            "larger than the rest, whatever this is set to, so they can still "
+            "be picked out.", self._chart_look_box)
+        dot_hint.setObjectName("hint_chart_dot_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0); _r.setSpacing(6)
+        _r.addWidget(self._chart_dot, 1)
+        _r.addWidget(dot_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        clv.addLayout(_r)
+
+        clv.addWidget(QLabel("How solid the dots are", self._chart_look_box))
+        self._chart_dot_opacity = NoScrollSlider(Qt.Orientation.Horizontal,
+                                                 self._chart_look_box)
+        self._chart_dot_opacity.setRange(10, 100)
+        self._chart_dot_opacity.setValue(100)
+        self._chart_dot_opacity.valueChanged.connect(lambda _v: self._redraw())
+        dot_op_hint = Hint(
+            "How much of each dot you can see through. Fully solid is the "
+            "usual choice and the one to come back to.\n\n"
+            "Turning it down is worth doing on a dense chart: several hundred "
+            "patches drawn solid hide one another, and the ones at the front "
+            "are all you ever see. Made semi-transparent they build up, so "
+            "where the chart samples heavily reads as darker and you can see "
+            "into the middle of the cloud.\n\n"
+            "This is about seeing the chart, not about the chart itself — no "
+            "number anywhere in the window changes with it.",
+            self._chart_look_box)
+        dot_op_hint.setObjectName("hint_chart_dot_opacity_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0); _r.setSpacing(6)
+        _r.addWidget(self._chart_dot_opacity, 1)
+        _r.addWidget(dot_op_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        clv.addLayout(_r)
+
+        self._chart_show_outside = QCheckBox(
+            "Show the ones out of reach", self._chart_look_box)
+        self._chart_show_outside.setChecked(True)
+        self._chart_show_outside.stateChanged.connect(self._redraw)
+        outside_hint = Hint(
+            "The patches a paper cannot reach are drawn larger and in red, so "
+            "they can be found without reading a number. Untick this to see "
+            "only what will survive — useful when the red is so dense that it "
+            "hides everything behind it.\n\n"
+            "This appears only while something is open for them to be out of "
+            "reach OF: a measured paper, or the profile itself.",
+            self._chart_look_box)
+        outside_hint.setObjectName("hint_chart_outside_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0); _r.setSpacing(6)
+        _r.addWidget(self._chart_show_outside, 1)
+        _r.addWidget(outside_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._chart_outside_row = QWidget(self._chart_look_box)
+        orl = QVBoxLayout(self._chart_outside_row)
+        orl.setContentsMargins(0, 0, 0, 0)
+        orl.setSpacing(4)
+        orl.addLayout(_r)
+
+        # THEIR OWN SIZE AND SOLIDITY, separately from the ones that fit. The
+        # two sets are being read for different reasons — the survivors as a
+        # cloud with a shape, the lost ones as individual findings — and one
+        # slider for both means every change to one spoils the other.
+        orl.addWidget(QLabel("How big the out-of-reach dots are",
+                             self._chart_outside_row))
+        self._chart_out_dot = NoScrollSlider(Qt.Orientation.Horizontal,
+                                             self._chart_outside_row)
+        self._chart_out_dot.setRange(20, 140)
+        self._chart_out_dot.setValue(55)
+        self._chart_out_dot.valueChanged.connect(lambda _v: self._redraw())
+        out_dot_hint = Hint(
+            "How large the patches a paper cannot reach are drawn, set "
+            "separately from the rest so the two can be balanced against each "
+            "other.\n\n"
+            "They start larger than the others on purpose: they are usually "
+            "the minority and the whole point is to find them without "
+            "counting. Make them larger still when only a handful are out of "
+            "reach and they are getting lost; make them smaller when half the "
+            "chart is red and the size is burying everything behind it.\n\n"
+            "Setting them to the same size as the rest is perfectly "
+            "reasonable once you are reading the shape rather than hunting "
+            "for individual patches.", self._chart_outside_row)
+        out_dot_hint.setObjectName("hint_chart_out_dot_hint")
+        _r2 = QHBoxLayout(); _r2.setContentsMargins(0, 0, 0, 0); _r2.setSpacing(6)
+        _r2.addWidget(self._chart_out_dot, 1)
+        _r2.addWidget(out_dot_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        orl.addLayout(_r2)
+
+        orl.addWidget(QLabel("How solid the out-of-reach dots are",
+                             self._chart_outside_row))
+        self._chart_out_opacity = NoScrollSlider(Qt.Orientation.Horizontal,
+                                                 self._chart_outside_row)
+        self._chart_out_opacity.setRange(10, 100)
+        self._chart_out_opacity.setValue(100)
+        self._chart_out_opacity.valueChanged.connect(lambda _v: self._redraw())
+        out_op_hint = Hint(
+            "How much of each out-of-reach dot you can see through, set "
+            "separately from the ones that fit.\n\n"
+            "Fully solid is right while you are looking for them. Turn it "
+            "down when they form a dense shell around everything else — on a "
+            "chart where half the patches are out of reach they can close "
+            "over the picture completely, and made semi-transparent you can "
+            "see the surviving patches and the skin through them while still "
+            "knowing where the losses are.\n\n"
+            "Untick Show the ones out of reach above to take them away "
+            "entirely. Nothing here changes a single count in Are the patches "
+            "inside? — those are measured from the colours, not from what is "
+            "drawn.", self._chart_outside_row)
+        out_op_hint.setObjectName("hint_chart_out_opacity_hint")
+        _r2 = QHBoxLayout(); _r2.setContentsMargins(0, 0, 0, 0); _r2.setSpacing(6)
+        _r2.addWidget(self._chart_out_opacity, 1)
+        _r2.addWidget(out_op_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        orl.addLayout(_r2)
+        clv.addWidget(self._chart_outside_row)
+
+        clv.addWidget(QLabel("A skin over the patches",
+                             self._chart_look_box))
+        self._chart_skin = NoScrollComboBox(self._chart_look_box)
+        self._chart_skin.addItem("No skin — the dots on their own", "none")
+        self._chart_skin.addItem("Outline only", "outline")
+        self._chart_skin.addItem("Mesh", "mesh")
+        self._chart_skin.addItem("Solid", "solid")
+        self._chart_skin.currentIndexChanged.connect(self._on_chart_skin)
+        skin_hint = Hint(
+            "Draws a closed surface over the patches, so you can see how far "
+            "out this chart reaches instead of judging it from a cloud of "
+            "dots. Start with Outline only — it shows the shape without "
+            "hiding anything inside it.\n\n"
+            "IT IS NOT A GAMUT, and the difference matters. A gamut is the "
+            "boundary of everything a paper can print. This is a skin over "
+            "the patches one chart happens to ask for, and a chart only "
+            "samples wherever its author chose to put a patch. On the demo "
+            "files the skin comes out 8% smaller than the paper's own "
+            "measured gamut — 663,257 against 724,277 cubic Lab units — "
+            "purely because the chart puts no patch on some parts of the "
+            "boundary. Read as a gamut it would understate the paper every "
+            "time, so it is never counted in How much colour it holds and "
+            "never joins a comparison.\n\n"
+            "WHEN A PAPER IS OPEN the skin covers only the patches that "
+            "paper can reach. There is deliberately no skin over the ones "
+            "out of reach: those are the furthest out, so they wrap around "
+            "the rest, and a shape drawn round them came to 87% of a shape "
+            "round the whole chart. It would fill the picture and read as "
+            "\"almost all of this is lost\" on a chart where a third of it "
+            "is.\n\n"
+            "A chart whose patches all lie on one plane — a grey ramp, a "
+            "single hue sweep — encloses no solid, so no skin is drawn for "
+            "it.", self._chart_look_box)
+        skin_hint.setObjectName("hint_chart_skin_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0); _r.setSpacing(6)
+        _r.addWidget(self._chart_skin, 1)
+        _r.addWidget(skin_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        clv.addLayout(_r)
+
+        self._chart_skin_row = QWidget(self._chart_look_box)
+        srl = QVBoxLayout(self._chart_skin_row)
+        srl.setContentsMargins(0, 0, 0, 0)
+        srl.setSpacing(4)
+        srl.addWidget(QLabel("What colour the skin is", self._chart_skin_row))
+        self._chart_skin_colour = NoScrollComboBox(self._chart_skin_row)
+        self._chart_skin_colour.addItem("Grey — let the dots carry the colour",
+                                        "grey")
+        self._chart_skin_colour.addItem("The colours of the patches",
+                                        "patches")
+        self._chart_skin_colour.addItem("The accent colour", "accent")
+        self._chart_skin_colour.currentIndexChanged.connect(
+            lambda _i: self._redraw())
+        skin_colour_hint = Hint(
+            "Grey is the one to start with. The dots inside are already "
+            "painted with the colours those patches will print as, and a "
+            "coloured skin over the top competes with them — you end up "
+            "reading the skin's colour instead of the patches'.\n\n"
+            "Choose the colours of the patches when the skin is the subject "
+            "rather than the dots: for a picture of the chart's reach on its "
+            "own, or with the dots turned right down in size. The skin then "
+            "takes its colour from the patches it is stretched over, the same "
+            "way a measured gamut takes its colour from the measurements.\n\n"
+            "Either way the shape is identical. This changes only what it is "
+            "painted with.", self._chart_skin_row)
+        skin_colour_hint.setObjectName("hint_chart_skin_colour_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0); _r.setSpacing(6)
+        _r.addWidget(self._chart_skin_colour, 1)
+        _r.addWidget(skin_colour_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        srl.addLayout(_r)
+        srl.addWidget(QLabel("How solid the skin is", self._chart_skin_row))
+        self._chart_skin_opacity = NoScrollSlider(
+            Qt.Orientation.Horizontal, self._chart_skin_row)
+        self._chart_skin_opacity.setRange(5, 100)
+        self._chart_skin_opacity.setValue(30)
+        self._chart_skin_opacity.valueChanged.connect(lambda _v: self._redraw())
+        skin_opacity_hint = Hint(
+            "How much of the skin you can see through. Low is nearly clear, "
+            "high is nearly solid.\n\n"
+            "Keep it low while the dots matter — the whole point of a skin "
+            "over a chart is to show its reach WITHOUT hiding the patches "
+            "inside, and a solid one turns them into a blank shell. Around a "
+            "third of the way along is enough to read the shape.\n\n"
+            "Turn it up when the shape itself is the subject, or when you are "
+            "saving a picture for somebody who will only look at it once. "
+            "This has no effect while the skin is set to Outline only, which "
+            "draws the cage and no surface at all.", self._chart_skin_row)
+        skin_opacity_hint.setObjectName("hint_chart_skin_opacity_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0); _r.setSpacing(6)
+        _r.addWidget(self._chart_skin_opacity, 1)
+        _r.addWidget(skin_opacity_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        srl.addLayout(_r)
+        self._chart_skin_row.setVisible(False)
+        clv.addWidget(self._chart_skin_row)
+
+        self._chart_look_box.setVisible(False)
+        v.addWidget(self._chart_look_box)
 
         # --- colour science ---------------------------------------------------
         g_cs = QGroupBox("What the colours are measured against", col)
@@ -4983,6 +5241,17 @@ class GamutApp(QMainWindow):
             ("show_lost", self._show_lost, "check", False),
             ("relative", self._relative, "check", False),
             ("manual_light", self._manual_light, "check", False),
+            # How the chart's patches are drawn. Remembered like every other
+            # look setting, so a chart opened tomorrow appears the way it was
+            # left rather than back at the defaults.
+            ("chart_dot", self._chart_dot, "slider", 32),
+            ("chart_dot_opacity", self._chart_dot_opacity, "slider", 100),
+            ("chart_out_dot", self._chart_out_dot, "slider", 55),
+            ("chart_out_opacity", self._chart_out_opacity, "slider", 100),
+            ("chart_show_outside", self._chart_show_outside, "check", True),
+            ("chart_skin", self._chart_skin, "combo", "none"),
+            ("chart_skin_colour", self._chart_skin_colour, "combo", "grey"),
+            ("chart_skin_opacity", self._chart_skin_opacity, "slider", 30),
             ("mesh_colour", self._mesh_colour, "check", False),
             ("rings_on", self._rings_on, "check", False),
             ("neutral", self._neutral, "check", False),
@@ -5741,6 +6010,7 @@ class GamutApp(QMainWindow):
                 "target: the patches you are about to print, shown where a "
                 "profile says each one would land.")
             self._chart_box.setVisible(False)
+            self._refresh_chart_look_box()
             return
         path, read = self._chart
         kind = {"CTI1": "an ArgyllCMS chart", "CTI2": "an ArgyllCMS chart, "
@@ -5751,6 +6021,7 @@ class GamutApp(QMainWindow):
         self._chart_label.setText(f"{path.stem}\n{patches} — {kind}")
         self._chart_note.setText(self._chart_state_note())
         self._update_chart_numbers()
+        self._refresh_chart_look_box()
 
     def _chart_state_note(self) -> str:
         """One line saying what the chart is, or what it still needs.
@@ -5843,6 +6114,49 @@ class GamutApp(QMainWindow):
         """
         space = self._space.currentData()
         return space if space in SPACES else "lab"
+
+    def _on_chart_skin(self) -> None:
+        """The skin's own settings only exist while there is a skin."""
+        self._chart_skin_row.setVisible(
+            self._chart_skin.currentData() != "none")
+        self._redraw()
+
+    def _chart_look(self) -> dict:
+        """Every setting the renderer needs for the chart's patches.
+
+        One place, read by both the live view and the saved page, for the same
+        reason ``_render_options`` exists: two nearly identical argument lists
+        are how an option comes to reach one route and not the other.
+        """
+        return dict(
+            dot_size=self._chart_dot.value() / 10.0,
+            dot_opacity=self._chart_dot_opacity.value() / 100.0,
+            out_dot_size=self._chart_out_dot.value() / 10.0,
+            out_dot_opacity=self._chart_out_opacity.value() / 100.0,
+            show_inside=True,
+            show_outside=self._chart_show_outside.isChecked(),
+            skin=self._chart_skin.currentData() or "none",
+            skin_colour=self._chart_skin_colour.currentData() or "grey",
+            skin_opacity=self._chart_skin_opacity.value() / 100.0,
+            accent=SCHEMES.get(self._scheme,
+                               SCHEMES["Magenta"])["accent"],
+        )
+
+    def _refresh_chart_look_box(self) -> None:
+        """Show these controls only where they can do something.
+
+        The group itself needs a chart that can actually be drawn. The
+        out-of-reach row needs something for the patches to be out of reach
+        OF, which is what ``_judging_shapes`` answers, and a profile to have
+        placed them — without one there is no colour to judge and every patch
+        is simply "a patch".
+        """
+        drawable = self._chart_drawable()
+        self._chart_look_box.setVisible(drawable)
+        judged = bool(self._judging_shapes()) and self._chart_placed is not None
+        self._chart_outside_row.setVisible(drawable and judged)
+        self._chart_skin_row.setVisible(
+            drawable and self._chart_skin.currentData() != "none")
 
     def _drawing_in_ink(self) -> bool:
         """True while the axes are the printer's own ink amounts.
@@ -5946,6 +6260,7 @@ class GamutApp(QMainWindow):
 
         if self._chart is None:
             self._chart_box.setVisible(False)
+            self._refresh_chart_look_box()
             return
         self._chart_box.setVisible(True)
         _path, read = self._chart
@@ -6223,9 +6538,12 @@ class GamutApp(QMainWindow):
                 self, "This file could not be used",
                 f"{path.name}\n\n{exc}\n\nThis opens a measured chart (a .ti3, "
                 "the file ArgyllCMS writes after you read a printed chart), an "
-                "ICC profile (.icc or .icm), or an ArgyllCMS gamut file (.gam). "
-                "A .ti1 or .ti2 is the chart before it was measured and has no "
-                "colours in it yet.")
+                "ICC profile (.icc or .icm), an ArgyllCMS gamut file (.gam), "
+                "or an ordinary picture.\n\n"
+                "A chart that has not been printed yet — a .ti1, a .ti2, or an "
+                "i1Profiler target — is opened too, and lands under A chart to "
+                "be printed rather than here. Drag one onto the window and it "
+                "goes to the right place by itself.")
             return
         self._slots.append((path, g, m))
         _log().info("opened %s (%s): %s%d vertices, volume %.0f",
@@ -6412,11 +6730,21 @@ class GamutApp(QMainWindow):
     #: search for. Opening and closing files is in here on purpose: a paper
     #: opened while ink amounts are showing still loads, still keeps its
     #: numbers and still counts the chart's patches — it is only not drawn.
+    #: Groups whose controls need no ⓘ of their own: they are housekeeping,
+    #: or every control in them is a plain named thing whose label already
+    #: says the whole of it. Anything not listed here must have an
+    #: explanation on the row, and scripts/audit_panel.py enforces it —
+    #: added after three sliders shipped with no ⓘ at all.
+    NO_HINT_NEEDED = frozenset({
+        "This window",
+    })
+
     SPACE_INDEPENDENT_GROUPS = frozenset({
         "What you are looking at",
         "How the shape is worked out",
         "Compare with",
         "A chart to be printed",
+        "How the patches are drawn",
         "How much colour it holds",
         "How the two compare",
         "Has anything changed?",
@@ -6609,8 +6937,15 @@ class GamutApp(QMainWindow):
                 QDesktopServices.openUrl(QUrl(argyll.DOWNLOAD_URL))
                 return
         start = got["folder"] or str(Path.home())
+        # THE OPTION HAS TO BE PASSED HERE TOO. This is a static convenience
+        # method rather than the shared factory, so it does not inherit
+        # anything from it — left alone it opens the system's own folder
+        # chooser while every other dialog in the window is ours, which is a
+        # difference somebody notices without being able to say what it is.
         chosen = QFileDialog.getExistingDirectory(
-            self, "Choose the folder holding the ArgyllCMS tools", start)
+            self, "Choose the folder holding the ArgyllCMS tools", start,
+            QFileDialog.Option.DontUseNativeDialog
+            | QFileDialog.Option.ShowDirsOnly)
         if not chosen:
             return
         if not argyll.looks_like_argyll(chosen):
@@ -7406,6 +7741,7 @@ class GamutApp(QMainWindow):
             ideal_neutrals=(self._neutral.isChecked()
                             and self._ideal_neutral.isChecked()),
             chart=self._chart_cloud(),
+            chart_look=self._chart_look(),
             light=self._light_position(),
             grid=self._grid_on.isChecked(),
             # Named explicitly rather than read off the first shape, because
