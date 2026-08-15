@@ -975,3 +975,101 @@ def test_the_strip_grows_with_the_window_between_a_floor_and_a_ceiling():
     assert "padding:0.45em 0.85em" in js and "padding:0.4em 0.8em" in js, (
         "buttons in em, so they grow with the text rather than staying the "
         "same size around it")
+
+
+# ----------------------------------------------------------------- ordering
+#
+# A see-through surface never hides itself: the drawing library turns depth
+# WRITING off for its transparent pass, so every triangle is blended in, near
+# and far, in whatever order it sits in memory -- and the last one to land on a
+# pixel is the one that mostly shows. Pieces of the far side punch through the
+# near side in hard-edged triangles. Measured on one paper at seven angles, at
+# a thousandth of see-through where nothing can possibly blend: up to 92.1% of
+# the picture unlike the solid one, and back to 0.8% once the triangles are put
+# in order.
+#
+# These guard the three things that were got WRONG on the way to that, each of
+# which measured like a success at the time.
+
+
+def test_the_ordering_reaches_every_page_and_is_not_a_setting(tmp_path):
+    """Both the window and a saved page draw through the same writer, and a
+    page with no movement in it can still be dragged round by hand -- so this
+    is not part of the turning engine and not something to switch on."""
+    js = ti3gamut._ORDER_JS
+    assert "window.cqOrder" in js
+    import plotly.graph_objects as go
+    fig = go.Figure(go.Scatter3d(x=[0, 1], y=[0, 1], z=[0, 1], name="A paper"))
+    out = tmp_path / "still.html"
+    ti3gamut._write_dark_html(fig, out, mode="dark", spin=None,
+                              carry_viewer=False, controls=False)
+    assert "window.cqOrder" in out.read_text(encoding="utf-8"), (
+        "a page with no turning in it at all still needs this")
+
+
+def test_the_order_is_taken_from_the_DIRECTION_of_the_eye():
+    """The first attempt worked out where the eye was among the measurements
+    and sorted by distance from it. It put the eye INSIDE the shape -- 11.6,
+    7.0, 18.9, for a shape running from -79 to 82 -- and made the picture
+    worse at three angles out of five. A direction needs no division by a
+    small number and no centre."""
+    js = ti3gamut._ORDER_JS
+    assert "function lineOfSight" in js
+    assert "getCamera" in js, (
+        "and read mid-drag, or the shape is ordered for where it used to be"
+    )
+
+
+def test_the_quick_door_re_sends_what_the_library_itself_gave():
+    """Handing the surface a triangle list ALONE declares it solid.
+
+        this.hasAlpha = false;
+        "opacity" in given && (this.opacity = given.opacity,
+                               this.opacity < 1 && (this.hasAlpha = true));
+
+    -- and `hasAlpha` is the whole of whether it is see-through. The picture
+    came back matching the solid one perfectly, which read as a flawless fix
+    and was the shape being genuinely opaque: the wall behind it stopped
+    coming through, 99.9% of it to 0.4%. Nothing but asking what was BEHIND
+    the shape could tell those two apart.
+    """
+    js = ti3gamut._ORDER_JS
+    assert "function remember" in js and "__cqGiven" in js, (
+        "the library's own parameters are kept and re-sent, rather than a "
+        "new set being built here -- one field wrong would fail as quietly")
+    assert "isTransparent" in js, (
+        "and it is checked afterwards, because the next version of the "
+        "library may reset something else the same way")
+
+
+def test_a_faded_colour_makes_a_surface_see_through_at_full_strength():
+    """A strength of 1 does not mean solid. The library reads
+
+        colour.length === 3 ? push(r, g, b, this.opacity)
+                            : (push(...), a < 1 && (this.hasAlpha = true))
+
+    so the fade over the part two shapes agree on -- which is written one
+    colour at a time -- makes a see-through surface that tears in exactly the
+    same way."""
+    js = ti3gamut._ORDER_JS
+    assert "someColourFades" in js
+    assert "!(t.opacity < 1) && !someColourFades" in js
+
+
+def test_greying_a_shape_keeps_a_fade_it_was_given():
+    """Two switches, one quietly undoing the other: greying one of two shapes
+    took its faded colours from 179 to none, while the shape left alone kept
+    all 308 of its own."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert '"rgba(" + v + "," + v + "," + v + "," + a + ")"' in js
+    assert "if (bits.length > 3)" in js, (
+        "the fourth number is read back off the colour it came in with")
+
+
+def test_the_ordering_never_takes_more_than_its_share_of_the_time():
+    """978 triangles for one measured chart, 19,230 when the Detail slider is
+    at 40 -- 2.3ms and 19.4ms, and the second is longer than a frame. Rather
+    than guess a count at which to give up, the last one is timed."""
+    js = ti3gamut._ORDER_JS
+    assert "var cost = 0, ready = 0;" in js
+    assert "cost * 3" in js

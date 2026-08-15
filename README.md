@@ -177,6 +177,16 @@ A hue family is only called a win when it is more than 2 chroma units clear.
 Smaller than that is neither visible nor worth trusting, and announcing it
 would let the readout contradict itself.
 
+- **And what colour is the paper itself?** *Glossy-paper: blacks reach L\* 4,
+  paper white L\* 94 and cool (a\* −0.4, b\* −3.4).* Every other figure here is
+  blind to this. Volume barely moves when a white shifts, and coverage only
+  counts colours in or out — so two papers can read as near enough the same
+  while one is a cool, brightened white and the other a warm cream. That is
+  visible on every print, in every neutral, before you look at a saturated
+  colour at all, and it is the difference the M0 / M1 / M2 measurement
+  conditions exist for. The demo papers differ by 4.5 in b\*, and nothing else
+  in the window said so.
+
 ### 4. Has my printer changed since last time?
 
 Open two readings of the **same** chart. As well as the shapes, you get a
@@ -596,6 +606,25 @@ version-numbered folder the official download unpacks into
 [argyllcms.com](https://www.argyllcms.com/) to get it — it is free, and it is
 the same toolkit that reads a printed chart in the first place. Nothing nags
 you about it on startup, because most people never need it.
+
+### See-through shapes are drawn in the right order
+
+A shape drawn solid hides itself; a shape drawn even slightly see-through does
+not, because the drawing library turns depth *writing* off for its transparent
+pass. Every triangle is blended in — near ones and far ones, in whatever order
+they sit in the file — and the last to land on a pixel is the one that mostly
+shows. Pieces of the far side punch through the near side as hard-edged
+triangles, and the shape reads as torn, sliced, or oddly dark.
+
+Both the window and every saved page now put each see-through surface's
+triangles in far-to-near order before drawing. At a *thousandth* of
+see-through, where nothing can blend, the worst of seven camera angles went
+from **92.1% of the picture unlike the solid one to 0.3%**.
+
+It keeps up while the shape turns: 60 frames a second up to 5,310 triangles,
+56 at 19,230. Where it cannot help is two shapes that cross — triangles can
+only be ordered *within* one surface, and a paper sitting entirely inside
+another would need the two interleaved, which the library cannot do.
 
 ### It moves, and you can take the movement with you
 

@@ -730,11 +730,17 @@ def test_the_engine_reaches_a_three_d_page_and_not_the_flat_one(tmp_path):
     spin = dict(on=True, turn=dict(mode="swing", speed=8.0, range=60.0),
                 tilt=dict(mode="off", speed=6.0, range=40.0))
 
+    # THE ENGINE BEING BUILT, not the word being mentioned. Looking for the
+    # bare name found it in a COMMENT in another script -- the one that puts
+    # see-through surfaces in order, which cross-references how the engine
+    # reads the camera mid-drag -- and called a flat page carrier of an engine
+    # it does not have. What matters is whether the thing is created.
+    built = "window.cqSpin ="
     solid = write_html([("chart", g)], tmp_path / "a.html", "t", spin=spin)
-    assert "cqSpin" in solid.read_text(encoding="utf-8")
+    assert built in solid.read_text(encoding="utf-8")
 
     flat = write_slice_html([("chart", g)], tmp_path / "b.html", 50.0, "t")
-    assert "cqSpin" not in flat.read_text(encoding="utf-8")
+    assert built not in flat.read_text(encoding="utf-8")
 
 
 def test_both_rooms_are_handed_to_the_engine(tmp_path):
@@ -1308,3 +1314,60 @@ def test_turning_the_greys_off_does_not_put_the_shape_back():
     stand._follow_neutral(False)
     assert stand._opacity.value() == 38
     assert not stand._ideal_neutral.isChecked()
+
+
+# ------------------------------------------------------- the colour of white
+
+
+def test_the_paper_white_is_the_lightest_thing_the_gamut_reaches():
+    from gamutview import paper_white
+    lab = np.array([[95.0, -0.4, -3.4], [50.0, 20.0, 30.0],
+                    [10.0, 0.0, 0.0], [80.0, 5.0, 5.0]])
+    got = paper_white(lab)
+    assert got == (95.0, -0.4, -3.4)
+
+
+def test_a_tie_on_lightness_is_broken_towards_the_least_coloured():
+    """Or a paper is described as more tinted than it is, by a stray sample a
+    hundredth of a lightness away from the real white."""
+    from gamutview import paper_white
+    lab = np.array([[95.00, 8.0, 9.0], [94.99, 0.1, -0.2]])
+    assert paper_white(lab)[1] == 0.1
+
+
+def test_white_is_described_in_words_as_well_as_numbers():
+    """b* is the axis that decides it for paper: brighteners push a white
+    towards blue, age and rag content towards cream. a* moves far less, and
+    leading with it would name a paper "greenish" over a fraction of its
+    warmth."""
+    from gamutview import describe_white
+    assert describe_white([95, 0.0, 0.0]) == "neutral"
+    assert describe_white([95, 0.4, -0.6]) == "neutral", (
+        "under a chroma of 1 there is nothing to say, and saying something "
+        "invites choosing between two papers on noise")
+    assert describe_white([95, 0.0, 3.0]) == "warm"
+    assert describe_white([95, 0.0, 7.5]) == "very warm"
+    assert describe_white([95, 0.0, -4.0]) == "cool"
+    assert describe_white([95, 3.0, 0.5]) == "pink-tinted"
+    assert describe_white([95, -3.0, 0.5]) == "green-tinted"
+
+
+def test_the_two_demo_papers_really_do_differ_in_their_white():
+    """The finding that earned this its place: every other number in the
+    window is blind to it. Volume barely moves when a white shifts and
+    coverage only counts points in or out, so these two read as near enough
+    the same paper -- and one is a cool brightened white, the other a warm
+    cream, which is visible on every print."""
+    from pathlib import Path
+    import ti3gamut
+    from gamutview import build_gamut, describe_white, paper_white
+    demo = Path(__file__).resolve().parent.parent / "demo"
+    out = {}
+    for name in ("Glossy-paper.ti3", "Matte-paper.ti3"):
+        m = ti3gamut.read_ti3(demo / name)
+        g = build_gamut(m.lab, m.device, input_space="lab", space="lab")
+        out[name] = paper_white(g)
+    assert describe_white(out["Glossy-paper.ti3"]) == "cool"
+    assert describe_white(out["Matte-paper.ti3"]) == "slightly warm"
+    apart = abs(out["Glossy-paper.ti3"][2] - out["Matte-paper.ti3"][2])
+    assert apart > 4.0, f"only {apart:.1f} b* apart"

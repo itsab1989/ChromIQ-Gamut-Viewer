@@ -8954,7 +8954,8 @@ class GamutApp(QMainWindow):
         paper that cannot go dark loses shadow detail whatever its gamut
         volume says. Needs a lightness axis, so it is left blank in CIE XYZ.
         """
-        from gamutview import AXES, lightness_range
+        from gamutview import (AXES, describe_white, lightness_range,
+                               paper_white)
         if not self._slots or not AXES[self._space.currentData()]["cylindrical"]:
             self._range.setText("")
             return
@@ -8962,8 +8963,18 @@ class GamutApp(QMainWindow):
             lines = []
             for path, g, _m in self._slots:
                 dark, light = lightness_range(g)
+                # AND WHAT COLOUR THAT WHITE IS. Every other number in this
+                # window is blind to it -- volume barely moves when a white
+                # shifts, and coverage only counts points in or out -- so two
+                # papers can read as near-identical here while one is a cool
+                # brightened white and the other a warm cream, which is
+                # visible on every print at a glance. See paper_white().
+                lab = paper_white(g)
+                how = describe_white(lab)
+                tint = (" and neutral" if how == "neutral"
+                        else f" and {how} (a* {lab[1]:+.1f}, b* {lab[2]:+.1f})")
                 lines.append(f"{path.stem}: blacks reach L* {dark:.0f}, "
-                             f"paper white L* {light:.0f}")
+                             f"paper white L* {light:.0f}{tint}")
         except Exception:      # noqa: BLE001 — a readout must never crash a view
             self._range.setText("")
             return

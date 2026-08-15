@@ -1,5 +1,140 @@
 # Changelog
 
+## v2.12.0
+
+### 🩹 A see-through shape no longer tears itself apart
+
+Reported as "weird artifacts", "really looking like rough triangles", and
+"darker as soon as transparency is introduced" — three descriptions of one
+fault, and the middle one names it exactly.
+
+A shape drawn solid hides itself: the graphics card remembers the depth of
+what it has already painted and throws away anything further back. A shape
+drawn even *slightly* see-through does not. From the drawing library's own
+render loop:
+
+    depthMask(false); blendFunc(ONE, ONE_MINUS_SRC_ALPHA);
+    ... every see-through object drawn, in the order it sits in memory ...
+
+Depth **writing** is off for that pass, so a see-through shape never hides
+itself. Every triangle is blended in, near ones and far ones, in whatever
+order they happen to sit in the file — and with that blend, the last one to
+land on a pixel is the one that mostly shows. "Last in memory" has nothing to
+do with "nearest to the eye", so pieces of the **far** side punch through the
+near side in hard-edged, triangle-shaped patches.
+
+**Measured before anything was written**, on one paper at seven angles, at a
+*thousandth* of see-through — where nothing can possibly blend, so anything
+that changes is this and not transparency:
+
+| angle | unlike the solid picture | after ordering |
+|---|---|---|
+| 1.5, 1.5, 1.5 | 46.8% | 0.5% |
+| −1.8, 0.6, 0.4 | 84.0% | 0.3% |
+| 0.2, −2.0, 1.1 | 56.8% | 0.2% |
+| 1.0, 1.0, −1.7 | **92.1%** | 0.3% |
+| −0.9, −1.4, −0.9 | 0.9% | 0.3% |
+
+That last row is why it was only seen *sometimes*. And the brightness moves
+with it — 123.7 against the solid shape's 153.3 at one angle, 153.5 once
+ordered — so "it goes dark as soon as it is see-through" and "it looks sliced"
+were **one fault, not two**.
+
+Saved pages and the window both now put every see-through surface's triangles
+in far-to-near order before each frame, which is what that blend has always
+expected and never had.
+
+| what is drawn | unlike the solid picture, before → after |
+|---|---|
+| the shape itself | 51.2% → **0.8%** |
+| with its wires shown | 50.9% → **9.6%** |
+| the red-and-grey "cannot print" shape | 41.4% → **0.7%** |
+| a skin over a chart's patches | 25.9% → **3.8%** |
+| faded where two shapes agree | 51.7% → **1.8%** |
+| two shapes, each at its own strength | 58.1% → **10.5%** |
+
+**What it still cannot do, said plainly.** Triangles can only be ordered
+*within* one surface. Where two shapes cross, which one wins is decided by the
+order the traces were added, and no ordering of whole shapes can fix it: a
+matte paper sitting entirely inside a glossy one would need the two
+interleaved — glossy's back, matte's back, matte's front, glossy's front — and
+the library draws one whole surface at a time. That is the 10.5% in the last
+row above.
+
+### ⚡ And it is fast enough to keep up while the shape turns
+
+Working out the order costs **0.10 ms** for 19,230 triangles; handing it over
+is everything else. Two measured decisions:
+
+- **Buckets, not a comparison sort.** Depth is a number in a known range, so
+  the triangles are dropped into buckets in one pass instead of a sort asking
+  a function which of two is nearer 275,000 times.
+- **The normals are worked out once.** A vertex normal cannot change when the
+  triangles are reordered — same vertex, same neighbours, same answer — yet
+  the library recomputes every one on every handover. Supplying them takes
+  35.9 ms down to 15.4 ms at the largest size. It is written to match the
+  library's own calculation step for step, and that matters: an area-weighted
+  normal is the obvious way, saves just as much, and moved the picture by
+  1.17%. Matching its sine-of-angle weighting instead moves the picture by
+  **0.00%, worst pixel 0 levels**.
+
+| triangles | before | now |
+|---|---|---|
+| 978, one measured chart | 3.15 ms | **1.90 ms** |
+| 2,934, three papers | 4.65 ms | **3.71 ms** |
+| 21,186, three papers + Detail 40 | 31.19 ms | **16.94 ms** |
+
+Spinning, with the ordering live: 60 a second at 978 and at 5,310 triangles,
+56 at 19,230. It also never takes more than about a quarter of the time — the
+last handover is timed and the next made to wait three times as long, so a
+small shape is re-ordered every frame and a large one four or five times a
+second.
+
+### 🔍 The grey switch no longer deletes the fade
+
+Two switches, one quietly undoing the other. Greying a shape converts each of
+its colours to a grey of the same lightness — and dropped the fourth number,
+the fade, which is how "where two shapes agree" is drawn. Greying one of two
+shapes took its faded colours from **179 to none**, while the shape left alone
+kept all 308 of its own.
+
+### 🧻 What colour your paper white actually is
+
+Every other number in the window is blind to it. Volume barely moves when a
+white shifts and coverage only counts colours in or out, so two papers read as
+near enough the same while one is a cool, brightened white and the other a
+warm cream — a difference visible on every print, in every neutral, before
+anybody looks at a saturated colour at all. It is also the difference the M0,
+M1 and M2 measurement conditions exist for.
+
+The lightness line now reads, on the two demo papers:
+
+    Glossy-paper: blacks reach L* 4, paper white L* 94 and cool (a* -0.4, b* -3.4)
+    Matte-paper:  blacks reach L* 13, paper white L* 92 and slightly warm (a* -0.1, b* +1.1)
+
+In words *and* in numbers, because "b* +3.4" tells somebody who already knows
+and "slightly warm" tells everybody. Ties on lightness are broken towards the
+least coloured, so a stray sample a hundredth of a lightness away can never
+make a paper sound more tinted than it is.
+
+### 📱 The phone fix from v2.11.0 is now proved, not assumed
+
+v2.11.0 added one viewport line to every saved page on the strength of the
+standard plus a test that the line was present — and it shipped flagged as the
+change most likely to alter what a phone shows and the one verified least.
+
+Measured now, through the browser engine's own phone emulation, the same page
+with the line and with it cut out:
+
+| | laid out at | the narrow-screen rules |
+|---|---|---|
+| with the line | **390 px** | fire |
+| without it | **980 px** | never fire |
+
+On a 390-point screen that is a **0.40× squeeze** — exactly the figure that
+had only been asserted. That is what made the controls tiny, and why every
+narrow-screen rule written for them stayed silent.
+
 ## v2.11.0
 
 ### 🫥 Fade away where two shapes agree — or where they differ

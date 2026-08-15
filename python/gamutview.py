@@ -702,6 +702,70 @@ def lightness_range(gamut) -> tuple[float, float]:
     return float(v[:, 0].min()), float(v[:, 0].max())
 
 
+def paper_white(gamut) -> tuple[float, float, float]:
+    """The colour of the lightest thing the gamut reaches, as (L*, a*, b*).
+
+    WHY THIS IS NOT ANSWERED BY THE LIGHTNESS RANGE, AND WHY IT MATTERS MORE
+    THAN ANY OF THE OTHER NUMBERS FOR CHOOSING BETWEEN TWO PAPERS.
+
+    Every other figure this module produces is blind to it. Volume is a size
+    and barely moves when the white shifts. Coverage counts points in or out.
+    Both would call two papers all but identical when one is a cool, blue
+    white full of optical brightener and the other a warm, cream rag -- and
+    that difference is visible on the wall at a glance, on every print, in
+    every neutral, before anybody looks at a saturated colour at all.
+
+    It is also the difference the measurement conditions exist for: a paper
+    with optical brighteners reads differently under M0, M1 and M2 precisely
+    because its white is not neutral, so the number here is the one that says
+    whether that distinction applies to this paper.
+
+    The lightest VERTEX is the honest answer to "what is the paper", because
+    the paper is the substrate showing through with no ink on it, which is by
+    construction the lightest thing the printer can make. Ties on L* are
+    broken towards the least coloured, so a paper is never described as more
+    tinted than it is by a stray sample a hundredth of a lightness apart.
+    """
+    v = np.asarray(gamut.vertices if hasattr(gamut, "vertices") else gamut,
+                   float)
+    if len(v) < 1:
+        raise ValueError("an empty gamut has no paper white")
+    top = v[:, 0].max()
+    near = v[v[:, 0] >= top - 0.05]
+    pick = near[np.hypot(near[:, 1], near[:, 2]).argmin()]
+    return float(pick[0]), float(pick[1]), float(pick[2])
+
+
+#: How far a white can sit from neutral before it is worth remarking on.
+#: A chroma of about 1 is around the smallest colour difference a good eye
+#: finds in a large flat neutral area seen on its own, which is what a sheet
+#: of paper is; below it there is nothing to say and saying something would
+#: invite somebody to choose between two papers on noise.
+WHITE_IS_NEUTRAL = 1.0
+
+
+def describe_white(lab) -> str:
+    """The paper white in words -- warm, cool, or neutral, and how strongly.
+
+    In plain language rather than in a* and b*, because "b* +3.4" tells
+    somebody who already knows, and "slightly warm" tells everybody. The two
+    are shown together so neither has to be trusted alone.
+    """
+    _L, a, b = lab
+    chroma = float(np.hypot(a, b))
+    if chroma < WHITE_IS_NEUTRAL:
+        return "neutral"
+    # b* IS THE AXIS THAT DECIDES IT for paper. Yellow-blue is where papers
+    # actually differ: optical brighteners push a white towards blue, age and
+    # rag content push it towards cream. a* moves far less, and leading with
+    # it would name a paper "greenish" over a fraction of what its warmth is.
+    strength = ("very " if chroma >= 6.0 else
+                "" if chroma >= 2.5 else "slightly ")
+    if abs(b) >= abs(a):
+        return f"{strength}{'warm' if b > 0 else 'cool'}"
+    return f"{strength}{'pink' if a > 0 else 'green'}-tinted"
+
+
 def hue_reach(gamut, families=HUE_FAMILIES) -> dict[str, float]:
     """The furthest each hue family reaches from the grey axis.
 
