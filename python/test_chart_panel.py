@@ -242,7 +242,7 @@ def _ink_grid(steps=4):
 
 
 def test_a_chart_in_ink_amounts_draws_with_no_profile_and_no_shape(app):
-    """Basti's question in one test: a patch set, alone, on real axes.
+    """The question that started this, in one test: a patch set, alone, on real axes.
 
     No Lab is passed at all, because none exists — nothing has said what these
     ink amounts print as. The dots still appear, at the numbers the file

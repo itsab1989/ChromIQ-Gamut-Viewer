@@ -4316,7 +4316,7 @@ class GamutApp(QMainWindow):
         self._update_btn.clicked.connect(lambda: self._check_updates(asked=True))
         v.addWidget(self._update_btn)
         self._auto_update = QCheckBox("Look for a newer version when the app starts", col)
-        # ON by default, at Basti's direction. It is the one thing here that
+        # ON by default, and deliberately. It is the one thing here that
         # reaches the network, so it is named plainly, it is one click to turn
         # off, and it asks the releases page for a version number and nothing
         # else -- no account, no identifier, nothing about the machine, the

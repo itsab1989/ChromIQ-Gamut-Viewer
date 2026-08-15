@@ -1,6 +1,6 @@
 # Design — opening a `.ti1` / `.ti2` chart, and checking it against a profile
 
-**Status: built and shipped in v2.2.0.** Basti's ruling, 2026-08-15, is
+**Status: built and shipped in v2.2.0.** The maintainer's ruling, 2026-08-15, is
 recorded in §0. §10 records what the real files turned out to be, which is not
 what §4 and §5 assumed — four of the assumptions here were wrong, and every one
 of them was found by opening an actual file rather than by reasoning about the
