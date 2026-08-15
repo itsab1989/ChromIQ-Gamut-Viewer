@@ -1,5 +1,56 @@
 # Changelog
 
+## v2.7.0
+
+### 🔴 The key beside the picture was a decoration, not a switch
+
+Reported from a phone, and it turned out to be three faults sitting on top of
+each other. All of them are in the key — the names under the shape that the
+README tells you to click.
+
+**The outline's little line was invisible, in exports and in the window
+itself.** The loop that walks a shape's triangle edges called its edge `key`,
+which is also the name of the argument holding *the colour the key is drawn
+in*. So the colour was overwritten with the last edge visited — a pair of
+vertex numbers like `(600, 610)`. Handed numbers instead of a colour, the
+drawing library falls back to black: **1.11:1 against the dark page**, which
+is nothing at all. One word, and it had been there the whole time. Now
+**7.42:1**.
+
+**Clicking a name switched nothing.** The keys are separate zero-point traces
+— they have to be, or a mesh's key is drawn with the scene's own lighting and
+disappears — but nothing joined them to the shape they name. Measured:
+clicking *Glossy-paper* hid the one-point proxy and left the 914-vertex mesh
+fully on screen. Every key is now tied to its shape, so clicking hides it and
+double-clicking shows it on its own.
+
+**A coloured outline keyed itself on its first colour band**, and the bands
+are sorted by colour, so `rgb(0,0,0)` sorted first and it keyed on black every
+time. It now takes a colour that represents the cage and can still be seen.
+
+### 🔴 On a phone the controls sat on top of the key
+
+The strip along the bottom was fixed to the bottom of the window, which is
+exactly the band the drawing library puts the key in. Measured at five
+viewports it covered **two rows on a desktop and all four on a phone**, where
+it was also wider than the screen.
+
+It sits under the picture now rather than floating over it, so the room it
+needs is reserved automatically — one line or two, at any width — and it
+cannot cover anything at any size. Two things came out of the same
+measurement:
+
+- **The picture had to be told it was shorter.** A plot measures its box once,
+  when it is created; adding the strip took about seventy pixels off the
+  bottom and the key went on being drawn where it would have gone in the
+  taller box — straight back over the strip.
+- **Plotly's own toolbar sat on the caption**, 2,464 square pixels of buttons
+  over the words on a phone. It is hidden below 1024px, where the caption
+  needs the whole width and a finger does the zooming anyway.
+
+All ten showcase pages are now checked at five viewports — iPhone SE through
+desktop — for anything covering anything else.
+
 ## v2.6.0
 
 ### 🔴 Save this view wrote a different view

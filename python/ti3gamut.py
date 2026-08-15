@@ -403,10 +403,12 @@ def _rings(gamut, name: str, count: int, colour: str, width: float = 1.5,
     rings = go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
                          line=dict(color=colour, width=width),
                          name=f"{name} (rings inside)",
+                         legendgroup=f"{name}-rings",
                          showlegend=key is None, hoverinfo="name")
     if key is None:
         return [rings]
-    return [rings, _legend_line(f"{name} (rings inside)", key)]
+    return [rings, _legend_line(f"{name} (rings inside)", key,
+                                f"{name}-rings")]
 
 
 def _band(colour: str, steps: int = 32) -> str:
@@ -420,7 +422,8 @@ def _band(colour: str, steps: int = 32) -> str:
 
 
 def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
-           paint: str = "plain", index: int = 0, key: str | None = None):
+           paint: str = "plain", index: int = 0, key: str | None = None,
+           page: str = "#111111"):
     """The triangle edges of a gamut, as a wire cage.
 
     A solid shape hides whatever is inside it. Drawn as a cage instead, an
@@ -444,21 +447,32 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
     xs, ys, zs = [], [], []
     for tri in f:
         for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
-            key = (a, b) if a < b else (b, a)
-            if key in seen:
+            # `edge`, NOT `key`. It used to be called key, which is also the
+            # name of this function's own argument -- the colour the legend
+            # key is to be drawn in. So by the time the loop finished, that
+            # colour had been overwritten with the last edge it happened to
+            # visit, a pair of vertex numbers like (600, 610). Handed a pair
+            # of numbers instead of a colour, the drawing library falls back
+            # to black, which is why the little line beside "(outline)" in
+            # the key has been invisible on every dark page and in the
+            # window itself. Reported from a phone and then from the app.
+            edge = (a, b) if a < b else (b, a)
+            if edge in seen:
                 continue
-            seen.add(key)
+            seen.add(edge)
             xs += [v[a, 0], v[b, 0], None]
             ys += [v[a, 1], v[b, 1], None]
             zs += [v[a, 2], v[b, 2], None]
     if paint == "plain":
         cage = go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
                             line=dict(color=colour, width=width),
-                            name=f"{name} (outline)", showlegend=key is None,
-                            hoverinfo="name")
+                            name=f"{name} (outline)",
+                            legendgroup=f"{name}-outline",
+                            showlegend=key is None, hoverinfo="name")
         if key is None:
             return [cage]
-        return [cage, _legend_line(f"{name} (outline)", key)]
+        return [cage, _legend_line(f"{name} (outline)", key,
+                                   f"{name}-outline")]
 
     per_vertex = _paint_vertices(gamut, paint, index)
     if per_vertex is None:                       # "true": each point's colour
@@ -468,10 +482,12 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
     seen_again = set()
     for tri in f:
         for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
-            key = (a, b) if a < b else (b, a)
-            if key in seen_again:
+            # `edge` here too, for the same reason: `key` is this function's
+            # colour argument and the loop above used to eat it.
+            edge = (a, b) if a < b else (b, a)
+            if edge in seen_again:
                 continue
-            seen_again.add(key)
+            seen_again.add(edge)
             # Group by a COARSENED colour: one trace per distinct colour gave
             # 491 traces for a single cage, which the browser draws slowly for
             # a picture the eye reads as a smooth gradient anyway. Rounding
@@ -488,7 +504,15 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
             x=bx, y=by, z=bz, mode="lines",
             line=dict(color=edge_colour, width=width),
             name=f"{name} (outline)", legendgroup=f"{name}-outline",
-            showlegend=(i == 0), hoverinfo="name"))
+            showlegend=False, hoverinfo="name"))
+    # A KEY OF ITS OWN, RATHER THAN THE FIRST BAND'S COLOUR. The bands are
+    # sorted by their colour and "rgb(0,0,0)" sorts first, so a coloured cage
+    # keyed on band zero took pure black every time -- 1.11:1 against the dark
+    # page, which is invisible. Reported from a phone, then measured: the
+    # outline key on two published pages could not be seen at all.
+    traces.append(_legend_line(f"{name} (outline)",
+                               _legend_swatch(per_vertex, page),
+                               f"{name}-outline"))
     return traces
 
 
@@ -806,7 +830,7 @@ def _caption(text: str, colours) -> dict:
                   family='Menlo, Consolas, "Courier New", monospace'))
 
 
-def _legend_line(name: str, colour: str):
+def _legend_line(name: str, colour: str, group: str | None = None):
     """A legend key for a cage, in a colour of its own.
 
     The cage itself is drawn light, because hundreds of thin lines on a pale
@@ -820,11 +844,11 @@ def _legend_line(name: str, colour: str):
 
     return go.Scatter3d(
         x=[None], y=[None], z=[None], mode="lines",
-        line=dict(color=colour, width=4),
+        line=dict(color=colour, width=4), legendgroup=group or name,
         name=name, showlegend=True, hoverinfo="skip")
 
 
-def _legend_proxy(name: str, colour: str):
+def _legend_proxy(name: str, colour: str, group: str | None = None):
     """A legend key that is not shaded by the scene's lighting.
 
     Plotly draws a mesh's own key by rendering a tiny piece of that mesh --
@@ -841,6 +865,7 @@ def _legend_proxy(name: str, colour: str):
     return go.Scatter3d(
         x=[None], y=[None], z=[None], mode="markers",
         marker=dict(size=11, color=colour, line=dict(width=0)),
+        legendgroup=group or name,
         name=name, showlegend=True, hoverinfo="skip")
 
 
@@ -957,6 +982,7 @@ def _mesh(gamut, name: str, opacity: float, wireframe: bool,
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
         vertexcolor=colours, opacity=opacity, name=name, showlegend=False,
+        legendgroup=name,
         # Only the legend key uses this; vertexcolor paints the surface.
         color=_legend_swatch(chosen if chosen is not None else gamut.colors,
                              page),
@@ -1025,8 +1051,10 @@ def _chart_skin(points, colours, name: str, style: str, opacity: float,
     # mesh's own key by rendering a scrap of that mesh, lighting and opacity
     # included, so at a low opacity on a dark page the marker beside the name
     # all but disappears.
+    common["legendgroup"] = f"{name}-skin"
     return [go.Mesh3d(**common),
-            _legend_proxy(f"{name} — a skin over the patches", key)]
+            _legend_proxy(f"{name} — a skin over the patches", key,
+                          f"{name}-skin")]
 
 
 def _patch_cloud(lab, name: str, space: str = "lab"):
@@ -1117,9 +1145,11 @@ def _chart_cloud(lab, name: str, outside=None, space: str = "lab",
             # cure: a proxy carrying a colour that represents the cloud and
             # can still be seen. Reported from the real window.
             showlegend=False, hoverinfo="name",
+            legendgroup=f"{name}-printed",
             name=f"{name} — to be printed"))
         traces.append(_legend_proxy(f"{name} — to be printed",
-                                    _legend_swatch(kept, page)))
+                                    _legend_swatch(kept, page),
+                                    f"{name}-printed"))
     if outside.any() and show_outside:
         traces.append(go.Scatter3d(
             x=v[outside, 0], y=v[outside, 1], z=v[outside, 2], mode="markers",
@@ -1132,8 +1162,10 @@ def _chart_cloud(lab, name: str, outside=None, space: str = "lab",
             # keys came out three different sizes. A key is a key whatever the
             # dots are doing.
             showlegend=False, hoverinfo="name",
+            legendgroup=f"{name}-outside",
             name=f"{name} — outside"))
-        traces.append(_legend_proxy(f"{name} — outside", _LOST))
+        traces.append(_legend_proxy(f"{name} — outside", _LOST,
+                                    f"{name}-outside"))
     if not with_positions:
         return traces
     # THE POINTS A SKIN MAY GO OVER: the ones that survive, never the lost
@@ -1653,19 +1685,25 @@ window.cqSpinControls = function (settings) {
   // down with it: 2.4:1 even on the light page, which is under what anybody
   // with ordinary eyesight can read. Only the pill fades now, and at three
   // quarters it still clears 4.5:1 with the brightest possible shape behind.
+  // IN THE FLOW, NOT FLOATING OVER THE PICTURE. It used to be fixed to the
+  // bottom of the window, which is exactly the band the drawing library puts
+  // the key in -- so the strip sat on top of the names, and those names are
+  // switches a reader is told to click. Measured at five viewports it covered
+  // two rows on a desktop and all four on a phone, where it was also wider
+  // than the screen and wrapped to two lines. Reported from a phone.
+  //
+  // Sitting under the picture instead, whatever height it needs is reserved
+  // for it automatically -- one line or two, at any width -- so it cannot
+  // cover anything at any size. No breakpoint, no reserved strip of pixels to
+  // keep in step with a wrapping rule, and nothing to get wrong on the next
+  // screen size somebody invents.
   css.textContent =
-    ".cq-spin-bar{position:fixed;left:50%;transform:translateX(-50%);"
-    + "bottom:14px;display:flex;gap:6px;align-items:center;z-index:9;"
+    ".cq-spin-bar{flex:0 0 auto;display:flex;gap:6px;align-items:center;"
+    + "justify-content:center;flex-wrap:wrap;margin:0 auto;max-width:100%;"
     + "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
-    + "padding:6px 8px;border-radius:999px;color:" + ink + ";"
-    + "background:" + tint(paper, 0.75) + ";"
-    + "border:1px solid " + tint(ink, 0.22) + ";"
-    + "transition:background .2s,border-color .2s}"
-    + ".cq-spin-bar:hover{background:" + tint(paper, 0.94) + ";"
-    + "border-color:" + tint(ink, 0.34) + "}"
-    // A TOUCH SCREEN HAS NO HOVER. Left to the rule above, every phone and
-    // tablet would get the resting look for ever and never the clearer one.
-    + "@media (hover:none){.cq-spin-bar{background:" + tint(paper, 0.94) + "}}"
+    + "padding:8px 10px;color:" + ink + ";"
+    + "background:" + paper + ";"
+    + "border-top:1px solid " + tint(ink, 0.14) + "}"
     + ".cq-spin-bar button{font:inherit;cursor:pointer;border-radius:999px;"
     + "padding:5px 10px;border:1px solid " + tint(ink, 0.45) + ";"
     + "background:transparent;color:inherit}"
@@ -1678,6 +1716,28 @@ window.cqSpinControls = function (settings) {
     + ".cq-spin-bar span{opacity:.85;min-width:64px;text-align:center}";
   document.head.appendChild(css);
   document.body.appendChild(bar);
+
+  // AND NOW TELL THE DRAWING LIBRARY THE PICTURE IS SHORTER. A plot measures
+  // its box once, when it is created, and only looks again on a window
+  // resize. Adding this strip takes about seventy pixels off the bottom of
+  // that box -- so the key went on being drawn where it would have gone in
+  // the taller one, which put it straight back over the strip. The layout was
+  // right and the picture had not been told. Same trap the two-room page
+  // documents, on the page that had no resize call of its own.
+  function fit() {
+    if (!window.Plotly) return;
+    (settings.ids || []).forEach(function (id) {
+      var gd = document.getElementById(id);
+      if (gd) window.Plotly.Plots.resize(gd);
+    });
+  }
+  fit();
+  window.setTimeout(fit, 60);          // after the strip's own fonts land
+  window.addEventListener("resize", fit);
+  // Turning a phone sideways is a resize the event above can miss.
+  window.addEventListener("orientationchange", function () {
+    window.setTimeout(fit, 120);
+  });
 
   function push() {
     window.cqSpin.set(
@@ -1783,7 +1843,10 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
 <title>{_t} — ChromIQ Gamut Viewer</title><style>
  html,body {{ margin:0; padding:0; height:100%; overflow:hidden;
               background:{colours['page']}; }}
- .row  {{ display:flex; height:100%; width:100%; }}
+ body  {{ display:flex; flex-direction:column; }}
+ .row  {{ display:flex; flex:1 1 auto; min-height:0; width:100%; }}
+ @media (max-width:1024px) {{ .modebar {{ display:none !important; }} }}
+ @media (max-width:820px) {{ .gtitle {{ font-size:11px !important; }} }}
  .half {{ flex:1 1 0; min-width:0; display:flex; flex-direction:column; }}
  .half + .half {{ border-left:1px solid {colours['grid']}; }}
  .cap  {{ height:22px; line-height:22px; padding:0 10px; font-size:12px;
@@ -1830,8 +1893,34 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     # exists. So: hidden when there is only a picture, scrollable when there
     # is something to scroll to.
     _overflow = "auto" if notes else "hidden"
+    # A COLUMN: the picture, then the figures, then the controls. Laying the
+    # page out rather than floating things over it is what makes the strip
+    # unable to cover the key, at any width -- see _SPIN_CONTROLS_JS.
     style = (f"<style>html,body{{background:{_PAGE_BACKGROUND};margin:0;"
-             f"padding:0;overflow:{_overflow};}}</style>")
+             f"padding:0;height:100%;overflow:{_overflow};}}"
+             f"body{{display:flex;flex-direction:column;}}"
+             f"body > div:first-of-type{{flex:1 1 auto;min-height:0;}}"
+             # THE TOOLBAR SAT ON THE CAPTION on a narrow screen -- 2,464
+             # square pixels of buttons straight over the words on a phone.
+             #
+             # It goes rather than moves, under 1024px, and that is a judgement
+             # worth writing down. The toolbar holds zoom, pan, reset and
+             # save-an-image: on a touch screen the first three are what
+             # fingers already do, reset is on the strip along the bottom, and
+             # the icons are 22px targets. So it costs a phone reader almost
+             # nothing and gives back the whole width of the caption. The
+             # threshold is 1024 rather than a phone width because the
+             # caption is not a fixed size either: the ink-amount page's runs
+             # to 821px, which reaches a top-right toolbar on a tablet while
+             # a shorter one would not. Above that the two have never met.
+             f"@media (max-width:1024px){{.modebar{{display:none !important;}}}}"
+             # The caption is one line of SVG text that cannot wrap, and it is
+             # the same 455px wide whatever the screen -- so on a phone the
+             # end of it simply falls off. A smaller face does not fix that,
+             # it only means more of the sentence survives.
+             f"@media (max-width:820px){{.gtitle{{font-size:11px !important;}}}}"
+             f"@media (max-width:480px){{.gtitle{{font-size:10px !important;}}}}"
+             f"</style>")
     if notes:
         # AND THE PICTURE HAS TO MAKE ROOM FOR THEM. Letting the page scroll
         # is not enough on its own: the scene is the full height of the
@@ -1842,16 +1931,15 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
         # from the start, where they can simply be read.
         #
         # THE WRAPPER, NOT THE PLOT. Plotly puts its graph div inside a plain
-        # <div style="height:100%"> of its own, so shrinking the inner one
-        # leaves the outer one still filling the window and the figures still
-        # below it -- which is what the first attempt at this did, and the
-        # measurement said so before it was published. The inner div is 100%
-        # of the outer, so the outer is the only one that has to be told.
+        # <div style="height:100%"> of its own, and that inline height would
+        # otherwise win over the column's sizing and push the figures off the
+        # bottom again. Letting it flex instead hands the leftover height to
+        # the picture and the height it asks for to everything else.
         #
         # !important because that height is written inline, and an inline
         # style beats a rule that does not say so.
         style += ("<style>body > div:first-of-type"
-                  "{height:76vh !important;}</style>")
+                  "{height:auto !important;}</style>")
     if "</head>" in html:
         html = html.replace("</head>", style + "</head>", 1)
     else:
@@ -2053,13 +2141,13 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                                 page=c["page"], light=light))
             fig.add_trace(_legend_proxy(
                 name, _legend_swatch(_paint_vertices(g, paint_i, i)
-                                     or g.colors, c["page"])))
+                                     or g.colors, c["page"]), name))
         if how in ("mesh", "solid+mesh"):
             for trace in _edges(g, name, colour=c["wire"],
                                 width=1.0 if how == "mesh" else 0.7,
                                 paint=("plain" if mesh_paint_i == "plain"
                                        else paint_i),
-                                index=i, key=c["mark"]):
+                                index=i, key=c["mark"], page=c["page"]):
                 fig.add_trace(trace)
         if rings_i:
             for trace in _rings(g, name, rings_i, c["wire"], key=c["mark"]):

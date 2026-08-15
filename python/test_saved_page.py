@@ -128,10 +128,40 @@ def test_the_strip_never_inherits_its_colour():
     assert "var ink = settings.ink" in ti3gamut._SPIN_CONTROLS_JS
 
 
-def test_a_touch_screen_gets_the_clearer_look():
-    """There is no hover on a phone, so a rule that only reveals the strip on
-    hover leaves every touch device with the resting one for ever."""
-    assert "@media (hover:none)" in ti3gamut._SPIN_CONTROLS_JS
+def test_the_strip_is_not_revealed_by_hovering():
+    """There is no hover on a phone. The strip is simply there, at full
+    strength, on its own background -- so there is no resting state for a
+    touch device to be stuck in."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert ".cq-spin-bar:hover" not in js
+    assert "opacity:.35" not in js
+
+
+def test_the_strip_cannot_cover_the_key():
+    """THE DEFECT, REPORTED FROM A PHONE: the strip was fixed to the bottom of
+    the window, which is the band the drawing library puts the key in -- so it
+    sat on top of names that a reader is told to click. Measured at five
+    viewports it covered two rows on a desktop and all four on a phone, where
+    it was also wider than the screen and wrapped onto two lines.
+
+    In the flow it cannot overlap anything at any width, which is why this
+    checks for the absence of the positioning rather than for a clearance."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "position:fixed" not in js
+    assert "flex-wrap:wrap" in js     # two lines when it must, and room for it
+
+
+def test_the_page_is_laid_out_as_a_column(tmp_path):
+    page = _page(tmp_path)
+    assert "display:flex;flex-direction:column;" in page
+    assert "body > div:first-of-type{flex:1 1 auto;min-height:0;}" in page
+
+
+def test_the_toolbar_is_moved_off_the_caption_on_a_narrow_screen(tmp_path):
+    """Plotly's own toolbar sits top-right and the caption runs under it: on a
+    phone that was 2,464 square pixels of buttons over the words. The toolbar
+    has somewhere else to go; one line of SVG text that cannot wrap does not."""
+    assert "@media (max-width:820px)" in _page(tmp_path)
 
 
 def test_a_keyboard_can_see_where_it_is():
@@ -197,7 +227,7 @@ def test_the_page_scrolls_when_the_numbers_are_under_it(tmp_path):
     # AND THE PICTURE MAKES ROOM. Letting it scroll is not enough on its own:
     # a 3D scene the full height of the window takes the wheel for zooming, so
     # there is nowhere left to scroll from and the figures stay out of reach.
-    assert "body > div:first-of-type{height:76vh !important;}" in page
+    assert "body > div:first-of-type{height:auto !important;}" in page
 
 
 def test_the_strip_does_not_sit_on_top_of_the_numbers(tmp_path):
@@ -226,3 +256,75 @@ def test_a_saved_page_gets_both():
     script = ti3gamut._spin_script(["scene0"], SPIN, "dark", True)
     assert "window.cqSpin" in script
     assert "cqSpinControls" in script
+
+
+# --------------------------------------------------------------------------
+# The key beside the picture
+# --------------------------------------------------------------------------
+
+def _cage(paint="plain", key="#9aa3b2"):
+    """A tiny gamut's outline traces, as build_figure would ask for them."""
+    import numpy as np
+    import gamutview
+
+    pts = np.array([[50.0, 0, 0], [60, 20, 0], [40, 0, 20], [50, 10, 30],
+                    [45, -20, 5], [55, 5, -20]])
+    g = gamutview.build_gamut(pts, space="lab", input_space="lab")
+    return ti3gamut._edges(g, "A paper", paint=paint, key=key,
+                           page="#111111")
+
+
+def test_the_outline_key_is_drawn_in_the_colour_it_was_given():
+    """THE DEFECT, REPORTED FROM A PHONE AND THEN FROM THE APP: the loop that
+    walks the triangle edges called its edge `key` -- the same name as this
+    function's own argument, which is the colour the key is to be drawn in. So
+    the colour was overwritten with the last edge visited, a pair of vertex
+    numbers like (600, 610). Handed numbers instead of a colour, the drawing
+    library falls back to black, and the little line beside "(outline)" was
+    invisible on every dark page and in the window itself."""
+    for trace in _cage(paint="plain", key="#9aa3b2"):
+        if trace.showlegend:
+            assert trace.line.color == "#9aa3b2", (
+                f"the outline key is drawn in {trace.line.color!r}, which is "
+                "not the colour it was given")
+
+
+def test_a_coloured_outline_gets_a_key_that_can_be_seen():
+    """Its key used to be the first colour BAND, and the bands are sorted by
+    colour -- so "rgb(0,0,0)" sorted first and a coloured cage keyed on black
+    every time. Measured at 1.11:1 against the dark page."""
+    keys = [t for t in _cage(paint="true", key="#9aa3b2") if t.showlegend]
+    assert len(keys) == 1, "a cage should put exactly one row in the key"
+    assert str(keys[0].line.color).lower() not in ("#000000", "rgb(0,0,0)",
+                                                   "black")
+
+
+def test_every_key_is_tied_to_the_thing_it_names():
+    """A key is a switch -- the README tells the reader to click it. The keys
+    here are separate zero-point traces, so without a legendgroup joining them
+    to the shape, clicking one hid the invisible proxy and left the shape on
+    screen. Measured: clicking "Glossy-paper" set the 1-point proxy to
+    legendonly and left the 914-vertex mesh fully visible."""
+    for paint in ("plain", "true"):
+        traces = _cage(paint=paint)
+        groups = {t.legendgroup for t in traces}
+        assert len(groups) == 1 and None not in groups, (
+            f"{paint}: the cage and its key are in groups {groups}, so "
+            "clicking the key cannot switch the cage")
+
+
+def test_the_proxy_makers_take_a_group():
+    import inspect
+
+    for fn in (ti3gamut._legend_line, ti3gamut._legend_proxy):
+        assert "group" in inspect.signature(fn).parameters
+        assert fn("a", "#fff", "g").legendgroup == "g"
+        # Falling back to the name keeps a lone key working on its own.
+        assert fn("a", "#fff").legendgroup == "a"
+
+
+def test_the_toolbar_gets_out_of_the_way_of_a_long_caption(tmp_path):
+    """Plotly's toolbar sits top-right; the caption is one line of SVG text
+    that cannot wrap and runs to 821px on the ink-amount page. On a tablet the
+    two met. Above 1024px they never have."""
+    assert "@media (max-width:1024px)" in _page(tmp_path)
