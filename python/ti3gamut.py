@@ -982,7 +982,8 @@ def _patch_cloud(lab, name: str, space: str = "lab"):
         name=f"{name} — patches", showlegend=True, hoverinfo="name")
 
 
-def _chart_cloud(lab, name: str, outside=None, space: str = "lab"):
+def _chart_cloud(lab, name: str, outside=None, space: str = "lab",
+                 device=None):
     """A chart's patches: dots where a profile says each one would land.
 
     DOTS, NEVER A SURFACE, and that is the whole design rather than a
@@ -995,17 +996,46 @@ def _chart_cloud(lab, name: str, outside=None, space: str = "lab"):
     patches that fall beyond the shape being judged, those are drawn in the
     same red this application uses everywhere for "out of reach", in a ring
     twice the size — the eye should find them without reading a number.
+
+    IN INK AMOUNTS the dots are positioned from *device* instead — the three
+    numbers the file actually holds, 0 to 100 — and no profile is needed to
+    put them somewhere true. A profile is still worth having, because it is
+    the only thing that can say what colour each one will come out; without
+    one the dots are painted with the ink amounts read as screen colour,
+    which is a legend, not a prediction, and the window says so beside them.
     """
     import plotly.graph_objects as go
     from gamutview import lab_to_xyz, xyz_to_srgb
 
-    lab = np.asarray(lab, float)
-    v = _to_plot_space(lab, space)
-    rgb = xyz_to_srgb(lab_to_xyz(lab, "D50"), "D50")
+    device_space = space == "rgb"
+    if device_space:
+        if device is None:
+            raise ValueError(
+                "drawing a chart in ink amounts needs the device values; "
+                "Lab cannot be turned back into ink without inverting a "
+                "profile, and this window does not pretend it can")
+        v = np.asarray(device, float)
+        n = len(v)
+    else:
+        if lab is None:
+            raise ValueError(
+                f"a chart drawn in {space} needs a profile to say where its "
+                f"patches land; only ink amounts can be drawn without one")
+        lab = np.asarray(lab, float)
+        v = _to_plot_space(lab, space)
+        n = len(lab)
+
+    # Colour comes from the profile's answer whenever there is one, in every
+    # space. Only a chart drawn in ink amounts with no profile falls back to
+    # the ink amounts as screen colour.
+    if lab is not None:
+        rgb = xyz_to_srgb(lab_to_xyz(np.asarray(lab, float), "D50"), "D50")
+    else:
+        rgb = np.clip(np.asarray(device, float) / 100.0, 0.0, 1.0)
     colours = [f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
                for r, g, b in rgb]
     if outside is None:
-        outside = np.zeros(len(lab), dtype=bool)
+        outside = np.zeros(n, dtype=bool)
     outside = np.asarray(outside, dtype=bool)
 
     traces = []
@@ -1561,17 +1591,27 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                  depth: float = 0.35, mesh_paint: str = "plain",
                  rings: int = 0, per_shape=None, neutrals=None,
                  ideal_neutrals: bool = False, chart=None,
-                 light=None, grid: bool = True):
+                 light=None, grid: bool = True, space=None):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
     are shown so the inner one stays visible). *points* also plots every
     measured patch, which shows where the chart sampled densely and where it
     left the boundary to guesswork.
+
+    *space* names the axes when there is nothing to read them off. Normally
+    the first gamut says which space everything was built in; a chart drawn
+    in ink amounts has no gamut beside it at all, and defaulting to Lab there
+    would label a cube of ink percentages a*, b*, L*.
     """
     import plotly.graph_objects as go
     c = SCENE_COLOURS["light" if mode == "light" else "dark"]
-    _axes_space = gamuts[0][1].space if gamuts else "lab"
+    _axes_space = space or (gamuts[0][1].space if gamuts else "lab")
+    if gamuts and space and gamuts[0][1].space != space:
+        raise ValueError(
+            f"asked to label the axes {space!r} while the shapes were built "
+            f"in {gamuts[0][1].space!r}; that would read the picture against "
+            f"the wrong axes")
     fig = go.Figure()
     base = opacity if opacity is not None else (1.0 if len(gamuts) == 1 else 0.55)
     for i, (name, g) in enumerate(gamuts):
@@ -1624,9 +1664,13 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
     # through a profile is a picture in its own right, and returning an empty
     # scene for one would look like a fault.
     if chart is not None:
-        chart_name, chart_lab, chart_outside = chart
+        # Four items since ink amounts became drawable; the fourth is the
+        # device values. Older three-item callers still work and simply
+        # cannot be drawn in ink amounts, which is what they meant.
+        chart_name, chart_lab, chart_outside = chart[:3]
+        chart_device = chart[3] if len(chart) > 3 else None
         for trace in _chart_cloud(chart_lab, chart_name, chart_outside,
-                                  _axes_space):
+                                  _axes_space, device=chart_device):
             fig.add_trace(trace)
     from gamutview import AXES
     # The axes are named for the space the gamuts were built in, so a

@@ -491,3 +491,90 @@ def test_a_four_ink_chart_goes_through_a_four_ink_profile(tmp_path):
     assert np.isfinite(placed.lab).all()
     report = chart.outside_report(placed.lab, profile_gamut(profile, steps=9))
     assert report.n_beyond == 0, (report.n_beyond, report.worst)
+
+
+# --------------------------------------------------------------------------
+# Ink amounts — a chart drawn on its own, with no profile at all
+# --------------------------------------------------------------------------
+
+def test_ink_amounts_are_the_files_own_numbers_and_need_no_profile():
+    """The whole point of the view: nothing here is predicted or assumed.
+
+    A chart file holds the amounts about to be asked of the printer. Those are
+    true of the chart alone — they do not change with the printer, the paper
+    or the profile — so they can be drawn straight away, and the numbers on
+    the axes are the numbers in the file.
+    """
+    c = _grid_chart(3)
+    positions = chart.device_positions(c)
+    assert positions.shape == (27, 3)
+    assert positions.min() == 0.0 and positions.max() == 100.0
+    # Exactly the file's own values, scaled to the 0..100 the axes are marked
+    # in and nothing else. Any profile lookup would break this equality.
+    assert np.allclose(positions, c.device * 100.0)
+
+
+def test_a_real_argyll_chart_can_be_drawn_in_ink_with_no_profile(tmp_path):
+    p = tmp_path / "real.ti1"
+    p.write_text(A_REAL_TI1)
+    c = chart.read_chart(p)
+    ok, why = chart.can_draw_in_ink(c)
+    assert ok and why == ""
+    positions = chart.device_positions(c)
+    assert len(positions) == c.n_patches
+    assert 0.0 <= positions.min() and positions.max() <= 100.0
+
+
+def test_a_cmyk_chart_cannot_go_on_three_ink_axes_and_says_so():
+    """Four inks do not fit three axes, and there is no honest flattening.
+
+    Dropping black or folding it into the other three would draw a chart that
+    was never in the file. The message has to send somebody somewhere useful,
+    so it names the control that does work for them.
+    """
+    four = chart.Chart(name="c", device=np.zeros((4, 4)),
+                       channels=("C", "M", "Y", "K"), kind="CTI1",
+                       scale=100.0, scale_certain=True, n_rows=4,
+                       duplicates=0, clamped=0)
+    ok, why = chart.can_draw_in_ink(four)
+    assert not ok
+    assert "C, M, Y, K" in why
+    assert "CIELAB" in why and "Placed through" in why
+    with pytest.raises(chart.ChartProblem, match="three axes"):
+        chart.device_positions(four)
+
+
+def test_the_scale_a_file_counted_in_never_reaches_the_axes():
+    """A 0-255 file and a 0-100 file describing the same patch draw the same.
+
+    ``read_chart`` already brings both to a shared 0..1, and this is the test
+    that keeps it that way: the ink-amount view has one number on its axes,
+    and a file that happened to count to 255 must not stretch the picture two
+    and a half times.
+    """
+    hundred = chart.Chart(name="a", device=np.array([[0.5, 0.25, 1.0]]),
+                          channels=("R", "G", "B"), kind="CTI1", scale=100.0,
+                          scale_certain=True, n_rows=1, duplicates=0,
+                          clamped=0)
+    of_255 = chart.Chart(name="b", device=np.array([[0.5, 0.25, 1.0]]),
+                         channels=("R", "G", "B"), kind="CGATS.5", scale=255.0,
+                         scale_certain=True, n_rows=1, duplicates=0, clamped=0)
+    assert np.allclose(chart.device_positions(hundred),
+                       chart.device_positions(of_255))
+    assert np.allclose(chart.device_positions(hundred), [[50.0, 25.0, 100.0]])
+
+
+def test_spacing_in_ink_amounts_is_measured_in_ink_amounts():
+    """A regular grid has a known answer, which is what makes this a check.
+
+    5 steps from 0 to 100 puts every neighbour exactly 25 apart, so the
+    closest pair, the widest hole and the middle are all 25. If the figure
+    were being taken in Lab — or the positions were being run through a
+    profile on the way — none of the three would come out round.
+    """
+    positions = chart.device_positions(_grid_chart(5))
+    s = chart.spread(positions)
+    assert s.n_patches == 125 and s.repeats == 0
+    assert s.closest == pytest.approx(25.0)
+    assert s.largest_gap == pytest.approx(25.0)
+    assert s.median_gap == pytest.approx(25.0)

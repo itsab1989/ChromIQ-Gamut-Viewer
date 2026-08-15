@@ -1,5 +1,85 @@
 # Changelog
 
+## v2.3.0
+
+### ✨ New
+
+- **A chart can now be looked at on its own, with no profile at all.**
+  **Draw it in** has a fourth entry, **Ink amounts — a chart on its own**. Its
+  three axes are not colour: they are the printer's own controls, how much of
+  each ink from 0 to 100, which is exactly what a `.ti1` or `.ti2` file
+  contains. So a patch set can be opened and seen straight away — nothing is
+  predicted, because nothing needs to be, and the numbers on the axes are the
+  numbers in the file. It answers a question about the *chart*: how evenly it
+  samples the range the printer can be asked for, where it crowds, and where
+  it leaves a hole. The spacing figure is quoted in ink amounts here rather
+  than in Lab, and says which it is.
+
+- **The patches a paper cannot reach, shown in ink-amount space.** With a
+  profile under **Placed through** and a measured paper open, the out-of-reach
+  patches are picked out in red at their ink amounts. On the demo files that
+  is 240 of 480 — and in the cube they are visibly the whole *outer shell* of
+  the ink range while the interior survives, a pattern that cannot be seen in
+  CIELAB, where the same patches are scattered through the shape. The counts
+  are identical in both views.
+
+- **A profile still paints, and cannot move anything.** In ink amounts a
+  profile is the only thing that can say what colour each patch will come out,
+  so it colours the dots — but the ink amounts *are* the axes, so nothing
+  shifts. The panel says which of the two it is doing.
+
+### 🧭 How it behaves
+
+- **Nothing else is drawn in ink amounts, on purpose.** Every RGB printer's
+  boundary in its own ink amounts is the same full cube, on every paper, so a
+  paper drawn there would be perfectly true and would tell you nothing. Papers,
+  profiles and pictures stay open, keep their measurements, and are drawn
+  again the moment CIELAB is chosen. Opening one while ink amounts are showing
+  now works properly — it is measured in CIELAB and simply not shown.
+
+- **A CMYK chart is not drawn there** and says why: four ink amounts do not fit
+  three axes, and dropping the black or folding it into the other three would
+  draw a chart that was never in the file. It sends you to CIELAB, where a
+  profile can place any number of inks into the three axes colour has.
+
+- **Controls that only describe a drawn surface switch off and explain
+  themselves**, and come back exactly as they were. Controls that change what
+  gets *built* — **Follow the real edge**, the detail slider — keep working,
+  because the shapes are still measured and the patch counts are measured
+  against them. So does the white point: the dots are painted through a
+  profile and counted against a paper, and both read colour against a white.
+
+### 🐞 Fixed
+
+- **The caption above the picture claimed a measurement that had not
+  happened.** In ink amounts it still read "lightness and colour measured from
+  a D50 white" over a cube of ink percentages — false in every clause. Found
+  by looking at the rendered picture rather than at the code.
+
+- **The ⓘ in "Are the patches inside?" sat explaining nothing** whenever a
+  chart was open without a profile, because the line it shares collapsed when
+  empty. That line now says what the missing figure needs instead.
+
+### 🔍 Under it
+
+- `scripts/audit_panel.py` — a new check that walks every interactive control
+  on the real panel, at three widths in all four spaces, and fails on text
+  that is cut off, anything past the column's edge, an orphaned ⓘ, or a
+  control that is neither declared space-dependent nor declared independent.
+  A control added later cannot be forgotten, only answered. Verified to fail
+  on a deliberately over-long label and a deliberately unregistered checkbox.
+
+- `scripts/drive_ink_amounts.py` — 22 scenarios driven through the real
+  window, each stating what should happen before it looks.
+
+- **Documented, with the measurements behind it**, in
+  `docs/DESIGN-ti1-ti2.md` §12–§14: why a chart's own `XYZ` columns are never
+  drawn (all 130 `.ti1`/`.ti2` files on this machine carry them; none is
+  flagged accurate; against a real print they are 34.6 ΔE out, claiming a
+  paper white of L\* 100 where the printer managed 92.6), what the ink-amount
+  view can and cannot hold, and how the mutual exclusions are kept honest.
+
+
 ## v2.2.1
 
 ### 🐞 Fixed

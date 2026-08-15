@@ -285,3 +285,142 @@ every other figure on screen as well.
 * **Question A is not a colour verification** and the window says so in those
   words whenever the profile doing the judging is the one that placed the
   patches.
+
+## 12. Why a chart needs a profile — and the part of that which is not true
+
+The question that produced §13: *"I just wonder when you are talking about a
+chart needing the ICC profile it was created through, how you could figure this
+out for some of them and for others not."*
+
+It deserves a precise answer, because the file gives two different impressions
+at once.
+
+### Every chart carries a colour column, and none of them means what it looks like
+
+Surveyed across every chart on this machine — 64 `.ti1`, 66 `.ti2`, 87 `.ti3`:
+
+| | files | carry `XYZ_X/Y/Z` | flagged `ACCURATE_EXPECTED_VALUES` |
+|---|---|---|---|
+| `.ti1` | 64 | **all 64** | **none** |
+| `.ti2` | 66 | **all 66** | **none** |
+
+So the reason a chart cannot be drawn from its own file is *not* that the file
+is silent about colour. It is that the file speaks and should not be believed.
+
+### What targen actually writes there
+
+`targen` adds those columns unconditionally, commented in its own source as
+*"expected XYZ values to aid previews, scan recognition & strip recognition"*
+(`target/targen.c:1727`). Whether they mean anything depends on one line:
+
+```c
+/* Note if the expected values are expected to be accurate */
+if (pdata->is_specific(pdata))
+    pp->add_kword(pp, 0, "ACCURATE_EXPECTED_VALUES", "true", NULL);
+```
+
+— and `pcpt_is_specific` (`targen.c:621`) returns true only when a real device
+model was supplied: an ICC profile via `-c`, or an `.mpp` model. With neither,
+`targen` falls back to `new_icxColorantLu()` (`targen.c:877`), a generic model
+built from textbook colorant definitions. Not this printer. Not this paper. Not
+even this *kind* of printer.
+
+**So the rule is exactly:** the colour in a chart file is a real prediction if
+and only if `ACCURATE_EXPECTED_VALUES` is present, which happens if and only if
+whoever ran `targen` gave it a profile. Nobody in this survey did.
+
+### How wrong it is, measured
+
+A `.ti2` and the `.ti3` from actually printing and reading it, matched patch by
+patch on device value:
+
+| | the chart's own prediction | what the printer did |
+|---|---|---|
+| paper white | L\* 100.00 | L\* 92.56 |
+| black | L\* 8.99 | L\* 26.60 |
+| mean over 90 matched patches | | **34.6 ΔE76** |
+
+A 34 ΔE average, a paper white claimed at a perfect 100 and a black claimed
+three times deeper than the printer managed. Drawing that would not be a rough
+guide; it would be a picture of a printer that does not exist.
+
+`chart.Chart` therefore reads the columns and keeps them — `expected` and
+`expected_accurate` — and the window never draws them. If a chart built with
+`targen -c` ever turns up, the flag is already there to notice it.
+
+## 13. Ink amounts: what a chart *can* be drawn from, with nothing else
+
+The above rules out the file's colour. It does not rule out the file's **ink
+amounts**, and those are the thing a chart actually is.
+
+`device_positions()` returns them scaled to the 0–100 the axes are marked in,
+and that is the whole computation. No profile, no white point, no lookup. The
+numbers are true of the chart alone and stay true whatever printer it is
+eventually sent to.
+
+### What this view can and cannot hold
+
+| | in ink amounts | why |
+|---|---|---|
+| a chart's patches | **yes, with nothing else open** | the file holds them |
+| a paper's gamut | **no** | every RGB printer fills the same full cube of ink amounts, on every paper — the shape would be true and would say nothing |
+| a profile's gamut | **no** | same reason: an output profile's device space *is* the cube |
+| a picture | **no** | an image's RGB belongs to sRGB or Display P3, not to this printer; putting the two in one cube compares different devices' controls |
+| a CMYK chart | **no** | four inks, three axes, and no honest flattening |
+
+**A profile is not useless here, it is just not a shape.** Two things it does:
+
+* **paints** each dot with the colour it predicts that ink amount will print
+  as — positions unchanged, because the ink amounts *are* the axes;
+* lets the patches be **counted** against a paper that is open, and the ones
+  that paper cannot reach are picked out in red *at their ink amounts*.
+
+That last one is the view's real find, and it is not available in CIELAB. On
+the demo files, 240 of 480 patches are out of reach of the matte paper — and in
+the cube they are visibly the entire **outer shell** of the ink range, with the
+interior surviving. In CIELAB the same 240 patches are scattered through the
+shape and the pattern cannot be seen at all.
+
+The counts are identical in both views, which is the correctness check: the
+judgement is about colour, and the space is only how it is drawn.
+
+## 14. The mutual exclusions, and how they are kept
+
+A fourth space that can do far less than the other three turns "did anyone
+remember this control?" from a small risk into the likeliest way to ship
+something broken. So the answer is declared rather than remembered.
+
+`gamutview.CAPABILITIES` names four things a space may support —
+`hue_circle`, `shapes`, `volume`, `white_point` — and `AXES[space]["can"]`
+says which. `GamutApp._space_dependent_controls()` maps every affected control
+to the capability it needs; `_apply_space_availability()` is the only code that
+switches anything off, and it is driven entirely by that list.
+
+Three rules fell out of writing it down, and one of them was a bug:
+
+1. **What changes how a surface is DRAWN goes dead; what changes what the
+   surface IS stays live.** The shapes are still built while ink amounts are
+   showing — they are simply not drawn — and the patch counts are measured
+   against them. So **Follow the real edge** and the detail slider keep
+   working, while opacity, styles, lighting and the paint radios do not.
+2. **The white point stays live.** This was got wrong first time: the axes do
+   not depend on it, so switching it off looked tidy — and took away the only
+   way to answer the white-mismatch warning the same panel raises. A chart in
+   ink amounts is still *painted* through a profile and still *counted*
+   against a paper, and both read colour against a white. Found by driving the
+   window, not by reading it.
+3. **A gamut is never built in a device space.** `_build_space()` returns the
+   drawn space when it is a colour space and CIELAB otherwise, so opening a
+   paper while ink amounts are showing loads and measures it normally.
+   Without this, opening anything in this view failed outright.
+
+`scripts/audit_panel.py` walks every interactive control on the real panel, at
+three widths and in all four spaces, and fails on any control that is neither
+registered nor listed in `SPACE_INDEPENDENT` — so a control added later cannot
+be *forgotten*, only *answered*. It checks two other things in the same pass:
+that no text is cut off (asking Qt's own size hint, not an estimate), and that
+no ⓘ has been left on a row explaining nothing. It has been verified to fail on
+a deliberately over-long label and a deliberately unregistered checkbox.
+
+`scripts/drive_ink_amounts.py` drives 22 scenarios through the real window,
+each stating what should happen before it looks.

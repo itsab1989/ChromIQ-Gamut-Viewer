@@ -355,6 +355,48 @@ are switched off while it is chosen rather than drawing something meaningless.
 **Volumes and percentages are only comparable within one space.** Changing this
 changes every number in the window, and that is expected.
 
+### And one that is not a colour space at all
+
+**Draw it in** has a fourth entry, **Ink amounts — a chart on its own**. Its
+three axes are not colour: they are the printer's own controls, how much red,
+green and blue ink to lay down, each from 0 to 100. That is exactly what a
+`.ti1` or `.ti2` file contains, so **a chart can be looked at here with no
+profile, no measurement and no printer** — nothing is predicted, because
+nothing needs to be. The numbers on the axes are the numbers in the file.
+
+<img src="docs/screenshots/18-ink-amounts.webp" width="620" alt="A 1168-patch chart drawn in ink amounts, with no profile">
+
+What it answers is a question about **the chart**, not about your printer: how
+evenly does this patch set sample the range the printer can be asked for,
+where does it crowd, and where does it leave a hole. The spacing figure under
+**Are the patches inside?** is quoted in ink amounts here rather than in Lab,
+and says so.
+
+**Nothing else is drawn beside it, and that is the point rather than a
+shortcoming.** Every RGB printer's boundary *in its own ink amounts* is the
+same full cube, on every paper — a paper drawn here would be perfectly true
+and would tell you nothing. Papers, profiles and pictures you have open stay
+open, keep their measurements, and are drawn again the moment you choose
+CIELAB.
+
+**A profile is still worth choosing** under **Placed through**. It cannot move
+the dots — the ink amounts *are* the axes — but it is the only thing that can
+say what colour each one will come out, so it paints them. And with a paper
+open as well, the patches that paper cannot reach are picked out in red, in
+ink-amount space:
+
+<img src="docs/screenshots/19-ink-amounts-outside.webp" width="620" alt="The same chart with the patches a matte paper cannot reach picked out">
+
+That picture says something the CIELAB one cannot: the losses are the whole
+*outer shell* of the ink range, while the interior survives. In CIELAB those
+same patches are scattered through the shape and the pattern is invisible.
+
+A CMYK chart has four ink amounts and three axes will not hold them, so it is
+not drawn here — dropping the black or folding it into the other three would
+draw a chart that was never in the file. The panel says so and sends you to
+CIELAB, where a profile can place any number of inks into the three axes
+colour has.
+
 ### Every word explained
 
 Anything that might be jargon has a plain-language entry under **What do these

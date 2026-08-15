@@ -332,10 +332,60 @@ def test_an_unknown_space_names_the_ones_that_work():
 def test_every_space_says_how_to_draw_and_label_it():
     """A space with no entry here would reach the plotting code and fail
     there instead, with no axis names."""
-    from gamutview import AXES, SPACES
+    from gamutview import AXES, DRAW_SPACES
+    for space in DRAW_SPACES:
+        assert set(AXES[space]) == {"cylindrical", "x", "y", "z", "units",
+                                    "kind", "can"}
+        assert AXES[space]["x"] and AXES[space]["y"] and AXES[space]["z"]
+
+
+def test_every_colour_space_measures_a_volume_in_cubic_units():
+    """Only the colour spaces claim a volume, and each says of what."""
+    from gamutview import AXES, SPACES, can_do
     for space in SPACES:
-        assert set(AXES[space]) == {"cylindrical", "x", "y", "z", "units"}
+        assert AXES[space]["kind"] == "colour"
+        assert can_do(space, "volume")
         assert AXES[space]["units"].startswith("cubic")
+
+
+def test_ink_amounts_is_a_device_space_and_converts_to_nothing():
+    """The invariant the whole design rests on.
+
+    Ink amounts are not a colour space: there is no conversion from "70% red"
+    to XYZ without asking a profile what one particular printer does with it.
+    Putting ``rgb`` into SPACES or into either conversion table would let a
+    gamut be *built* in it, and the volume that came out would be a number
+    about a cube of controls being read as a number about colour.
+    """
+    from gamutview import AXES, SPACES, _FROM_XYZ, _TO_XYZ, can_do
+    assert "rgb" not in SPACES
+    assert "rgb" not in _TO_XYZ
+    assert "rgb" not in _FROM_XYZ
+    assert AXES["rgb"]["kind"] == "device"
+    for capability in ("hue_circle", "shapes", "volume"):
+        assert not can_do("rgb", capability)
+
+
+def test_ink_amounts_still_read_colour_against_a_white():
+    """Found by driving the window, not by reading it.
+
+    The axes do not depend on a white point, so switching the control off
+    looked tidy — and took away the only way to answer the white-mismatch
+    warning the very same panel raises. A chart drawn in ink amounts is still
+    PAINTED through a profile and still COUNTED against a paper, and both of
+    those read a colour against a white.
+    """
+    from gamutview import can_do
+    assert can_do("rgb", "white_point")
+
+
+def test_asking_about_an_unknown_space_or_capability_is_an_error():
+    """Silently returning False would switch a working control off for ever."""
+    from gamutview import can_do
+    with pytest.raises(ValueError, match="capability"):
+        can_do("lab", "sparkle")
+    with pytest.raises(ValueError, match="space"):
+        can_do("cmyk", "shapes")
 
 
 # --- what two gamuts have in common -----------------------------------------

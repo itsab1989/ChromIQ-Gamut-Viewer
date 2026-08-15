@@ -73,7 +73,7 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QWidget)
 
 from version import APP_NAME, __version__
-from gamutview import build_gamut, coverage, outside_of
+from gamutview import SPACES, build_gamut, coverage, outside_of
 from gamutview import xyz_to_lab
 from references import (REFERENCE_SPACES, gam_gamut, icc_gamut,
                         reference_gamut)
@@ -2942,9 +2942,13 @@ class GamutApp(QMainWindow):
         tl = QVBoxLayout(self._chart_through_row)
         tl.setContentsMargins(0, 0, 0, 0)
         tl.setSpacing(4)
-        through_name = QLabel("Placed through", self._chart_through_row)
-        through_name.setObjectName("name")
-        tl.addWidget(through_name)
+        # Kept, because the same control is required in a colour space and
+        # optional in ink amounts, and a label that does not say which leaves
+        # somebody hunting for a profile they do not need.
+        self._chart_through_name = QLabel("Placed through",
+                                          self._chart_through_row)
+        self._chart_through_name.setObjectName("name")
+        tl.addWidget(self._chart_through_name)
         self._chart_through = NoScrollComboBox(self._chart_through_row)
         # ACTIVATED, for the same reason Compare with uses it: picking the
         # entry you are already on changes no index, so choosing "another
@@ -3023,6 +3027,7 @@ class GamutApp(QMainWindow):
         self._space.addItem("CIELAB — for print", "lab")
         self._space.addItem("CIELUV — for displays", "luv")
         self._space.addItem("CIE XYZ — the raw measurement", "xyz")
+        self._space.addItem("Ink amounts — a chart on its own", "rgb")
         self._space.currentIndexChanged.connect(self._on_space_changed)
         space_hint = Hint(
             "CIELAB is the one to use for print, and the one every number in "
@@ -3039,6 +3044,25 @@ class GamutApp(QMainWindow):
             "in it are hard to judge by eye. It has no lightness axis and no "
             "grey axis either, so the slice, the rings and the greys are not "
             "available while it is chosen.\n\n"
+            "INK AMOUNTS is not a colour space at all, and it is the one "
+            "choice here that changes what the window is for. The three axes "
+            "are the printer's own controls — how much red, green and blue "
+            "ink to lay down, each from 0 to 100 — which is exactly what a "
+            "chart file contains. So a chart can be looked at here on its "
+            "own, with no profile and no measurement, and what you see is the "
+            "patch set itself: how evenly it samples the printer's range, "
+            "where it crowds, and where it leaves a hole.\n\n"
+            "Nothing else can be drawn beside it, and that is not a "
+            "limitation being apologised for. Every RGB printer's boundary in "
+            "its own ink amounts is the same full cube, on every paper — so a "
+            "paper drawn here would be a shape that is perfectly true and "
+            "tells you nothing. The papers and profiles you have open stay "
+            "open and come back the moment you choose CIELAB again.\n\n"
+            "A profile is still worth choosing under Placed through while you "
+            "are here. It cannot move the dots — the ink amounts are where "
+            "they are — but it is the only thing that can say what colour "
+            "each one will come out, so it paints them, and it lets the "
+            "patches be counted against a paper you have open.\n\n"
             "Volumes and percentages are only comparable within one space. "
             "Change this and every number changes with it — that is expected, "
             "not a fault.", g_cs)
@@ -4090,7 +4114,7 @@ class GamutApp(QMainWindow):
     def _on_picture(self) -> None:
         """Save what is on screen as a picture."""
         if (not self._slots and self._reference is None
-                and self._chart_placed is None):
+                and not self._chart_drawable()):
             return
         dlg = PictureDialog(self)
         if not dlg.exec():
@@ -5423,7 +5447,7 @@ class GamutApp(QMainWindow):
                 self._reference = (name, reference_gamut(
                     name, white_point=self._white.currentData(),
                     steps=self._detail.value(),
-                    space=self._space.currentData()))
+                    space=self._build_space()))
                 self._compare_note.setText(REFERENCE_SPACES[name]["note"])
             elif choice[0] == "icc":
                 # PICTURES BELONG HERE TOO. They were readable all along --
@@ -5465,7 +5489,7 @@ class GamutApp(QMainWindow):
                 lab = xyz_to_lab(v, self._white.currentData())
                 self._reference = ("Every visible colour",
                                    build_gamut(lab, input_space="lab",
-                                               space=self._space.currentData(),
+                                               space=self._build_space(),
                                                white_point=self._white.currentData()))
                 self._compare_note.setText(
                     "Every colour a printed surface could possibly show under "
@@ -5677,13 +5701,15 @@ class GamutApp(QMainWindow):
                 self._chart_profile = None
                 self._fill_chart_profiles()
         self._refresh_chart_panel()
-        if self._chart_placed is not None:
-            # A placed chart is something to look at, so everything that saves
-            # or exports the view has something to work with.
+        if self._chart_drawable():
+            # A chart that can be drawn is something to look at, so everything
+            # that saves or exports the view has something to work with. In
+            # ink amounts that is true with no profile at all, which is the
+            # whole point of the view.
             self._save.setEnabled(True)
             self._export_btn.setEnabled(True)
             self._picture.setEnabled(True)
-        if self._slots or self._reference is not None or self._chart_placed:
+        if self._slots or self._reference is not None or self._chart_drawable():
             self._redraw()
         else:
             self._update_chart_numbers()
@@ -5699,6 +5725,9 @@ class GamutApp(QMainWindow):
         """The chart's name, and what is still needed before it can be shown."""
         self._chart_row.setVisible(self._chart is not None)
         self._chart_through_row.setVisible(self._chart is not None)
+        self._chart_through_name.setText(
+            "Placed through — optional here" if self._drawing_in_ink()
+            else "Placed through")
         if self._chart is None:
             self._chart_label.setText("")
             # A LINE HERE EVEN WITH NOTHING OPEN, for two reasons. It says what
@@ -5732,12 +5761,27 @@ class GamutApp(QMainWindow):
         in whether it says so.
         """
         _path, read = self._chart
+        in_ink = self._drawing_in_ink()
+        if in_ink:
+            ok, why = self._chart_in_ink_ok()
+            if not ok:
+                return why
         if self._chart_profile is None:
+            if in_ink:
+                return ("Shown as the ink amounts the file actually holds — "
+                        "no profile needed, and nothing here is a guess. The "
+                        "dots are painted with those amounts read as screen "
+                        "colour, which is a legend and not a prediction: "
+                        "choose the ICC profile these patches were built for "
+                        "under Placed through and they take the colours they "
+                        "will really print as.")
             return ("A chart on its own is a list of ink amounts, and ink "
                     "amounts have no place in colour space until something "
                     "says what they would print as. Choose the ICC profile "
                     "these patches were built for under Placed through, and "
-                    "they appear.")
+                    "they appear. To see the patch set on its own instead, "
+                    "with no profile at all, choose Ink amounts under Draw "
+                    "it in.")
         placed = self._chart_placed
         if placed is None:
             return ("These patches could not be placed through that profile. "
@@ -5759,6 +5803,14 @@ class GamutApp(QMainWindow):
                          "nothing in it goes high enough to tell")
         tail = (" " + "; ".join(s[0].upper() + s[1:] for s in extra) + "."
                 if extra else "")
+        if in_ink:
+            # The profile has not moved anything — it cannot, the ink amounts
+            # are the axes — so saying "shown where it says they would land"
+            # here would describe the wrong picture entirely.
+            return (f"To be printed, not measured. Shown as the ink amounts "
+                    f"the file holds, painted with the colours "
+                    f"{placed.profile} says they will print as, from its "
+                    f"{placed.intent} table.{tail}")
         return (f"To be printed, not measured. Shown where "
                 f"{placed.profile} says they would land, using its "
                 f"{placed.intent} table.{tail}")
@@ -5775,26 +5827,95 @@ class GamutApp(QMainWindow):
             return None
         return self._chart_placed.under(self._white.currentData())
 
+    def _build_space(self) -> str:
+        """The space to BUILD a gamut in, which is not always the one drawn in.
+
+        A gamut can only be built in a colour space, because building one means
+        measuring a boundary and a volume. Ink amounts are not one, so while
+        they are chosen every shape is built in CIELAB instead — the papers,
+        profiles and pictures you have open keep loading, keep their numbers,
+        and are simply not drawn until a colour space is chosen again.
+
+        The alternative was to refuse to open anything while in ink amounts,
+        which would have made a view meant for looking at a chart quietly
+        break the rest of the window. This way the ink view costs nothing:
+        switch to it and back, and everything is where it was.
+        """
+        space = self._space.currentData()
+        return space if space in SPACES else "lab"
+
+    def _drawing_in_ink(self) -> bool:
+        """True while the axes are the printer's own ink amounts.
+
+        Asked in a good many places, and asked as a question about the window
+        rather than a string comparison, so that the one fact "we are not in a
+        colour space" has a single name.
+        """
+        return self._space.currentData() == "rgb"
+
+    def _chart_in_ink_ok(self) -> tuple:
+        """Whether the open chart can go on the three ink axes, and why not.
+
+        Returns ``(False, "")`` when there is no chart at all — nothing is
+        wrong, there is simply nothing to draw, and a reason would be a
+        complaint about something the person has not done yet.
+        """
+        import chart as chart_mod
+        if self._chart is None:
+            return False, ""
+        return chart_mod.can_draw_in_ink(self._chart[1])
+
+    def _chart_drawable(self) -> bool:
+        """Whether there is a chart that can actually be put in the picture.
+
+        The two halves of the window ask different things of a chart. A colour
+        space needs a profile, because ink amounts have no place in one until
+        something says what colour they make. Ink amounts need no profile and
+        never did — the file already holds the numbers — but they do need the
+        chart to have exactly three of them.
+        """
+        if self._chart is None:
+            return False
+        if self._drawing_in_ink():
+            return self._chart_in_ink_ok()[0]
+        return self._chart_placed is not None
+
     def _chart_cloud(self):
-        """The chart as (name, Lab, outside-mask) for the renderer, or None.
+        """The chart as (name, Lab, outside-mask, ink amounts), or None.
 
         The mask marks the patches that fall outside the FIRST shape on
         screen — the one the eye reads as the subject. Marking against several
         at once would put one dot in two states.
+
+        Lab is None when no profile has been chosen, which only happens in the
+        ink-amount view: there the dots are positioned from the ink amounts
+        and painted with them too. Everywhere else a chart without a profile
+        is not drawable at all, so the pair can never disagree.
         """
-        if self._chart is None or self._chart_placed is None:
+        import chart as chart_mod
+        if not self._chart_drawable():
             return None
-        path, _read = self._chart
+        path, read = self._chart
+        in_ink = self._drawing_in_ink()
         lab = self._chart_lab()
+        device = None
+        if in_ink:
+            try:
+                device = chart_mod.device_positions(read)
+            except Exception:      # noqa: BLE001 — a view must never crash
+                return None
         marked = None
         judged = self._judging_shapes()
-        if judged:
-            import chart as chart_mod
+        # Judging still needs a profile, in either view: the question "can the
+        # paper reach this patch" is about colour, and only a profile can say
+        # what colour an ink amount makes. So in ink amounts the dots appear
+        # with no profile, and turn red only once one is chosen.
+        if judged and lab is not None:
             try:
                 marked = chart_mod.outside_report(lab, judged[0][1]).beyond
             except Exception:      # noqa: BLE001 — a view must never crash
                 marked = None
-        return (path.stem, lab, marked)
+        return (path.stem, lab, marked, device)
 
     def _judging_shapes(self) -> list:
         """Every shape a chart can be counted against: (name, gamut, path).
@@ -5829,21 +5950,27 @@ class GamutApp(QMainWindow):
         self._chart_box.setVisible(True)
         _path, read = self._chart
         placed = self._chart_placed
+        in_ink = self._drawing_in_ink()
+        patches = ("1 patch" if read.n_patches == 1
+                   else f"{read.n_patches} patches")
         if placed is None:
-            patches = ("1 patch" if read.n_patches == 1
-                       else f"{read.n_patches} patches")
             self._chart_headline.setText(
                 f"{patches} waiting to be printed. None of them has been "
                 "measured.")
             self._chart_rows.setText(
                 "Choose a profile under Placed through and they can be "
+                "counted against whatever else you have open."
+                if in_ink else
+                "Choose a profile under Placed through and they can be "
                 "counted.")
-            self._chart_spread.setText("")
+            # The spacing figure needs no profile in ink amounts: it is a
+            # question about the chart, and the chart is right here.
+            self._show_chart_spread(in_ink and self._chart_in_ink_ok()[0])
             return
 
-        patches = ("1 patch" if read.n_patches == 1
-                   else f"{read.n_patches} patches")
         self._chart_headline.setText(
+            f"{patches}, drawn as the ink amounts themselves and painted "
+            f"through {placed.profile}." if in_ink else
             f"{patches}, placed through {placed.profile}.")
         lab = self._chart_lab()
 
@@ -5865,22 +5992,57 @@ class GamutApp(QMainWindow):
             "a shape, or the measurement of the paper, and each one gets a "
             "line here.")
 
-        spread = chart_mod.spread(lab)
-        if spread is None:
-            self._chart_spread.setText("")
+        self._show_chart_spread(in_ink)
+
+    def _show_chart_spread(self, in_ink: bool) -> None:
+        """How evenly the chart samples whatever it is being drawn in.
+
+        THE UNITS ARE NOT THE SAME IN THE TWO VIEWS and the sentence has to
+        say which it is quoting. In a colour space the answer is a distance in
+        Lab — how far apart the patches will look. In ink amounts it is a
+        distance in ink — how finely the chart samples the printer's controls,
+        which is the question the chart's author was actually answering. The
+        two are different numbers about the same chart, and a figure carrying
+        the wrong name for its units is the kind of wrong that gets quoted.
+        """
+        import chart as chart_mod
+
+        points = None
+        if in_ink:
+            if self._chart is not None and self._chart_in_ink_ok()[0]:
+                try:
+                    points = chart_mod.device_positions(self._chart[1])
+                except Exception:     # noqa: BLE001 — never crash a readout
+                    points = None
         else:
-            repeated = (
-                "" if not spread.repeats else
-                f" One patch lands exactly where another does and was left "
-                f"out of these; charts repeat patches on purpose."
-                if spread.repeats == 1 else
-                f" {spread.repeats} patches land exactly where another does "
-                f"and were left out of these; charts repeat patches on "
-                f"purpose.")
+            points = self._chart_lab()
+        spread = None if points is None else chart_mod.spread(points)
+        if spread is None:
+            # NEVER LEFT EMPTY WHILE A CHART IS OPEN. The ⓘ that explains
+            # these figures shares this row, and an empty label collapses and
+            # leaves the icon sitting on a line of its own explaining nothing
+            # — which is exactly what the panel audit reported.
             self._chart_spread.setText(
-                f"How far apart: closest pair {spread.closest:.1f}, typical "
-                f"{spread.median_gap:.1f}, widest gap {spread.largest_gap:.1f}"
-                f" — straight-line distance in Lab.{repeated}")
+                "" if self._chart is None else
+                "How far apart the patches are is measured once a profile has "
+                "placed them. Choose one under Placed through — or choose Ink "
+                "amounts under Draw it in to measure the spacing of the ink "
+                "amounts themselves, which needs no profile.")
+            return
+        repeated = (
+            "" if not spread.repeats else
+            " One patch lands exactly where another does and was left "
+            "out of these; charts repeat patches on purpose."
+            if spread.repeats == 1 else
+            f" {spread.repeats} patches land exactly where another does "
+            f"and were left out of these; charts repeat patches on "
+            f"purpose.")
+        units = ("how much of each ink, out of 100" if in_ink
+                 else "straight-line distance in Lab")
+        self._chart_spread.setText(
+            f"How far apart: closest pair {spread.closest:.1f}, typical "
+            f"{spread.median_gap:.1f}, widest gap {spread.largest_gap:.1f}"
+            f" — {units}.{repeated}")
 
     #: Above this many ΔE outside the profile that placed them, patches are
     #: not explained by how finely the surface was sampled, and the chart
@@ -6084,7 +6246,7 @@ class GamutApp(QMainWindow):
             reader = (gam_gamut if path.suffix.lower() == ".gam"
                       else icc_gamut)
             g = reader(path, white_point=self._white.currentData(),
-                       space=self._space.currentData())
+                       space=self._build_space())
         except Exception as exc:      # noqa: BLE001 — always explain
             Notice.warn(
                 self, "This profile could not be used",
@@ -6112,19 +6274,19 @@ class GamutApp(QMainWindow):
         if suffix in (".icc", ".icm", ".gam"):
             reader = gam_gamut if suffix == ".gam" else icc_gamut
             return reader(path, white_point=self._white.currentData(),
-                          space=self._space.currentData()), None
+                          space=self._build_space()), None
         if suffix in IMAGE_EXTENSIONS:
             from imagegamut import image_gamut
             built, facts = image_gamut(
                 path, white_point=self._white.currentData(),
-                space=self._space.currentData())
+                space=self._build_space())
             self._image_facts[str(path)] = facts
             return built, None
         m = read_measurement(path, self._white.currentData(),
                              self._relative.isChecked())
         drive = None if self._mode.currentData() == "hull" else m.device
         g = build_gamut(m.lab, drive, input_space="lab",
-                        space=self._space.currentData(),
+                        space=self._build_space(),
                         white_point=self._white.currentData())
         return g, m
 
@@ -6183,34 +6345,180 @@ class GamutApp(QMainWindow):
         self._rebuild_reference()
         self._redraw()
 
-    def _apply_space_availability(self) -> None:
-        """Turn off the tools that need a lightness axis when there is none.
+    def _space_dependent_controls(self) -> list:
+        """Every control that only works in some spaces, and what each needs.
 
-        The slice, the rings and the grey axis are all defined against
-        lightness and the neutral centre, which CIELAB and CIELUV both have
-        and CIE XYZ does not. Rather than draw something meaningless in XYZ,
-        the three controls are switched off and say why. They come back
-        exactly as they were when an opponent space is chosen again.
+        THE REGISTRY, and the reason there is one. This used to be a single
+        boolean and a hand-written tuple of six widgets, which was correct for
+        exactly as long as there were three spaces and nobody added a control.
+        A fourth space that can do far less than the other three turns "did
+        anyone remember this one?" from a small risk into the likeliest way to
+        ship something broken — a slider still live over a picture it cannot
+        change, sitting there looking as though it ought to do something.
+
+        So each entry names the capability it needs (see ``gamutview``), and
+        ``tests/test_gamutview.py`` walks every interactive control on the
+        panel and fails on any that is neither listed here nor named in
+        ``SPACE_INDEPENDENT`` below. Adding a control now forces the question
+        to be answered rather than leaving it to be noticed.
+
+        ``untick`` marks the ones that must not be left ticked-but-dead: a
+        switched-off checkbox that is still ticked describes a picture that is
+        not on screen.
         """
-        from gamutview import AXES
-        usable = AXES[self._space.currentData()]["cylindrical"]
-        why = ("" if usable else
-               "Not available in CIE XYZ — it has no lightness axis and no "
-               "grey axis to measure from. Choose CIELAB or CIELUV under "
-               "Draw it in to use this.")
-        for widget in (self._slice_on, self._slice_at, self._rings_on,
-                       self._rings, self._neutral, self._ideal_neutral):
-            widget.setEnabled(usable)
-            widget.setToolTip(why)
-        if not usable:
-            # Untick rather than leave them ticked-but-dead, so the picture
-            # always matches the controls.
-            for box in (self._slice_on, self._rings_on, self._neutral,
-                        self._ideal_neutral):
-                box.blockSignals(True)
-                box.setChecked(False)
-                box.blockSignals(False)
-        self._follow_neutral(usable and self._neutral.isChecked())
+        rows = [
+            # (widget, capability it needs, untick when unavailable)
+            (self._slice_on, "hue_circle", True),
+            (self._slice_at, "hue_circle", False),
+            (self._rings_on, "hue_circle", True),
+            (self._rings, "hue_circle", False),
+            (self._neutral, "hue_circle", True),
+            (self._ideal_neutral, "hue_circle", True),
+            # THE SURFACE CONTROLS, and the line they are on the far side of.
+            # What matters is whether a control changes how a surface is
+            # DRAWN or what the surface IS. Drawing controls go dead in ink
+            # amounts, because nothing is drawn. The ones that change what
+            # gets built — how the edge is followed, how finely it is
+            # sampled — stay live, because the shapes are still built even
+            # while they are not shown, and the patch count in "Are the
+            # patches inside?" is measured against them.
+            (self._target, "shapes", False),
+            (self._style_mine, "shapes", False),
+            (self._style_second, "shapes", False),
+            (self._style_other, "shapes", False),
+            (self._opacity, "shapes", False),
+            (self._depth, "shapes", False),
+            (self._mesh_colour, "shapes", True),
+            (self._points, "shapes", True),
+            (self._show_lost, "shapes", True),
+            (self._side_by_side, "shapes", True),
+            (self._manual_light, "shapes", True),
+            # A white point is what a colour is read against — still true in
+            # ink amounts, where the dots are painted through a profile and
+            # counted against a paper. See the capability's note in gamutview.
+            (self._white, "white_point", False),
+            (self._relative, "white_point", False),
+        ]
+        # How a surface is painted, and the lighting on it. Registered through
+        # the group and the row list they already live in, so adding another
+        # radio or another slider is covered without touching this.
+        rows += [(b, "shapes", False) for b in self._paint_group.buttons()]
+        rows += [(r, "shapes", False) for r in self._light_rows]
+        return rows
+
+    #: Whole sections whose controls mean the same thing in every space, so
+    #: that the audit does not demand an answer for each theme radio in turn.
+    #: Named by the heading a person reads, which is also what they would
+    #: search for. Opening and closing files is in here on purpose: a paper
+    #: opened while ink amounts are showing still loads, still keeps its
+    #: numbers and still counts the chart's patches — it is only not drawn.
+    SPACE_INDEPENDENT_GROUPS = frozenset({
+        "What you are looking at",
+        "How the shape is worked out",
+        "Compare with",
+        "A chart to be printed",
+        "How much colour it holds",
+        "How the two compare",
+        "Has anything changed?",
+        "Are the patches inside?",
+        "This window",
+    })
+
+    #: Controls inside a space-dependent section that are nonetheless the same
+    #: in every space, each with the reason it is exempt. Attribute names,
+    #: because that is what somebody grepping for it would type.
+    SPACE_INDEPENDENT = {
+        "_space": "the control that chooses the space cannot depend on it",
+        "_aspect": "box proportions apply to a cloud of dots as much as to a "
+                   "surface",
+        "_grid_on": "the box and its grid frame any scene",
+        "_spin_on": "turning the view is about the camera, not the contents",
+        "_turn_mode": "as _spin_on",
+        "_turn_speed": "as _spin_on",
+        "_turn_sweep": "as _spin_on",
+        "_tilt_mode": "as _spin_on",
+        "_tilt_speed": "as _spin_on",
+        "_tilt_sweep": "as _spin_on",
+        "_link_cameras": "only ever visible with two rooms, which ink amounts "
+                         "cannot produce, so it is hidden rather than dead",
+        "_detail": "changes how finely a gamut is BUILT, and the shapes are "
+                   "still built in ink amounts even though they are not "
+                   "drawn — the patch counts are measured against them",
+        # The buttons along the bottom of the column, which sit outside any
+        # group box. Saving, exporting and the housekeeping links all work on
+        # whatever is on screen, whatever space that is.
+        "_save": "saves whatever is on screen",
+        "_picture": "as _save",
+        "_export_btn": "the numbers are the numbers, in any space",
+        "_reset_btn": "housekeeping",
+        "_glossary_btn": "housekeeping",
+        "_argyll_btn": "housekeeping",
+        "_ffmpeg_btn": "housekeeping",
+        "_update_btn": "housekeeping",
+        "_auto_update": "housekeeping",
+    }
+
+    def _why_not_in_this_space(self, capability: str) -> str:
+        """Plain words for a control that the current space cannot support."""
+        space = self._space.currentData()
+        if space == "rgb":
+            reasons = {
+                "hue_circle":
+                    "Not available in ink amounts — the axes are how much of "
+                    "each ink to lay down, so there is no lightness axis and "
+                    "no grey axis to measure from.",
+                "shapes":
+                    "Not available in ink amounts — nothing is drawn here but "
+                    "the chart's own patches. Every RGB printer fills the "
+                    "same full cube of ink amounts, so a paper drawn here "
+                    "would be true and would tell you nothing.",
+                "white_point":
+                    "Not available in ink amounts — 70% of an ink is 70% of "
+                    "an ink whatever light you look at it under. A white "
+                    "point is what a measured colour is read against, and "
+                    "these are not measurements.",
+            }
+            return (reasons.get(capability, "Not available in ink amounts.")
+                    + " Choose CIELAB under Draw it in to use this.")
+        return ("Not available in CIE XYZ — it has no lightness axis and no "
+                "grey axis to measure from. Choose CIELAB or CIELUV under "
+                "Draw it in to use this.")
+
+    def _apply_space_availability(self) -> None:
+        """Switch off the tools the chosen space cannot support, and say why.
+
+        Driven entirely by the registry above, so that the rule and the list
+        of controls it applies to cannot drift apart. Everything comes back
+        exactly as it was when a space that supports it is chosen again — the
+        values are never rewritten, only the enabled state and the tooltip.
+        """
+        from gamutview import can_do
+        space = self._space.currentData()
+        # CAPTURED ONCE, BEFORE ANYTHING IS OVERWRITTEN. A control switched
+        # off here has its tooltip replaced by the reason, so re-reading it
+        # later would remember the reason as the original and the real help
+        # text would be gone for the rest of the session. This runs the first
+        # time round, while every tooltip is still the one it was built with.
+        if not hasattr(self, "_original_tooltips"):
+            self._original_tooltips = {
+                w: w.toolTip() for w, _c, _u in
+                self._space_dependent_controls()}
+        for widget, capability, untick in self._space_dependent_controls():
+            ok = can_do(space, capability)
+            widget.setEnabled(ok)
+            if not ok:
+                widget.setToolTip(self._why_not_in_this_space(capability))
+            elif widget in self._original_tooltips:
+                widget.setToolTip(self._original_tooltips[widget])
+            if not ok and untick and hasattr(widget, "setChecked"):
+                # Untick rather than leave them ticked-but-dead, so the
+                # picture always matches the controls.
+                widget.blockSignals(True)
+                widget.setChecked(False)
+                widget.blockSignals(False)
+        self._follow_neutral(can_do(space, "hue_circle")
+                             and self._neutral.isChecked())
+        self._refresh_chart_panel()
 
     def _rebuild_reference(self) -> None:
         """Rebuild the comparison in the current space and white point.
@@ -6228,21 +6536,21 @@ class GamutApp(QMainWindow):
                 self._reference = (choice[1], reference_gamut(
                     choice[1], white_point=self._white.currentData(),
                     steps=self._detail.value(),
-                    space=self._space.currentData()))
+                    space=self._build_space()))
             elif choice[0] == "icc" and self._reference_path is not None:
                 path = self._reference_path
                 reader = (gam_gamut if path.suffix.lower() == ".gam"
                           else icc_gamut)
                 self._reference = (_profile_label(path), reader(
                     path, white_point=self._white.currentData(),
-                    space=self._space.currentData()))
+                    space=self._build_space()))
             elif choice[0] == "visible":
                 v, _f = optimal_colour_solid(
                     "D50" if self._white.currentData() == "D50" else "D65",
                     max(24, self._detail.value() * 3))
                 lab = xyz_to_lab(v, self._white.currentData())
                 self._reference = ("Every visible colour", build_gamut(
-                    lab, input_space="lab", space=self._space.currentData(),
+                    lab, input_space="lab", space=self._build_space(),
                     white_point=self._white.currentData()))
         except Exception as exc:      # noqa: BLE001 — always explain
             Notice.warn(self, "That comparison could not be rebuilt", str(exc))
@@ -6822,11 +7130,17 @@ class GamutApp(QMainWindow):
         control that cannot do anything is worse than a missing one: it
         invites a click and answers with nothing.
         """
+        from gamutview import can_do
         pieces = len(self._slots) + (1 if self._reference is not None else 0)
-        can_split = pieces >= 2
+        # THIS RUNS AFTER the space registry, inside every redraw, so it has
+        # to agree with it. Left to itself it would switch two rooms back on
+        # in ink amounts, where there are no shapes to put in either of them.
+        shapes = can_do(self._space.currentData(), "shapes")
+        can_split = pieces >= 2 and shapes
         self._side_by_side.setEnabled(can_split)
         self._side_by_side.setToolTip(
             "" if can_split else
+            self._why_not_in_this_space("shapes") if not shapes else
             "Open a second chart, or choose something under Compare with, and "
             "this can put the two side by side.")
         if not can_split and self._side_by_side.isChecked():
@@ -6841,7 +7155,7 @@ class GamutApp(QMainWindow):
         # only a chart is open would leave somebody who opened a chart and a
         # profile looking at the empty-window text with no idea why.
         if (not self._slots and self._reference is None
-                and self._chart_placed is None):
+                and not self._chart_drawable()):
             return
         # The comparison can change without any chart changing, so the style
         # controls are refreshed here rather than only when charts are opened.
@@ -7094,6 +7408,10 @@ class GamutApp(QMainWindow):
             chart=self._chart_cloud(),
             light=self._light_position(),
             grid=self._grid_on.isChecked(),
+            # Named explicitly rather than read off the first shape, because
+            # in ink amounts there is no first shape to read it off and the
+            # axes would fall back to being labelled a*, b*, L*.
+            space=self._space.currentData(),
         )
 
     def _scene_contents(self):
@@ -7103,6 +7421,16 @@ class GamutApp(QMainWindow):
         page is exactly what was on screen. Keeping two copies of this is how
         the save route came to be broken while the view looked fine.
         """
+        # IN INK AMOUNTS THERE ARE NO SHAPES, and this is the one place that
+        # has to be true — everything downstream reads the list it returns.
+        # The reason is not that the surface is hard to compute: it is that
+        # every RGB printer's boundary in its own ink amounts is the same unit
+        # cube, whatever paper it is on. A shape here would be correct and
+        # would tell nobody anything, while sitting in the picture looking
+        # like a result. The panel says so in words rather than leaving an
+        # empty scene to be read as a fault.
+        if self._drawing_in_ink():
+            return [], [], [], None
         gamuts = [(p.stem, g) for p, g, _m in self._slots]
         # None where the file was a profile: there are no measured patches to
         # show, and inventing some would be exactly the claim this application
@@ -7153,6 +7481,16 @@ class GamutApp(QMainWindow):
         """
         ref = ("the paper's own white" if self._relative.isChecked()
                else f"a {self._white.currentData()} white")
+        # IN INK AMOUNTS NOTHING IS MEASURED AND THERE IS NO LIGHTNESS, so the
+        # usual caption is false in every clause. Caught by looking at the
+        # rendered picture rather than at the code: the panel was already
+        # careful and the caption above the scene still said "lightness and
+        # colour measured from a D50 white" over a cube of ink percentages.
+        if self._drawing_in_ink() and self._chart is not None:
+            painted = ("" if self._chart_placed is None else
+                       f", painted through {self._chart_placed.profile}")
+            return (f"{self._chart[0].stem} — the ink amounts this chart asks "
+                    f"for, not measured and not yet printed{painted}")
         # A CHART ON ITS OWN IS NOT A MEASURED GAMUT, and a caption saying it
         # was would be the one claim this whole feature was designed not to
         # make. Named for what is actually in the picture.
@@ -7359,9 +7697,14 @@ class GamutApp(QMainWindow):
         Never hard-coded to Lab: a number labelled "cubic Lab units" beside a
         shape drawn in Luv or XYZ would be wrong, and volumes are not
         comparable between spaces.
+
+        THE SPACE IT WAS BUILT IN, not the one on the axes. In ink amounts
+        those are different: the shapes are still measured in CIELAB, they
+        are simply not drawn, so their volumes are Lab volumes and saying
+        otherwise would put an ink unit on a colour measurement.
         """
         from gamutview import AXES
-        return AXES[self._space.currentData()]["units"]
+        return AXES[self._build_space()]["units"]
 
     def _update_range(self) -> None:
         """How black the blacks go and how bright the paper is.

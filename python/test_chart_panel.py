@@ -225,3 +225,113 @@ def test_a_saved_page_carries_the_chart_as_well(app, tmp_path):
     assert "to be printed" in page
     assert "outside" in page
     assert "on the edge" in page          # the figures travelled too
+
+
+# --------------------------------------------------------------------------
+# Ink amounts — what reaches the picture with no profile at all
+# --------------------------------------------------------------------------
+
+def _ink_grid(steps=4):
+    axis = np.linspace(0, 100, steps)
+    return np.stack(np.meshgrid(axis, axis, axis, indexing="ij"),
+                    axis=-1).reshape(-1, 3)
+
+
+def test_a_chart_in_ink_amounts_draws_with_no_profile_and_no_shape(app):
+    """Basti's question in one test: a patch set, alone, on real axes.
+
+    No Lab is passed at all, because none exists — nothing has said what these
+    ink amounts print as. The dots still appear, at the numbers the file
+    holds, and the axes say what they are.
+    """
+    import ti3gamut
+    device = _ink_grid(4)
+    figure = ti3gamut.build_figure([], "t", space="rgb",
+                                   chart=("mine", None, None, device))
+    assert {t.type for t in figure.data} == {"scatter3d"}
+    assert len(figure.data[0].x) == 64
+    scene = figure.layout.scene
+    assert scene.xaxis.title.text == "Red  %"
+    assert scene.yaxis.title.text == "Green  %"
+    assert scene.zaxis.title.text == "Blue  %"
+
+
+def test_the_dots_sit_at_the_ink_amounts_themselves(app):
+    """Positions are the file's numbers, not a lookup of them."""
+    import ti3gamut
+    device = np.array([[0.0, 0.0, 0.0], [100.0, 50.0, 25.0]])
+    figure = ti3gamut.build_figure([], "t", space="rgb",
+                                   chart=("mine", None, None, device))
+    got = np.column_stack([figure.data[0].x, figure.data[0].y,
+                           figure.data[0].z])
+    assert np.allclose(np.sort(got, axis=0), np.sort(device, axis=0))
+
+
+def test_without_a_profile_the_dots_are_painted_with_the_ink_amounts(app):
+    """A legend, not a prediction — and the panel says so beside them.
+
+    Painting them with anything else would be inventing a colour for a patch
+    nothing has yet been asked about.
+    """
+    import ti3gamut
+    device = np.array([[100.0, 0.0, 0.0], [0.0, 100.0, 0.0]])
+    figure = ti3gamut.build_figure([], "t", space="rgb",
+                                   chart=("mine", None, None, device))
+    assert list(figure.data[0].marker.color) == ["rgb(255,0,0)",
+                                                 "rgb(0,255,0)"]
+
+
+def test_with_a_profile_the_dots_keep_their_place_and_change_colour(app):
+    """The profile cannot move them — the ink amounts ARE the axes.
+
+    This is the one thing most likely to be got wrong by someone extending
+    the view later: a profile is a colouring here, not a placement.
+    """
+    import ti3gamut
+    device = np.array([[100.0, 0.0, 0.0], [0.0, 100.0, 0.0]])
+    lab = np.array([[54.0, 81.0, 70.0], [88.0, -79.0, 81.0]])
+    plain = ti3gamut.build_figure([], "t", space="rgb",
+                                  chart=("mine", None, None, device))
+    with_profile = ti3gamut.build_figure([], "t", space="rgb",
+                                         chart=("mine", lab, None, device))
+    assert np.allclose(plain.data[0].x, with_profile.data[0].x)
+    assert np.allclose(plain.data[0].z, with_profile.data[0].z)
+    assert (list(plain.data[0].marker.color)
+            != list(with_profile.data[0].marker.color))
+
+
+def test_drawing_a_chart_in_ink_amounts_without_the_amounts_is_refused(app):
+    """Lab cannot be turned back into ink without inverting a profile, and
+    quietly drawing the Lab on axes labelled Red/Green/Blue would be the
+    worst possible way to be wrong."""
+    import ti3gamut
+    lab = np.array([[50.0, 10.0, -10.0]])
+    with pytest.raises(ValueError, match="ink amounts needs the device"):
+        ti3gamut.build_figure([], "t", space="rgb",
+                              chart=("mine", lab, None, None))
+
+
+def test_a_colour_space_still_refuses_a_chart_with_no_profile(app):
+    """The other direction of the same rule."""
+    import ti3gamut
+    with pytest.raises(ValueError, match="needs a profile"):
+        ti3gamut.build_figure([], "t", space="lab",
+                              chart=("mine", None, None, _ink_grid(2)))
+
+
+def test_labelling_the_axes_against_the_shapes_actually_built_is_refused(app):
+    """A picture read against the wrong axes is the failure this whole
+    feature could most easily introduce, so it is made impossible."""
+    import ti3gamut
+    from references import reference_gamut
+    with pytest.raises(ValueError, match="wrong axes"):
+        ti3gamut.build_figure([("sRGB", reference_gamut("sRGB"))], "t",
+                              space="rgb")
+
+
+def test_the_old_three_item_chart_still_works(app):
+    """Pages and callers written before ink amounts existed keep working."""
+    import ti3gamut
+    lab = np.column_stack([np.linspace(10, 90, 8), np.zeros(8), np.zeros(8)])
+    figure = ti3gamut.build_figure([], "t", chart=("mine", lab, None))
+    assert len(figure.data[0].x) == 8

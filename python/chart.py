@@ -695,6 +695,50 @@ def _closest_on_triangles(point, triangles) -> np.ndarray:
 # Question C — how the patches are spread
 # --------------------------------------------------------------------------
 
+#: The axes of the ink-amount view run 0 to 100, because that is what a .ti1
+#: and a .ti2 are written in and what ChromIQ, Argyll and every printer dialog
+#: call the same thing. Files that count 0 to 255 are already converted to the
+#: shared 0..1 by ``read_chart``, so only one number appears here.
+DEVICE_AXIS_MAX = 100.0
+
+
+def device_positions(chart: "Chart") -> np.ndarray:
+    """Where the chart's patches sit in ink amounts, as an (N, 3) array.
+
+    NO PROFILE IS INVOLVED AND THAT IS THE POINT. These are the numbers the
+    file actually holds — the amounts about to be asked of the printer — so
+    they are true of the chart alone and stay true no matter which printer,
+    paper or profile it is eventually sent to. Everywhere else in this window
+    a chart has no position until a profile is asked where its patches would
+    land; here it has one already, because the question is a different one.
+    """
+    ok, why = can_draw_in_ink(chart)
+    if not ok:
+        raise ChartProblem(why)
+    return np.asarray(chart.device, dtype=float)[:, :3] * DEVICE_AXIS_MAX
+
+
+def can_draw_in_ink(chart: "Chart") -> tuple:
+    """Whether *chart* can go on three ink axes, and plain words if it cannot.
+
+    A picture has three axes. An RGB chart has three ink amounts and fits
+    exactly; a CMYK one has four and does not, and there is no honest way to
+    flatten it — dropping black or mixing it into the other three would draw a
+    chart that was never in the file. Rather than show a lie it says so, and
+    the Lab view still works for it, because a profile can place any number of
+    channels into the three the eye has.
+    """
+    n = 0 if chart.device is None else np.asarray(chart.device).shape[1]
+    if chart.is_rgb and n == 3:
+        return True, ""
+    inks = ", ".join(chart.channels) if chart.channels else f"{n} channels"
+    return False, (
+        f"This chart is {inks}, and the ink-amount view has three axes. "
+        f"Choose CIELAB under Draw it in and give it a profile under Placed "
+        f"through: a profile can place any number of inks into the three "
+        f"axes colour has.")
+
+
 @dataclass(frozen=True)
 class Spread:
     """How evenly a chart samples the space it is placed in."""

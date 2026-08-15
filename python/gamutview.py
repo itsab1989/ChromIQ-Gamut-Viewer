@@ -51,7 +51,8 @@ import numpy as np
 
 __all__ = ["Gamut", "build_gamut", "coverage", "mesh_volume", "outside_of", "slice_at", "delta_e_2000", "xyz_to_lab", "lab_to_xyz", "xyz_to_srgb",
            "lab_to_lch_cartesian", "WHITE_POINTS",
-           "xyz_to_luv", "luv_to_xyz", "SPACES", "AXES"]
+           "xyz_to_luv", "luv_to_xyz", "SPACES", "AXES", "DRAW_SPACES",
+           "CAPABILITIES", "can_do"]
 
 Space = Literal["xyz", "lab", "luv"]
 
@@ -209,6 +210,14 @@ def xyz_to_srgb(xyz, white_point="D50", clip: bool = True) -> np.ndarray:
 #: The spaces a gamut can be built and drawn in, and what each is good for.
 #: Every conversion goes through XYZ, so a space needs only a pair of
 #: functions here to be usable everywhere in the app.
+#:
+#: DEVICE SPACE IS DELIBERATELY NOT IN HERE. Ink amounts are not a colour
+#: space: there is no conversion from "70% red" to XYZ without asking a
+#: profile what this particular printer does with 70% red, and two printers
+#: answer differently. Anything that builds or measures a gamut takes one of
+#: these three; ``DRAW_SPACES`` below is the wider list of things the window
+#: will put on its axes, and it is wider precisely because drawing dots needs
+#: less than measuring a volume does.
 SPACES = ("lab", "luv", "xyz")
 
 _TO_XYZ = {
@@ -222,17 +231,81 @@ _FROM_XYZ = {
     "luv": xyz_to_luv,
 }
 
+#: What a space is capable of carrying. Every feature of the window that only
+#: makes sense in some spaces names one of these, and ``AXES[space]["can"]``
+#: says whether it is available. The point of naming them is that a new space
+#: cannot quietly leave a control switched on: the window's registry maps each
+#: control to one of these names, and a test walks every control on the panel
+#: and fails on any that is neither registered nor declared space-independent.
+#:
+#: ``hue_circle``  the two colour axes can be rearranged into a hue circle
+#:                 around a lightness axis — what the slice, the rings and the
+#:                 grey axis are all defined against.
+#: ``shapes``      a gamut surface drawn here is a real boundary. It is not
+#:                 enough that a surface *can* be computed: in ink amounts the
+#:                 surface of every RGB printer is the same unit cube, so a
+#:                 shape here would be true and say nothing.
+#: ``volume``      a volume or a coverage percentage measured here means
+#:                 something. Follows ``shapes``, and is separate because a
+#:                 space could in principle draw a boundary worth looking at
+#:                 without its units being worth multiplying together.
+#: ``white_point`` some colour in the picture is read against a chosen white.
+#:                 Ink amounts keep this even though their axes do not depend
+#:                 on it: a chart drawn there is still painted with the colours
+#:                 a profile predicts, and still counted against a paper, and
+#:                 both of those are read against a white. Switching the
+#:                 control off would have looked tidy and taken away the only
+#:                 way to answer the mismatch warning the same panel raises.
+CAPABILITIES = frozenset({"hue_circle", "shapes", "volume", "white_point"})
+
 #: How each space is drawn: the three axis titles, and whether the two colour
 #: axes are rearranged into a hue circle around a lightness axis. XYZ has no
 #: lightness and no hue, so it is plotted exactly as measured.
+#:
+#: ``rgb`` is the odd one and is meant to be. It is not a colour space and it
+#: is not in ``SPACES``; it is the printer's own controls, three numbers from
+#: 0 to 100 meaning "this much of each ink". A chart is a list of exactly
+#: those numbers, which is why a chart can be drawn here with no profile at
+#: all, and why nothing that needs to know what a colour *is* can be.
 AXES = {
     "lab": dict(cylindrical=True, x="a*  (chroma →)", y="b*", z="L*",
-                units="cubic Lab units"),
+                units="cubic Lab units", kind="colour",
+                can=frozenset({"hue_circle", "shapes", "volume",
+                               "white_point"})),
     "luv": dict(cylindrical=True, x="u*  (chroma →)", y="v*", z="L*",
-                units="cubic Luv units"),
+                units="cubic Luv units", kind="colour",
+                can=frozenset({"hue_circle", "shapes", "volume",
+                               "white_point"})),
     "xyz": dict(cylindrical=False, x="X", y="Y", z="Z",
-                units="cubic XYZ units"),
+                units="cubic XYZ units", kind="colour",
+                can=frozenset({"shapes", "volume", "white_point"})),
+    "rgb": dict(cylindrical=False, x="Red  %", y="Green  %", z="Blue  %",
+                units="percent of the ink range, cubed", kind="device",
+                can=frozenset({"white_point"})),
 }
+
+#: Everything the window will put on its axes: the colour spaces a gamut can
+#: be measured in, plus the device space that only a chart can be drawn in.
+DRAW_SPACES = SPACES + ("rgb",)
+
+
+def can_do(space: str, capability: str) -> bool:
+    """Whether *space* supports *capability*.
+
+    The one place the question is answered, so that "is the slice available"
+    and "is the volume worth quoting" cannot drift apart. An unknown
+    capability is a programming mistake and says so rather than returning
+    False, which would silently switch a working control off for ever.
+    """
+    if capability not in CAPABILITIES:
+        raise ValueError(
+            f"{capability!r} is not a capability; known ones are "
+            f"{sorted(CAPABILITIES)}")
+    try:
+        return capability in AXES[space]["can"]
+    except KeyError:
+        raise ValueError(f"{space!r} is not a space this window draws in;"
+                         f" known ones are {sorted(AXES)}") from None
 
 
 def lab_to_lch_cartesian(lab) -> np.ndarray:
