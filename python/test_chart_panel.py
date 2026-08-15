@@ -175,7 +175,11 @@ def test_the_ones_outside_are_drawn_apart_from_the_rest(app):
     figure = ti3gamut.build_figure([], "t", chart=("mine", lab, outside))
     names = [t.name for t in figure.data]
     assert any("to be printed" in n for n in names)
-    marked = [t for t in figure.data if "outside" in (t.name or "")]
+    # The DATA trace, not the key. Every name in the legend now has a proxy
+    # standing in for it — a scatter holding no points — so that the key is a
+    # solid, readable colour at a fixed size whatever the dots are set to.
+    marked = [t for t in figure.data
+              if "outside" in (t.name or "") and t.hoverinfo != "skip"]
     assert len(marked) == 1
     assert len(marked[0].x) == 4
     assert marked[0].marker.size > 3.2       # larger than the ordinary dots
@@ -397,3 +401,52 @@ def test_a_chart_is_marked_against_the_shape_it_is_shown_with(app):
     # of the rooms is showing the other one's verdict.
     assert int(against_small.sum()) > int(against_wide.sum()), (
         int(against_small.sum()), int(against_wide.sum()))
+
+
+def test_every_legend_key_is_a_proxy_of_the_same_size(app):
+    """A key is a key whatever the dots are doing.
+
+    Plotly draws a scatter's key from the trace itself, so the key inherited
+    the marker size and opacity — turning the out-of-reach dots down, which is
+    the sensible thing when half a chart is red, shrank and faded their key
+    with them. And given a LIST of colours it keys on the first, which for a
+    chart is very often black: on a dark page that marker vanished entirely.
+    """
+    import numpy as np
+
+    import ti3gamut
+    device = np.random.default_rng(1).uniform(0, 100, (60, 3))
+    outside = np.zeros(60, dtype=bool)
+    outside[:20] = True
+    for out_size, out_op, dot_size in ((2.0, 0.1, 2.0), (14.0, 1.0, 10.0)):
+        figure = ti3gamut.build_figure(
+            [], "t", space="rgb", chart=("c", None, outside, device),
+            chart_look=dict(skin="solid", skin_opacity=0.08,
+                            out_dot_size=out_size, out_dot_opacity=out_op,
+                            dot_size=dot_size))
+        keys = [t for t in figure.data if t.showlegend]
+        assert len(keys) == 3, [t.name for t in keys]
+        # All three the same size, none of them carrying the dots' opacity,
+        # and every one a solid colour rather than a list.
+        assert {t.marker.size for t in keys} == {11}, (
+            out_size, [t.marker.size for t in keys])
+        for key in keys:
+            assert isinstance(key.marker.color, str), key.name
+            assert key.marker.opacity in (None, 1.0), key.name
+
+
+def test_a_legend_key_is_lifted_until_it_can_be_seen(app):
+    """Black patches on a dark page, and white ones on a light page."""
+    from ti3gamut import SCENE_COLOURS, _legend_swatch
+
+    dark = SCENE_COLOURS["dark"]["page"]
+    light = SCENE_COLOURS["light"]["page"]
+
+    def lum(hex_colour):
+        r, g, b = (int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5))
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    on_dark = _legend_swatch(["rgb(0,0,0)"] * 4, dark)
+    on_light = _legend_swatch(["rgb(255,255,255)"] * 4, light)
+    assert lum(on_dark) > lum(dark) + 0.3, on_dark
+    assert lum(on_light) < lum(light) - 0.2, on_light

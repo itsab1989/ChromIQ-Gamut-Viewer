@@ -1171,7 +1171,14 @@ class LookSection(QGroupBox):
         self._wall_colour.clicked.connect(self._pick_wall_colour)
         self._wall_chosen = "#202020"
         line = self._row(rows, line, "Wall colour", self._wall_colour, Hint(
-            "Any colour you like on the three panels the grid sits on.", self))
+            "Any colour you like on the three panels the grid sits on.\n\n"
+            "The walls are what give the picture its depth: without them a "
+            "shape floats with nothing behind it and it is much harder to see "
+            "which way round it is.\n\n"
+            "Keep them close to the background so they read as a room rather "
+            "than as three coloured panels competing with the shape. A shade "
+            "or two lighter than the page on a dark theme, a shade or two "
+            "darker on a light one, is usually all it wants.", self))
         self._wall_colour_row = line - 1
 
         self._colour = QPushButton("Choose a colour…", self)
@@ -1179,7 +1186,9 @@ class LookSection(QGroupBox):
         self._colour.clicked.connect(self._pick_colour)
         self._chosen = "#ffffff"
         line = self._row(rows, line, "Colour", self._colour, Hint(
-            "Any colour you like behind the shape — a house style, a slide "
+            "Any colour you like behind the shape.\n\n"
+            "This is the page the picture is drawn on, so it is the one to "
+            "change for a house style, a slide "
             "background, or the exact grey of the page it is going on.", self))
         self._colour_row = line - 1
 
@@ -1216,7 +1225,15 @@ class LookSection(QGroupBox):
         self._lettering_chosen = "#22211f"
         line = self._row(rows, line, "Lettering colour", self._lettering_colour,
                          Hint("Any colour you like for the numbers and the "
-                              "axis names.", self))
+                              "names of the axes.\n\n"
+                              "These are the smallest text in the picture, so "
+                              "they are the first thing to become unreadable "
+                              "against an unusual background. Check them "
+                              "against whatever you have set behind the shape "
+                              "before saving — a mid grey reads on both a "
+                              "light and a dark page, which is why it is the "
+                              "safe choice for a picture going somewhere you "
+                              "cannot control.", self))
         self._lettering_colour_row = line - 1
 
         self._gridlines = NoScrollComboBox(self)
@@ -1246,7 +1263,17 @@ class LookSection(QGroupBox):
         self._gridlines_chosen = "#d0ccc6"
         line = self._row(rows, line, "Grid colour", self._gridlines_colour,
                          Hint("Any colour you like for the lines across the "
-                              "walls.", self))
+                              "walls.\n\n"
+                              "The grid is what lets you say WHERE something "
+                              "is rather than only what shape it is — how "
+                              "light a part of the surface is, or how far out "
+                              "into the reds it reaches.\n\n"
+                              "It should be quiet: just visible enough to "
+                              "follow, never so strong that it competes with "
+                              "the shape in front of it. If in doubt make it "
+                              "fainter, because a grid that shouts is the "
+                              "quickest way to make a good picture look "
+                              "busy.", self))
         self._gridlines_colour_row = line - 1
 
 
@@ -2809,6 +2836,15 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._clear_btn, 1)
         _r.addWidget(hint, 0, Qt.AlignmentFlag.AlignVCenter)
         fv.addLayout(_r)
+        # SAY WHEN SOMETHING OPEN IS NOT IN THE PICTURE. Ink amounts draw the
+        # chart and nothing else, on purpose — but a paper listed right here
+        # and missing from the picture and the legend reads as a fault, and
+        # there was nothing on screen to say otherwise. Reported from the real
+        # window, where exactly that happened.
+        self._not_drawn_note = WrappedLabel("", g_files, hide_when_empty=True)
+        self._not_drawn_note.setObjectName("hint")
+        _wrapped(self._not_drawn_note)
+        fv.addWidget(self._not_drawn_note)
         v.addWidget(g_files)
 
         # --- how it is built --------------------------------------------------
@@ -3761,8 +3797,8 @@ class GamutApp(QMainWindow):
             "notice first in a black-and-white print.\n\n"
             "The line runs up the INSIDE of the shape, so the shape is turned "
             "down to about a third when you tick this — at full strength it is "
-            "an opaque solid and the line is hidden behind it. **How solid it "
-            "looks** is yours to set from there; it will not be changed "
+            "an opaque solid and the line is hidden behind it. How solid it "
+            "looks is yours to set from there; it will not be changed "
             "again.", g_look)
         neutral_hint.setObjectName("hint_neutral_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
@@ -3796,7 +3832,7 @@ class GamutApp(QMainWindow):
             "It is dotted and pale on purpose. It is not a measurement of "
             "anything you printed — it is the definition of neutral, drawn in "
             "the same space, so the two can be compared directly.\n\n"
-            "Turn the shape down with **How solid it looks** to see both "
+            "Turn the shape down with How solid it looks to see both "
             "lines properly: at full strength the surface is opaque and "
             "everything inside it is hidden.", g_look)
         ideal_hint.setObjectName("hint_ideal_hint")
@@ -3950,7 +3986,19 @@ class GamutApp(QMainWindow):
         self._range.setObjectName("hint")
         vv.addWidget(self._range)
         self._volume_hint = Hint(
-            "Open a chart to see how much colour it holds.", g_vol)
+            "Open a chart to see how much colour it holds.\n\n"
+            "The figure is the volume the measured surface encloses, in the "
+            "units of whichever space is chosen under Draw it in — cubic Lab "
+            "units for CIELAB, which is the one to leave it on for print.\n\n"
+            "IT IS FOR COMPARING, not for reading on its own. There is no "
+            "such thing as a good number here: a paper holding 700,000 cubic "
+            "Lab units means nothing until you have a second paper measured "
+            "the same way to hold it against. Open two and the panel does the "
+            "comparing for you.\n\n"
+            "Underneath it are the two figures that decide how much contrast "
+            "you actually get: how dark the blacks reach, and how bright the "
+            "paper white is. A paper that cannot go dark loses shadow detail "
+            "however large its volume turns out to be.", g_vol)
         self._volume_hint.setObjectName("hint_volume_hint")
         vv.addWidget(self._volume_hint)
         v.addWidget(g_vol)
@@ -4145,8 +4193,8 @@ class GamutApp(QMainWindow):
             "text and the backgrounds stay exactly where they are, because "
             "those are what make the window readable — an accent is what "
             "makes it yours.\n\n"
-            "One place it does reach the picture: choosing **In the accent "
-            "colours** under How the shapes are coloured tints the gamut into "
+            "One place it does reach the picture: choosing In the accent "
+            "colours under How the shapes are coloured tints the gamut into "
             "this same family.", g_prefs)
         accent_hint.setObjectName("hint_accent_hint")
         pv.addWidget(accent_hint)
@@ -6969,6 +7017,7 @@ class GamutApp(QMainWindow):
         self._follow_neutral(can_do(space, "hue_circle")
                              and self._neutral.isChecked())
         self._refresh_chart_panel()
+        self._refresh_not_drawn_note()
 
     def _rebuild_reference(self) -> None:
         """Rebuild the comparison in the current space and white point.
@@ -7416,10 +7465,43 @@ class GamutApp(QMainWindow):
             combo.setVisible(show)
             name.setVisible(show)      # or the word is left behind on its own
 
+    def _refresh_not_drawn_note(self) -> None:
+        """Say when something open is deliberately not in the picture.
+
+        Ink amounts draw a chart and nothing else, which is the whole design —
+        every RGB printer fills the same cube of ink amounts, so a paper drawn
+        there would be true and would say nothing. But a paper listed in this
+        very group and absent from both the picture and the legend reads as a
+        fault, and nothing on screen said otherwise.
+
+        It names what is missing and what to do about it, and it says the
+        numbers are unaffected — because "is it still being counted?" is the
+        next question anybody would ask.
+        """
+        open_shapes = len(self._slots) + (1 if self._reference is not None
+                                          else 0)
+        if not self._drawing_in_ink() or not open_shapes:
+            self._not_drawn_note.setText("")
+            return
+        names = [p.stem for p, _g, _m in self._slots]
+        if self._reference is not None:
+            names.append(self._reference[0])
+        listed = (names[0] if len(names) == 1
+                  else " and ".join([", ".join(names[:-1]), names[-1]]))
+        thing = "is" if len(names) == 1 else "are"
+        self._not_drawn_note.setText(
+            f"{listed} {thing} open and not drawn here. Ink amounts show a "
+            f"chart on its own: every RGB printer fills the same full cube of "
+            f"them, so a paper drawn here would be true and would tell you "
+            f"nothing. Nothing is lost — the measurements still count the "
+            f"chart's patches under Are the patches inside?, and everything "
+            f"is drawn again the moment you choose CIELAB under Draw it in.")
+
     def _refresh_slot_labels(self) -> None:
         # "both" only when there really are two; a button that says the wrong
         # number is a small lie that makes people distrust the rest.
         self._clear_btn.setVisible(len(self._slots) == 2)
+        self._refresh_not_drawn_note()
         self._refresh_style_controls()
         for i, row in enumerate(self._slot_rows):
             row.setVisible(i < len(self._slots))

@@ -1125,12 +1125,15 @@ def _chart_cloud(lab, name: str, outside=None, space: str = "lab",
             x=v[outside, 0], y=v[outside, 1], z=v[outside, 2], mode="markers",
             marker=dict(size=out_size, opacity=out_opacity, color=_LOST,
                         symbol="circle", line=dict(width=0)),
-            # One flat colour, so its own key is already right — except that
-            # a low opacity is carried into the key and fades it away.
-            showlegend=out_opacity > 0.6, hoverinfo="name",
+            # A PROXY HERE TOO, always. Its own key would be drawn at the
+            # trace's marker size and opacity, so turning the out-of-reach
+            # dots down — which is the sensible thing to do when half a chart
+            # is red — shrank and faded the key along with them, and the three
+            # keys came out three different sizes. A key is a key whatever the
+            # dots are doing.
+            showlegend=False, hoverinfo="name",
             name=f"{name} — outside"))
-        if out_opacity <= 0.6:
-            traces.append(_legend_proxy(f"{name} — outside", _LOST))
+        traces.append(_legend_proxy(f"{name} — outside", _LOST))
     if not with_positions:
         return traces
     # THE POINTS A SKIN MAY GO OVER: the ones that survive, never the lost

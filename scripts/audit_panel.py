@@ -214,6 +214,57 @@ def audit_once(window, panel, label: str) -> list:
     return problems
 
 
+#: Markdown that Qt renders as literal characters. ``a*``, ``b*``, ``L*`` and
+#: ``C*`` are colour notation, not emphasis, so only DOUBLED stars count —
+#: three real ones had shipped, printing "**In the accent colours**" complete
+#: with its asterisks.
+import re as _re
+_MARKDOWN = _re.compile(r"\*\*|__[A-Za-z]|\[[^\]]+\]\(")
+
+
+def audit_help(window, panel) -> list:
+    """Every ⓘ explanation: present, extensive, and naming things that exist.
+
+    The three ways help text goes wrong here, in the order they have actually
+    happened: it carries Markdown that Qt prints as characters; it is one
+    terse line where the rest of the window writes a paragraph for a beginner;
+    or it names a control that has since been renamed, sending somebody
+    hunting for a label that is not there.
+    """
+    import gamut_app
+    problems = []
+    labels = {g.title() for g in panel.findChildren(QGroupBox)}
+    for x in panel.findChildren((QCheckBox, QPushButton, QRadioButton, QLabel)):
+        if x.text():
+            labels.add(x.text().strip())
+    for c in panel.findChildren(QComboBox):
+        labels |= {c.itemText(i).strip() for i in range(c.count())}
+    lowered = " ¦ ".join(sorted(labels)).lower()
+
+    # "under X", where X runs to the end of the clause.
+    names = _re.compile(r"under ([A-Z][A-Za-z ]{2,40}?)(?=[.,;:\n]| and | to | while | tints | is | are )")
+    for hint in panel.findChildren(gamut_app.Hint):
+        text = getattr(hint, "_text", "") or hint.toolTip() or ""
+        name = hint.objectName() or "an ⓘ"
+        if not text.strip():
+            problems.append(f"[help] EMPTY  {name} explains nothing")
+            continue
+        if _MARKDOWN.search(text):
+            problems.append(
+                f"[help] MARKDOWN  {name} carries **, __ or a link — Qt "
+                f"prints those as characters")
+        if len(text) < 150:
+            problems.append(
+                f"[help] TERSE  {name} is {len(text)} characters; the rest of "
+                f"this window writes a paragraph for a beginner")
+        for found in names.findall(text):
+            if found.strip().lower() not in lowered:
+                problems.append(
+                    f"[help] STALE  {name} sends the reader to "
+                    f"{found.strip()!r}, which is not on the panel")
+    return problems
+
+
 def audit_registry(window) -> list:
     """Every interactive control is either space-dependent or declared not.
 
@@ -282,6 +333,7 @@ def main() -> int:
 
     panel = window.findChild(QScrollArea).widget()
     problems = list(audit_registry(window))
+    problems += audit_help(window, panel)
 
     # A chart open, because half the panel only exists once there is one.
     chart = os.environ.get("AUDIT_CHART", "")
@@ -293,6 +345,13 @@ def main() -> int:
     if shots:
         out.mkdir(exist_ok=True)
 
+    # NEVER WIDER THAN THE SCREEN. This resizes a real window on a real
+    # desktop, and asking for 1900 px on a narrower display pushes it off the
+    # edge — which is rude, and measures a layout nobody can actually see.
+    # The widths are clamped to what fits, and duplicates dropped.
+    available = app.primaryScreen().availableGeometry().width()
+    widths = sorted({min(w, available - 40) for w in WIDTHS})
+
     for appearance in ("dark", "light"):
       # BOTH APPEARANCES. A label that fits is a label that fits, but an ⓘ
       # or a swatch that reads on one background can vanish on the other,
@@ -301,7 +360,7 @@ def main() -> int:
       window._set_appearance(appearance) if hasattr(
           window, "_set_appearance") else None
       pump(app, 2)
-      for width in WIDTHS:
+      for width in widths:
         window.resize(width, 940)
         pump(app, 1.5)
         for i in range(window._space.count()):
@@ -320,9 +379,9 @@ def main() -> int:
             print("  " + line)
         print(f"\n{len(problems)} problem(s).")
         return 1
-    checked = 2 * len(WIDTHS) * window._space.count()
+    checked = 2 * len(widths) * window._space.count()
     print(f"  Clean: {checked} panel states checked "
-          f"(2 appearances × {len(WIDTHS)} widths × "
+          f"(2 appearances × {len(widths)} widths × "
           f"{window._space.count()} spaces), "
           f"every control answered for.")
     return 0
