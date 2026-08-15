@@ -155,33 +155,52 @@ def read_ti3(path: Path, white_point: str = "D50",
     cannot give us what we need — an empty chart, no measurement columns, a
     device space that is not RGB.
     """
+    import cgats
+
     text = path.read_text(errors="replace")
-    if "BEGIN_DATA_FORMAT" not in text or "BEGIN_DATA" not in text:
-        raise ValueError(f"{path.name} is not a CGATS/.ti3 file "
-                         "(no BEGIN_DATA_FORMAT section)")
 
-    fmt = text.split("BEGIN_DATA_FORMAT", 1)[1].split("END_DATA_FORMAT", 1)[0]
-    columns = fmt.split()
-    # Split AFTER the format section: "BEGIN_DATA_FORMAT" also starts with
-    # "BEGIN_DATA", so searching the whole file finds the header first and the
-    # column names end up parsed as numbers.
-    after = text.split("END_DATA_FORMAT", 1)[1]
-    body = after.split("BEGIN_DATA", 1)[1].rsplit("END_DATA", 1)[0]
+    # A CHART IS NOT A MEASUREMENT, and it is caught here rather than later.
+    # A .ti1 carries XYZ columns that came out of targen's device *model*, not
+    # off any paper, so it would otherwise read as a perfectly plausible
+    # measured gamut made entirely of predictions.
+    from chart import CHART_KINDS
+    kind = cgats.identifier(text)
+    if kind in CHART_KINDS:
+        which = "a .ti1" if kind == "CTI1" else "a .ti2"
+        raise ValueError(
+            f"{path.name} is {which} — a chart waiting to be printed, not a "
+            "measurement.\n\nThe XYZ values in it are predictions from a "
+            "device model rather than anything read off paper, so drawing it "
+            "as a measured gamut would be inventing a result.\n\nOpen it with "
+            "Open a chart… instead: the patches are shown as a cloud of "
+            "points, placed through a profile you choose, and counted against "
+            "whatever else is on screen.")
 
-    rows = []
-    for line in body.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or line.startswith("BEGIN_DATA"):
-            continue
-        parts = line.split()
-        if len(parts) >= len(columns):
-            rows.append(parts[:len(columns)])
-    if not rows:
+    try:
+        tables = cgats.read_tables(text)
+    except cgats.CgatsProblem as exc:
+        raise ValueError(f"{path.name}: {exc}") from None
+
+    # THE FIRST TABLE THAT HOLDS MEASUREMENTS. Reading from the first
+    # BEGIN_DATA to the last END_DATA is what a two-split reader does, and on
+    # any file with more than one table it swallows the headers in between:
+    # the first thing the number parser then meets is a word out of a
+    # DESCRIPTOR line, and the error names it.
+    for table in tables:
+        if table.has(*_XYZ) or table.has(*_LAB):
+            break
+    else:
+        raise ValueError(
+            f"{path.name} has no XYZ or Lab columns — it may be a chart that "
+            "has not been measured yet rather than a measurement")
+    if not len(table):
         raise ValueError(f"{path.name} has no measurement rows")
 
+    columns = list(table.columns)
+    rows = [list(r) for r in table.rows]
+
     def column(name: str) -> np.ndarray:
-        i = columns.index(name)
-        return np.array([float(r[i]) for r in rows], dtype=float)
+        return table.numbers(name)[:, 0]
 
     have = set(columns)
     if set(_XYZ) <= have:
@@ -963,6 +982,51 @@ def _patch_cloud(lab, name: str, space: str = "lab"):
         name=f"{name} — patches", showlegend=True, hoverinfo="name")
 
 
+def _chart_cloud(lab, name: str, outside=None, space: str = "lab"):
+    """A chart's patches: dots where a profile says each one would land.
+
+    DOTS, NEVER A SURFACE, and that is the whole design rather than a
+    preference. These patches have not been printed. A shape thrown around a
+    set of *requested* ink amounts is not the gamut of anything, and the
+    picture would claim one.
+
+    Drawn a little larger than the measured-patch cloud, with a thin outline,
+    so that a chart on top of a solid still reads. Where *outside* marks the
+    patches that fall beyond the shape being judged, those are drawn in the
+    same red this application uses everywhere for "out of reach", in a ring
+    twice the size — the eye should find them without reading a number.
+    """
+    import plotly.graph_objects as go
+    from gamutview import lab_to_xyz, xyz_to_srgb
+
+    lab = np.asarray(lab, float)
+    v = _to_plot_space(lab, space)
+    rgb = xyz_to_srgb(lab_to_xyz(lab, "D50"), "D50")
+    colours = [f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
+               for r, g, b in rgb]
+    if outside is None:
+        outside = np.zeros(len(lab), dtype=bool)
+    outside = np.asarray(outside, dtype=bool)
+
+    traces = []
+    inside = ~outside
+    if inside.any():
+        traces.append(go.Scatter3d(
+            x=v[inside, 0], y=v[inside, 1], z=v[inside, 2], mode="markers",
+            marker=dict(size=3.2,
+                        color=[c for c, keep in zip(colours, inside) if keep],
+                        line=dict(width=0)),
+            name=f"{name} — to be printed", showlegend=True,
+            hoverinfo="name"))
+    if outside.any():
+        traces.append(go.Scatter3d(
+            x=v[outside, 0], y=v[outside, 1], z=v[outside, 2], mode="markers",
+            marker=dict(size=5.5, color=_LOST, symbol="circle",
+                        line=dict(width=0)),
+            name=f"{name} — outside", showlegend=True, hoverinfo="name"))
+    return traces
+
+
 #: Colours for the outlines in a slice, in the order gamuts are given.
 _SLICE_COLOURS = ("#e8175d", "#3aa8d0", "#f2c744", "#6bd07a")
 
@@ -1496,7 +1560,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                  mode: str = "dark", paint: str = "true",
                  depth: float = 0.35, mesh_paint: str = "plain",
                  rings: int = 0, per_shape=None, neutrals=None,
-                 ideal_neutrals: bool = False,
+                 ideal_neutrals: bool = False, chart=None,
                  light=None, grid: bool = True):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
@@ -1555,6 +1619,15 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                 fig.add_trace(trace)
         if points and patches is not None and i < len(patches):
             fig.add_trace(_patch_cloud(patches[i], name, _axes_space))
+    # THE CHART GOES ON LAST, so its dots sit over every surface rather than
+    # behind them. Drawn even when there is no gamut at all: a chart placed
+    # through a profile is a picture in its own right, and returning an empty
+    # scene for one would look like a fault.
+    if chart is not None:
+        chart_name, chart_lab, chart_outside = chart
+        for trace in _chart_cloud(chart_lab, chart_name, chart_outside,
+                                  _axes_space):
+            fig.add_trace(trace)
     from gamutview import AXES
     # The axes are named for the space the gamuts were built in, so a
     # picture can never be read against the wrong labels.

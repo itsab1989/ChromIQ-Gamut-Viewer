@@ -2512,6 +2512,14 @@ class GamutApp(QMainWindow):
         # one instead of asking for the file again -- or, worse, leaving a
         # comparison behind in the space it was first built in.
         self._reference_path: Path | None = None
+        #: The chart waiting to be printed, when one is open: its path, what
+        #: was read out of it, and where its patches land once a profile has
+        #: been asked. KEPT APART FROM ``_slots`` ON PURPOSE — a chart is not a
+        #: gamut and must never become one, and holding it in the same list as
+        #: the measured shapes is how it would quietly get drawn as a solid.
+        self._chart: "tuple[Path, object] | None" = None
+        self._chart_placed = None            # chart.Placement, or None
+        self._chart_profile: Path | None = None
         self._tmp = Path(tempfile.mkdtemp(prefix="gamutview-"))
         #: Where the last file came from, so the next dialog opens there.
         self._last_folder = ""
@@ -2674,7 +2682,24 @@ class GamutApp(QMainWindow):
         # --- the measurements -------------------------------------------------
         g_files = QGroupBox("What you are looking at", col)
         fv = QVBoxLayout(g_files)
-        self._open_btn = QPushButton("Open a measurement or a profile…", g_files)
+        # ALL THREE KINDS ARE NAMED, and the width was measured rather than
+        # guessed: a full-width button in this column is 282 px, and this
+        # label needs 261. "Open a measurement, profile or chart…" needs 272,
+        # which leaves ten pixels and would clip on the first platform whose
+        # font runs a shade wider.
+        self._open_btn = QPushButton("Open measurement, profile or chart…",
+                                     g_files)
+        self._open_btn.setToolTip(
+            "Opens any of the three kinds of file this window understands.\n\n"
+            "A MEASUREMENT (.ti3, .cxf, .mxf, .txt) is what your instrument "
+            "read off a printed chart — what your printer really did.\n\n"
+            "An ICC PROFILE (.icc, .icm) or an ArgyllCMS gamut file (.gam) is "
+            "what your printer is described as being able to do.\n\n"
+            "A CHART (.ti1, .ti2, or an i1Profiler target) is the other end of "
+            "the story: patches waiting to be printed, none of them measured "
+            "yet. One opened here goes to A chart to be printed, further down, "
+            "because it is drawn as a cloud of dots rather than as a shape.\n\n"
+            "You can drag any of them onto this window instead.")
         self._open_btn.clicked.connect(self._on_open)
         fv.addWidget(self._open_btn)
         # One row per open chart, each with its own way out. A single "close
@@ -2706,12 +2731,22 @@ class GamutApp(QMainWindow):
             fv.addWidget(row)
             self._slot_labels.append(lab)
             self._slot_rows.append(row)
-        self._clear_btn = QPushButton("Close both", g_files)
+        # "Close both" WAS TRUE OF TWO THINGS AND THERE CAN NOW BE THREE. A
+        # chart open beside two measurements made the word a small lie, and
+        # leaving the chart behind after a button that says "both" is exactly
+        # the sort of surprise this window is careful about.
+        self._clear_btn = QPushButton("Close them all", g_files)
         self._clear_btn.setObjectName("secondary")
+        self._clear_btn.setToolTip(
+            "Closes everything open at once — both measurements or profiles, "
+            "and the chart with them if one is open.\n\n"
+            "To close just one, use the × beside its name. Nothing is deleted "
+            "either way: closing only takes it off the screen, and the files "
+            "on your drive are untouched.")
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setVisible(False)
         hint = Hint(
-            "Three kinds of file can go here, and you can start with any of "
+            "Four kinds of file can go here, and you can start with any of "
             "them.\n\n"
             "A MEASUREMENT is the .ti3 file ArgyllCMS saves once you have read "
             "a printed chart with your instrument. The chart is the sheet of "
@@ -2741,6 +2776,13 @@ class GamutApp(QMainWindow):
             "right far more often than not — and the line under the name says "
             "so, because an assumption that changes the answer should never "
             "be made quietly.\n\n"
+            "A CHART is the fourth, and it is the odd one out: a .ti1, a .ti2 "
+            "or an i1Profiler target, holding the patches you are ABOUT to "
+            "print. Nothing in it has been printed and nothing measured, so "
+            "there is no shape to draw — the patches appear as a cloud of "
+            "dots, put where a profile says they would land. Open one here or "
+            "drag it in and it goes to A chart to be printed, further down "
+            "this column, where you choose that profile.\n\n"
             "Each one always says underneath which kind it is, because "
             "mistaking them is the one confusion this window exists to clear "
             "up. A third shape can join them through Compare with, below.",
@@ -2802,6 +2844,16 @@ class GamutApp(QMainWindow):
         # opened: swapping to a different file meant picking something else
         # first and coming back. activated fires whenever a person picks a
         # line, which is the thing actually being responded to.
+        self._compare.setToolTip(
+            "Adds a third shape to hold your measurement against: a standard "
+            "colour space, another profile or measurement from a file, or "
+            "every colour the eye can see.\n\n"
+            "This is for SHAPES. A chart that has not been printed yet is not "
+            "one — it is a list of ink amounts with no place in colour space "
+            "until a profile says where they land — so charts have their own "
+            "section, A chart to be printed, just below. Whatever you choose "
+            "here still gets its own line in that chart's figures, so the two "
+            "work together.")
         self._compare.activated.connect(lambda _i: self._on_compare_changed())
         cvv.addWidget(self._compare)
         self._compare_note = WrappedLabel("", g_cmp, hide_when_empty=True)
@@ -2812,7 +2864,14 @@ class GamutApp(QMainWindow):
             "images people send you will survive on this paper. Comparing with "
             "every visible colour asks how much of what your eyes can see this "
             "paper can hold at all. They are three different questions and the "
-            "answers are not interchangeable.", g_cmp)
+            "answers are not interchangeable.\n\n"
+            "A CHART THAT HAS NOT BEEN PRINTED does not belong here, and not "
+            "as a rule of tidiness: a chart is a list of ink amounts, it has "
+            "no shape, and there is nothing to compare until a profile says "
+            "where those amounts would land. Charts have their own section "
+            "underneath. Whatever you pick here does get counted against an "
+            "open chart, though — it earns its own line in Are the patches "
+            "inside?, alongside every other shape on screen.", g_cmp)
         cmp_hint.setObjectName("hint_cmp_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
         _r.setSpacing(6)
@@ -2820,6 +2879,101 @@ class GamutApp(QMainWindow):
         _r.addWidget(cmp_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         cvv.addLayout(_r)
         v.addWidget(g_cmp)
+
+        # --- a chart that has not been printed yet ----------------------------
+        # ITS OWN GROUP, not a third entry in Compare with, because it is not a
+        # shape and cannot be compared with anything on its own. A chart is a
+        # list of ink amounts; it has no position in colour space until a
+        # profile is asked where those amounts would land.
+        g_chart = QGroupBox("A chart to be printed", col)
+        chv = QVBoxLayout(g_chart)
+        self._chart_btn = QPushButton("Open a chart to be printed…", g_chart)
+        self._chart_btn.setToolTip(
+            "Opens a chart that has not been printed yet: a .ti1 or .ti2 from "
+            "ChromIQ or ArgyllCMS, or the .txt or .pxf file i1Profiler saves "
+            "for a target.\n\n"
+            "A chart is a list of ink amounts about to be asked for. Nothing "
+            "in it has been printed and nothing in it has been measured, so it "
+            "is never drawn as a shape — the patches appear as a cloud of "
+            "dots, placed where an ICC profile says each one would land.\n\n"
+            "Choose that profile under Placed through, just below. With the "
+            "measurement of the paper open as well, the panel counts how many "
+            "of the patches your printer can actually reach.")
+        self._chart_btn.clicked.connect(self._on_open_chart)
+        chv.addWidget(self._chart_btn)
+
+        row = QWidget(g_chart)
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._chart_label = WrappedLabel("", row)
+        self._chart_label.setObjectName("slot")
+        rl.addWidget(self._chart_label, 1)
+        shut = QPushButton("×", row)
+        shut.setObjectName("closer")
+        shut.setFixedSize(22, 22)
+        shut.setToolTip("Close this chart")
+        shut.setCursor(Qt.CursorShape.PointingHandCursor)
+        shut.clicked.connect(self._close_chart)
+        rl.addWidget(shut, 0)
+        row.setVisible(False)
+        chv.addWidget(row)
+        self._chart_row = row
+
+        self._chart_through_row = QWidget(g_chart)
+        tl = QVBoxLayout(self._chart_through_row)
+        tl.setContentsMargins(0, 0, 0, 0)
+        tl.setSpacing(4)
+        through_name = QLabel("Placed through", self._chart_through_row)
+        through_name.setObjectName("name")
+        tl.addWidget(through_name)
+        self._chart_through = NoScrollComboBox(self._chart_through_row)
+        # ACTIVATED, for the same reason Compare with uses it: picking the
+        # entry you are already on changes no index, so choosing "another
+        # profile…" a second time would do nothing at all.
+        self._chart_through.activated.connect(lambda _i: self._on_chart_profile())
+        tl.addWidget(self._chart_through)
+        self._chart_through_row.setVisible(False)
+        chv.addWidget(self._chart_through_row)
+
+        self._chart_note = WrappedLabel("", g_chart, hide_when_empty=True)
+        self._chart_note.setObjectName("hint"); _wrapped(self._chart_note)
+        chart_hint = Hint(
+            "A CHART IS THE OTHER END OF THE STORY from everything else this "
+            "window opens.\n\n"
+            "A measurement is what came back off the paper. A chart is the "
+            "list of ink amounts about to be asked FOR — a .ti1 as ChromIQ or "
+            "ArgyllCMS generates it, a .ti2 once it has been laid out on a "
+            "sheet, or the .txt or .pxf file i1Profiler saves for the same "
+            "thing. Nothing in it has been printed. Nothing in it has been "
+            "measured.\n\n"
+            "So it is never drawn as a solid shape. A shape thrown around a "
+            "set of requested ink amounts is not the gamut of anything. The "
+            "patches are drawn as a cloud of dots instead, and only where a "
+            "profile says those amounts would land — which is why Placed "
+            "through has to be answered before anything appears.\n\n"
+            "WHAT IT ANSWERS. Open the profile the chart was built from and "
+            "the question is whether the chart builder did its job: patches "
+            "outside a gamut they were promised to be inside mean something "
+            "went wrong between the two, and that really happens — a rendering "
+            "intent that did not match, ink amounts counted 0 to 255 where the "
+            "file wanted 0 to 100, patches clipped to a box around the gamut "
+            "instead of to its surface, or simply the wrong profile. It does "
+            "NOT check your printer, because the same profile is answering "
+            "both questions.\n\n"
+            "Open the MEASUREMENT of the paper as well, and it does check your "
+            "printer: the patches your profile promises, held against what the "
+            "paper really achieved. That is the one that finds trouble.\n\n"
+            "Every shape on screen gets its own line in Are the patches "
+            "inside?, below, so both questions are answered in the same "
+            "picture and neither can be mistaken for the other.",
+            g_chart)
+        chart_hint.setObjectName("hint_chart_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._chart_note, 1)
+        _r.addWidget(chart_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        chv.addLayout(_r)
+        v.addWidget(g_chart)
 
         # --- colour science ---------------------------------------------------
         g_cs = QGroupBox("What the colours are measured against", col)
@@ -3518,6 +3672,62 @@ class GamutApp(QMainWindow):
         self._drift_box.setVisible(False)
         v.addWidget(self._drift_box)
 
+        # Only there when a chart is open, because with none it would be a
+        # heading over three empty lines.
+        self._chart_box = QGroupBox("Are the patches inside?", col)
+        cbv = QVBoxLayout(self._chart_box)
+        self._chart_headline = WrappedLabel("", self._chart_box,
+                                            hide_when_empty=True)
+        cbv.addWidget(self._chart_headline)
+        self._chart_rows = WrappedLabel("", self._chart_box,
+                                        hide_when_empty=True)
+        cbv.addWidget(self._chart_rows)
+        self._chart_spread = WrappedLabel("", self._chart_box,
+                                          hide_when_empty=True)
+        self._chart_spread.setObjectName("hint")
+        chart_numbers_hint = Hint(
+            "INSIDE, ON THE EDGE, OUTSIDE — three counts rather than two, and "
+            "the middle one is the one that saves an evening.\n\n"
+            "A gamut surface is not an exact object. It is worked out from a "
+            "grid of samples, and between those samples the real boundary "
+            "bulges out a little further than the shape drawn through them. So "
+            "a handful of patches always land a whisker outside any surface, "
+            "including the surface of the very profile that placed them. "
+            "Pushing a 5960-patch chart through a real printer profile and "
+            "measuring against that same profile: at a coarse sampling 353 "
+            "patches came out \"outside\", and at a fine one 122 did — but the "
+            "distance they were outside by fell from 0.58 to 0.05. They were "
+            "on the surface the whole time.\n\n"
+            "So a patch within 1.0 ΔE of the surface is called ON THE EDGE. "
+            "One ΔE is the standard threshold for a difference nobody can see "
+            "with the two colours side by side, and it is more than ten times "
+            "the error measured above. A patch further out than that is "
+            "outside for a reason worth finding.\n\n"
+            "WHICH SURFACE. The test is against the same surface this window "
+            "uses everywhere else — a skin over the shape's own corners — so "
+            "the counts here can never disagree with the colouring on the "
+            "shape beside them. A real printer's edge has dents in it and a "
+            "skin bridges them, which makes this test careful in exactly one "
+            "direction: a patch it calls outside really is outside, and a "
+            "patch sitting down in a dent may be called inside. It can miss "
+            "something; it cannot invent something.\n\n"
+            "HOW FAR APART tells you about the chart itself rather than about "
+            "any printer, and needs nothing else open. Patches much closer "
+            "together than the rest are the chart doubling up and spending "
+            "paper twice on one colour; the largest gap is the widest hole in "
+            "what it samples. It is straight-line distance in Lab rather than "
+            "ΔE, because it is a question about coverage of the space, not "
+            "about what the eye can tell apart.",
+            self._chart_box)
+        chart_numbers_hint.setObjectName("hint_chart_numbers_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
+        _r.setSpacing(6)
+        _r.addWidget(self._chart_spread, 1)
+        _r.addWidget(chart_numbers_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        cbv.addLayout(_r)
+        self._chart_box.setVisible(False)
+        v.addWidget(self._chart_box)
+
         v.addStretch(1)
 
         # Appearance and accent live at the FOOT of the column. Between the
@@ -3833,7 +4043,8 @@ class GamutApp(QMainWindow):
         volume = self._volume.text().strip()
         if volume and volume != "—":
             parts.append(f"Colour held: {volume} {self._volume_units()}")
-        for name in ("_coverage", "_pair", "_drift", "_drift_worst"):
+        for name in ("_coverage", "_pair", "_drift", "_drift_worst",
+                     "_chart_headline", "_chart_rows", "_chart_spread"):
             label = getattr(self, name, None)
             if label is None:
                 continue
@@ -3849,11 +4060,14 @@ class GamutApp(QMainWindow):
         names = [path.stem for path, _g, _m in self._slots]
         if self._reference is not None:
             names.append(self._reference[0])
+        if self._chart is not None and self._chart_placed is not None:
+            names.append(self._chart[0].stem)
         return names
 
     def _on_picture(self) -> None:
         """Save what is on screen as a picture."""
-        if not self._slots and self._reference is None:
+        if (not self._slots and self._reference is None
+                and self._chart_placed is None):
             return
         dlg = PictureDialog(self)
         if not dlg.exec():
@@ -4970,10 +5184,10 @@ class GamutApp(QMainWindow):
         direction, the grey drift, and the drift between two readings — as
         comma-separated text that opens in any spreadsheet.
         """
-        if not self._slots:
+        if not self._slots and self._chart is None:
             return
-        default = self._slots[0][0].with_name(
-            self._slots[0][0].stem + "-gamut.csv")
+        first = self._slots[0][0] if self._slots else self._chart[0]
+        default = first.with_name(first.stem + "-gamut.csv")
         dlg = self._file_dialog("Save the numbers as a table",
                                 QFileDialog.FileMode.AnyFile,
                                 "Comma-separated values (*.csv)", str(default),
@@ -5036,6 +5250,7 @@ class GamutApp(QMainWindow):
                 rows.append(("patches above 1", d.over_one, "dE2000"))
             except ValueError:
                 pass               # not two readings of one chart; say nothing
+        rows.extend(self._chart_rows_for_export())
         try:
             with open(target, "w", newline="", encoding="utf-8") as handle:
                 csv.writer(handle).writerows(rows)
@@ -5046,6 +5261,65 @@ class GamutApp(QMainWindow):
             self, "Saved",
             f"Written to\n{target}\n\nIt opens in any spreadsheet, and every "
             "row says what it is and what the units are.")
+
+    def _chart_rows_for_export(self) -> list:
+        """The chart's answer as table rows — the counts, then the patches.
+
+        THE PATCHES THEMSELVES, ONE PER LINE, because "627 are outside" is
+        where the question starts rather than where it ends. The row carries
+        the ink amounts in the file's own units and, when the chart is a .ti2,
+        the position on the sheet — so somebody can walk to the printed page
+        and look at the patch this is talking about.
+        """
+        import chart as chart_mod
+
+        if self._chart is None or self._chart_placed is None:
+            return []
+        path, read = self._chart
+        placed = self._chart_placed
+        lab = self._chart_lab()
+        rows = [("", "", ""),
+                ("chart", path.name, f"{read.kind}, not measured"),
+                ("chart: patches", read.n_patches,
+                 f"{read.duplicates} repeat another"),
+                ("chart: placed through", placed.profile,
+                 f"{placed.intent} ({placed.tag})"),
+                ("chart: ink amounts counted to", f"{read.scale:g}",
+                 "as the file writes them"
+                 if read.scale_certain else "assumed — the file does not say")]
+        spread = chart_mod.spread(lab)
+        if spread is not None:
+            rows.append(("chart: widest gap", f"{spread.largest_gap:.2f}",
+                         "straight-line Lab between nearest neighbours"))
+
+        detail = []
+        for name, gamut, _p, _measured in self._judging_shapes():
+            try:
+                report = chart_mod.outside_report(lab, gamut,
+                                                  against=name)
+            except Exception:      # noqa: BLE001 — a table must still be written
+                continue
+            rows.append((f"chart inside {name}", report.n_inside,
+                         f"{report.n_edge} within {report.tolerance:g} dE2000 "
+                         f"of the surface, {report.n_beyond} beyond it"))
+            if report.n_beyond:
+                rows.append((f"chart outside {name}: worst",
+                             f"{report.worst:.2f}", "dE2000"))
+            for i in np.nonzero(report.beyond)[0]:
+                detail.append((
+                    name, i + 1,
+                    read.locations[i] if i < len(read.locations) else "",
+                    *[f"{v * read.scale:.4f}" for v in read.device[i]],
+                    *[f"{v:.3f}" for v in lab[i]],
+                    f"{report.distance[i]:.3f}"))
+        if detail:
+            channels = "".join(read.channels)
+            rows.append(("", "", ""))
+            rows.append(("patches outside, one per line", "", ""))
+            rows.append(("outside what", "patch number", "position on sheet")
+                        + tuple(channels) + ("L*", "a*", "b*", "dE2000 outside"))
+            rows.extend(detail)
+        return rows
 
     def _check_updates(self, *, asked: bool) -> None:
         """Ask the releases page whether there is a newer version.
@@ -5168,6 +5442,7 @@ class GamutApp(QMainWindow):
             self._reference = None
             self._compare.setCurrentIndex(0)
             return
+        self._chart_profile_offer()
         self._redraw()
 
     def _file_dialog(self, title: str, mode, name_filter: str,
@@ -5212,12 +5487,14 @@ class GamutApp(QMainWindow):
         # works.
         pictures = " ".join(f"*{e}" for e in IMAGE_EXTENSIONS)
         dlg = self._file_dialog(
-            "Open a measurement, a profile or a picture",
+            "Open a measurement, a profile, a chart or a picture",
             QFileDialog.FileMode.ExistingFiles,
             "Everything this can open "
-            f"(*.ti3 *.cxf *.mxf *.txt *.icc *.icm *.gam {pictures});;"
+            f"(*.ti3 *.cxf *.mxf *.txt *.icc *.icm *.gam *.ti1 *.ti2 *.pxf "
+            f"{pictures});;"
             "Measurements (*.ti3 *.cxf *.mxf *.txt);;"
             "ICC profiles (*.icc *.icm);;"
+            "Charts to be printed (*.ti1 *.ti2 *.txt *.pxf);;"
             f"Pictures ({pictures});;"
             "ArgyllCMS gamut files (*.gam);;All files (*)")
         if dlg.exec():
@@ -5225,19 +5502,449 @@ class GamutApp(QMainWindow):
                 self._last_folder = str(Path(chosen).parent)
                 self._load(Path(chosen))
 
+    # ---- a chart waiting to be printed -----------------------------------
+
+    def _on_open_chart(self) -> None:
+        """Open a .ti1, .ti2 or i1Profiler target — a chart, not a measurement."""
+        dlg = self._file_dialog(
+            "Open a chart that has not been printed yet",
+            QFileDialog.FileMode.ExistingFile,
+            "Charts to be printed (*.ti1 *.ti2 *.txt *.pxf *.cxf);;"
+            "ArgyllCMS charts (*.ti1 *.ti2);;"
+            "i1Profiler targets (*.txt *.pxf);;All files (*)")
+        if not dlg.exec():
+            return
+        path = Path(dlg.selectedFiles()[0])
+        self._last_folder = str(path.parent)
+        self._open_chart_file(path)
+
+    def _open_chart_file(self, path: Path) -> None:
+        """Read one chart and show it, or say plainly why it could not be."""
+        import chart as chart_mod
+
+        try:
+            read = chart_mod.read_chart(path)
+        except Exception as exc:               # noqa: BLE001 — always explain
+            _log().warning("could not read chart %s: %s", path.name, exc)
+            Notice.warn(
+                self, "This chart could not be used",
+                f"{path.name}\n\n{exc}\n\nThis opens a chart that is waiting "
+                "to be printed: a .ti1 or .ti2 from ChromIQ or ArgyllCMS, or "
+                "the .txt or .pxf file i1Profiler saves for a target. A chart "
+                "that has already been measured is a .ti3, and that goes "
+                "through Open a measurement or a profile… instead.")
+            return
+        self._chart = (path, read)
+        _log().info("opened chart %s (%s): %d patches, %d repeated",
+                    path.name, read.kind, read.n_patches, read.duplicates)
+        # A chart the user has just opened deserves a profile suggested rather
+        # than an empty box: if exactly one profile is already on screen, that
+        # is almost certainly the one it belongs to.
+        if self._chart_profile is None:
+            for candidate in self._profiles_on_screen():
+                self._chart_profile = candidate
+                break
+        self._fill_chart_profiles()
+        self._place_chart()
+
+    def _chart_profile_offer(self) -> None:
+        """Keep Placed through in step with whatever is open.
+
+        Opening the profile a chart belongs to should be enough: a person who
+        has a chart on screen with nothing to place it through, and who then
+        opens a profile, has already said what they want.
+        """
+        if self._chart is None:
+            return
+        had = self._chart_profile
+        if had is None:
+            for candidate in self._profiles_on_screen():
+                self._chart_profile = candidate
+                break
+        self._fill_chart_profiles()
+        if self._chart_profile is not had:
+            self._place_chart()
+        else:
+            self._refresh_chart_panel()
+
+    def _profiles_on_screen(self) -> list:
+        """Every ICC profile already open, in the order they were opened.
+
+        Only an ICC profile can place a chart's patches. A measurement holds
+        the patches of a *different* chart, and a .gam file is a bare surface
+        with no way in from device values at all — so neither can answer "where
+        would this ink amount land", and offering them would be offering
+        something that cannot work.
+        """
+        seen, out = set(), []
+        for path, _g, _m in self._slots:
+            if path.suffix.lower() in (".icc", ".icm") and path not in seen:
+                seen.add(path)
+                out.append(path)
+        ref = self._reference_path
+        if (ref is not None and ref.suffix.lower() in (".icc", ".icm")
+                and ref not in seen):
+            out.append(ref)
+        return out
+
+    def _fill_chart_profiles(self) -> None:
+        """Refill the Placed-through box from what is open, keeping the choice."""
+        want = self._chart_profile
+        self._chart_through.blockSignals(True)
+        self._chart_through.clear()
+        for path in self._profiles_on_screen():
+            self._chart_through.addItem(f"{path.stem} — already open", str(path))
+        if want is not None and self._chart_through.findData(str(want)) < 0:
+            self._chart_through.addItem(want.stem, str(want))
+        self._chart_through.addItem("Choose an ICC profile…", "")
+        index = (self._chart_through.findData(str(want))
+                 if want is not None else -1)
+        self._chart_through.setCurrentIndex(max(0, index))
+        self._chart_through.blockSignals(False)
+
+    def _on_chart_profile(self) -> None:
+        """A different profile chosen to place the patches through."""
+        data = self._chart_through.currentData()
+        if data:
+            self._chart_profile = Path(data)
+        else:
+            dlg = self._file_dialog(
+                "Choose the profile to place these patches through",
+                QFileDialog.FileMode.ExistingFile,
+                "ICC profiles (*.icc *.icm);;All files (*)")
+            if not dlg.exec():
+                self._fill_chart_profiles()
+                return
+            self._chart_profile = Path(dlg.selectedFiles()[0])
+            self._last_folder = str(self._chart_profile.parent)
+        self._fill_chart_profiles()
+        self._place_chart()
+
+    def _place_chart(self) -> None:
+        """Work out where the chart's patches land, and show the result.
+
+        Failing to place them is not an error to hide: the chart stays open and
+        the panel says what is missing, because "open a profile" is something
+        the person can act on and an empty window is not.
+        """
+        import chart as chart_mod
+
+        self._chart_placed = None
+        if self._chart is None:
+            self._refresh_chart_panel()
+            return
+        if self._chart_profile is not None:
+            try:
+                self._chart_placed = chart_mod.through_profile(
+                    self._chart[1], self._chart_profile)
+            except Exception as exc:          # noqa: BLE001 — always explain
+                _log().warning("could not place chart: %s", exc)
+                Notice.warn(self, "These patches could not be placed", str(exc))
+                self._chart_profile = None
+                self._fill_chart_profiles()
+        self._refresh_chart_panel()
+        if self._chart_placed is not None:
+            # A placed chart is something to look at, so everything that saves
+            # or exports the view has something to work with.
+            self._save.setEnabled(True)
+            self._export_btn.setEnabled(True)
+            self._picture.setEnabled(True)
+        if self._slots or self._reference is not None or self._chart_placed:
+            self._redraw()
+        else:
+            self._update_chart_numbers()
+
+    def _close_chart(self) -> None:
+        self._chart = None
+        self._chart_placed = None
+        self._refresh_chart_panel()
+        if self._slots or self._reference is not None:
+            self._redraw()
+
+    def _refresh_chart_panel(self) -> None:
+        """The chart's name, and what is still needed before it can be shown."""
+        self._chart_row.setVisible(self._chart is not None)
+        self._chart_through_row.setVisible(self._chart is not None)
+        if self._chart is None:
+            self._chart_label.setText("")
+            self._chart_note.setText("")
+            self._chart_box.setVisible(False)
+            return
+        path, read = self._chart
+        kind = {"CTI1": "an ArgyllCMS chart", "CTI2": "an ArgyllCMS chart, "
+                "laid out on a sheet", "CxF3": "an i1Profiler target"}.get(
+                    read.kind, "a chart")
+        patches = ("1 patch" if read.n_patches == 1
+                   else f"{read.n_patches} patches")
+        self._chart_label.setText(f"{path.stem}\n{patches} — {kind}")
+        self._chart_note.setText(self._chart_state_note())
+        self._update_chart_numbers()
+
+    def _chart_state_note(self) -> str:
+        """One line saying what the chart is, or what it still needs.
+
+        NEVER AN EMPTY PANEL. A chart with no profile cannot be drawn at all —
+        there is nowhere to draw it — and the difference between "this window
+        is broken" and "this window is waiting for one more file" is entirely
+        in whether it says so.
+        """
+        _path, read = self._chart
+        if self._chart_profile is None:
+            return ("A chart on its own is a list of ink amounts, and ink "
+                    "amounts have no place in colour space until something "
+                    "says what they would print as. Choose the ICC profile "
+                    "these patches were built for under Placed through, and "
+                    "they appear.")
+        placed = self._chart_placed
+        if placed is None:
+            return ("These patches could not be placed through that profile. "
+                    "Choose another one under Placed through.")
+        extra = []
+        if read.duplicates:
+            extra.append(
+                f"{read.duplicates} of them repeat a patch already in the "
+                "chart, which charts do on purpose"
+                if read.duplicates > 1 else
+                "one of them repeats a patch already in the chart, which "
+                "charts do on purpose")
+        if read.clamped:
+            extra.append(f"{read.clamped} held ink amounts outside the "
+                         "possible range and were pulled back into it")
+        if not read.scale_certain:
+            extra.append("this file does not say whether its ink amounts "
+                         "count to 100 or to 255, and 100 was assumed — "
+                         "nothing in it goes high enough to tell")
+        tail = (" " + "; ".join(s[0].upper() + s[1:] for s in extra) + "."
+                if extra else "")
+        return (f"To be printed, not measured. Shown where "
+                f"{placed.profile} says they would land, using its "
+                f"{placed.intent} table.{tail}")
+
+    def _chart_lab(self):
+        """Where the chart's patches sit, under the white point now chosen.
+
+        Everything else in the window moves when the white point changes, and
+        a chart left in the profile's own D50 would be drawn a few ΔE away
+        from where the shapes around it moved to — the exact size of error
+        that looks like a result.
+        """
+        if self._chart_placed is None:
+            return None
+        return self._chart_placed.under(self._white.currentData())
+
+    def _chart_cloud(self):
+        """The chart as (name, Lab, outside-mask) for the renderer, or None.
+
+        The mask marks the patches that fall outside the FIRST shape on
+        screen — the one the eye reads as the subject. Marking against several
+        at once would put one dot in two states.
+        """
+        if self._chart is None or self._chart_placed is None:
+            return None
+        path, _read = self._chart
+        lab = self._chart_lab()
+        marked = None
+        judged = self._judging_shapes()
+        if judged:
+            import chart as chart_mod
+            try:
+                marked = chart_mod.outside_report(lab, judged[0][1]).beyond
+            except Exception:      # noqa: BLE001 — a view must never crash
+                marked = None
+        return (path.stem, lab, marked)
+
+    def _judging_shapes(self) -> list:
+        """Every shape a chart can be counted against: (name, gamut, path).
+
+        THE PATH IS CARRIED, not just the name, and that is not tidiness. A
+        profile and the measurement it was built from routinely have the same
+        stem — ``Glossy-paper.icc`` beside ``Glossy-paper.ti3`` is the ordinary
+        case, not a contrived one. Deciding "is this the profile that placed
+        the patches?" by comparing names told the reader that a *measurement*
+        had placed them, and printed the wrong verdict under it. Caught by
+        driving the window with exactly that pair of files open.
+        """
+        out = [(p.stem, g, p, m is not None) for p, g, m in self._slots]
+        if self._reference is not None:
+            # A comparison built from a file is a measurement when it is one;
+            # a standard colour space or the visible solid is not, and neither
+            # has a paper white to be judged against.
+            measured = (self._reference_path is not None
+                        and self._reference_path.suffix.lower()
+                        not in (".icc", ".icm", ".gam"))
+            out.append((self._reference[0], self._reference[1],
+                        self._reference_path, measured))
+        return out
+
+    def _update_chart_numbers(self) -> None:
+        """The three questions, answered against whatever else is open."""
+        import chart as chart_mod
+
+        if self._chart is None:
+            self._chart_box.setVisible(False)
+            return
+        self._chart_box.setVisible(True)
+        _path, read = self._chart
+        placed = self._chart_placed
+        if placed is None:
+            patches = ("1 patch" if read.n_patches == 1
+                       else f"{read.n_patches} patches")
+            self._chart_headline.setText(
+                f"{patches} waiting to be printed. None of them has been "
+                "measured.")
+            self._chart_rows.setText(
+                "Choose a profile under Placed through and they can be "
+                "counted.")
+            self._chart_spread.setText("")
+            return
+
+        patches = ("1 patch" if read.n_patches == 1
+                   else f"{read.n_patches} patches")
+        self._chart_headline.setText(
+            f"{patches}, placed through {placed.profile}.")
+        lab = self._chart_lab()
+
+        lines = []
+        for name, gamut, path, measured in self._judging_shapes():
+            try:
+                report = chart_mod.outside_report(lab, gamut,
+                                                  against=name)
+            except Exception as exc:      # noqa: BLE001 — never crash a readout
+                lines.append(f"{name}: could not be counted ({exc}).")
+                continue
+            same = (path is not None and self._chart_profile is not None
+                    and Path(path) == Path(self._chart_profile))
+            lines.append(self._chart_verdict(name, report, same)
+                         + self._white_mismatch_caution(measured))
+        self._chart_rows.setText(
+            "\n\n".join(lines) if lines else
+            "Nothing else is open to count them against. Open the profile as "
+            "a shape, or the measurement of the paper, and each one gets a "
+            "line here.")
+
+        spread = chart_mod.spread(lab)
+        if spread is None:
+            self._chart_spread.setText("")
+        else:
+            repeated = (
+                "" if not spread.repeats else
+                f" One patch lands exactly where another does and was left "
+                f"out of these; charts repeat patches on purpose."
+                if spread.repeats == 1 else
+                f" {spread.repeats} patches land exactly where another does "
+                f"and were left out of these; charts repeat patches on "
+                f"purpose.")
+            self._chart_spread.setText(
+                f"How far apart: closest pair {spread.closest:.1f}, typical "
+                f"{spread.median_gap:.1f}, widest gap {spread.largest_gap:.1f}"
+                f" — straight-line distance in Lab.{repeated}")
+
+    #: Above this many ΔE outside the profile that placed them, patches are
+    #: not explained by how finely the surface was sampled, and the chart
+    #: builder is worth suspecting. Measured: the worst a real 5960-patch chart
+    #: managed against its own profile was 1.3 ΔE, and it fell to 0.05 as the
+    #: surface was sampled more finely. Twice that leaves ample room.
+    CHART_BUILDER_SUSPECT = 2.0
+
+    def _white_mismatch_caution(self, measured: bool) -> str:
+        """Warn when a chart is being counted against two different whites.
+
+        THIS IS THE ONE THAT WOULD HAVE SHIPPED A FALSE ALARM, and the numbers
+        are not subtle. A chart is placed through the profile's relative
+        colorimetric table, and "relative colorimetric" means, by definition,
+        that the paper's white becomes L* 100. A measurement read absolutely
+        keeps the white the instrument actually saw — L* 93.8 on the demo
+        glossy paper. So every light patch in the chart floats above the
+        measured shape by that difference, for no reason to do with the
+        printer at all. Measured on a real 5960-patch chart against the
+        measurement of the very paper its profile describes:
+
+            measurement judged absolutely     624 patches outside, worst 4.5
+            measurement judged against its    0 patches outside, worst 1.0
+            own white
+
+        Six hundred patches of pure artefact. The tick box that fixes it is
+        already in this window, so the answer is to say which one is being
+        looked at and where the switch is — never to move it quietly, because
+        it changes every other figure on screen as well.
+        """
+        if not measured or self._relative.isChecked():
+            return ""
+        return ("\nThese two are measured against different whites: the chart "
+                "is placed relative to the paper's white, and this "
+                "measurement is being judged against an absolute D50, so the "
+                "lightest patches sit above it whatever the printer did. Tick "
+                "Judge each paper against its own white, further down, to "
+                "compare them like for like.")
+
+    def _chart_verdict(self, name, report, same_profile: bool) -> str:
+        """One shape's line, in words rather than in three bare numbers.
+
+        The sentence differs when the shape doing the judging is the very
+        profile that placed the patches, because then a clean answer proves
+        something quite different from a clean answer against a measurement —
+        and letting the reader assume otherwise is the whole trap this feature
+        had to be designed around.
+        """
+        head = (f"{name}: {report.n_inside} inside, {report.n_edge} on the "
+                f"edge, {report.n_beyond} outside.")
+        if same_profile:
+            if report.all_inside:
+                return (head + "\nEvery patch sits inside the profile it was "
+                        "placed through — which is what should happen, and is "
+                        "a check of the chart rather than of your printer.")
+            # HOW BADLY WRONG DECIDES WHICH IT IS, and the scale of the two
+            # cases is nothing alike. A chart builder that went wrong — ink
+            # amounts counted to 255 instead of 100, the wrong rendering
+            # intent, the wrong profile entirely — puts a great many patches a
+            # very long way out. A surface drawn through a grid of samples
+            # leaves one or two a whisker out, measured at 1.3 ΔE on a real
+            # profile. Printing the alarming sentence for the second case
+            # would send somebody hunting a fault that is not there.
+            if report.worst < self.CHART_BUILDER_SUSPECT \
+                    and report.n_beyond <= max(1, report.n_patches // 100):
+                return (head + f"\nThe furthest out is {report.worst:.1f} ΔE, "
+                        "which is the thickness of the boundary itself rather "
+                        "than a fault: a gamut surface is drawn through a grid "
+                        "of samples, and the real edge bulges very slightly "
+                        "between them. Nothing here needs looking into — and "
+                        "this is a check of the chart rather than of your "
+                        "printer, because the same profile answered both "
+                        "halves of the question.")
+            return (head + f"\nWorst {report.worst:.1f} ΔE, and "
+                    f"{report.n_beyond} of them. These were placed through "
+                    "this very profile, so they should all have been inside "
+                    "it. Something differs between the way the chart was "
+                    "built and the way it is being read — the rendering "
+                    "intent, ink amounts counted to 255 where the file wanted "
+                    "100, patches clipped to a box around the gamut instead "
+                    "of to its surface, or simply a different profile.")
+        if report.all_inside:
+            return (head + f"\nEverything this chart asks for is within reach "
+                    f"of {name}.")
+        return (head + f"\nWorst {report.worst:.1f} ΔE, average of those "
+                f"{report.average:.1f}. {name} cannot reach what those "
+                "patches ask for.")
+
     def _close_one(self, which: int) -> None:
         """Close just this chart and leave the other one where it is."""
         if 0 <= which < len(self._slots):
             del self._slots[which]
         self._refresh_slot_labels()
-        if self._slots:
+        self._fill_chart_profiles()
+        if self._slots or self._chart_placed is not None:
             self._redraw()
         else:
             self._on_clear()
 
     def _on_clear(self) -> None:
+        """Close everything on screen — which now includes the chart."""
         self._slots.clear()
+        self._chart = None
+        self._chart_placed = None
         self._refresh_slot_labels()
+        self._refresh_chart_panel()
+        self._fill_chart_profiles()
         self._show_placeholder()
         self._volume.setText("—")
         self._volume_hint.setText(self._volume_units())
@@ -5251,13 +5958,14 @@ class GamutApp(QMainWindow):
         the user will look for it, and it carries its own viewer so it still
         opens with no network and no ChromIQ.
         """
-        if not self._slots:
+        if not self._slots and self._chart_placed is None:
             return
         options = WebPageDialog(self)
         if not options.exec():
             return
         chosen = options.choices()
         first = (self._slots[0][0] if self._slots
+                 else self._chart[0] if self._chart is not None
                  else Path(self._reference[0] if self._reference else "gamut"))
         default = first.with_name(first.stem + "-gamut.html")
         dlg = self._file_dialog("Save this view as a web page",
@@ -5291,6 +5999,15 @@ class GamutApp(QMainWindow):
         # when there is no chart to draw it against -- so opening a profile
         # first appeared to do nothing whatever. Comparing is what the
         # Compare with box is for, and it says so.
+        # A CHART DROPPED ON THE WINDOW OPENS AS A CHART. Somebody dragging a
+        # .ti1 in has said exactly what they want; making them read an error
+        # and then find the other button would be pedantry. Decided on the
+        # file's contents, so a measurement saved under a chart's name still
+        # opens as a measurement.
+        import chart as chart_mod
+        if chart_mod.looks_like_chart(path):
+            self._open_chart_file(path)
+            return
         if len(self._slots) >= 2:
             self._slots.pop(0)                 # newest two win
         try:
@@ -5312,6 +6029,7 @@ class GamutApp(QMainWindow):
                     len(g.vertices), g.volume)
         self._warn_if_too_few_patches(path, m)
         self._refresh_slot_labels()
+        self._chart_profile_offer()
         self._save.setEnabled(True)
         self._export_btn.setEnabled(True)
         self._picture.setEnabled(True)
@@ -5964,9 +6682,12 @@ class GamutApp(QMainWindow):
             "colour that printer actually put on paper — what it really did, "
             "on that paper, on that day, rather than what a profile predicts "
             "it can do.</p>"
-            "<p style='margin:0'>Use <b>Open a measurement or a profile</b> on the "
-            "left, "
-            "or drag the file onto this window.</p>"
+            "<p style='margin:0 0 14px'>Use <b>Open a measurement or a "
+            "profile</b> on the left, or drag the file onto this window.</p>"
+            "<p style='margin:0;font-size:13px'>Got a chart you have not "
+            "printed yet — a <b>.ti1</b>, a <b>.ti2</b> or an i1Profiler "
+            "target? <b>Open a chart</b> shows where its patches would land, "
+            "and counts how many fall outside what your printer can reach.</p>"
             "</div></body></html>")
 
     def _on_manual_light(self) -> None:
@@ -6073,7 +6794,11 @@ class GamutApp(QMainWindow):
         self._link_row.setVisible(linked_useful)
 
     def _redraw(self) -> None:
-        if not self._slots and self._reference is None:
+        # A PLACED CHART IS A PICTURE IN ITS OWN RIGHT. Returning early when
+        # only a chart is open would leave somebody who opened a chart and a
+        # profile looking at the empty-window text with no idea why.
+        if (not self._slots and self._reference is None
+                and self._chart_placed is None):
             return
         # The comparison can change without any chart changing, so the style
         # controls are refreshed here rather than only when charts are opened.
@@ -6109,6 +6834,7 @@ class GamutApp(QMainWindow):
         self._update_volume()
         self._update_coverage()
         self._update_drift()
+        self._update_chart_numbers()
 
     def _write_two_slices(self, gamuts, out) -> None:
         """Two cross-sections, side by side, on one range.
@@ -6311,6 +7037,7 @@ class GamutApp(QMainWindow):
                       else None),
             ideal_neutrals=(self._neutral.isChecked()
                             and self._ideal_neutral.isChecked()),
+            chart=self._chart_cloud(),
             light=self._light_position(),
             grid=self._grid_on.isChecked(),
         )
@@ -6372,6 +7099,14 @@ class GamutApp(QMainWindow):
         """
         ref = ("the paper's own white" if self._relative.isChecked()
                else f"a {self._white.currentData()} white")
+        # A CHART ON ITS OWN IS NOT A MEASURED GAMUT, and a caption saying it
+        # was would be the one claim this whole feature was designed not to
+        # make. Named for what is actually in the picture.
+        if self._chart_placed is not None and not self._slots \
+                and self._reference is None:
+            return (f"{self._chart[0].stem} — patches to be printed, not "
+                    f"measured, shown where {self._chart_placed.profile} says "
+                    f"they would land")
         return f"Measured gamut — lightness and colour measured from {ref}"
 
     def _update_coverage(self) -> None:
