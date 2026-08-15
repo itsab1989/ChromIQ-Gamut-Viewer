@@ -700,7 +700,7 @@ handled by the page itself, and the **zoom** buttons and the four arrows
 behind **more…** are there for anyone who would rather press something — or
 who is on a desktop with no wheel.
 
-<p align="center"><img src="docs/screenshots/21-a-saved-page-as-its-reader-sees-it.webp" width="880" alt="A saved page open in a browser: two measured papers in CIELAB, one solid and one as an outline, their names underneath, then a strip of controls reading Pause, minus, speed, plus, minus, zoom, plus, reset view, less…, then an opened panel of controls in five headed groups — HOW IT MOVES with left and right and up and down, WHERE YOU LOOK FROM with move-it arrows and the buttons above, front, side and angle, EACH SHAPE with a row per paper carrying a minus, a percentage, a plus, wires and grey, WHAT IS DRAWN with the numbers, walls and grid, lettering and the names, and THE PAGE ITSELF with light or dark, full screen and PNG — and below all of it the written-out figures"></p>
+<p align="center"><img src="docs/screenshots/21-a-saved-page-as-its-reader-sees-it.webp" width="880" alt="A saved page open in a browser: two measured papers in CIELAB, one solid and one as an outline, their names underneath, then a strip reading Pause, minus, zoom, plus, reset view, less…, and an opened panel of controls in five headed groups — HOW IT MOVES with left-and-right and up-and-down, each carrying an on switch, a speed and a sweep reading “round” and “22°”; WHERE YOU LOOK FROM with four move-it arrows and the buttons above, front, side and angle; EACH SHAPE beginning with “where they agree” and “where they differ” at 100%, then a row per paper carrying a minus, a percentage, a plus, wires and grey, and an “as saved” button; WHAT IS DRAWN with the numbers, walls and grid, lettering and the names; and THE PAGE ITSELF with light or dark, full screen and PNG — with the written-out figures below all of it"></p>
 
 **You choose which controls the page carries**, each time you save it. The
 save dialog has a section — *What the person opening it can change* — with a
@@ -708,7 +708,7 @@ switch for each one, and an explanation of when it is worth handing over:
 
 <p align="center"><img src="docs/screenshots/22-choosing-what-the-reader-can-change.webp" width="470" alt="The save dialog under the heading What the person opening it can change, with its switches sorted into five named boxes: Moving the shape (stop and start the movement, one speed, a speed for each direction, turn left and right, tip up and down); Looking at it (move the cut up and down, zoom in and out, move the picture about, four fixed places to look from, put the view back, fill the screen); How each shape is drawn (make a shape fainter or more solid, draw the edges instead of the surface, take the colour out of a shape); What the picture shows (put the numbers away, the box and its grid, the lettering, the names underneath); and The page itself (light or dark, save it as a picture file, remember what they chose). Each row has a help icon beside it."></p>
 
-There are twenty-one of them now, in five named groups — *Moving the shape*,
+There are twenty-three of them now, in five named groups — *Moving the shape*,
 *Looking at it*, *How each shape is drawn*, *What the picture shows* and *The
 page itself* — each with an explanation of when it is worth handing over. The
 ones that were always there stay ticked, along with **zoom** and **move**,
@@ -740,6 +740,44 @@ still carry a name promising two things while showing one. Those are marked in
 the file and the switch is not built for them at all. Not built rather than
 built and refused: a control that is present and declines to work is the worse
 of the two.
+
+**Two shapes can be dissolved into each other.** *Where they agree* fades the
+part every shape reaches, leaving only the places they differ — the question
+you ask when choosing between two papers. *Where they differ* does the
+opposite, leaving the part they have in common — the question you ask when the
+same picture has to go out on both and you need to know which colours are safe
+on either.
+
+Both are sliders rather than switches, and that was settled by measurement: a
+shape lying entirely inside another agrees *everywhere*, so hiding the shared
+part outright makes it vanish completely — correct, and indistinguishable from
+a fault. Faded, it is still faintly there and explains itself. At the top of
+the range neither changes the picture at all, and that is exact rather than
+approximate: the fade rides on a per-point alpha inside a single mesh, so full
+strength hands back the identical array of colours. Cutting the surface into
+two meshes was tried first and measured against the picture as it ships —
+**120,481 pixels differed** with the fade at full, because a browser blends
+transparent surfaces in the order it draws them.
+
+**If a see-through shape looks sliced, it is the drawing and not the
+measurement.** Two things cause it, and measurement says roughly half each.
+A closed shape drawn see-through also shows its **far side from the inside**,
+whose faces point away from the light — that appears the instant a surface
+stops being opaque, and hard-edged structure jumps from 0.54% to 0.71% at a
+*thousandth* of transparency, where nothing can yet be blending. The rest
+arrives as real blending: a browser composites see-through surfaces in the
+order it draws them rather than by which is nearer. Measured on one paper:
+0.54% of the inside is hard-edged when solid, 0.71% at a thousandth and 0.90%
+at half — and it depends far more on where you stand, from 0.87% seen from
+above to **3.47% at the three-quarter angle these pictures open at**.
+The silhouette is identical either way (0 pixels lost of 148,518). Turning
+the shape solid removes it, and so does pressing **above**. Both the window
+and the saved page say so where you meet it.
+
+**Each direction gets a sweep as well as a speed** — how far it swings, in
+degrees, with the same limits the window uses. One press past the widest swing
+sends it **all the way round**, which is otherwise impossible on a page that
+was saved swinging.
 
 **A saved cross-section carries the same lightness slider the window has.**
 Without it a cut is frozen at whatever height the sender happened to be

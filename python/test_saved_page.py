@@ -8,6 +8,7 @@ with, and the figures written under the picture could not be scrolled to.
 """
 from __future__ import annotations
 
+import inspect
 import re
 
 import pytest
@@ -202,13 +203,14 @@ def test_no_movement_settings_means_no_strip():
 # The figures written under the picture
 # --------------------------------------------------------------------------
 
-def _page(tmp_path, notes=""):
+def _page(tmp_path, notes="", controls=True):
     import plotly.graph_objects as go
 
     fig = go.Figure(go.Scatter3d(x=[0, 1], y=[0, 1], z=[0, 1], name="A paper"))
     out = tmp_path / "p.html"
     ti3gamut._write_dark_html(fig, out, mode="dark", spin=SPIN,
-                              carry_viewer=False, notes=notes)
+                              carry_viewer=False, notes=notes,
+                              controls=controls)
     # ENCODING NAMED, ALWAYS. Path.read_text() uses the platform default,
     # which on Windows is cp1252 -- and this page is full of em dashes and
     # ellipses, so every test that read one back died there while passing on
@@ -264,16 +266,29 @@ def test_a_page_that_fills_the_screen_has_nothing_to_scroll_to(tmp_path):
     of the page would be unreachable.
 
     The invariant that makes that impossible: a page only fills the screen
-    exactly when there is nothing under it to reach. With figures, the
-    picture is capped and the page scrolls; without them, there is nothing
-    below the fold in the first place."""
-    alone = _page(tmp_path)
+    exactly when there is nothing under it to reach.
+
+    WHAT COUNTS AS "UNDER IT" CHANGED, and this test was written before it
+    did. It used to be the written-out figures and nothing else, so the cap
+    was applied only when there were figures. Then the strip of controls grew
+    from four switches to twenty-one -- and a page with no figures, whose
+    picture was still a rigid item in a body fixed to the height of the
+    window, had nothing to give that panel but the picture. Measured with the
+    panel open: **0 pixels of picture at 320x568.** The cap now applies
+    whenever anything at all sits below, which is figures OR controls.
+    """
+    alone = _page(tmp_path, controls=False)
     assert "overflow:hidden" in alone, "nothing below it, so nothing scrolls"
     assert "min-height:62vh" not in alone, (
-        "with nothing under it the picture may have the whole window")
+        "with nothing under it at all the picture may have the whole window")
     with_notes = _page(tmp_path, notes="Colour held: 702,327")
     assert "overflow:auto" in with_notes
     assert "min-height:62vh" in with_notes
+    # AND THE CASE THAT WAS MISSED: controls, no figures.
+    with_strip = _page(tmp_path)
+    assert "min-height:62vh" in with_strip, (
+        "a panel of twenty-one controls will squeeze an uncapped picture to "
+        "nothing on a phone")
 
 
 def test_the_strip_does_not_sit_on_top_of_the_numbers(tmp_path):
@@ -686,3 +701,277 @@ def test_the_selectors_are_quoted_because_the_names_carry_numbers():
     would take the whole strip down with it."""
     js = ti3gamut._SPIN_CONTROLS_JS
     assert "'[data-cq=\"' + what + '\"]'" in js
+
+
+# --------------------------------------------------------------------------
+# Fading away where the shapes agree — and where they differ
+#
+# The first of these guards a fault that was BUILT, measured and thrown away:
+# the fade was done by cutting each surface into two meshes, and at full
+# strength — where nothing should have changed — 120,481 pixels differed by
+# more than eight levels because a browser blends transparent surfaces in the
+# order it draws them.
+# --------------------------------------------------------------------------
+
+def _gamuts():
+    import numpy as np
+
+    from gamutview import build_gamut
+    rng = np.random.default_rng(20260815)
+
+    def blob(scale):
+        pts = rng.normal(size=(60, 3)) * np.array([12.0, 20.0, 20.0]) * scale
+        pts[:, 0] += 50.0
+        return build_gamut(pts, input_space="lab", space="lab")
+
+    return [("big", blob(1.0)), ("small", blob(0.55))]
+
+
+def test_where_they_agree_is_worked_out_from_containment_not_guessed():
+    """The same test the red-and-grey comparison already uses, so the two
+    features cannot disagree about what "inside" means."""
+    import inspect
+
+    source = inspect.getsource(ti3gamut.agreement_masks)
+    assert "outside_of" in source
+    assert "AND, NOT OR" in source, (
+        "with three shapes, 'where they overlap' is the region every one of "
+        "them holds -- a point inside one of two others still differs")
+
+
+def test_a_shape_alone_agrees_with_nothing():
+    """Closing the second measurement while the fade is turned down must not
+    erase the one that is left."""
+    import numpy as np
+
+    only = [_gamuts()[0]]
+    mask = ti3gamut.agreement_masks(only)[0]
+    assert mask.all(), "all of it stands out when there is nothing to compare"
+
+
+def test_a_shape_inside_another_agrees_everywhere():
+    import numpy as np
+
+    big, small = _gamuts()
+    masks = ti3gamut.agreement_masks([big, small])
+    assert masks[1].sum() < masks[0].sum(), (
+        "the smaller shape is mostly inside the bigger one, so far less of "
+        "it stands out")
+
+
+def test_the_fade_is_done_to_the_colours_and_not_by_a_second_mesh():
+    """MEASURED, and the reason the first implementation was thrown away.
+
+    Cutting a closed surface into a faded half and a solid half changes how
+    the browser composites it: 120,481 pixels differed by more than eight
+    levels with the fade at FULL. One mesh carrying an alpha per point has no
+    such seam -- and at full strength it hands back the very same colour
+    strings, so the picture is identical by construction rather than by
+    luck. Re-measured on the finished thing at 0 pixels different.
+    """
+    source = inspect.getsource(ti3gamut._with_alpha)
+    assert "120,481" in source, "the measurement that forced this belongs here"
+    assert 'out.append(colour)' in source, (
+        "at full strength the very same string comes back, not a rebuilt one "
+        "-- which is what makes the top of the range identical rather than "
+        "merely close")
+
+
+def test_full_strength_really_does_return_the_same_colours():
+    got = ti3gamut._with_alpha(["rgb(1,2,3)", "rgb(4,5,6)"], [1.0, 1.0])
+    assert got == ["rgb(1,2,3)", "rgb(4,5,6)"]
+
+
+def test_and_a_lower_one_really_does_change_them():
+    got = ti3gamut._with_alpha(["rgb(1,2,3)", "rgb(4,5,6)"], [0.25, 1.0])
+    assert got == ["rgba(1,2,3,0.250)", "rgb(4,5,6)"]
+
+
+def test_the_mask_follows_the_same_welding_as_the_colours_it_indexes():
+    """A weld groups by the point AND its colour. A mask welded on its own,
+    with its own values standing in for colours, can group differently and
+    come back a different length -- lined up with nothing, so the fade lands
+    on the wrong points and looks like a fault in the measurement."""
+    import inspect
+
+    assert "_weld_order" in inspect.getsource(ti3gamut._weld), (
+        "one rule, used by both, rather than two implementations of it")
+    assert "_weld_order(v, colours)" in inspect.getsource(ti3gamut._mesh)
+
+
+def test_the_reader_gets_both_directions_and_they_are_not_the_same_control():
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert 'data-cq="agree-at"' in js and 'data-cq="differ-at"' in js
+    assert "differAt" in js and "agreeAt" in js
+    assert 'mark.charAt(at) === "1" ? differAt : agreeAt' in js, (
+        "one asks where they differ, the other what they have in common")
+
+
+def test_the_page_only_carries_the_mask_when_it_hands_over_the_control():
+    """One character per measured point is small, and a page nobody can fade
+    has no use for it at all."""
+    assert 'stand = (agreeing_edges(g, disagrees)' in inspect.getsource(
+        ti3gamut.build_figure)
+
+
+def test_a_strength_moves_in_steps_the_eye_can_see_evenly():
+    """Ten equal steps of a tenth sound right and do not look it: full to
+    nine-tenths is barely visible, while the last step removes almost all of
+    what was left. Reported as a shape that "seemed fully there and then
+    immediately completely gone"."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "var LADDER = [0, 0.05, 0.08, 0.11, 0.15, 0.2," in js
+    assert "function stepped(value, by, start)" in js
+    # AND IT KEEPS WHEREVER THE SHAPE STARTED as a rung of its own, or a
+    # value the page was saved with -- 0.55 for two papers, 0.30 for a
+    # chart's skin -- cannot be returned to by pressing plus as many times
+    # as minus. Caught by pressing both and comparing the drawing.
+    assert "function ladderFor(start)" in js
+    # ONE LADDER FOR EVERY STRENGTH ON THE PAGE. Two similar controls moving
+    # in different steps is the inconsistency this is meant to remove.
+    assert js.count("stepped(") >= 4
+
+
+def test_it_can_be_taken_all_the_way_to_nothing():
+    """Asked for, and the right answer: hiding the shared part outright is a
+    thing somebody wants. Refusing it because a vanished shape MIGHT be
+    mistaken for a fault solves the wrong half of the problem."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "var LADDER = [0," in js
+
+
+def test_the_button_does_not_say_only_that_something_changed():
+    """A label reading "(changed)" was tried and taken out again.
+
+    It says that SOMETHING is different without saying what, which is half an
+    answer and leaves the reader hunting anyway — "not really helpful", as it
+    was put. The note that names the thing they can see and what to press
+    about it is the whole answer, so the vague one was only noise."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    # THE EMITTED STRING, not the word wherever it appears -- the comment
+    # explaining why it was removed says it too, and a test that cannot tell
+    # those apart forbids writing the reason down.
+    assert '" (changed)"' not in js
+    assert "changedFromSaved" not in js
+    assert "function tellMore()" in js, (
+        "it still has to exist, and be defined and not only called -- it was "
+        "called from two places while defined in none, so the panel's own "
+        "button stopped updating at all")
+    # EVERY ROUTE THAT CHANGES THE PICTURE GOES THROUGH IT.
+    assert js.count("tellMore()") >= 2
+
+
+def test_a_saved_page_tells_a_phone_how_wide_it_is(tmp_path):
+    """WITHOUT THIS EVERY RULE WRITTEN FOR A PHONE IS DEAD.
+
+    A phone browser handed a page with no viewport tag assumes it was written
+    for a desktop: it lays it out in a pretend window about 980 pixels wide
+    and scales the result down to fit. On a 390-pixel phone that is a scale of
+    roughly 0.40, so a 12-pixel label is drawn at five physical pixels — and
+    every ``@media (max-width: …)`` rule in the strip is measured against 980
+    and never fires.
+
+    Reported as "on some occurrences the controls are tiny". It survived
+    because the viewport measurements here resize the real window, and a
+    desktop browser in a narrow window lays out at that width with or without
+    the tag — so the probes were measuring the layout this tag produces while
+    the pages shipped without it.
+    """
+    page = _page(tmp_path)
+    assert 'name="viewport"' in page
+    assert "width=device-width" in page
+    assert "initial-scale=1" in page
+    # AND IN THE HEAD, before the styles it governs.
+    assert page.index('name="viewport"') < page.index("</head>")
+
+
+@pytest.mark.parametrize("styles", [["solid", "solid"], ["solid", "mesh"],
+                                    ["mesh", "mesh"], ["solid+mesh", "mesh"],
+                                    ["mesh", "solid"]])
+@pytest.mark.parametrize("agree,differ,split",
+                         [(1.0, 1.0, False), (1.0, 1.0, True),
+                          (0.3, 1.0, True), (1.0, 0.3, True),
+                          (0.0, 0.0, True)])
+def test_no_name_is_listed_twice(styles, agree, differ, split):
+    """A cage is drawn in two halves when the fades are handed over, and the
+    second half must not put its own entry in the list of names.
+
+    IT DID. Passing ``key=None`` reads to `_edges` as "no separate marker, so
+    the cage itself carries the name" — the opposite of silence — so a page
+    with a cage on it listed that cage twice under one name, in every
+    arrangement, whether or not anything was actually faded. Reported as "the
+    outline was double in some", and reproduced here in 16 of 25
+    combinations before the fix.
+    """
+    import collections
+
+    fig = ti3gamut.build_figure(_gamuts(), "", styles=styles, agree=agree,
+                                differ=differ, split=split)
+    names = [t.name for t in fig.data if getattr(t, "showlegend", False)]
+    twice = [n for n, count in collections.Counter(names).items() if count > 1]
+    assert not twice, f"listed more than once: {twice}"
+
+
+def test_the_page_says_why_a_see_through_shape_looks_sliced():
+    """A see-through surface shows flat, hard-edged patches of its own
+    triangles at some angles — the browser blends them in the order it draws
+    them rather than by which is nearer. Nothing is missing and the outline is
+    identical, but it reads as a slice taken out of the shape.
+
+    Measured: 0.54% of the inside is hard-edged when solid against 0.87% from
+    above and 3.47% at the three-quarter angle these pictures open at. Both
+    routes to transparency draw it identically, so there is no cleaner one to
+    switch to — the answer is to say so.
+
+    Explaining it only in the tooltip of the button that causes it is no help
+    to somebody looking at the picture wondering what they did: reported as
+    "it looks sliced", then "I don't know which control does it".
+    """
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert 'data-cq="facets"' in js
+    assert "nothing is missing" in js
+    assert "Press + to make it solid" in js, "name the cure, not only the cause"
+    # SHOWN ONLY WHILE IT APPLIES. A standing note about something that is
+    # not happening is just more to read.
+    assert 'note.hidden = !thin' in js
+    # AND UPDATED ON THE ONE PATH EVERY PRESS TAKES. Hung off the plural
+    # tellShapes() it was missed by every per-shape press, which calls the
+    # singular one -- the same trap as the "(changed)" label.
+    # Checked by reading tellMore's own body rather than by comparing
+    # positions in the file with some other function's -- which is a guess
+    # about layout, and was wrong the first time it was written here.
+    body = js[js.index("function tellMore()"):]
+    body = body[:body.index("\n  }") + 4]
+    assert "note.hidden" in body, (
+        "the note has to be updated on the one path every press takes")
+
+
+def test_the_picture_can_never_paint_over_the_controls():
+    """Opening the panel takes about seventy pixels off the picture, and the
+    drawing library only learns that when told to re-measure. For a frame or
+    two the canvas is still its old height and spills over the strip, slicing
+    the Play button in half. Reported as "here, and then a second later it is
+    back to good".
+
+    Telling it to re-measure sooner only shortens the flicker. Stacking the
+    controls above the picture removes it whatever the timing, and clipping
+    the picture to its own box stops the canvas escaping at all.
+    """
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert ".cq-spin-bar,.cq-spin-panel{position:relative;z-index:2}" in js
+    assert "body > div:first-of-type{overflow:hidden}" in js
+    assert "requestAnimationFrame(function () { fit(); })" in js, (
+        "and re-measured once the browser has actually laid out, which is "
+        "the earliest the new height can be read")
+
+
+def test_the_strip_grows_with_the_window_between_a_floor_and_a_ceiling():
+    """Pinned at 12px it was right on a laptop and read as tiny on anything
+    wider — reported from a desktop window. The floor keeps every measurement
+    made for a narrow screen exactly where it was."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert js.count("clamp(12px,0.85vw,15px)") == 2, (
+        "the strip and the panel, or the two disagree about their own size")
+    assert "padding:0.45em 0.85em" in js and "padding:0.4em 0.8em" in js, (
+        "buttons in em, so they grow with the text rather than staying the "
+        "same size around it")

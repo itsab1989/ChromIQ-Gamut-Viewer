@@ -424,7 +424,7 @@ def _band(colour: str, steps: int = 32) -> str:
 
 def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
            paint: str = "plain", index: int = 0, key: str | None = None,
-           page: str = "#111111"):
+           page: str = "#111111", only=None):
     """The triangle edges of a gamut, as a wire cage.
 
     A solid shape hides whatever is inside it. Drawn as a cage instead, an
@@ -443,7 +443,8 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
     """
     import plotly.graph_objects as go
     v = _plot_points(gamut)
-    f = gamut.faces
+    f = (np.asarray(gamut.faces)[np.asarray(only)] if only is not None
+         else gamut.faces)
     seen = set()
     xs, ys, zs = [], [], []
     for tri in f:
@@ -475,6 +476,8 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
         return [cage, _legend_line(f"{name} (outline)", key,
                                    f"{name}-outline")]
 
+    if only is not None and not len(f):
+        return []                      # nothing of this cage is in this part
     per_vertex = _paint_vertices(gamut, paint, index)
     if per_vertex is None:                       # "true": each point's colour
         per_vertex = [f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
@@ -546,12 +549,40 @@ _COLOUR_IS_THE_ANSWER = {"cq": "colour"}
 
 
 def _mesh_lost(gamut, name: str, opacity: float, lost,
-               kept: str = _KEPT, depth: float = 0.35, light=None) -> "list":
-    """The gamut painted by what the comparison cannot reproduce."""
+               kept: str = _KEPT, depth: float = 0.35, light=None,
+               only=None, alphas=None, stand=None) -> "list":
+    """The gamut painted by what the comparison cannot reproduce.
+
+    *only* splits it exactly as it splits a plain mesh -- see :func:`_mesh`.
+    The two features ask different questions of the same shape (this one is
+    about the chosen comparison, the split is about the other shapes drawn
+    beside it) and both can be true at once, so they compose rather than
+    exclude each other.
+    """
     import plotly.graph_objects as go
     v = _plot_points(gamut)
     colours = [_LOST if bad else kept for bad in lost]
-    v, colours, faces = _weld(v, colours, gamut.faces)
+    # THE FADE GOES ON BEFORE THE WELD, so it travels with the colours it
+    # belongs to. Welding renumbers the vertices; a mask applied afterwards
+    # would line up with nothing.
+    if alphas is not None:
+        colours = _with_alpha(colours, alphas)
+    picked = (np.asarray(gamut.faces)[np.asarray(only)] if only is not None
+              else gamut.faces)
+    # THE MASK IS WELDED WITH THE COLOURS, not alongside them.
+    #
+    # A saved page has to be able to work this fade out for itself, which
+    # means carrying which vertices stand out -- and it must be numbered the
+    # way the drawn vertices are, not the way the gamut's are. Welding drops
+    # duplicates and renumbers what is left, so the mask is put through the
+    # very same call rather than through a second one that could disagree
+    # with it. _weld indexes its middle argument and does not care what is in
+    # it, which is what makes this safe.
+    carried = None
+    if stand is not None:
+        keep, _remap = _weld_order(v, colours)
+        carried = "".join("1" if stand[i] else "0" for i in keep)
+    v, colours, faces = _weld(v, colours, picked)
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
@@ -566,7 +597,8 @@ def _mesh_lost(gamut, name: str, opacity: float, lost,
         name=f"{name} — red is out of reach, grey is within it", showlegend=True,
         hoverinfo="name",
         # The red IS the answer here — see _COLOUR_IS_THE_ANSWER.
-        meta=dict(_COLOUR_IS_THE_ANSWER))
+        meta=dict(_COLOUR_IS_THE_ANSWER,
+                  **({"stand": carried} if carried is not None else {})))
 
 
 #: A distinct colour per shape, for when telling them apart matters more than
@@ -976,6 +1008,26 @@ def _weld(points, colours, faces):
     agree about a corner. The dents stay: they are real, they are the whole
     point of following the measured boundary, and nothing here smooths them.
     """
+    keep, remap = _weld_order(points, colours)
+    if len(keep) == len(points):
+        return points, colours, faces
+    kept = np.asarray(keep)
+    welded = ([colours[i] for i in kept] if isinstance(colours, list)
+              else np.asarray(colours)[kept])
+    return points[kept], welded, remap[np.asarray(faces)]
+
+
+def _weld_order(points, colours):
+    """WHICH vertices a weld keeps, and where every old one now points.
+
+    Split out of :func:`_weld` so that anything else needing to follow the
+    same renumbering can do so by the SAME rule rather than by a second
+    implementation of it. That matters more than it looks: a weld groups by
+    the point AND its colour, so a mask welded on its own -- with the mask
+    values standing in for the colours -- can group differently and come back
+    a different length, lined up with nothing. Asking for the indices once
+    and indexing everything with them cannot drift.
+    """
     keys, order, keep = [], {}, []
     for point, colour in zip(points, colours):
         keys.append((tuple(np.round(point, 6)),
@@ -988,30 +1040,159 @@ def _weld(points, colours, faces):
             at = order[key] = len(keep)
             keep.append(i)
         remap[i] = at
-    if len(keep) == len(keys):
-        return points, colours, faces
-    kept = np.asarray(keep)
-    welded = ([colours[i] for i in kept] if isinstance(colours, list)
-              else np.asarray(colours)[kept])
-    return points[kept], welded, remap[np.asarray(faces)]
+    return keep, remap
+
+
+def agreement_masks(gamuts):
+    """Which triangles of each shape lie somewhere the others do NOT reach.
+
+    Two gamuts drawn over each other are mostly the same gamut: the part where
+    they agree is the bulk of both, it is drawn twice, and it hides the part
+    where they differ -- which is the only part anybody is comparing them to
+    see. Fading the agreement away leaves the disagreement standing on its own.
+
+    A vertex is AGREED when every other shape also contains it. A triangle is
+    agreed when all three of its vertices are. Returned per shape as a boolean
+    per triangle: ``True`` where that triangle disagrees with something and is
+    therefore part of the answer.
+
+    AND, NOT OR, with three or more shapes. "Where they overlap" is the region
+    every one of them holds; a point inside one of two others is still a
+    disagreement and stays visible.
+
+    Containment is `gamutview.outside_of`, which is the same test the
+    red-and-grey comparison mesh already uses -- so the two features cannot
+    disagree with each other about what "inside" means.
+
+    NOT CACHED, deliberately. The test builds a triangulation of the shape
+    being tested against, which is the expensive part -- and it was measured
+    before deciding: **12 ms for two demo gamuts**, against a full redraw of
+    the picture that costs far more than that. The obvious cache is keyed on
+    the identity of the two shapes, and object identity is reused the moment
+    one is garbage-collected: a freed gamut's key can be handed to a newly
+    loaded one, which would quietly answer a containment question about a
+    measurement that is no longer open. Twelve milliseconds is not worth a
+    class of bug that shows up as one paper wearing another's shape.
+    """
+    from gamutview import outside_of
+
+    out = []
+    for i, (_name, a) in enumerate(gamuts):
+        others = [b for j, (_m, b) in enumerate(gamuts) if j != i]
+        faces = np.asarray(a.faces)
+        if not others:
+            # NOTHING TO AGREE WITH. One shape on its own disagrees with
+            # everything, so all of it stays -- which makes the control a
+            # no-op rather than a shape-eraser when somebody closes the
+            # second measurement while it is turned down.
+            out.append(np.ones(len(faces), bool))
+            continue
+        agreed = np.ones(len(a.vertices), bool)
+        for b in others:
+            try:
+                got = outside_of(a, b)
+            except Exception:          # noqa: BLE001 — a shape too small to
+                # triangulate cannot contain anything, so nothing agrees with
+                # it and the picture is left exactly as it was.
+                got = np.ones(len(a.vertices), bool)
+            agreed &= ~got
+        out.append(~(agreed[faces[:, 0]] & agreed[faces[:, 1]]
+                     & agreed[faces[:, 2]]))
+    return out
+
+
+def _with_alpha(colours, alphas):
+    """The same colours, each carrying its own alpha.
+
+    WHY ALPHA AND NOT A SECOND MESH. The obvious way to draw part of a shape
+    faintly is to cut it into two meshes and give them two opacities. It was
+    built that way first, and then measured against the picture as it ships:
+    **120,481 pixels differed by more than eight levels, the worst by 79** --
+    with the fade at FULL, where nothing should have changed at all.
+
+    A browser blends transparent surfaces in the order it draws them. One
+    closed surface, and the same surface cut into two open pieces, do not
+    composite to the same thing; the difference shows as hard-edged patches
+    across the shape, which is exactly what somebody looking at one asked
+    about.
+
+    Per-vertex alpha keeps ONE mesh. At full strength the colours are the very
+    strings they always were, so the top of the slider is not merely close to
+    a no-op -- it is the same array of colours and therefore the same picture.
+    Measured at **0 pixels different**.
+    """
+    out = []
+    for colour, alpha in zip(colours, alphas):
+        text = str(colour)
+        if alpha >= 1.0 or "(" not in text:
+            out.append(colour)          # untouched: the same string, not a copy
+            continue
+        inside = text[text.index("(") + 1:text.index(")")].split(",")
+        out.append(f"rgba({inside[0]},{inside[1]},{inside[2]},{alpha:.3f})")
+    return out
+
+
+def agreeing_edges(gamut, keep_faces):
+    """The same split for a wire cage: every vertex the kept triangles touch.
+
+    WITHOUT THIS THE FEATURE IS HALF APPLIED. A page showing one solid shape
+    and one cage would fade the solid's agreement away and leave the cage
+    drawn in full, so the reader sees a hole appear in one shape and nothing
+    happen to the other -- and has no way of knowing the two were treated
+    differently. A cage is a boundary like any other and is faded like one.
+    """
+    faces = np.asarray(gamut.faces)
+    live = np.zeros(len(gamut.vertices), bool)
+    if len(faces):
+        live[np.unique(faces[np.asarray(keep_faces)])] = True
+    return live
 
 
 def _mesh(gamut, name: str, opacity: float, wireframe: bool,
           paint: str = "true", index: int = 0, depth: float = 0.35,
-          page: str = "#111318", light=None):
-    """One Plotly mesh for a gamut, painted the way the user asked."""
+          page: str = "#111318", light=None, only=None, alphas=None,
+          stand=None):
+    """One Plotly mesh for a gamut, painted the way the user asked.
+
+    *only* is an optional boolean per triangle. Given one, the mesh is drawn
+    from those triangles alone -- which is how one shape becomes two meshes,
+    the part that disagrees with the other shapes and the part that agrees,
+    so the two can be drawn at different strengths. The drawing library allows
+    exactly one opacity per trace, which is the whole reason for the split.
+    """
     import plotly.graph_objects as go
     v = _plot_points(gamut)
     chosen = _paint_vertices(gamut, paint, index)
     colours = chosen if chosen is not None else [
         f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
         for r, g, b in gamut.colors]
-    v, colours, faces = _weld(v, colours, gamut.faces)
+    # THE FADE GOES ON BEFORE THE WELD, so it travels with the colours it
+    # belongs to. Welding renumbers the vertices; a mask applied afterwards
+    # would line up with nothing.
+    if alphas is not None:
+        colours = _with_alpha(colours, alphas)
+    picked = (np.asarray(gamut.faces)[np.asarray(only)] if only is not None
+              else gamut.faces)
+    # THE MASK IS WELDED WITH THE COLOURS, not alongside them.
+    #
+    # A saved page has to be able to work this fade out for itself, which
+    # means carrying which vertices stand out -- and it must be numbered the
+    # way the drawn vertices are, not the way the gamut's are. Welding drops
+    # duplicates and renumbers what is left, so the mask is put through the
+    # very same call rather than through a second one that could disagree
+    # with it. _weld indexes its middle argument and does not care what is in
+    # it, which is what makes this safe.
+    carried = None
+    if stand is not None:
+        keep, _remap = _weld_order(v, colours)
+        carried = "".join("1" if stand[i] else "0" for i in keep)
+    v, colours, faces = _weld(v, colours, picked)
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
         vertexcolor=colours, opacity=opacity, name=name, showlegend=False,
         legendgroup=name,
+        meta=(dict(stand=carried) if carried is not None else None),
         # Only the legend key uses this; vertexcolor paints the surface.
         color=_legend_swatch(chosen if chosen is not None else gamut.colors,
                              page),
@@ -2006,6 +2187,32 @@ window.cqSpinControls = function (settings) {
     return show[what] === undefined ? fallback : !!show[what];
   }
   var speeds = {turn: saved.turn.speed || 6, tilt: saved.tilt.speed || 6};
+  // HOW FAR EACH DIRECTION SWINGS, which the window has always had a slider
+  // for and a saved page had no way of touching -- a reader could change how
+  // FAST it swung and not how far, which are two quite different things to
+  // watch. The limits are the window's own (15-180 degrees left and right,
+  // 10-120 up and down), so a page cannot be set to something the window
+  // itself would not allow.
+  var ranges = {turn: saved.turn.range || 60, tilt: saved.tilt.range || 40};
+  var SWEEP = {turn: [15, 180], tilt: [10, 120]};
+  // WHICH WAY EACH DIRECTION MOVES WHEN IT IS ON: a swing that comes back,
+  // or a full turn that never does. The window has always offered both and a
+  // saved page offered neither -- whatever it was saved with was all a
+  // reader could ever have.
+  //
+  // THE TWO ARE ONE CONTROL HERE, not a sweep and a separate mode switch.
+  // Widening the swing step by step and then one step further is exactly how
+  // somebody would describe going all the way round, so the reading runs
+  // 60°, 70° … 180°, round. One control, one idea, and three fewer buttons
+  // in a row that has to survive a phone.
+  var chosen = {
+    turn: (saved.turn.mode && saved.turn.mode !== "off") ? saved.turn.mode : "round",
+    tilt: (saved.tilt.mode && saved.tilt.mode !== "off") ? saved.tilt.mode : "swing"};
+  function swings(which) { return on("sweep", false); }
+  function sweepReads(which) {
+    return chosen[which] === "round" ? "round"
+           : Math.round(ranges[which]) + "\u00b0";
+  }
   // ONE SPEED OR TWO. With the per-direction speeds switched off, the single
   // speed scales both together and keeps the proportion the page was saved
   // with -- a slow tip under a quicker turn stays a slow tip under a quicker
@@ -2039,6 +2246,7 @@ window.cqSpinControls = function (settings) {
   // name that appears in both panes is one row that acts on both. Two rows
   // doing half the job each is how a side-by-side page ends up with one pane
   // faded and the other not.
+  var agreed = false;                  // does this page carry the split at all
   function findShapes() {
     var found = [], byKey = {};
     (settings.ids || []).forEach(function (id) {
@@ -2069,6 +2277,11 @@ window.cqSpinControls = function (settings) {
           if (t.fill && t.fill !== "none") g.fill = true;
           // See _COLOUR_IS_THE_ANSWER in the Python that wrote this page.
           if (t.meta && t.meta.cq === "colour") g.plain = false;
+          // WHICH OF THIS SHAPE'S POINTS STAND OUTSIDE THE OTHERS, one
+          // character per drawn vertex, worked out when the page was written
+          // because only the Python has the whole 3D shape to work it out
+          // from. Its presence is also what says this page can fade at all.
+          if (t.meta && t.meta.stand) { g.stand = true; agreed = true; }
         }
       });
     });
@@ -2098,6 +2311,17 @@ window.cqSpinControls = function (settings) {
       grey: false};
     g.opened = Object.assign({}, dressed[g.key]);
   });
+  // HOW MUCH OF THE AGREEMENT IS LEFT, for the whole page rather than per
+  // shape: it is a statement about a pair, and one shape agreeing more than
+  // another is not a thing that can be true.
+  var agreeAt = 1, differAt = 1;
+  function withAlpha(colour, alpha) {
+    var text = String(colour);
+    if (alpha >= 1 || text.indexOf("(") < 0) return colour;
+    var bits = text.slice(text.indexOf("(") + 1, text.indexOf(")")).split(",");
+    return "rgba(" + bits[0] + "," + bits[1] + "," + bits[2] + ","
+           + alpha.toFixed(3) + ")";
+  }
 
   // WHICH CROSS-SECTIONS THIS PAGE CARRIES, if it is one that can be slid
   // through at all. Settled HERE, above the part that reads back what the
@@ -2193,12 +2417,54 @@ window.cqSpinControls = function (settings) {
           patch.fill = st.filled ? "toself" : "none"; any = true;
         }
       }
-      if (on("grey", true) && g.plain) {
+      // TWO REASONS TO REWRITE A TRACE'S COLOURS, and they are independent.
+      //
+      // Grey is offered only where the colour is decoration; the fade
+      // applies wherever the page carries a mask. Written with the fade
+      // nested inside the grey test -- as it was at first -- the comparison
+      // mesh that is red for what a paper cannot reach could not be faded at
+      // all, because grey is deliberately refused for it. The one page in
+      // the showcase whose whole subject is comparing two measurements was
+      // the one page where the new control did nothing.
+      var mark = t.meta && t.meta.stand;
+      // WHENEVER THERE IS A MASK, NOT ONLY WHEN SOMETHING IS FADED.
+      //
+      // Written as "…and something is faded", sliding back up to the top
+      // skipped this whole block -- so the colours written on the way DOWN
+      // were never written back, and the shape stayed faint at a reading of
+      // 100%. The colours are always rebuilt from the originals, so the
+      // reading and the picture cannot come apart.
+      //
+      // It costs nothing at rest: dressOne only runs on a press, or on load
+      // for a shape whose stored settings differ from the saved ones.
+      var fading = !!mark;
+      var greying = on("grey", true) && g.plain;
+      if (greying || fading) {
         COLOUR_FIELDS.forEach(function (field) {
           var had = reach(t, field);
           if (had === undefined || had === null) return;
           var origin = was(part, field, had);
-          var want = st.grey ? greyed(origin) : origin;
+          var want = (greying && st.grey) ? greyed(origin) : origin;
+          // AND THEN THE AGREEMENT, ON TOP OF WHATEVER COLOUR THAT LEFT.
+          //
+          // Applied to the colours rather than to the trace's opacity, and
+          // that is the whole design: cutting the surface into a faded half
+          // and a solid half was built first and measured against the
+          // picture as it ships -- 120,481 pixels differed by more than
+          // eight levels with the fade at FULL, because a browser blends
+          // transparent surfaces in the order it draws them and one closed
+          // surface is not two open ones. One mesh with an alpha per point
+          // has no such seam, and at the top it is the very same array of
+          // colours, so it is not merely close to changing nothing.
+          //
+          // It composes with grey rather than fighting it: grey decides WHAT
+          // colour each point is, this decides how much of it there is.
+          if (fading && field === "vertexcolor" && Array.isArray(want)) {
+            want = want.map(function (colour, at) {
+              return withAlpha(colour,
+                mark.charAt(at) === "1" ? differAt : agreeAt);
+            });
+          }
           // AN ARRAY HAS TO BE WRAPPED IN ANOTHER ONE. Handed a bare array,
           // restyle reads it as one value per trace and hands the FIRST
           // element to this trace -- so 491 vertex colours quietly became the
@@ -2215,7 +2481,8 @@ window.cqSpinControls = function (settings) {
   function moved(g) {
     var a = dressed[g.key], b = g.opened;
     return a.opacity !== b.opacity || a.wires !== b.wires
-        || a.filled !== b.filled || a.grey !== b.grey;
+        || a.filled !== b.filled || a.grey !== b.grey
+        || agreeAt < 1 || differAt < 1;
   }
   // ONLY WHAT HAS ACTUALLY CHANGED. Called once when the page opens, this
   // would otherwise re-draw every surface on it to the values it already has
@@ -2223,6 +2490,11 @@ window.cqSpinControls = function (settings) {
   // the first second somebody is looking at it.
   function dressAll() { shapes.filter(moved).forEach(dressOne); }
   function undress() {
+    // THE AGREEMENT GOES BACK TOO. "As saved" that restored every shape's
+    // strength and left the shared part faded would put the page in a state
+    // it was never saved in, and leave the one control the reader most
+    // likely moved as the one thing the button does not undo.
+    agreeAt = 1; differAt = 1;
     shapes.forEach(function (g) {
       dressed[g.key] = Object.assign({}, g.opened);
       dressOne(g);
@@ -2257,7 +2529,9 @@ window.cqSpinControls = function (settings) {
     try {
       localStorage.setItem(STORE, JSON.stringify(
         {running: running, both: both, speeds: speeds, picture: picture,
-         shapes: dressed, cutAt: cutAt,
+         shapes: dressed, cutAt: cutAt, agreeAt: agreeAt, ranges: ranges,
+         chosen: chosen,
+         differAt: differAt,
          mode: mode, turn: turn.mode, tilt: tilt.mode}));
     } catch (e) {}
   }
@@ -2275,6 +2549,8 @@ window.cqSpinControls = function (settings) {
       // simply visited the page before would have come back to find the
       // written-out numbers gone, with nothing they did to explain it.
       if (was.speeds) speeds = Object.assign({}, speeds, was.speeds);
+      if (was.ranges) ranges = Object.assign({}, ranges, was.ranges);
+      if (was.chosen) chosen = Object.assign({}, chosen, was.chosen);
       if (was.picture) picture = Object.assign({}, picture, was.picture);
       // ONLY SHAPES THIS PAGE ACTUALLY HAS. What was stored may have been
       // written by an earlier page at the same address, or by a version of
@@ -2290,6 +2566,10 @@ window.cqSpinControls = function (settings) {
       // BOUNDED BY WHAT THIS PAGE ACTUALLY HAS. A remembered height from a
       // page with more cuts in it than this one would otherwise ask for a
       // level that does not exist, and the picture would open empty.
+      if (typeof was.agreeAt === "number")
+        agreeAt = Math.max(0, Math.min(1, was.agreeAt));
+      if (typeof was.differAt === "number")
+        differAt = Math.max(0, Math.min(1, was.differAt));
       if (was.cutAt !== undefined && cuts)
         cutAt = Math.max(0, Math.min(cuts.levels.length - 1, was.cutAt | 0));
       if (was.turn !== undefined) turn.mode = was.turn;
@@ -2337,10 +2617,19 @@ window.cqSpinControls = function (settings) {
   // are read. Empty groups are never drawn, so a page that hands over two
   // controls still shows two controls and no scaffolding.
   var body = "";
-  function section(heading, rows, wide) {
+  function section(heading, rows, wide, aside) {
     if (!rows) return;
+    // THE ASIDE SITS OUTSIDE THE GRID, under it.
+    //
+    // Put inside as a full-width cell it was part of the layout, so the row
+    // of shape controls moved sideways the moment it appeared -- measured at
+    // 300 pixels on a wide window. A note that shoves the button you are
+    // reaching for is the very fault it was added to explain, and it is the
+    // second time in this file that something has moved under a finger.
+    // Below the grid it can only ever add height beneath everything.
     body += '<div class="cq-sect' + (wide ? " cq-wide" : "") + '">'
-      + '<h4>' + heading + '</h4><div class="cq-rows">' + rows + '</div></div>';
+      + '<h4>' + heading + '</h4><div class="cq-rows">' + rows + '</div>'
+      + (aside || "") + '</div>';
   }
 
   // ------------------------------------------------- moving the cut up and down
@@ -2537,9 +2826,11 @@ window.cqSpinControls = function (settings) {
   }
 
   var HAS_PANEL = on("lr", true) || on("ud", true) || on("speed_each", false)
+    || swings("turn") || swings("tilt")
     || on("move", true) || on("grid", false) || on("labels", false)
     || on("key", false) || on("appearance", false)
     || HAS_SHAPES || canStand() || canFull() || canSave()
+    || (agreed && on("agree", true))
     || (on("notes", true) && !!document.querySelector(".cq-notes"));
   if (HAS_PANEL)
     head += button("more", "more…", "Everything else you can change about "
@@ -2562,6 +2853,21 @@ window.cqSpinControls = function (settings) {
            + Math.round(speeds.turn) + '</span>'
            + button("turn-faster", "+", "Turn left and right more quickly.")
          : "")
+      + (swings("turn")
+         ? group(button("turn-narrower", "&minus;", "Swing a shorter way to "
+             + "each side. A narrow swing keeps the shape almost facing you, "
+             + "which is what you want when you have picked an angle and only "
+             + "want enough movement to tell a dent from a shadow.")
+           + '<span class="cq-num" data-cq="turn-range">'
+           + sweepReads("turn") + '</span>'
+           + button("turn-wider", "+", "Swing further to each side, up to "
+             + "half a turn — and one press further than that sets it going "
+             + "ALL THE WAY ROUND, turning steadily in one direction instead "
+             + "of coming back. The reading says “round” when it is doing "
+             + "that. A swing keeps the shape near the angle you picked; all "
+             + "the way round is the one to leave running while you look at "
+             + "something else. Press the minus to come back to a swing."))
+         : "")
       + '</span></div>';
   if (on("ud", true))
     moves += '<div class="cq-row"><span>up &amp; down</span>'
@@ -2574,6 +2880,19 @@ window.cqSpinControls = function (settings) {
            + '<span class="cq-num" data-cq="tilt-speed">'
            + Math.round(speeds.tilt) + '</span>'
            + button("tilt-faster", "+", "Tip more quickly.")
+         : "")
+      + (swings("tilt")
+         ? group(button("tilt-narrower", "&minus;", "Tip a shorter way. A "
+             + "small tip is enough to show that a surface is dented rather "
+             + "than smooth, and it is much easier to watch than a large one.")
+           + '<span class="cq-num" data-cq="tilt-range">'
+           + sweepReads("tilt") + '</span>'
+           + button("tilt-wider", "+", "Tip further, until you are looking "
+             + "down onto the lid of the shape and then up at its floor — "
+             + "which is the only way to see how flat the top is near white. "
+             + "One press past the furthest tip sends it right over the top "
+             + "and round, reading “round”, which is worth seeing once and "
+             + "is not restful to leave running."))
          : "")
       + '</span></div>';
   section("how it moves", moves);
@@ -2601,6 +2920,46 @@ window.cqSpinControls = function (settings) {
   section("where you look from", looking);
 
   var each = "";
+  // WHERE THEY AGREE, ABOVE THE SHAPES IT ACTS ON. It belongs in this group
+  // rather than with the grid and the lettering, because it is about the
+  // shapes themselves -- and it goes first because it is the one control
+  // here that acts on all of them at once, so reading down the group runs
+  // from "all of them" to "this one".
+  if (agreed && on("agree", true)) {
+    each += '<div class="cq-row"><span>where they agree</span>'
+      + '<span class="cq-ctl">'
+      + group(button("agree-less", "&minus;",
+          "Fade away the part that every shape reaches, so that what is left "
+          + "standing is only where they differ. Two papers drawn over each "
+          + "other are mostly the same paper: the part they share is the bulk "
+          + "of both, it is drawn twice, and it sits in front of the very "
+          + "thing you are comparing them to see.")
+        + '<span class="cq-num" data-cq="agree-at">100%</span>'
+        + button("agree-more", "+",
+          "Bring the shared part back. At the top nothing is changed at all "
+          + "and the picture is exactly the one that was saved. If a whole "
+          + "shape faded away on the way down, that is the answer and not a "
+          + "fault: it means that shape sits completely inside the others and "
+          + "differs from them nowhere."))
+      + '</span></div>';
+    // AND THE OTHER WAY ROUND. The two are not the same control read
+    // backwards: fading the shared part asks "where do these differ?", which
+    // is what you ask when choosing between two papers, and fading the
+    // differences asks "what can I print on both of them?", which is what
+    // you ask when the same picture has to go out on both.
+    each += '<div class="cq-row"><span>where they differ</span>'
+      + '<span class="cq-ctl">'
+      + group(button("differ-less", "&minus;",
+          "Fade away the parts that only one shape reaches, leaving the part "
+          + "they all have in common. That shared part is what you can print "
+          + "on either of them and get the same colour, which is the question "
+          + "to ask when one picture has to go out on both.")
+        + '<span class="cq-num" data-cq="differ-at">100%</span>'
+        + button("differ-more", "+",
+          "Bring the differences back. Both of these sit at the top when the "
+          + "page opens, and there they change nothing at all."))
+      + '</span></div>';
+  }
   shapes.forEach(function (g, n) {
     var st = dressed[g.key], ctl = "";
     if (canFade(g))
@@ -2614,7 +2973,13 @@ window.cqSpinControls = function (settings) {
         + button("shape-stronger-" + n, "+",
           "Make " + g.label + " more solid. At full strength a surface hides "
           + "everything behind it, which is exactly what you want when it is "
-          + "the shape itself you are studying rather than the comparison."));
+          + "the shape itself you are studying rather than the comparison. "
+          + "It is also the cleanest: a see-through surface shows flat "
+          + "patches of its own triangles at some angles, because the "
+          + "browser blends them in the order it draws them rather than by "
+          + "which is nearer. That is the drawing, not your measurement — "
+          + "it is worst at a three-quarter view and least from straight "
+          + "above, and going solid removes it altogether."));
     if (canWire(g))
       ctl += button("shape-wires-" + n, g.mesh ? "wires" : "filled",
         g.mesh
@@ -2646,6 +3011,19 @@ window.cqSpinControls = function (settings) {
       + safe(g.label) + '">' + safe(g.label) + '</span>'
       + '<span class="cq-ctl">' + ctl + '</span></div>';
   });
+  // A LINE THAT APPEARS ONLY WHEN IT APPLIES.
+  //
+  // A see-through surface shows flat, hard-edged patches of its own triangles
+  // at some angles -- the browser blends them in the order it draws them
+  // rather than by which is nearer. Nothing is missing, and the outline is
+  // identical, but it reads as a slice taken out of the shape.
+  //
+  // It was explained in the tooltip on the button that causes it, which is no
+  // help at all to somebody looking at the picture wondering what they did:
+  // reported as "it looks sliced" and then, plainly, "I don't know which
+  // control does it". So the page says so itself, in the group the control
+  // lives in, and only while a shape is actually see-through -- a standing
+  // note about a thing that is not happening is just more to read.
   if (each)
     each += '<div class="cq-row cq-back"><span>changed your mind?</span>'
       + '<span class="cq-ctl">'
@@ -2654,7 +3032,11 @@ window.cqSpinControls = function (settings) {
         + "Only how they are drawn is put back: nothing you have turned, "
         + "zoomed or hidden is disturbed.")
       + '</span></div>';
-  section("each shape", each, true);
+  section("each shape", each, true,
+    each ? '<div class="cq-aside" data-cq="facets" hidden>'
+           + 'a see-through shape shows its own facets at some angles — '
+           + 'nothing is missing. Press + to make it solid, or “above”.'
+           + '</div>' : "");
 
   var drawn = "";
   // ONLY IF THERE ARE ANY. Offering to hide something that is not on the
@@ -2734,13 +3116,43 @@ window.cqSpinControls = function (settings) {
       // this pair of numbers is what tells a reader which minus goes with
       // which label, and it is the only thing that does.
       ".cq-grp{display:inline-flex;gap:6px;align-items:center}"
+      // THE STRIP AND THE PANEL PAINT ABOVE THE PICTURE, ALWAYS.
+      //
+      // Opening the panel takes about seventy pixels off the picture, and the
+      // drawing library only learns that when it is told to re-measure. For
+      // the frame or two in between, the canvas is still its old height and
+      // spills over the strip -- so the Play button and "less…" are sliced
+      // in half by the panel's top edge, and a moment later it settles.
+      // Reported exactly that way: "here, and then a second later it is back
+      // to good".
+      //
+      // Telling it to re-measure sooner only shortens the flicker; stacking
+      // the controls above the picture removes it whatever the timing, and
+      // clipping the picture to its own box stops the canvas escaping in the
+      // first place. Two rules, no reliance on when a frame lands.
+      + ".cq-spin-bar,.cq-spin-panel{position:relative;z-index:2}"
+      + "body > div:first-of-type{overflow:hidden}"
+      // THE TEXT GROWS WITH THE WINDOW, between a floor and a ceiling.
+      //
+      // Pinned at 12px it was right on a laptop and looked lost on anything
+      // bigger: on a 1900-pixel window the picture fills the screen and the
+      // controls under it are the same twelve pixels they were at 1280, which
+      // reads as tiny. Reported twice, once on a phone (a different cause --
+      // see the viewport tag) and once on a wide desktop window, which is
+      // this.
+      //
+      // clamp() keeps 12px as the floor, so nothing measured for a narrow
+      // screen moves, and stops at 15px so a very wide window does not end up
+      // with a row of enormous buttons. The padding is in em, so the buttons
+      // grow with the text rather than staying the same size around it.
       + ".cq-spin-bar{flex:0 0 auto;display:flex;gap:18px;align-items:center;"
       + "justify-content:center;flex-wrap:wrap;margin:0 auto;max-width:100%;"
-      + "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+      + "font:clamp(12px,0.85vw,15px)/1 -apple-system,BlinkMacSystemFont,"
+      + "'Segoe UI',sans-serif;"
       + "padding:8px 10px;color:" + ink + ";background:" + paper + ";"
       + "border-top:1px solid " + tint(ink, 0.14) + "}"
       + ".cq-spin-bar button{font:inherit;cursor:pointer;border-radius:999px;"
-      + "padding:5px 10px;border:1px solid " + tint(ink, 0.45) + ";"
+      + "padding:0.45em 0.85em;border:1px solid " + tint(ink, 0.45) + ";"
       + "background:transparent;color:inherit}"
       + ".cq-spin-bar button:hover{border-color:" + ink + "}"
       // A KEYBOARD MUST BE ABLE TO SEE WHERE IT IS. The browser's own focus
@@ -2761,8 +3173,11 @@ window.cqSpinControls = function (settings) {
       + "font-variant-numeric:tabular-nums}"
       + ".cq-spin-panel{flex:0 0 auto;color:" + ink + ";background:" + paper
       + ";border-top:1px solid " + tint(ink, 0.14) + ";padding:10px 14px 12px;"
-      + "font:12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
-      + "display:block;max-width:900px;margin:0 auto;width:100%;"
+      + "font:clamp(12px,0.85vw,15px)/1.4 -apple-system,BlinkMacSystemFont,"
+      + "'Segoe UI',sans-serif;"
+      // The panel widens with the text too, or fifteen-pixel words are laid
+      // into columns measured for twelve-pixel ones.
+      + "display:block;max-width:min(1120px,94vw);margin:0 auto;width:100%;"
       + "box-sizing:border-box}"
       // A HEADING AND ITS OWN LIST PER GROUP. The lists still flow into as
       // many columns as the width allows, so a desktop shows a group in one
@@ -2788,6 +3203,11 @@ window.cqSpinControls = function (settings) {
       + ".cq-spin-panel .cq-name{flex:1 1 150px;min-width:0;overflow:hidden;"
       + "text-overflow:ellipsis;white-space:nowrap}"
       + ".cq-spin-panel .cq-back span:first-child{opacity:.6}"
+      // The note runs the width of the group and reads as an aside, not as a
+      // row with a missing control on the right-hand side.
+      + ".cq-spin-panel .cq-aside{opacity:.55;margin:6px 0 0;"
+      + "font-size:.92em;line-height:1.35;display:block}"
+      + ".cq-spin-panel .cq-aside[hidden]{display:none}"
       + ".cq-spin-panel .cq-row{display:flex;align-items:center;"
       + "justify-content:space-between;gap:10px}"
       + ".cq-spin-panel .cq-ctl{display:flex;gap:5px;align-items:center;"
@@ -2810,7 +3230,7 @@ window.cqSpinControls = function (settings) {
       + ".cq-spin-panel .cq-num{display:inline-block;min-width:40px;"
       + "text-align:center;font-variant-numeric:tabular-nums}"
       + ".cq-spin-panel button{font:inherit;cursor:pointer;border-radius:999px;"
-      + "padding:4px 9px;border:1px solid " + tint(ink, 0.45) + ";"
+      + "padding:0.4em 0.8em;border:1px solid " + tint(ink, 0.45) + ";"
       + "background:transparent;color:inherit;min-width:34px}"
       + ".cq-spin-panel button[aria-pressed=false]{opacity:.5}"
       // CLOSED MEANS CLOSED.
@@ -2922,6 +3342,12 @@ window.cqSpinControls = function (settings) {
     });
   }
   fit();
+  // AFTER THE BROWSER HAS LAID OUT, not merely soon. requestAnimationFrame
+  // runs once the new heights are settled, which is the earliest moment the
+  // picture can be measured correctly; the timer after it is the belt to
+  // that pair of braces.
+  if (window.requestAnimationFrame)
+    window.requestAnimationFrame(function () { fit(); });
   window.setTimeout(fit, 60);
   window.addEventListener("resize", fit);
   // Turning a phone sideways is a resize the event above can miss.
@@ -2934,8 +3360,12 @@ window.cqSpinControls = function (settings) {
   function wake() {
     if ((!turn.mode || turn.mode === "off") &&
         (!tilt.mode || tilt.mode === "off")) {
-      turn.mode = "round";
-      if (!turn.range) turn.range = 60;
+      // Whatever the reader last chose for the left-and-right direction, or
+      // all the way round if they have never chosen anything. It used to set
+      // a range here as well, which nothing reads any more: how far each
+      // direction swings is kept in `ranges` now, so that the sweep buttons
+      // and the engine cannot hold two different answers.
+      turn.mode = chosen.turn;
     }
   }
   // QUOTED, ALWAYS. These names now carry a number on the end ("shape-lit-2")
@@ -3040,19 +3470,46 @@ window.cqSpinControls = function (settings) {
     if (flat) running = false;
     window.cqSpin.set(
       {on: running,
-       turn: {mode: turn.mode, range: turn.range, speed: speedFor("turn")},
-       tilt: {mode: tilt.mode, range: tilt.range, speed: speedFor("tilt")}});
+       turn: {mode: turn.mode, range: ranges.turn, speed: speedFor("turn")},
+       tilt: {mode: tilt.mode, range: ranges.tilt, speed: speedFor("tilt")}});
     say("speed", "speed " + both);
     say("turn-speed", String(Math.round(speeds.turn)));
     say("tilt-speed", String(Math.round(speeds.tilt)));
+    say("turn-range", sweepReads("turn"));
+    say("tilt-range", sweepReads("tilt"));
     say("play", running ? "Pause" : "Play");
     press("lr", turn.mode && turn.mode !== "off");
     press("ud", tilt.mode && tilt.mode !== "off");
+    // FROM THE ONE PLACE EVERY HANDLER ALREADY PASSES THROUGH. Hung off the
+    // plural tellShapes() instead, it was missed by every per-shape press --
+    // which calls the singular one -- so fading a shape to nothing left the
+    // button still claiming the page was as it was saved.
+    tellMore();
     if (on("remember", true)) remember();
   }
 
   function step(which, by) {
     speeds[which] = Math.min(12, Math.max(1, Math.round(speeds[which] + by)));
+  }
+  //: Ten degrees a press: fine enough that nobody overshoots the sweep they
+  //: wanted, coarse enough that one press is plainly something.
+  function sweep(which, by) {
+    var limit = SWEEP[which];
+    if (chosen[which] === "round") {
+      // Coming back from a full turn lands on the widest swing there is,
+      // which is the step it left from.
+      if (by < 0) { chosen[which] = "swing"; ranges[which] = limit[1]; }
+    } else if (Math.round(ranges[which] + by) > limit[1]) {
+      chosen[which] = "round";
+    } else {
+      ranges[which] = Math.max(limit[0], Math.round(ranges[which] + by));
+    }
+    // A DIRECTION THAT IS RUNNING CHANGES UNDER THE READER'S HAND. One that
+    // is switched off keeps the choice for when it is switched back on --
+    // the same promise the on/off button already makes about the movement
+    // the page was saved with.
+    var axis = (which === "turn") ? turn : tilt;
+    if (axis.mode && axis.mode !== "off") axis.mode = chosen[which];
   }
 
   //: How faint a shape may be made, and how solid. Not zero at the faint end:
@@ -3060,7 +3517,62 @@ window.cqSpinControls = function (settings) {
   //: it by holding the minus button has no way of telling that from a page
   //: that failed to draw. Hiding a shape outright is what the names in the
   //: key are for, and that at least says so plainly.
-  var FAINTEST = 0.05, SOLID = 1;
+  //: THE STEPS A STRENGTH MOVES IN, and they are not even on purpose.
+  //:
+  //: Ten equal steps of a tenth sound right and do not look it: taking a
+  //: surface from full to nine-tenths is barely visible, while the last step
+  //: from a tenth to nothing removes almost everything that was left. So a
+  //: reader pressing steadily sees nothing happen, nothing happen, nothing
+  //: happen -- and then the shape is gone. Reported exactly that way: "it
+  //: seemed it was fully there and then immediately completely gone".
+  //:
+  //: These are spaced so each press changes what you SEE by about as much as
+  //: the last one, which means small steps at the faint end where the eye is
+  //: most sensitive to them.
+  //:
+  //: IT DOES REACH NOTHING, and that was asked for: hiding the shared part
+  //: outright is a thing somebody wants, and refusing it because a vanished
+  //: shape MIGHT be mistaken for a fault is solving the wrong half of the
+  //: problem. The right half is telling them -- which the button that opens
+  //: this panel now does: a line under "each shape" naming what a see-through
+  //: surface does to the picture and what to press about it, shown only while
+  //: one actually is. An explanation beats a prohibition -- and a SPECIFIC
+  //: explanation beats a vague one, which is why a label merely announcing
+  //: that something had changed was tried here and taken out again.
+  //:
+  //: The rungs near the bottom are close together so that the last step
+  //: before nothing is a small one rather than a cliff.
+  var LADDER = [0, 0.05, 0.08, 0.11, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
+                0.9, 1];
+  // THE RUNGS, PLUS WHEREVER THIS PARTICULAR SHAPE STARTED.
+  //
+  // A page saved with two papers draws them at 0.55, a chart's skin at 0.30 --
+  // values that are not on the ladder. Stepping off one of those snaps to the
+  // nearest rung, and stepping back lands on that rung rather than where it
+  // began: 0.55 went down to 0.4 and back to 0.5, so pressing plus as many
+  // times as minus did NOT put the shape back. Caught by the check that
+  // presses both and compares the drawing byte for byte.
+  //
+  // Giving each shape a ladder with its own starting value in it costs one
+  // array and makes going back exact for any value a page can be saved with.
+  var LADDERS = {};
+  function ladderFor(start) {
+    var key = String(start);
+    if (LADDERS[key]) return LADDERS[key];
+    var rungs = LADDER.slice();
+    if (rungs.indexOf(start) < 0 && start >= 0 && start <= 1) rungs.push(start);
+    rungs.sort(function (a, b) { return a - b; });
+    return (LADDERS[key] = rungs);
+  }
+  function stepped(value, by, start) {
+    var rungs = ladderFor(start === undefined ? value : start);
+    var best = 0, gap = Infinity;
+    for (var i = 0; i < rungs.length; i++) {
+      var d = Math.abs(rungs[i] - value);
+      if (d < gap) { gap = d; best = i; }
+    }
+    return rungs[Math.max(0, Math.min(rungs.length - 1, best + by))];
+  }
   function tellShape(n) {
     var g = shapes[n]; if (!g) return;
     var st = dressed[g.key];
@@ -3068,16 +3580,57 @@ window.cqSpinControls = function (settings) {
     press("shape-wires-" + n, g.mesh ? st.wires : st.filled);
     press("shape-grey-" + n, st.grey);
   }
-  function tellShapes() { shapes.forEach(function (g, n) { tellShape(n); }); }
+  function tellShapes() {
+    shapes.forEach(function (g, n) { tellShape(n); });
+    say("agree-at", Math.round(agreeAt * 100) + "%");
+    say("differ-at", Math.round(differAt * 100) + "%");
+    tellMore();
+  }
+  // THE PAGE SAYS WHEN IT IS NO LONGER SHOWING WHAT IT WAS SAVED SHOWING.
+  //
+  // Several of these controls take a piece out of the picture on purpose:
+  // fading away the part two shapes share leaves a shape with a bite out of
+  // it, and turning one right down removes it altogether. That is what they
+  // are for. But with the panel closed there was nothing on screen to say
+  // so -- and a reader who pressed something a while ago, or who came back
+  // to a page their browser had remembered settings for, sees a shape that
+  // looks cut, or gone, and no reason for it.
+  //
+  // Reported exactly that way: a shape that "seemed fully there and then
+  // immediately completely gone", by somebody who had not noticed which
+  // control was doing it.
+  //
+  // One word on the button that opens the panel is enough. It is where a
+  // reader is already looking when they wonder, the panel behind it shows
+  // which control it is and what it is set to, and "as saved" in there puts
+  // everything back. An explanation, rather than refusing to let them do it.
+  function tellMore() {
+    // JUST "more…". A label reading "(changed)" was tried and taken out
+    // again: it says that SOMETHING is different without saying what, which
+    // is only half an answer and leaves the reader hunting anyway. The note
+    // below names the thing they can see and what to press about it, which
+    // is the whole answer, so the vague one was only noise.
+    say("more", (panel.hidden ? "more" : "less") + "\u2026");
+    // AND THE NOTE ABOUT SEE-THROUGH SURFACES, only while one is.
+    //
+    // Here rather than in tellShapes(), which per-shape presses do not call
+    // -- they call the singular tellShape(). That is the second time the
+    // same trap has been walked into in this file: anything that has to be
+    // true after EVERY press belongs on the one path every press takes.
+    var thin = shapes.some(function (g) { return dressed[g.key].opacity < 1; })
+      || agreeAt < 1 || differAt < 1;
+    var note = panel.querySelector('[data-cq="facets"]');
+    if (note) note.hidden = !thin;
+  }
   function shapePress(what) {
     var bits = what.split("-");            // shape-fainter-2
     var n = parseInt(bits[2], 10);
     var g = shapes[n]; if (!g) return true;
     var st = dressed[g.key];
     if (bits[1] === "fainter")
-      st.opacity = Math.max(FAINTEST, Math.round((st.opacity - 0.1) * 100) / 100);
+      st.opacity = stepped(st.opacity, -1, g.opened.opacity);
     if (bits[1] === "stronger")
-      st.opacity = Math.min(SOLID, Math.round((st.opacity + 0.1) * 100) / 100);
+      st.opacity = stepped(st.opacity, 1, g.opened.opacity);
     // ONE BUTTON, TWO MEANINGS, AND NEVER BOTH AT ONCE: a solid has wires
     // drawn over it, a flat cut is filled in or left as an outline. Which of
     // the two a shape gets is decided when the row is built, from what that
@@ -3132,6 +3685,15 @@ window.cqSpinControls = function (settings) {
     var what = ev.target.getAttribute("data-cq");
     if (!what) return;
     if (what.indexOf("shape-") === 0) { shapePress(what); push(); return; }
+    if (what.indexOf("agree-") === 0 || what.indexOf("differ-") === 0) {
+      var by = (what.indexOf("-more") > 0 ? 1 : -1);
+      if (what.indexOf("agree-") === 0) agreeAt = stepped(agreeAt, by);
+      else differAt = stepped(differAt, by);
+      shapes.forEach(dressOne);
+      tellShapes();
+      push();
+      return;
+    }
     if (what === "shapes-back") { undress(); tellShapes(); push(); return; }
     if (what.indexOf("look-") === 0) {
       if (window.cqSpin.look) window.cqSpin.look(what.slice(5));
@@ -3147,7 +3709,7 @@ window.cqSpinControls = function (settings) {
     if (what === "shot") { snapshot(); return; }
     if (what === "more") {
       panel.hidden = !panel.hidden;
-      say("more", panel.hidden ? "more…" : "less…");
+      tellMore();
       fit();
       return;
     }
@@ -3172,14 +3734,20 @@ window.cqSpinControls = function (settings) {
     if (what === "turn-faster") step("turn", 1);
     if (what === "tilt-slower") step("tilt", -1);
     if (what === "tilt-faster") step("tilt", 1);
+    if (what === "turn-narrower") sweep("turn", -10);
+    if (what === "turn-wider") sweep("turn", 10);
+    if (what === "tilt-narrower") sweep("tilt", -10);
+    if (what === "tilt-wider") sweep("tilt", 10);
     // REMEMBERS WHAT IT WAS, so switching an axis off and on again brings back
     // the movement the page was saved with rather than a guess at one.
+    // REMEMBERS WHAT IT WAS, and "what it was" is now what the reader last
+    // chose rather than only what the page was saved with -- otherwise
+    // setting a direction to go all the way round and then switching it off
+    // and on again would quietly put it back to a swing.
     if (what === "lr") turn.mode = (turn.mode && turn.mode !== "off")
-      ? "off" : (saved.turn.mode && saved.turn.mode !== "off"
-                 ? saved.turn.mode : "round");
+      ? "off" : chosen.turn;
     if (what === "ud") tilt.mode = (tilt.mode && tilt.mode !== "off")
-      ? "off" : (saved.tilt.mode && saved.tilt.mode !== "off"
-                 ? saved.tilt.mode : "swing");
+      ? "off" : chosen.tilt;
     if (what === "grid") { picture.grid = !picture.grid; applyPicture(); }
     if (what === "labels") { picture.labels = !picture.labels; applyPicture(); }
     if (what === "key") { picture.key = !picture.key; applyPicture(); }
@@ -3372,8 +3940,9 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
              f"@media (max-width:820px){{.gtitle{{font-size:11px !important;}}}}"
              f"@media (max-width:480px){{.gtitle{{font-size:10px !important;}}}}"
              f"</style>")
-    if notes:
-        # AND THE PICTURE HAS TO MAKE ROOM FOR THEM. Letting the page scroll
+    if notes or controls:
+        # AND THE PICTURE HAS TO MAKE ROOM FOR WHAT IS UNDER IT. Letting the
+        # page scroll
         # is not enough on its own: the scene is the full height of the
         # window, a 3D scene takes the wheel for zooming, and there is no
         # other part of the page to put the pointer over -- so fifteen wheel
@@ -3413,10 +3982,52 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
                   "body > div:first-of-type"
                   "{height:auto !important;min-height:62vh;}"
                   ".cq-notes{flex:0 0 auto;}</style>")
+        # WHY `controls` AND NOT ONLY `notes`.
+        #
+        # This was written for the written-out figures, because they were the
+        # only thing that had ever sat under the picture, and it was applied
+        # only when they were there. Then the panel of controls grew from
+        # four switches to twenty-one -- and a page with NO figures on it,
+        # whose picture was therefore still a rigid flex item in a body fixed
+        # to the height of the window, had nothing to give the panel but the
+        # picture itself.
+        #
+        # Measured on such a page with the panel open: **0 pixels of picture
+        # at 320x568, and 127 at 390x844.** The page had become a wall of
+        # buttons with the thing they control squeezed out of existence.
+        #
+        # It went unseen because every page measured until then carried the
+        # figures, and so every page measured until then had this rule.
+    # HOW WIDE THE PAGE THINKS IT IS, WHICH ON A PHONE IT OTHERWISE GETS
+    # WRONG BY A FACTOR OF TWO AND A HALF.
+    #
+    # A phone browser handed a page with no viewport tag assumes the page was
+    # written for a desktop: it lays it out in a pretend window about 980
+    # pixels wide and then scales the whole thing down to fit the screen. On a
+    # 390-pixel phone that is a scale of about 0.40 -- so a 12-pixel label is
+    # drawn at five physical pixels and a 34-pixel button at fourteen.
+    #
+    # Reported as "on some occurrences the controls are tiny", and that is
+    # exactly it. Worse, EVERY rule written for a narrow screen was dead: the
+    # page believed it was 980 pixels wide, so the one-column layout, the
+    # bigger tap targets and the short-screen cap never came into force on
+    # the one device they were written for.
+    #
+    # IT WENT UNSEEN BECAUSE OF HOW IT WAS TESTED. Every viewport measurement
+    # here resizes the real window, and a desktop browser in a narrow window
+    # lays out at that width whether or not this tag is present -- so the
+    # probes measured the layout this tag produces while the pages shipped
+    # without it. The showcase index has had one all along, which is why that
+    # page has always read properly on a phone and these have not.
+    #
+    # `width=device-width` says lay it out at the width of the screen, and
+    # `initial-scale=1` says do not zoom it afterwards.
+    head = ('<meta name="viewport" '
+            'content="width=device-width,initial-scale=1">')
     if "</head>" in html:
-        html = html.replace("</head>", style + "</head>", 1)
+        html = html.replace("</head>", head + style + "</head>", 1)
     else:
-        html = style + html
+        html = head + style + html
     if notes:
         # THE NUMBERS TRAVEL WITH THE PICTURE. A shape sent to somebody
         # without them is a shape they cannot check, and "which paper was
@@ -3714,7 +4325,8 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                  rings: int = 0, per_shape=None, neutrals=None,
                  ideal_neutrals: bool = False, chart=None,
                  light=None, grid: bool = True, space=None,
-                 chart_look=None):
+                 chart_look=None, agree: float = 1.0, differ: float = 1.0,
+                 split: bool = False):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -3737,6 +4349,22 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             f"the wrong axes")
     fig = go.Figure()
     base = opacity if opacity is not None else (1.0 if len(gamuts) == 1 else 0.55)
+    # WHERE THE SHAPES AGREE, AND WHETHER TO DRAW IT SEPARATELY.
+    #
+    # Two gamuts over each other are mostly the same gamut: the agreement is
+    # the bulk of both, it is drawn twice, and it hides the part where they
+    # differ -- which is the only part anybody put them side by side to see.
+    # Split into two meshes, the agreement can be faded and the disagreement
+    # left standing on its own.
+    #
+    # SPLIT EVEN AT FULL STRENGTH when *split* is set, which is what a saved
+    # page asks for: the reader has to be able to move the slider, and a
+    # trace that was never written cannot be faded by anybody. On screen the
+    # split is only made when it changes something, because it costs a
+    # containment test per pair on every redraw.
+    splits = None
+    if len(gamuts) > 1 and (split or agree < 1.0 or differ < 1.0):
+        splits = agreement_masks(gamuts)
     for i, (name, g) in enumerate(gamuts):
         # Each shape may carry its own settings. Anything it does not name
         # falls back to the window-wide value, so a caller that knows nothing
@@ -3750,23 +4378,82 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         mesh_paint_i = own.get("mesh_paint", mesh_paint)
         how = (styles[i] if styles is not None and i < len(styles) else "solid")
         marked = lost[i] if lost is not None and i < len(lost) else None
+        # WHERE THIS SHAPE AGREES WITH THE OTHERS, AND WHERE IT DOES NOT.
+        #
+        # `disagrees` is per TRIANGLE; `standing` is per VERTEX -- a vertex
+        # counts as standing out when any triangle it belongs to does. The
+        # surface is faded with a per-vertex alpha rather than cut into two
+        # meshes, because two transparent meshes do not composite to the same
+        # thing as one: see _with_alpha, where that was measured.
+        alphas = None
+        disagrees = splits[i] if splits is not None else None
+        if disagrees is not None:
+            standing = agreeing_edges(g, disagrees)
+            alphas = np.where(standing, differ, agree)
+        # CARRIED INTO THE PAGE only when the reader is being given the
+        # control. It is one character per vertex -- about half a kilobyte a
+        # shape -- against the 66 kB a second copy of the mesh would have
+        # cost, and a page nobody can fade has no use for it at all.
+        stand = (agreeing_edges(g, disagrees)
+                 if (split and disagrees is not None) else None)
         if marked is not None:
             fig.add_trace(_mesh_lost(g, name, base_i, marked, c["kept"],
-                                     depth_i, light=light))
+                                     depth_i, light=light, alphas=alphas,
+                                     stand=stand))
         elif how in ("solid", "solid+mesh"):
             fig.add_trace(_mesh(g, name, opacity=base_i, wireframe=False,
                                 paint=paint_i, index=i, depth=depth_i,
-                                page=c["page"], light=light))
+                                page=c["page"], light=light, alphas=alphas,
+                                stand=stand))
             fig.add_trace(_legend_proxy(
                 name, _legend_swatch(_paint_vertices(g, paint_i, i)
                                      or g.colors, c["page"]), name))
         if how in ("mesh", "solid+mesh"):
-            for trace in _edges(g, name, colour=c["wire"],
-                                width=1.0 if how == "mesh" else 0.7,
-                                paint=("plain" if mesh_paint_i == "plain"
-                                       else paint_i),
-                                index=i, key=c["mark"], page=c["page"]):
-                fig.add_trace(trace)
+            # A CAGE CANNOT CARRY A COLOUR PER POINT -- the drawing library
+            # gives a line one colour for the whole trace -- so this is the
+            # one place the split survives. It costs far less here than it
+            # would on a surface: lines are thin, they overlap each other
+            # hardly at all, and the blending order that ruins two
+            # transparent surfaces is not visible between two sets of wires.
+            parts = ([(None, 1.0)] if disagrees is None
+                     else [(disagrees, differ), (~disagrees, agree)])
+            for only, strength in parts:
+                if only is not None and not np.any(only):
+                    continue
+                first = only is disagrees
+                for trace in _edges(g, name, colour=c["wire"],
+                                    width=1.0 if how == "mesh" else 0.7,
+                                    paint=("plain" if mesh_paint_i == "plain"
+                                           else paint_i),
+                                    index=i,
+                                    # THE FIRST HALF CARRIES THE KEY, and
+                                    # only the first. Written as "the first
+                                    # half OR anything at full strength",
+                                    # both halves qualified whenever nothing
+                                    # was faded -- which is how the page
+                                    # opens -- and the cage was listed twice
+                                    # under the same name. Reported as
+                                    # "the outline was double in some".
+                                    #
+                                    # `only is disagrees` is true for the
+                                    # first half AND for the unsplit case,
+                                    # where both are None, so one test
+                                    # covers both.
+                                    key=c["mark"] if first else None,
+                                    page=c["page"], only=only):
+                    if strength < 1.0:
+                        trace.update(opacity=strength)
+                    # AND SILENCED OUTRIGHT ON THE SECOND HALF.
+                    #
+                    # Passing key=None does NOT mean "no entry in the list of
+                    # names": _edges reads it as "no separate marker, so the
+                    # cage itself carries the name". So the half that was
+                    # meant to be silent was the half that spoke, and a page
+                    # with a cage on it listed that cage twice under one
+                    # name. Reported as "the outline was double in some".
+                    if not first:
+                        trace.update(showlegend=False)
+                    fig.add_trace(trace)
         if rings_i:
             for trace in _rings(g, name, rings_i, c["wire"], key=c["mark"]):
                 fig.add_trace(trace)

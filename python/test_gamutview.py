@@ -541,6 +541,11 @@ class _FakeApp:
         self._lab_gamuts = {}
         self._spin_on = _Value(False)
         self._grid_on = _Value(True)
+        # 100 = "all of it", which is the do-nothing position: the picture is
+        # exactly what it would be without the control at all, so these tests
+        # go on describing the same drawing they always did.
+        self._agree = _Value(100)
+        self._differ = _Value(100)
         self._turn_mode, self._turn_speed, self._turn_sweep = (
             _Value("swing"), _Value(8), _Value(60))
         self._tilt_mode, self._tilt_speed, self._tilt_sweep = (

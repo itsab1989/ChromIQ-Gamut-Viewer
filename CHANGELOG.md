@@ -1,5 +1,231 @@
 # Changelog
 
+## v2.11.0
+
+### 🫥 Fade away where two shapes agree — or where they differ
+
+Two papers drawn over each other are mostly the same paper. The part they
+share is the bulk of both, it is drawn twice, and it sits in front of the part
+where they differ — which is the only part anybody put them side by side to
+see. There are now two controls, in the window and on a saved page, that
+dissolve either half and leave the other standing.
+
+- **Where they agree** fades the part every shape reaches, leaving only the
+  places they differ. This is the question you ask when choosing between two
+  papers.
+- **Where they differ** does the opposite, leaving the part they all have in
+  common. This is the question you ask when the same picture has to go out on
+  both, and you want to know which colours are safe on either.
+
+**Sliders, not a switch, and that was decided by measurement.** Hiding the
+shared part outright has a cliff in it: a shape lying entirely inside another
+agrees *everywhere*, so every one of its triangles goes and the shape vanishes
+— exactly 0 of 978 on the demo pair. That is the correct answer and it looks
+precisely like a fault. Faded instead, the shape is still faintly there and
+the reader can see for themselves that it agrees everywhere.
+
+**The top of the range changes nothing, and that is exact rather than
+approximate.** The first implementation cut each surface into a faded half and
+a solid half. Rendered against the picture as it ships, **120,481 pixels
+differed by more than eight levels, the worst by 79 — with the fade at full**,
+because a browser blends transparent surfaces in the order it draws them and
+one closed surface is not the same as two open ones. Somebody looking at a
+shape asked whether the shading was right; it was not, and it was measurable.
+
+The fade is now carried on a per-point alpha inside a **single** mesh, so at
+the top it hands back the very same array of colours. Re-measured on the
+finished thing: **0 pixels different.**
+
+The two compose with everything already there — a shape's own strength, and
+the grey switch — rather than fighting them, and *as saved* puts both back.
+
+### 🔄 A saved page can set how far it swings, and send it right round
+
+The window has always had a sweep slider for each direction and a saved page
+had none: a reader could change how *fast* it moved and not how *far*, which
+are two different things to watch. Each direction now gets a minus and a plus
+reading in degrees, with this window's own limits — 15° to 180° left and
+right, 10° to 120° up and down.
+
+**And one press past the widest swing sets it going all the way round**, with
+the reading changing to *round*; the minus brings it back to a swing. That
+matters because it was otherwise impossible: a page saved swinging could never
+be set to turn continuously by the person reading it. Switching a direction
+off and on again now keeps what the *reader* chose rather than reverting to
+what the page was saved with.
+
+### 📱 Fixed: a page without written-out numbers lost its picture entirely
+
+A serious one, and it was found by asking a question I had not tested.
+
+The picture is a flexible item in a page fixed to the height of the window, so
+anything below it competes for room. That was handled — but only on pages that
+carried the written-out figures, because when the rule was written those were
+the only thing that ever sat below. Then the control panel grew from four
+switches to twenty-three, and on a page with **no** figures there was nothing
+to give it but the picture itself.
+
+Measured with the panel open on such a page: **0 pixels of picture at 320×568,
+and 127 at 390×844.** The page had become a wall of buttons with the thing they
+control squeezed out of existence. It went unseen because every page I had
+measured carried the figures, and so every page I had measured had the rule.
+
+The picture now keeps a floor whenever anything sits under it — figures or
+controls — and the page scrolls instead. Measured at 320, 390, 500, 768, 844
+and 1280 pixels wide: the picture holds 62% of the screen at every one.
+
+### 🪄 A strength now moves in steps you can see evenly, and the page says when it has been changed
+
+Ten equal steps of a tenth sound right and do not look it. Taking a surface
+from full to nine-tenths is barely visible; the last step from a tenth to
+nothing removes almost everything left. So a reader pressing steadily sees
+nothing happen, nothing happen, nothing happen — and then the shape is gone.
+Reported exactly that way. Every strength on a saved page now moves along one
+ladder whose rungs are close together at the faint end, so each press changes
+what you see by about as much as the last.
+
+**It still goes all the way to nothing**, because hiding something outright is
+a thing people want, and refusing it in case a vanished shape is mistaken for
+a fault solves the wrong half of the problem. The right half is saying so: the
+button that opens the panel now reads **more… (changed)** whenever the picture
+is not the one that was saved. The panel behind it shows which control it is,
+and *as saved* puts everything back.
+
+### 🔍 Why a see-through shape sometimes looks sliced — measured, and now explained
+
+Somebody looking at a gamut asked whether flat, hard-edged patches across it
+were right. They are the drawing, not the measurement: a browser blends
+see-through surfaces in the order it draws them rather than by which is
+nearer, so a surface shows its own triangles wherever those two orders
+disagree.
+
+Measured on one paper, counting hard edges inside the outline:
+
+| | hard edges |
+|---|---|
+| solid | 0.54% |
+| three-quarters | 1.50% |
+| a third see-through | 1.14% |
+
+and it depends strongly on where you are standing:
+
+| seen from | hard edges |
+|---|---|
+| above | 0.87% |
+| front | 1.13% |
+| side | 1.21% |
+| **a three-quarter angle** | **3.47%** |
+
+Four times worse at the angle these pictures open at than from straight above.
+Nothing is wrong and nothing is missing — the silhouette is identical, checked
+at 0 pixels lost out of 148,518 — so the fix is to say so where somebody meets
+it: both the window and the saved page now explain it, and name the two things
+that remove it (turn the shape solid, or press **above**).
+
+While chasing it, one hypothesis was tested and thrown away rather than
+shipped: that greying a shape sinks its dark end into a dark page. It does
+not — 53 of 675 vertices are below the visible threshold in their own colours
+and 53 in grey, identically.
+
+### 📐 Fixed: the controls were tiny on a phone, and tiny again on a big screen
+
+Two reports, two different causes, both real.
+
+**On a phone**, the saved pages carried **no viewport tag**. A phone browser
+handed such a page assumes it was written for a desktop: it lays it out in a
+pretend window about 980 pixels wide and scales the result down to fit. On a
+390-pixel phone that is a scale of about **0.40** — a 12-pixel label drawn at
+five physical pixels. Worse, every rule written for a narrow screen was dead,
+because the page believed it was 980 wide: the one-column layout, the bigger
+tap targets and the short-screen cap never came into force on the one device
+they were written for. It survived because every viewport measurement here
+resizes the real window, and a desktop browser in a narrow window lays out at
+that width with or without the tag — so the probes were measuring the layout
+the tag produces while the pages shipped without it.
+
+**On a wide desktop window**, the strip was pinned at 12 pixels however big
+the window got. It now grows with the window between a floor of 12 and a
+ceiling of 15, with the buttons sized in em so they grow with the text.
+Measured: 12px on a phone, 15px at 1920 and beyond.
+
+### 🩹 Fixed: the picture briefly painted over its own controls
+
+Opening the panel takes about seventy pixels off the picture, and the drawing
+library only learns that when it is told to re-measure. For a frame or two the
+canvas was still its old height and spilled over the strip, slicing the Play
+button in half — "here, and then a second later it is back to good".
+
+Re-measuring sooner only shortens a flicker. The controls now paint above the
+picture whatever the timing, and the picture is clipped to its own box so the
+canvas cannot escape at all. Sampled twenty times across the second after the
+press, at three window sizes: **0 pixels of overlap.**
+
+### 🪜 Fixed: a shape could not always be put back by pressing the other way
+
+A page saved with two papers draws them at 55%, a chart's skin at 30% — values
+that are not on the ladder of steps. Stepping off one snapped to the nearest
+rung, and stepping back landed on that rung rather than where it began: 55%
+went down to 40% and back to **50%**. Each shape now carries its own starting
+value as a rung, so pressing plus as many times as minus returns exactly.
+
+The label reading **(changed)** was tried and taken out again. It said that
+*something* was different without saying what, which is half an answer and
+leaves the reader hunting anyway. What replaced it is specific: a line under
+*each shape*, shown only while a shape is actually see-through, naming what
+that does to the picture and what to press about it.
+
+### 🔦 Measured, not yet changed: a see-through surface is lit differently from a solid one
+
+Asked directly — is the light source affecting solid surfaces the same way as
+see-through ones? — and the answer is no. Measured on one paper from one
+camera:
+
+| | mean brightness | dark end | bright end |
+|---|---|---|---|
+| solid | 152.1 | 15.0 | 251.0 |
+| 0.999 | 126.2 | 3.0 | 232.0 |
+| half | 94.9 | 12.0 | 167.0 |
+
+**A thousandth of transparency moves 202,546 of 543,011 pixels by more than
+eight levels and the mean brightness by −25.9.** A thousandth cannot blend
+anything, so that is not the alpha: it is a different rendering path. Two
+things happen on it — the far side of a closed shape is drawn from the inside,
+where the faces point away from the light, and the near surface itself is lit
+differently (the specular highlight drops from 251 to 232 for that same
+thousandth, and the highlight is on the near face).
+
+**And it accounts for about half of what reads as a slice.** Hard-edged
+structure inside the shape measures 0.54% when solid, **0.71% at 0.999** — a
+thousandth of alpha, so that step is the path and not the blending — and 0.90%
+at half, the rest being real compositing order. Which is exactly why the
+patches appear *as soon as* a surface stops being opaque rather than gradually.
+
+This is how the viewer has always rendered and nothing here changed it. It is
+recorded because it has a consequence worth knowing: two shapes drawn at
+different strengths are being compared at different apparent brightnesses, and
+the shading is a drawing choice sitting on top of the measured colours rather
+than part of them. Making it consistent across strengths is the next piece of
+work, not a quiet edit at the end of this one.
+
+### Also
+
+- The fade was at first nested inside the code that handles the grey switch,
+  which is deliberately refused for shapes whose colour *is* the measurement.
+  So the one page in the showcase whose whole subject is comparing two
+  measurements was the one page where the new control did nothing.
+- Returning the fade to the top left the colours written on the way down in
+  place, so a shape stayed faint at a reading of 100%. The colours are now
+  always rebuilt from the originals, so the reading and the picture cannot
+  come apart.
+- `_weld` groups vertices by position **and** colour. A mask welded separately
+  can group differently and come back a different length, lined up with
+  nothing — so the rule now lives in one place and everything follows it.
+- The window's new sliders are in the one table of remembered settings, which
+  means they are saved between sessions and put back by *Start again with the
+  standard settings* without either being wired up twice.
+- 414 tests, up from 405.
+
+
 ## v2.10.0
 
 ### 🎚 A saved page hands over each shape on its own

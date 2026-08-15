@@ -54,11 +54,15 @@ DEFAULT_OFFER = {"play": True, "speed": True, "lr": True, "ud": True,
                  # which is the only honest thing for a showcase to show.
                  "opacity": True, "wires": True, "grey": True,
                  "views": True, "fullscreen": True, "picture": True,
-                 "cut": True}
+                 "cut": True, "agree": True,
+                 # Off by default, like the per-direction speeds it sits
+                 # beside: a finer control for something the single speed
+                 # already covers for most people.
+                 "sweep": False}
 
 #: Everything the page can carry, for the one sample that shows it off.
 EVERY_CONTROL = dict(DEFAULT_OFFER, speed_each=True, grid=True, labels=True,
-                     key=True, appearance=True, speed=False)
+                     key=True, appearance=True, speed=False, sweep=True)
 
 #: How many bytes one number takes, per the dtype names plotly writes.
 _WIDTH = {"f8": 8, "f4": 4, "i8": 8, "i4": 4, "i2": 2, "i1": 1,
@@ -532,7 +536,8 @@ def main() -> int:
     save_to(p, numbers=True, offer=EVERY_CONTROL)
     made.append(("11", p))
     body = p.read_text(encoding="utf-8")
-    for wanted in ("speed_each", "grid", "labels", "key", "appearance"):
+    for wanted in ("speed_each", "grid", "labels", "key", "appearance",
+                   "sweep", "agree"):
         check("11", f"the page was given the {wanted} control",
               f'"{wanted}": true' in body)
     check("11", "and it carries both sets of page colours, to switch between",
@@ -588,12 +593,31 @@ def main() -> int:
           "take the other for background")
     # THE MARK THAT REFUSES THE GREY SWITCH. Written into the trace by the
     # Python and read by the page when it decides which controls to build.
-    # Written compactly by the drawing library -- no spaces after the colons,
-    # which is what the first version of this check looked for and did not find.
+    # Written compactly by the drawing library -- no spaces after the colons.
+    # Looked for on its own rather than as a whole meta block: the same block
+    # now also carries which points stand outside the other shape, so pinning
+    # the exact object was pinning two unrelated things together.
     check("13", "it is marked as a shape whose colour is the answer",
-          '"meta":{"cq":"colour"}' in body)
+          '"cq":"colour"' in body)
     check("13", "so the page still offers the other two shape controls",
           '"opacity": true' in body and '"wires": true' in body)
+    # THE TWO FADES, AND THE MASK THEY NEED. One character per measured
+    # point, saying which side of the question that point falls on -- the
+    # page cannot work this out for itself, because it has no idea where one
+    # gamut stops and another starts.
+    check("13", "the reader can fade away where the two agree",
+          'data-cq="agree-at"' in body)
+    check("13", "and, the other way round, where they differ",
+          'data-cq="differ-at"' in body)
+    marks = re.findall(r'"stand":"([01]+)"', body)
+    check("13", "and it carries what it needs to do it", bool(marks),
+          f"{len(marks)} masks, {[len(m) for m in marks]} points")
+    # THE MASK MUST BE THE SAME LENGTH AS THE COLOURS IT INDEXES, or the fade
+    # lands on the wrong points and reads as a fault in the measurement.
+    lens = [c.count("rgb") for c in re.findall(r'"vertexcolor":\[(.*?)\]', body)]
+    check("13", "and it lines up with the colours it acts on",
+          bool(marks) and all(len(m) in lens for m in marks),
+          f"masks {[len(m) for m in marks]} against colours {lens[:3]}")
     # AND IT IS ACTUALLY A TWO-COLOURED PICTURE. The whole point of this page
     # is that a reader can tell the two apart, and a shape that is 91% one of
     # them demonstrates nothing. Read off the window rather than assumed.

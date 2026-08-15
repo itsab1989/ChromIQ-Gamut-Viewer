@@ -1,5 +1,5 @@
 <html>
-<head><title>Glossy-paper — ChromIQ Gamut Viewer</title><meta charset="utf-8" /><style>html,body{background:#111111;margin:0;padding:0;height:100%;overflow:hidden;}body{display:flex;flex-direction:column;}body > div:first-of-type{flex:1 1 auto;min-height:0;}@media (max-width:1024px){.modebar{display:none !important;}}@media (max-width:820px){.gtitle{font-size:11px !important;}}@media (max-width:480px){.gtitle{font-size:10px !important;}}</style></head>
+<head><title>Glossy-paper — ChromIQ Gamut Viewer</title><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{background:#111111;margin:0;padding:0;height:100%;overflow:hidden;}body{display:flex;flex-direction:column;}body > div:first-of-type{flex:1 1 auto;min-height:0;}@media (max-width:1024px){.modebar{display:none !important;}}@media (max-width:820px){.gtitle{font-size:11px !important;}}@media (max-width:480px){.gtitle{font-size:10px !important;}}</style><style>html{height:100%;}body{height:auto;min-height:100%;}body > div:first-of-type{height:auto !important;min-height:62vh;}.cq-notes{flex:0 0 auto;}</style></head>
 <body>
     <div style="height:100%; width:100%;">                        <script>window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
         <script>/**
@@ -4373,6 +4373,32 @@ window.cqSpinControls = function (settings) {
     return show[what] === undefined ? fallback : !!show[what];
   }
   var speeds = {turn: saved.turn.speed || 6, tilt: saved.tilt.speed || 6};
+  // HOW FAR EACH DIRECTION SWINGS, which the window has always had a slider
+  // for and a saved page had no way of touching -- a reader could change how
+  // FAST it swung and not how far, which are two quite different things to
+  // watch. The limits are the window's own (15-180 degrees left and right,
+  // 10-120 up and down), so a page cannot be set to something the window
+  // itself would not allow.
+  var ranges = {turn: saved.turn.range || 60, tilt: saved.tilt.range || 40};
+  var SWEEP = {turn: [15, 180], tilt: [10, 120]};
+  // WHICH WAY EACH DIRECTION MOVES WHEN IT IS ON: a swing that comes back,
+  // or a full turn that never does. The window has always offered both and a
+  // saved page offered neither -- whatever it was saved with was all a
+  // reader could ever have.
+  //
+  // THE TWO ARE ONE CONTROL HERE, not a sweep and a separate mode switch.
+  // Widening the swing step by step and then one step further is exactly how
+  // somebody would describe going all the way round, so the reading runs
+  // 60°, 70° … 180°, round. One control, one idea, and three fewer buttons
+  // in a row that has to survive a phone.
+  var chosen = {
+    turn: (saved.turn.mode && saved.turn.mode !== "off") ? saved.turn.mode : "round",
+    tilt: (saved.tilt.mode && saved.tilt.mode !== "off") ? saved.tilt.mode : "swing"};
+  function swings(which) { return on("sweep", false); }
+  function sweepReads(which) {
+    return chosen[which] === "round" ? "round"
+           : Math.round(ranges[which]) + "°";
+  }
   // ONE SPEED OR TWO. With the per-direction speeds switched off, the single
   // speed scales both together and keeps the proportion the page was saved
   // with -- a slow tip under a quicker turn stays a slow tip under a quicker
@@ -4406,6 +4432,7 @@ window.cqSpinControls = function (settings) {
   // name that appears in both panes is one row that acts on both. Two rows
   // doing half the job each is how a side-by-side page ends up with one pane
   // faded and the other not.
+  var agreed = false;                  // does this page carry the split at all
   function findShapes() {
     var found = [], byKey = {};
     (settings.ids || []).forEach(function (id) {
@@ -4436,6 +4463,11 @@ window.cqSpinControls = function (settings) {
           if (t.fill && t.fill !== "none") g.fill = true;
           // See _COLOUR_IS_THE_ANSWER in the Python that wrote this page.
           if (t.meta && t.meta.cq === "colour") g.plain = false;
+          // WHICH OF THIS SHAPE'S POINTS STAND OUTSIDE THE OTHERS, one
+          // character per drawn vertex, worked out when the page was written
+          // because only the Python has the whole 3D shape to work it out
+          // from. Its presence is also what says this page can fade at all.
+          if (t.meta && t.meta.stand) { g.stand = true; agreed = true; }
         }
       });
     });
@@ -4465,6 +4497,17 @@ window.cqSpinControls = function (settings) {
       grey: false};
     g.opened = Object.assign({}, dressed[g.key]);
   });
+  // HOW MUCH OF THE AGREEMENT IS LEFT, for the whole page rather than per
+  // shape: it is a statement about a pair, and one shape agreeing more than
+  // another is not a thing that can be true.
+  var agreeAt = 1, differAt = 1;
+  function withAlpha(colour, alpha) {
+    var text = String(colour);
+    if (alpha >= 1 || text.indexOf("(") < 0) return colour;
+    var bits = text.slice(text.indexOf("(") + 1, text.indexOf(")")).split(",");
+    return "rgba(" + bits[0] + "," + bits[1] + "," + bits[2] + ","
+           + alpha.toFixed(3) + ")";
+  }
 
   // WHICH CROSS-SECTIONS THIS PAGE CARRIES, if it is one that can be slid
   // through at all. Settled HERE, above the part that reads back what the
@@ -4560,12 +4603,54 @@ window.cqSpinControls = function (settings) {
           patch.fill = st.filled ? "toself" : "none"; any = true;
         }
       }
-      if (on("grey", true) && g.plain) {
+      // TWO REASONS TO REWRITE A TRACE'S COLOURS, and they are independent.
+      //
+      // Grey is offered only where the colour is decoration; the fade
+      // applies wherever the page carries a mask. Written with the fade
+      // nested inside the grey test -- as it was at first -- the comparison
+      // mesh that is red for what a paper cannot reach could not be faded at
+      // all, because grey is deliberately refused for it. The one page in
+      // the showcase whose whole subject is comparing two measurements was
+      // the one page where the new control did nothing.
+      var mark = t.meta && t.meta.stand;
+      // WHENEVER THERE IS A MASK, NOT ONLY WHEN SOMETHING IS FADED.
+      //
+      // Written as "…and something is faded", sliding back up to the top
+      // skipped this whole block -- so the colours written on the way DOWN
+      // were never written back, and the shape stayed faint at a reading of
+      // 100%. The colours are always rebuilt from the originals, so the
+      // reading and the picture cannot come apart.
+      //
+      // It costs nothing at rest: dressOne only runs on a press, or on load
+      // for a shape whose stored settings differ from the saved ones.
+      var fading = !!mark;
+      var greying = on("grey", true) && g.plain;
+      if (greying || fading) {
         COLOUR_FIELDS.forEach(function (field) {
           var had = reach(t, field);
           if (had === undefined || had === null) return;
           var origin = was(part, field, had);
-          var want = st.grey ? greyed(origin) : origin;
+          var want = (greying && st.grey) ? greyed(origin) : origin;
+          // AND THEN THE AGREEMENT, ON TOP OF WHATEVER COLOUR THAT LEFT.
+          //
+          // Applied to the colours rather than to the trace's opacity, and
+          // that is the whole design: cutting the surface into a faded half
+          // and a solid half was built first and measured against the
+          // picture as it ships -- 120,481 pixels differed by more than
+          // eight levels with the fade at FULL, because a browser blends
+          // transparent surfaces in the order it draws them and one closed
+          // surface is not two open ones. One mesh with an alpha per point
+          // has no such seam, and at the top it is the very same array of
+          // colours, so it is not merely close to changing nothing.
+          //
+          // It composes with grey rather than fighting it: grey decides WHAT
+          // colour each point is, this decides how much of it there is.
+          if (fading && field === "vertexcolor" && Array.isArray(want)) {
+            want = want.map(function (colour, at) {
+              return withAlpha(colour,
+                mark.charAt(at) === "1" ? differAt : agreeAt);
+            });
+          }
           // AN ARRAY HAS TO BE WRAPPED IN ANOTHER ONE. Handed a bare array,
           // restyle reads it as one value per trace and hands the FIRST
           // element to this trace -- so 491 vertex colours quietly became the
@@ -4582,7 +4667,8 @@ window.cqSpinControls = function (settings) {
   function moved(g) {
     var a = dressed[g.key], b = g.opened;
     return a.opacity !== b.opacity || a.wires !== b.wires
-        || a.filled !== b.filled || a.grey !== b.grey;
+        || a.filled !== b.filled || a.grey !== b.grey
+        || agreeAt < 1 || differAt < 1;
   }
   // ONLY WHAT HAS ACTUALLY CHANGED. Called once when the page opens, this
   // would otherwise re-draw every surface on it to the values it already has
@@ -4590,6 +4676,11 @@ window.cqSpinControls = function (settings) {
   // the first second somebody is looking at it.
   function dressAll() { shapes.filter(moved).forEach(dressOne); }
   function undress() {
+    // THE AGREEMENT GOES BACK TOO. "As saved" that restored every shape's
+    // strength and left the shared part faded would put the page in a state
+    // it was never saved in, and leave the one control the reader most
+    // likely moved as the one thing the button does not undo.
+    agreeAt = 1; differAt = 1;
     shapes.forEach(function (g) {
       dressed[g.key] = Object.assign({}, g.opened);
       dressOne(g);
@@ -4624,7 +4715,9 @@ window.cqSpinControls = function (settings) {
     try {
       localStorage.setItem(STORE, JSON.stringify(
         {running: running, both: both, speeds: speeds, picture: picture,
-         shapes: dressed, cutAt: cutAt,
+         shapes: dressed, cutAt: cutAt, agreeAt: agreeAt, ranges: ranges,
+         chosen: chosen,
+         differAt: differAt,
          mode: mode, turn: turn.mode, tilt: tilt.mode}));
     } catch (e) {}
   }
@@ -4642,6 +4735,8 @@ window.cqSpinControls = function (settings) {
       // simply visited the page before would have come back to find the
       // written-out numbers gone, with nothing they did to explain it.
       if (was.speeds) speeds = Object.assign({}, speeds, was.speeds);
+      if (was.ranges) ranges = Object.assign({}, ranges, was.ranges);
+      if (was.chosen) chosen = Object.assign({}, chosen, was.chosen);
       if (was.picture) picture = Object.assign({}, picture, was.picture);
       // ONLY SHAPES THIS PAGE ACTUALLY HAS. What was stored may have been
       // written by an earlier page at the same address, or by a version of
@@ -4657,6 +4752,10 @@ window.cqSpinControls = function (settings) {
       // BOUNDED BY WHAT THIS PAGE ACTUALLY HAS. A remembered height from a
       // page with more cuts in it than this one would otherwise ask for a
       // level that does not exist, and the picture would open empty.
+      if (typeof was.agreeAt === "number")
+        agreeAt = Math.max(0, Math.min(1, was.agreeAt));
+      if (typeof was.differAt === "number")
+        differAt = Math.max(0, Math.min(1, was.differAt));
       if (was.cutAt !== undefined && cuts)
         cutAt = Math.max(0, Math.min(cuts.levels.length - 1, was.cutAt | 0));
       if (was.turn !== undefined) turn.mode = was.turn;
@@ -4704,10 +4803,19 @@ window.cqSpinControls = function (settings) {
   // are read. Empty groups are never drawn, so a page that hands over two
   // controls still shows two controls and no scaffolding.
   var body = "";
-  function section(heading, rows, wide) {
+  function section(heading, rows, wide, aside) {
     if (!rows) return;
+    // THE ASIDE SITS OUTSIDE THE GRID, under it.
+    //
+    // Put inside as a full-width cell it was part of the layout, so the row
+    // of shape controls moved sideways the moment it appeared -- measured at
+    // 300 pixels on a wide window. A note that shoves the button you are
+    // reaching for is the very fault it was added to explain, and it is the
+    // second time in this file that something has moved under a finger.
+    // Below the grid it can only ever add height beneath everything.
     body += '<div class="cq-sect' + (wide ? " cq-wide" : "") + '">'
-      + '<h4>' + heading + '</h4><div class="cq-rows">' + rows + '</div></div>';
+      + '<h4>' + heading + '</h4><div class="cq-rows">' + rows + '</div>'
+      + (aside || "") + '</div>';
   }
 
   // ------------------------------------------------- moving the cut up and down
@@ -4904,9 +5012,11 @@ window.cqSpinControls = function (settings) {
   }
 
   var HAS_PANEL = on("lr", true) || on("ud", true) || on("speed_each", false)
+    || swings("turn") || swings("tilt")
     || on("move", true) || on("grid", false) || on("labels", false)
     || on("key", false) || on("appearance", false)
     || HAS_SHAPES || canStand() || canFull() || canSave()
+    || (agreed && on("agree", true))
     || (on("notes", true) && !!document.querySelector(".cq-notes"));
   if (HAS_PANEL)
     head += button("more", "more…", "Everything else you can change about "
@@ -4929,6 +5039,21 @@ window.cqSpinControls = function (settings) {
            + Math.round(speeds.turn) + '</span>'
            + button("turn-faster", "+", "Turn left and right more quickly.")
          : "")
+      + (swings("turn")
+         ? group(button("turn-narrower", "&minus;", "Swing a shorter way to "
+             + "each side. A narrow swing keeps the shape almost facing you, "
+             + "which is what you want when you have picked an angle and only "
+             + "want enough movement to tell a dent from a shadow.")
+           + '<span class="cq-num" data-cq="turn-range">'
+           + sweepReads("turn") + '</span>'
+           + button("turn-wider", "+", "Swing further to each side, up to "
+             + "half a turn — and one press further than that sets it going "
+             + "ALL THE WAY ROUND, turning steadily in one direction instead "
+             + "of coming back. The reading says “round” when it is doing "
+             + "that. A swing keeps the shape near the angle you picked; all "
+             + "the way round is the one to leave running while you look at "
+             + "something else. Press the minus to come back to a swing."))
+         : "")
       + '</span></div>';
   if (on("ud", true))
     moves += '<div class="cq-row"><span>up &amp; down</span>'
@@ -4941,6 +5066,19 @@ window.cqSpinControls = function (settings) {
            + '<span class="cq-num" data-cq="tilt-speed">'
            + Math.round(speeds.tilt) + '</span>'
            + button("tilt-faster", "+", "Tip more quickly.")
+         : "")
+      + (swings("tilt")
+         ? group(button("tilt-narrower", "&minus;", "Tip a shorter way. A "
+             + "small tip is enough to show that a surface is dented rather "
+             + "than smooth, and it is much easier to watch than a large one.")
+           + '<span class="cq-num" data-cq="tilt-range">'
+           + sweepReads("tilt") + '</span>'
+           + button("tilt-wider", "+", "Tip further, until you are looking "
+             + "down onto the lid of the shape and then up at its floor — "
+             + "which is the only way to see how flat the top is near white. "
+             + "One press past the furthest tip sends it right over the top "
+             + "and round, reading “round”, which is worth seeing once and "
+             + "is not restful to leave running."))
          : "")
       + '</span></div>';
   section("how it moves", moves);
@@ -4968,6 +5106,46 @@ window.cqSpinControls = function (settings) {
   section("where you look from", looking);
 
   var each = "";
+  // WHERE THEY AGREE, ABOVE THE SHAPES IT ACTS ON. It belongs in this group
+  // rather than with the grid and the lettering, because it is about the
+  // shapes themselves -- and it goes first because it is the one control
+  // here that acts on all of them at once, so reading down the group runs
+  // from "all of them" to "this one".
+  if (agreed && on("agree", true)) {
+    each += '<div class="cq-row"><span>where they agree</span>'
+      + '<span class="cq-ctl">'
+      + group(button("agree-less", "&minus;",
+          "Fade away the part that every shape reaches, so that what is left "
+          + "standing is only where they differ. Two papers drawn over each "
+          + "other are mostly the same paper: the part they share is the bulk "
+          + "of both, it is drawn twice, and it sits in front of the very "
+          + "thing you are comparing them to see.")
+        + '<span class="cq-num" data-cq="agree-at">100%</span>'
+        + button("agree-more", "+",
+          "Bring the shared part back. At the top nothing is changed at all "
+          + "and the picture is exactly the one that was saved. If a whole "
+          + "shape faded away on the way down, that is the answer and not a "
+          + "fault: it means that shape sits completely inside the others and "
+          + "differs from them nowhere."))
+      + '</span></div>';
+    // AND THE OTHER WAY ROUND. The two are not the same control read
+    // backwards: fading the shared part asks "where do these differ?", which
+    // is what you ask when choosing between two papers, and fading the
+    // differences asks "what can I print on both of them?", which is what
+    // you ask when the same picture has to go out on both.
+    each += '<div class="cq-row"><span>where they differ</span>'
+      + '<span class="cq-ctl">'
+      + group(button("differ-less", "&minus;",
+          "Fade away the parts that only one shape reaches, leaving the part "
+          + "they all have in common. That shared part is what you can print "
+          + "on either of them and get the same colour, which is the question "
+          + "to ask when one picture has to go out on both.")
+        + '<span class="cq-num" data-cq="differ-at">100%</span>'
+        + button("differ-more", "+",
+          "Bring the differences back. Both of these sit at the top when the "
+          + "page opens, and there they change nothing at all."))
+      + '</span></div>';
+  }
   shapes.forEach(function (g, n) {
     var st = dressed[g.key], ctl = "";
     if (canFade(g))
@@ -4981,7 +5159,13 @@ window.cqSpinControls = function (settings) {
         + button("shape-stronger-" + n, "+",
           "Make " + g.label + " more solid. At full strength a surface hides "
           + "everything behind it, which is exactly what you want when it is "
-          + "the shape itself you are studying rather than the comparison."));
+          + "the shape itself you are studying rather than the comparison. "
+          + "It is also the cleanest: a see-through surface shows flat "
+          + "patches of its own triangles at some angles, because the "
+          + "browser blends them in the order it draws them rather than by "
+          + "which is nearer. That is the drawing, not your measurement — "
+          + "it is worst at a three-quarter view and least from straight "
+          + "above, and going solid removes it altogether."));
     if (canWire(g))
       ctl += button("shape-wires-" + n, g.mesh ? "wires" : "filled",
         g.mesh
@@ -5013,6 +5197,19 @@ window.cqSpinControls = function (settings) {
       + safe(g.label) + '">' + safe(g.label) + '</span>'
       + '<span class="cq-ctl">' + ctl + '</span></div>';
   });
+  // A LINE THAT APPEARS ONLY WHEN IT APPLIES.
+  //
+  // A see-through surface shows flat, hard-edged patches of its own triangles
+  // at some angles -- the browser blends them in the order it draws them
+  // rather than by which is nearer. Nothing is missing, and the outline is
+  // identical, but it reads as a slice taken out of the shape.
+  //
+  // It was explained in the tooltip on the button that causes it, which is no
+  // help at all to somebody looking at the picture wondering what they did:
+  // reported as "it looks sliced" and then, plainly, "I don't know which
+  // control does it". So the page says so itself, in the group the control
+  // lives in, and only while a shape is actually see-through -- a standing
+  // note about a thing that is not happening is just more to read.
   if (each)
     each += '<div class="cq-row cq-back"><span>changed your mind?</span>'
       + '<span class="cq-ctl">'
@@ -5021,7 +5218,11 @@ window.cqSpinControls = function (settings) {
         + "Only how they are drawn is put back: nothing you have turned, "
         + "zoomed or hidden is disturbed.")
       + '</span></div>';
-  section("each shape", each, true);
+  section("each shape", each, true,
+    each ? '<div class="cq-aside" data-cq="facets" hidden>'
+           + 'a see-through shape shows its own facets at some angles — '
+           + 'nothing is missing. Press + to make it solid, or “above”.'
+           + '</div>' : "");
 
   var drawn = "";
   // ONLY IF THERE ARE ANY. Offering to hide something that is not on the
@@ -5101,13 +5302,43 @@ window.cqSpinControls = function (settings) {
       // this pair of numbers is what tells a reader which minus goes with
       // which label, and it is the only thing that does.
       ".cq-grp{display:inline-flex;gap:6px;align-items:center}"
+      // THE STRIP AND THE PANEL PAINT ABOVE THE PICTURE, ALWAYS.
+      //
+      // Opening the panel takes about seventy pixels off the picture, and the
+      // drawing library only learns that when it is told to re-measure. For
+      // the frame or two in between, the canvas is still its old height and
+      // spills over the strip -- so the Play button and "less…" are sliced
+      // in half by the panel's top edge, and a moment later it settles.
+      // Reported exactly that way: "here, and then a second later it is back
+      // to good".
+      //
+      // Telling it to re-measure sooner only shortens the flicker; stacking
+      // the controls above the picture removes it whatever the timing, and
+      // clipping the picture to its own box stops the canvas escaping in the
+      // first place. Two rules, no reliance on when a frame lands.
+      + ".cq-spin-bar,.cq-spin-panel{position:relative;z-index:2}"
+      + "body > div:first-of-type{overflow:hidden}"
+      // THE TEXT GROWS WITH THE WINDOW, between a floor and a ceiling.
+      //
+      // Pinned at 12px it was right on a laptop and looked lost on anything
+      // bigger: on a 1900-pixel window the picture fills the screen and the
+      // controls under it are the same twelve pixels they were at 1280, which
+      // reads as tiny. Reported twice, once on a phone (a different cause --
+      // see the viewport tag) and once on a wide desktop window, which is
+      // this.
+      //
+      // clamp() keeps 12px as the floor, so nothing measured for a narrow
+      // screen moves, and stops at 15px so a very wide window does not end up
+      // with a row of enormous buttons. The padding is in em, so the buttons
+      // grow with the text rather than staying the same size around it.
       + ".cq-spin-bar{flex:0 0 auto;display:flex;gap:18px;align-items:center;"
       + "justify-content:center;flex-wrap:wrap;margin:0 auto;max-width:100%;"
-      + "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+      + "font:clamp(12px,0.85vw,15px)/1 -apple-system,BlinkMacSystemFont,"
+      + "'Segoe UI',sans-serif;"
       + "padding:8px 10px;color:" + ink + ";background:" + paper + ";"
       + "border-top:1px solid " + tint(ink, 0.14) + "}"
       + ".cq-spin-bar button{font:inherit;cursor:pointer;border-radius:999px;"
-      + "padding:5px 10px;border:1px solid " + tint(ink, 0.45) + ";"
+      + "padding:0.45em 0.85em;border:1px solid " + tint(ink, 0.45) + ";"
       + "background:transparent;color:inherit}"
       + ".cq-spin-bar button:hover{border-color:" + ink + "}"
       // A KEYBOARD MUST BE ABLE TO SEE WHERE IT IS. The browser's own focus
@@ -5128,8 +5359,11 @@ window.cqSpinControls = function (settings) {
       + "font-variant-numeric:tabular-nums}"
       + ".cq-spin-panel{flex:0 0 auto;color:" + ink + ";background:" + paper
       + ";border-top:1px solid " + tint(ink, 0.14) + ";padding:10px 14px 12px;"
-      + "font:12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
-      + "display:block;max-width:900px;margin:0 auto;width:100%;"
+      + "font:clamp(12px,0.85vw,15px)/1.4 -apple-system,BlinkMacSystemFont,"
+      + "'Segoe UI',sans-serif;"
+      // The panel widens with the text too, or fifteen-pixel words are laid
+      // into columns measured for twelve-pixel ones.
+      + "display:block;max-width:min(1120px,94vw);margin:0 auto;width:100%;"
       + "box-sizing:border-box}"
       // A HEADING AND ITS OWN LIST PER GROUP. The lists still flow into as
       // many columns as the width allows, so a desktop shows a group in one
@@ -5155,6 +5389,11 @@ window.cqSpinControls = function (settings) {
       + ".cq-spin-panel .cq-name{flex:1 1 150px;min-width:0;overflow:hidden;"
       + "text-overflow:ellipsis;white-space:nowrap}"
       + ".cq-spin-panel .cq-back span:first-child{opacity:.6}"
+      // The note runs the width of the group and reads as an aside, not as a
+      // row with a missing control on the right-hand side.
+      + ".cq-spin-panel .cq-aside{opacity:.55;margin:6px 0 0;"
+      + "font-size:.92em;line-height:1.35;display:block}"
+      + ".cq-spin-panel .cq-aside[hidden]{display:none}"
       + ".cq-spin-panel .cq-row{display:flex;align-items:center;"
       + "justify-content:space-between;gap:10px}"
       + ".cq-spin-panel .cq-ctl{display:flex;gap:5px;align-items:center;"
@@ -5177,7 +5416,7 @@ window.cqSpinControls = function (settings) {
       + ".cq-spin-panel .cq-num{display:inline-block;min-width:40px;"
       + "text-align:center;font-variant-numeric:tabular-nums}"
       + ".cq-spin-panel button{font:inherit;cursor:pointer;border-radius:999px;"
-      + "padding:4px 9px;border:1px solid " + tint(ink, 0.45) + ";"
+      + "padding:0.4em 0.8em;border:1px solid " + tint(ink, 0.45) + ";"
       + "background:transparent;color:inherit;min-width:34px}"
       + ".cq-spin-panel button[aria-pressed=false]{opacity:.5}"
       // CLOSED MEANS CLOSED.
@@ -5289,6 +5528,12 @@ window.cqSpinControls = function (settings) {
     });
   }
   fit();
+  // AFTER THE BROWSER HAS LAID OUT, not merely soon. requestAnimationFrame
+  // runs once the new heights are settled, which is the earliest moment the
+  // picture can be measured correctly; the timer after it is the belt to
+  // that pair of braces.
+  if (window.requestAnimationFrame)
+    window.requestAnimationFrame(function () { fit(); });
   window.setTimeout(fit, 60);
   window.addEventListener("resize", fit);
   // Turning a phone sideways is a resize the event above can miss.
@@ -5301,8 +5546,12 @@ window.cqSpinControls = function (settings) {
   function wake() {
     if ((!turn.mode || turn.mode === "off") &&
         (!tilt.mode || tilt.mode === "off")) {
-      turn.mode = "round";
-      if (!turn.range) turn.range = 60;
+      // Whatever the reader last chose for the left-and-right direction, or
+      // all the way round if they have never chosen anything. It used to set
+      // a range here as well, which nothing reads any more: how far each
+      // direction swings is kept in `ranges` now, so that the sweep buttons
+      // and the engine cannot hold two different answers.
+      turn.mode = chosen.turn;
     }
   }
   // QUOTED, ALWAYS. These names now carry a number on the end ("shape-lit-2")
@@ -5407,19 +5656,46 @@ window.cqSpinControls = function (settings) {
     if (flat) running = false;
     window.cqSpin.set(
       {on: running,
-       turn: {mode: turn.mode, range: turn.range, speed: speedFor("turn")},
-       tilt: {mode: tilt.mode, range: tilt.range, speed: speedFor("tilt")}});
+       turn: {mode: turn.mode, range: ranges.turn, speed: speedFor("turn")},
+       tilt: {mode: tilt.mode, range: ranges.tilt, speed: speedFor("tilt")}});
     say("speed", "speed " + both);
     say("turn-speed", String(Math.round(speeds.turn)));
     say("tilt-speed", String(Math.round(speeds.tilt)));
+    say("turn-range", sweepReads("turn"));
+    say("tilt-range", sweepReads("tilt"));
     say("play", running ? "Pause" : "Play");
     press("lr", turn.mode && turn.mode !== "off");
     press("ud", tilt.mode && tilt.mode !== "off");
+    // FROM THE ONE PLACE EVERY HANDLER ALREADY PASSES THROUGH. Hung off the
+    // plural tellShapes() instead, it was missed by every per-shape press --
+    // which calls the singular one -- so fading a shape to nothing left the
+    // button still claiming the page was as it was saved.
+    tellMore();
     if (on("remember", true)) remember();
   }
 
   function step(which, by) {
     speeds[which] = Math.min(12, Math.max(1, Math.round(speeds[which] + by)));
+  }
+  //: Ten degrees a press: fine enough that nobody overshoots the sweep they
+  //: wanted, coarse enough that one press is plainly something.
+  function sweep(which, by) {
+    var limit = SWEEP[which];
+    if (chosen[which] === "round") {
+      // Coming back from a full turn lands on the widest swing there is,
+      // which is the step it left from.
+      if (by < 0) { chosen[which] = "swing"; ranges[which] = limit[1]; }
+    } else if (Math.round(ranges[which] + by) > limit[1]) {
+      chosen[which] = "round";
+    } else {
+      ranges[which] = Math.max(limit[0], Math.round(ranges[which] + by));
+    }
+    // A DIRECTION THAT IS RUNNING CHANGES UNDER THE READER'S HAND. One that
+    // is switched off keeps the choice for when it is switched back on --
+    // the same promise the on/off button already makes about the movement
+    // the page was saved with.
+    var axis = (which === "turn") ? turn : tilt;
+    if (axis.mode && axis.mode !== "off") axis.mode = chosen[which];
   }
 
   //: How faint a shape may be made, and how solid. Not zero at the faint end:
@@ -5427,7 +5703,62 @@ window.cqSpinControls = function (settings) {
   //: it by holding the minus button has no way of telling that from a page
   //: that failed to draw. Hiding a shape outright is what the names in the
   //: key are for, and that at least says so plainly.
-  var FAINTEST = 0.05, SOLID = 1;
+  //: THE STEPS A STRENGTH MOVES IN, and they are not even on purpose.
+  //:
+  //: Ten equal steps of a tenth sound right and do not look it: taking a
+  //: surface from full to nine-tenths is barely visible, while the last step
+  //: from a tenth to nothing removes almost everything that was left. So a
+  //: reader pressing steadily sees nothing happen, nothing happen, nothing
+  //: happen -- and then the shape is gone. Reported exactly that way: "it
+  //: seemed it was fully there and then immediately completely gone".
+  //:
+  //: These are spaced so each press changes what you SEE by about as much as
+  //: the last one, which means small steps at the faint end where the eye is
+  //: most sensitive to them.
+  //:
+  //: IT DOES REACH NOTHING, and that was asked for: hiding the shared part
+  //: outright is a thing somebody wants, and refusing it because a vanished
+  //: shape MIGHT be mistaken for a fault is solving the wrong half of the
+  //: problem. The right half is telling them -- which the button that opens
+  //: this panel now does: a line under "each shape" naming what a see-through
+  //: surface does to the picture and what to press about it, shown only while
+  //: one actually is. An explanation beats a prohibition -- and a SPECIFIC
+  //: explanation beats a vague one, which is why a label merely announcing
+  //: that something had changed was tried here and taken out again.
+  //:
+  //: The rungs near the bottom are close together so that the last step
+  //: before nothing is a small one rather than a cliff.
+  var LADDER = [0, 0.05, 0.08, 0.11, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
+                0.9, 1];
+  // THE RUNGS, PLUS WHEREVER THIS PARTICULAR SHAPE STARTED.
+  //
+  // A page saved with two papers draws them at 0.55, a chart's skin at 0.30 --
+  // values that are not on the ladder. Stepping off one of those snaps to the
+  // nearest rung, and stepping back lands on that rung rather than where it
+  // began: 0.55 went down to 0.4 and back to 0.5, so pressing plus as many
+  // times as minus did NOT put the shape back. Caught by the check that
+  // presses both and compares the drawing byte for byte.
+  //
+  // Giving each shape a ladder with its own starting value in it costs one
+  // array and makes going back exact for any value a page can be saved with.
+  var LADDERS = {};
+  function ladderFor(start) {
+    var key = String(start);
+    if (LADDERS[key]) return LADDERS[key];
+    var rungs = LADDER.slice();
+    if (rungs.indexOf(start) < 0 && start >= 0 && start <= 1) rungs.push(start);
+    rungs.sort(function (a, b) { return a - b; });
+    return (LADDERS[key] = rungs);
+  }
+  function stepped(value, by, start) {
+    var rungs = ladderFor(start === undefined ? value : start);
+    var best = 0, gap = Infinity;
+    for (var i = 0; i < rungs.length; i++) {
+      var d = Math.abs(rungs[i] - value);
+      if (d < gap) { gap = d; best = i; }
+    }
+    return rungs[Math.max(0, Math.min(rungs.length - 1, best + by))];
+  }
   function tellShape(n) {
     var g = shapes[n]; if (!g) return;
     var st = dressed[g.key];
@@ -5435,16 +5766,57 @@ window.cqSpinControls = function (settings) {
     press("shape-wires-" + n, g.mesh ? st.wires : st.filled);
     press("shape-grey-" + n, st.grey);
   }
-  function tellShapes() { shapes.forEach(function (g, n) { tellShape(n); }); }
+  function tellShapes() {
+    shapes.forEach(function (g, n) { tellShape(n); });
+    say("agree-at", Math.round(agreeAt * 100) + "%");
+    say("differ-at", Math.round(differAt * 100) + "%");
+    tellMore();
+  }
+  // THE PAGE SAYS WHEN IT IS NO LONGER SHOWING WHAT IT WAS SAVED SHOWING.
+  //
+  // Several of these controls take a piece out of the picture on purpose:
+  // fading away the part two shapes share leaves a shape with a bite out of
+  // it, and turning one right down removes it altogether. That is what they
+  // are for. But with the panel closed there was nothing on screen to say
+  // so -- and a reader who pressed something a while ago, or who came back
+  // to a page their browser had remembered settings for, sees a shape that
+  // looks cut, or gone, and no reason for it.
+  //
+  // Reported exactly that way: a shape that "seemed fully there and then
+  // immediately completely gone", by somebody who had not noticed which
+  // control was doing it.
+  //
+  // One word on the button that opens the panel is enough. It is where a
+  // reader is already looking when they wonder, the panel behind it shows
+  // which control it is and what it is set to, and "as saved" in there puts
+  // everything back. An explanation, rather than refusing to let them do it.
+  function tellMore() {
+    // JUST "more…". A label reading "(changed)" was tried and taken out
+    // again: it says that SOMETHING is different without saying what, which
+    // is only half an answer and leaves the reader hunting anyway. The note
+    // below names the thing they can see and what to press about it, which
+    // is the whole answer, so the vague one was only noise.
+    say("more", (panel.hidden ? "more" : "less") + "…");
+    // AND THE NOTE ABOUT SEE-THROUGH SURFACES, only while one is.
+    //
+    // Here rather than in tellShapes(), which per-shape presses do not call
+    // -- they call the singular tellShape(). That is the second time the
+    // same trap has been walked into in this file: anything that has to be
+    // true after EVERY press belongs on the one path every press takes.
+    var thin = shapes.some(function (g) { return dressed[g.key].opacity < 1; })
+      || agreeAt < 1 || differAt < 1;
+    var note = panel.querySelector('[data-cq="facets"]');
+    if (note) note.hidden = !thin;
+  }
   function shapePress(what) {
     var bits = what.split("-");            // shape-fainter-2
     var n = parseInt(bits[2], 10);
     var g = shapes[n]; if (!g) return true;
     var st = dressed[g.key];
     if (bits[1] === "fainter")
-      st.opacity = Math.max(FAINTEST, Math.round((st.opacity - 0.1) * 100) / 100);
+      st.opacity = stepped(st.opacity, -1, g.opened.opacity);
     if (bits[1] === "stronger")
-      st.opacity = Math.min(SOLID, Math.round((st.opacity + 0.1) * 100) / 100);
+      st.opacity = stepped(st.opacity, 1, g.opened.opacity);
     // ONE BUTTON, TWO MEANINGS, AND NEVER BOTH AT ONCE: a solid has wires
     // drawn over it, a flat cut is filled in or left as an outline. Which of
     // the two a shape gets is decided when the row is built, from what that
@@ -5499,6 +5871,15 @@ window.cqSpinControls = function (settings) {
     var what = ev.target.getAttribute("data-cq");
     if (!what) return;
     if (what.indexOf("shape-") === 0) { shapePress(what); push(); return; }
+    if (what.indexOf("agree-") === 0 || what.indexOf("differ-") === 0) {
+      var by = (what.indexOf("-more") > 0 ? 1 : -1);
+      if (what.indexOf("agree-") === 0) agreeAt = stepped(agreeAt, by);
+      else differAt = stepped(differAt, by);
+      shapes.forEach(dressOne);
+      tellShapes();
+      push();
+      return;
+    }
     if (what === "shapes-back") { undress(); tellShapes(); push(); return; }
     if (what.indexOf("look-") === 0) {
       if (window.cqSpin.look) window.cqSpin.look(what.slice(5));
@@ -5514,7 +5895,7 @@ window.cqSpinControls = function (settings) {
     if (what === "shot") { snapshot(); return; }
     if (what === "more") {
       panel.hidden = !panel.hidden;
-      say("more", panel.hidden ? "more…" : "less…");
+      tellMore();
       fit();
       return;
     }
@@ -5539,14 +5920,20 @@ window.cqSpinControls = function (settings) {
     if (what === "turn-faster") step("turn", 1);
     if (what === "tilt-slower") step("tilt", -1);
     if (what === "tilt-faster") step("tilt", 1);
+    if (what === "turn-narrower") sweep("turn", -10);
+    if (what === "turn-wider") sweep("turn", 10);
+    if (what === "tilt-narrower") sweep("tilt", -10);
+    if (what === "tilt-wider") sweep("tilt", 10);
     // REMEMBERS WHAT IT WAS, so switching an axis off and on again brings back
     // the movement the page was saved with rather than a guess at one.
+    // REMEMBERS WHAT IT WAS, and "what it was" is now what the reader last
+    // chose rather than only what the page was saved with -- otherwise
+    // setting a direction to go all the way round and then switching it off
+    // and on again would quietly put it back to a swing.
     if (what === "lr") turn.mode = (turn.mode && turn.mode !== "off")
-      ? "off" : (saved.turn.mode && saved.turn.mode !== "off"
-                 ? saved.turn.mode : "round");
+      ? "off" : chosen.turn;
     if (what === "ud") tilt.mode = (tilt.mode && tilt.mode !== "off")
-      ? "off" : (saved.tilt.mode && saved.tilt.mode !== "off"
-                 ? saved.tilt.mode : "swing");
+      ? "off" : chosen.tilt;
     if (what === "grid") { picture.grid = !picture.grid; applyPicture(); }
     if (what === "labels") { picture.labels = !picture.labels; applyPicture(); }
     if (what === "key") { picture.key = !picture.key; applyPicture(); }
@@ -5589,5 +5976,5 @@ window.cqSpinControls = function (settings) {
   push();
 };
 
-window.addEventListener('load', function () {var s = {"on": false, "turn": {"mode": "round", "speed": 8.0, "range": 60.0}, "tilt": {"mode": "off", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#e6e6e6", "paper": "#111111", "mode": "dark", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true, "opacity": true, "wires": true, "grey": true, "views": true, "fullscreen": true, "picture": true, "cut": true}};window.cqSpin.set(s);window.cqSpinControls(s);});</script></body>
+window.addEventListener('load', function () {var s = {"on": false, "turn": {"mode": "round", "speed": 8.0, "range": 60.0}, "tilt": {"mode": "off", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#e6e6e6", "paper": "#111111", "mode": "dark", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true, "opacity": true, "wires": true, "grey": true, "views": true, "fullscreen": true, "picture": true, "cut": true, "agree": true, "sweep": false}};window.cqSpin.set(s);window.cqSpinControls(s);});</script></body>
 </html>

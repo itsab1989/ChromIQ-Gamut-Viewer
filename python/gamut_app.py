@@ -2193,6 +2193,29 @@ class WebPageDialog(QDialog):
              "It costs two more buttons in the panel. If in doubt, leave "
              "this off and keep the single speed above: most people only "
              "want it a bit slower."),
+            ("sweep", "How far it swings, and whether it goes right round", False,
+             "Gives each direction a minus and a plus for HOW FAR it moves, "
+             "separately from how fast — which are two quite different "
+             "things to watch, and until now a saved page could only ever "
+             "hand over the speed.\n\n"
+             "WHAT IT CHANGES. A narrow swing keeps the shape almost facing "
+             "the way you pointed it, and gives just enough movement to tell "
+             "a dent in the surface from a shadow on it. A wide one carries "
+             "it round both edges so you can see what is hiding at the sides. "
+             "The reading is in degrees, and the limits are this window's own "
+             "— 15° to 180° left and right, 10° to 120° up and down — so a "
+             "page cannot be set to something this window would refuse.\n\n"
+             "AND ONE PRESS PAST THE WIDEST SWING sets that direction going "
+             "ALL THE WAY ROUND, turning steadily in one direction instead of "
+             "coming back; the reading then says “round”. That matters "
+             "because it is the only way somebody reading your page can get "
+             "to the full turn if you saved it swinging — and pressing the "
+             "minus brings it back to a swing again. Nothing is lost either "
+             "way.\n\n"
+             "It costs two more buttons in each direction's row. If you are "
+             "handing over a page for somebody to glance at, the single "
+             "speed above is usually enough; this is for a page somebody is "
+             "going to sit and study."),
             ("lr", "Turn left and right on or off", True,
              "A switch for the turning — the movement most people mean by "
              "“spin it”.\n\n"
@@ -2295,6 +2318,47 @@ class WebPageDialog(QDialog):
              "costs nothing on the devices that cannot use it."),
             ]),
             ("How each shape is drawn", [
+            ("agree", "Fade where they agree, or where they differ", True,
+             "Two rows of controls, one each way round, so the person "
+             "reading the page can dissolve either half of the picture and "
+             "look at the other.\n\n"
+             "WHERE THEY AGREE fades the part every shape reaches, leaving "
+             "only the places they differ. WHERE THEY DIFFER does the "
+             "opposite, leaving the part they all have in common. Those are "
+             "two different questions: the first is the one you ask when "
+             "choosing between two papers, and the second is the one you ask "
+             "when the same picture has to go out on both and you want to "
+             "know which colours are safe on either.\n\n"
+             "WHY IT IS WORTH HANDING OVER. Two papers drawn over each other "
+             "are mostly the same paper. The part they share is the bulk of "
+             "both, it is drawn twice, and it sits in front of the part where "
+             "they differ — which is the only part anybody put them side by "
+             "side to see. This dissolves the agreement and leaves the "
+             "difference standing on its own, and it is the sort of thing a "
+             "reader wants to try both ways rather than be handed one of.\n\n"
+             "AT THE TOP nothing is changed at all: the picture is exactly "
+             "the one you saved. Somewhere in the middle is usually the most "
+             "useful — fully hidden loses all sense of how big the agreement "
+             "was, while faint keeps the whole shape as context with the "
+             "difference standing out of it.\n\n"
+             "IF A WHOLE SHAPE DISAPPEARS as they slide it down, that is the "
+             "answer and not a fault: it means that shape lies completely "
+             "inside the others and disagrees with them nowhere. Sliding back "
+             "up brings it in again, whole.\n\n"
+             "These only appear on a page with two or more shapes on it — one "
+             "on its own has nothing to agree with — and they cost the file "
+             "about half a kilobyte per shape, which is one character for "
+             "each measured point saying which side of the question it falls "
+             "on.\n\n"
+             "The fading is done to the colours themselves rather than by "
+             "drawing the shape twice, which is why the top of the range is "
+             "not merely close to leaving the picture alone but leaves it "
+             "pixel for pixel identical.\n\n"
+             "IT IS ABOUT THE SURFACES, not about volume. What is left is the "
+             "piece of each boundary lying outside the others, and on two "
+             "shapes that graze each other a great many boundary points fall "
+             "just outside while very little volume does. The written-out "
+             "figures under the picture are where the volume is answered."),
             ("opacity", "Make a shape fainter or more solid", True,
              "A minus, a percentage and a plus for every shape on the page, "
              "each one on its own.\n\n"
@@ -2304,6 +2368,15 @@ class WebPageDialog(QDialog):
              "save the page; this lets the person reading it choose a "
              "different one for the shape they happen to care about, which "
              "is not a decision you can make for them in advance.\n\n"
+             "A SEE-THROUGH SURFACE SHOWS ITS OWN FACETS at some angles — "
+             "flat patches with hard edges, which look like a slice taken "
+             "out of the shape. That is the drawing and not your "
+             "measurement: a browser blends see-through surfaces in the "
+             "order it draws them rather than by which one is nearer. "
+             "Measured on one paper, it is about four times worse at a "
+             "three-quarter view than from straight above, and it goes "
+             "altogether when the shape is solid — so if a shape looks cut, "
+             "press the plus or look at it from above.\n\n"
              "It stops short of invisible at one end and solid at the other, "
              "so nobody can fade a shape away and be left wondering whether "
              "the page failed to draw it. Hiding one outright is what the "
@@ -4174,6 +4247,113 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._show_lost, 1)
         _r.addWidget(lost_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
+
+        # WHERE THE SHAPES AGREE, FADED AWAY.
+        #
+        # A SLIDER RATHER THAN A TICK BOX, and that is a measured decision.
+        # Hiding the agreement outright has a cliff in it: a shape that lies
+        # entirely inside another disagrees NOWHERE, so every one of its
+        # triangles goes and the shape vanishes -- 0 of 978 on the demo pair.
+        # That is the correct answer and it looks exactly like a fault. Faded
+        # instead, the shape is still faintly there at 40% and the reader can
+        # see for themselves that it agrees everywhere.
+        #
+        # It also has a true do-nothing position. At 100% the picture is what
+        # it was, which is what makes a new control safe to leave switched on.
+        agrow = QHBoxLayout()
+        agrow.addWidget(QLabel("Where they agree", g_look))
+        self._agree = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
+        self._agree.setRange(0, 100)
+        self._agree.setValue(100)
+        self._agree.valueChanged.connect(
+            lambda v: self._agree_lbl.setText("all of it" if v == 100
+                                              else ("hidden" if v == 0
+                                                    else f"{v}%")))
+        self._agree.sliderReleased.connect(self._redraw)
+        agrow.addWidget(self._agree, 1)
+        self._agree_lbl = QLabel("all of it", g_look)
+        self._agree_lbl.setFixedWidth(52)
+        agrow.addWidget(self._agree_lbl)
+        lv.addLayout(agrow)
+        agree_hint = Hint(
+            "Fades away the part of each shape that the other shapes reach "
+            "too, so what is left standing is only where they disagree.\n\n"
+            "WHY THIS IS WORTH HAVING. Two papers drawn over each other are "
+            "mostly the same paper. The part they share is the bulk of both, "
+            "it is drawn twice, and it sits in front of the part where they "
+            "differ — which is the only part you put them side by side to "
+            "see. Sliding this down dissolves the agreement and leaves the "
+            "difference on its own.\n\n"
+            "AT THE TOP — “all of it” — nothing is changed at all. The "
+            "picture is exactly what it would be without this control, so "
+            "you can leave it alone and lose nothing.\n\n"
+            "SOMEWHERE IN THE MIDDLE is usually the most useful. Fully "
+            "hidden, you lose all sense of how big the agreement was; faint, "
+            "you keep the whole shape as context with the difference "
+            "standing out of it.\n\n"
+            "IF ONE SHAPE DISAPPEARS ENTIRELY, that is your answer and not a "
+            "fault: it means that shape lies completely inside the others "
+            "and disagrees with them nowhere. Slide back up and you will see "
+            "it fade in again, whole.\n\n"
+            "It needs at least two shapes on screen — one on its own has "
+            "nothing to agree with, and the slider is greyed out until a "
+            "second arrives.\n\n"
+            "WHAT IT IS NOT: this is about the SURFACES, not about volume. "
+            "The part left standing is the piece of each boundary that lies "
+            "outside the others, and on two shapes that graze each other a "
+            "great many boundary points fall just outside while very little "
+            "volume does. Read it as “here is where they part company”, and "
+            "read the figures on the left for how much colour that is worth.",
+            g_look)
+        agree_hint.setObjectName("hint_agree_hint")
+        lv.addWidget(agree_hint)
+
+        # AND THE OTHER WAY ROUND, because it answers the other question.
+        # Fading the shared part asks "where do these two differ?"; fading
+        # the differences asks "what can I print on BOTH of them?" -- which
+        # is the one a person with two papers and one image actually has.
+        # Two plain sliders rather than one that runs both ways: a control
+        # whose middle is "normal" and whose two ends mean opposite things
+        # takes a paragraph to explain, and these take a line each.
+        dfrow = QHBoxLayout()
+        dfrow.addWidget(QLabel("Where they differ", g_look))
+        self._differ = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
+        self._differ.setRange(0, 100)
+        self._differ.setValue(100)
+        self._differ.valueChanged.connect(
+            lambda v: self._differ_lbl.setText("all of it" if v == 100
+                                               else ("hidden" if v == 0
+                                                     else f"{v}%")))
+        self._differ.sliderReleased.connect(self._redraw)
+        dfrow.addWidget(self._differ, 1)
+        self._differ_lbl = QLabel("all of it", g_look)
+        self._differ_lbl.setFixedWidth(52)
+        dfrow.addWidget(self._differ_lbl)
+        lv.addLayout(dfrow)
+        differ_hint = Hint(
+            "The opposite of the slider above: this one fades away the parts "
+            "that only ONE of the shapes reaches, leaving the part they all "
+            "have in common.\n\n"
+            "WHAT IT ANSWERS. “Where they agree” answers *where do these two "
+            "differ* — the question you ask when choosing between two papers. "
+            "This one answers *what can I print on both of them* — the "
+            "question you ask when the same picture has to go out on both, "
+            "and you want to know which colours are safe to use. The shape "
+            "left standing is the part every measurement on screen can "
+            "reach.\n\n"
+            "The two work together. Pull this one down and the shared core is "
+            "what remains; pull the one above down instead and the "
+            "differences are what remain; leave both at the top and nothing "
+            "is changed at all.\n\n"
+            "AT THE TOP nothing is changed, so you can leave it alone and "
+            "lose nothing.\n\n"
+            "It needs at least two shapes, and it is about the SURFACES: what "
+            "is left is the piece of each boundary that lies inside all the "
+            "others, not a solid of the shared volume. The written-out "
+            "figures on the left are where volume is answered.", g_look)
+        differ_hint.setObjectName("hint_differ_hint")
+        lv.addWidget(differ_hint)
+
         self._neutral = QCheckBox("Show the greys", g_look)
         self._neutral.stateChanged.connect(self._redraw)
         self._neutral.toggled.connect(self._follow_neutral)
@@ -5716,6 +5896,8 @@ class GamutApp(QMainWindow):
             ("slice_on", self._slice_on, "check", False),
             ("points", self._points, "check", False),
             ("show_lost", self._show_lost, "check", False),
+            ("agree", self._agree, "slider", 100),
+            ("differ", self._differ, "slider", 100),
             ("relative", self._relative, "check", False),
             ("manual_light", self._manual_light, "check", False),
             # How the chart's patches are drawn. Remembered like every other
@@ -5839,6 +6021,15 @@ class GamutApp(QMainWindow):
         self._detail_lbl.setText(f"{self._detail.value()} steps")
         self._slice_lbl.setText(f"L* {self._slice_at.value()}")
         self._rings_lbl.setText(str(self._rings.value()))
+        # THE SAME WORDING THE SLIDER ITSELF USES while being dragged, or a
+        # reset would leave the label reading "40%" beside a slider back at
+        # the top. Both routes into this window's stored settings come
+        # through here, which is why it is the only place it belongs.
+        for _slider, _label in ((self._agree, self._agree_lbl),
+                                (self._differ, self._differ_lbl)):
+            _v = _slider.value()
+            _label.setText("all of it" if _v == 100
+                           else ("hidden" if _v == 0 else f"{_v}%"))
 
     def _reset_defaults(self) -> None:
         """Put every setting back to its starting value, after asking."""
@@ -7295,6 +7486,8 @@ class GamutApp(QMainWindow):
             (self._mesh_colour, "shapes", True),
             (self._points, "shapes", True),
             (self._show_lost, "shapes", True),
+            (self._agree, "shapes", True),
+            (self._differ, "shapes", True),
             (self._side_by_side, "shapes", True),
             (self._manual_light, "shapes", True),
             # A white point is what a colour is read against — still true in
@@ -8104,6 +8297,20 @@ class GamutApp(QMainWindow):
             self._side_by_side.blockSignals(False)
         linked_useful = can_split and self._side_by_side.isChecked()
         self._link_row.setVisible(linked_useful)
+        # ONE SHAPE HAS NOTHING TO AGREE WITH, so the slider is dead until a
+        # second arrives -- and it says why rather than simply refusing to
+        # move. Left live it would be a control that does nothing, which this
+        # window treats as worse than a control that is not there.
+        for _slider, _label in ((self._agree, self._agree_lbl),
+                                (self._differ, self._differ_lbl)):
+            _slider.setEnabled(can_split)
+            _label.setEnabled(can_split)
+            _slider.setToolTip(
+                "" if can_split else
+                self._why_not_in_this_space("shapes") if not shapes else
+                "Open a second measurement, or choose something under Compare "
+                "with, and these can fade the part the two of them share, or "
+                "the parts only one of them reaches.")
 
     def _redraw(self) -> None:
         # A PLACED CHART IS A PICTURE IN ITS OWN RIGHT. Returning early when
@@ -8173,6 +8380,15 @@ class GamutApp(QMainWindow):
                                   controls=controls, offer=offer)
         else:
             write_html(gamuts, out, self._scene_title(),
+                       # SPLIT WHETHER OR NOT IT IS FADED RIGHT NOW. The
+                       # reader gets a slider for the agreement, and a trace
+                       # that was never written into the page cannot be faded
+                       # by anybody -- so the two halves travel whenever the
+                       # control is being handed over, even at full strength
+                       # where the picture is identical either way.
+                       split=bool(controls and len(gamuts) > 1
+                                  and (offer is None
+                                       or offer.get("agree", True))),
                        spin=self._spin_options(),
                        # NO FLOATING STRIP IN THIS WINDOW. It has its own
                        # movement controls, and a second set over the picture
@@ -8431,6 +8647,8 @@ class GamutApp(QMainWindow):
             chart_look=self._chart_look(),
             light=self._light_position(),
             grid=self._grid_on.isChecked(),
+            agree=self._agree.value() / 100.0,
+            differ=self._differ.value() / 100.0,
             # Named explicitly rather than read off the first shape, because
             # in ink amounts there is no first shape to read it off and the
             # axes would fall back to being labelled a*, b*, L*.

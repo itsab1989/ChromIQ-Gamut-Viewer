@@ -57,11 +57,19 @@ def the_page():
     from PyQt6.QtWebEngineCore import QWebEngineSettings
     view.settings().setAttribute(
         QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)
-    # TALL ENOUGH FOR THE WHOLE PANEL. At 940 the picture took its 62% and the
-    # last group of controls fell off the bottom of the grab -- a README
-    # picture that stops in the middle of the thing it is illustrating is
-    # worse than none, because a reader counts what is in it.
-    view.resize(1180, 1500)
+    # TALL ENOUGH FOR THE WHOLE PANEL, and it has had to grow twice: the
+    # picture takes 62% of whatever height this is, so every row added to the
+    # panel needs about two and a half times its own height here. A README
+    # picture that stops in the middle of the thing it illustrates is worse
+    # than none, because a reader counts what is in it. If a group is missing
+    # from the bottom of the grab, this number is why.
+    view.resize(1180, 1040)
+    # SHRUNK, NOT SQUEEZED. The window cannot be made taller than the screen
+    # it is on, and the panel has outgrown that -- so the page is rendered at
+    # three-quarter size instead. Every proportion is exactly what a reader
+    # sees; there is simply more of it in the frame, and the grab is taken at
+    # twice the pixel density so nothing is lost to the shrinking.
+    view.setZoomFactor(0.7)
     view.show()
 
     def js(code, wait=0):
@@ -86,7 +94,13 @@ def the_page():
             "return JSON.stringify([b.x+b.width/2,b.y+b.height/2]);})()")
     if at:
         x, y = json.loads(at)
-        point = QPointF(x, y)
+        # SCALED BY THE PAGE ZOOM. getBoundingClientRect answers in CSS
+        # pixels and a synthetic mouse event is delivered in the widget's
+        # own, which are the same thing only at 100%. At 70% the press
+        # landed a third of the way up the page, the panel never opened, and
+        # the picture came out showing a "more…" button as proof of it.
+        zoom = view.zoomFactor()
+        point = QPointF(x * zoom, y * zoom)
         target = view.focusProxy() or view
         for kind in (QMouseEvent.Type.MouseButtonPress,
                      QMouseEvent.Type.MouseButtonRelease):
