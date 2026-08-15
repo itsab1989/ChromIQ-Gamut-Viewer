@@ -234,7 +234,13 @@ print("\n=== 5. the picture itself ===")
 cloud = w._chart_cloud()
 check("the renderer is handed the chart", cloud is not None)
 if cloud:
-    name, lab, marked = cloud
+    # FOUR, not three. The chart grew a fourth part -- the ink amounts, which
+    # is what the ink-amount view draws from -- and this driver went on
+    # unpacking three and died on the line. It is not shipped, so nothing a
+    # user touches was affected; it did mean this whole check had been
+    # silently unrunnable since. Named rather than positional from here on, so
+    # a fifth part cannot do it again.
+    name, lab, marked, ink = cloud
     check("with a mask of what falls outside", marked is not None
           and len(marked) == len(lab))
     check("and it marks some but not all", 0 < int(marked.sum()) < len(marked),

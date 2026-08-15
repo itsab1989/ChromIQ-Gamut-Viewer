@@ -2192,6 +2192,32 @@ class WebPageDialog(QDialog):
              "is dented rather than smooth. On its own it can be unsettling "
              "to watch, which is exactly why it is worth letting somebody "
              "turn it off."),
+            ("zoom", "Zoom in and out", True,
+             "A minus and a plus that bring the shape closer or take it "
+             "further away.\n\n"
+             "WORTH KEEPING ON, ESPECIALLY FOR A PHONE. On a computer you "
+             "can zoom with the scroll wheel, so buttons only save a little "
+             "trouble. On a phone or a tablet there is no wheel, and the "
+             "part of the viewer that draws the shape understands one finger "
+             "and nothing else — so without these buttons somebody reading "
+             "your page on a phone can turn the shape and can never get any "
+             "closer to it.\n\n"
+             "The page now also understands a two-finger pinch, but nothing "
+             "on screen says so, and a pinch is the sort of thing people try "
+             "once and give up on. The buttons are the part they can see.\n\n"
+             "There are limits at both ends, so nobody can zoom so far in or "
+             "out that they lose the shape and cannot find it again."),
+            ("move", "Move the picture about", True,
+             "Four arrows that slide the picture left, right, up and down, "
+             "so a corner of the shape can be brought into the middle.\n\n"
+             "This is what you would do on a computer by dragging with the "
+             "right-hand mouse button, or by holding Ctrl and dragging. On a "
+             "phone neither of those exists — there is no second button and "
+             "no Ctrl key — so these arrows are the only way, apart from the "
+             "two-finger drag the page now understands.\n\n"
+             "Most useful together with the zoom above: get close first, "
+             "then move to the part you actually wanted. “Put the view back” "
+             "returns the whole shape whenever it goes wrong."),
             ("reset", "Put the view back", True,
              "A reset button that returns the shape to the way the page "
              "opened.\n\n"
@@ -2201,6 +2227,16 @@ class WebPageDialog(QDialog):
              "most people would not think to reload it.\n\n"
              "It undoes only their own turning and zooming. Nothing is "
              "closed and no figure changes."),
+            ("notes", "Put the numbers away", True,
+             "Lets whoever opens the page hide the written-out figures "
+             "underneath it, and bring them back.\n\n"
+             "Only appears if you asked for the numbers at the top of this "
+             "window — there is nothing to hide otherwise.\n\n"
+             "This matters most on a phone, where those figures are easily "
+             "taller than the whole screen: somebody who has read them once "
+             "can put them away and give the picture the entire window. "
+             "Nothing is deleted and nothing is recalculated — the same "
+             "numbers come straight back."),
             ("grid", "Show or hide the box and its grid", False,
              "Lets whoever opens the page take away the ruled box around the "
              "shape, and put it back.\n\n"
@@ -7935,13 +7971,19 @@ class GamutApp(QMainWindow):
         """
         if self._slice_on.isChecked():
             # A CROSS-SECTION IS DRAWN FLAT, LOOKING DOWN. There is no camera,
-            # so no movement settings travel with it and no strip is offered
-            # for movement that cannot happen.
+            # so no movement settings travel with it and the strip leaves out
+            # everything about movement -- but it does get a strip. Zooming,
+            # moving and getting back to the opening view are as useful on a
+            # cut as on a shape, and on a phone the drawing library's own
+            # toolbar is hidden, so without one there was no way back from a
+            # zoom at all.
             if self._side_by_side.isChecked() and len(gamuts) >= 2:
-                self._write_two_slices(gamuts, out)
+                self._write_two_slices(gamuts, out, controls=controls,
+                                       offer=offer)
             else:
                 write_slice_html(gamuts, out, float(self._slice_at.value()),
-                                 self._scene_title(), mode=self._appearance)
+                                 self._scene_title(), mode=self._appearance,
+                                 controls=controls, offer=offer)
             return True
         if self._side_by_side.isChecked() and len(gamuts) >= 2:
             self._write_two_rooms(gamuts, out, clouds, lost,
@@ -7959,7 +8001,8 @@ class GamutApp(QMainWindow):
                        **self._render_options())
         return False
 
-    def _write_two_slices(self, gamuts, out) -> None:
+    def _write_two_slices(self, gamuts, out, controls: bool = False,
+                          offer=None) -> None:
         """Two cross-sections, side by side, on one range.
 
         The same question as two rooms in 3D -- what does each of these look
@@ -7980,7 +8023,8 @@ class GamutApp(QMainWindow):
             extent=extent, legend=False, first=i))
             for i, (name, g) in enumerate(gamuts[:2])]
         write_side_by_side_html(pages, out, mode=self._appearance,
-                                linked=self._link_cameras.isChecked())
+                                linked=self._link_cameras.isChecked(),
+                                controls=controls, offer=offer)
 
     def _write_two_rooms(self, gamuts, out, clouds, lost,
                          controls: bool = False, offer=None) -> None:

@@ -45,7 +45,8 @@ failures: list[str] = []
 #: there. Anything added since is opt-in, so nobody's exports change shape
 #: without them asking.
 DEFAULT_OFFER = {"play": True, "speed": True, "lr": True, "ud": True,
-                 "reset": True, "remember": True}
+                 "reset": True, "remember": True, "zoom": True, "move": True,
+                 "notes": True}
 
 #: Everything the page can carry, for the one sample that shows it off.
 EVERY_CONTROL = dict(DEFAULT_OFFER, speed_each=True, grid=True, labels=True,
@@ -447,8 +448,43 @@ def main() -> int:
     check("10", "it really is the flat cross-section, not the 3D shape",
           bool(rooms) and all(k == ["scatter"] for k in rooms.values()),
           str(rooms))
-    check("10", "and it offers no movement controls, having no camera",
-          "cqSpinControls" not in body)
+    # A FLAT CUT HAS NO CAMERA, so nothing about movement is built -- but it
+    # does get the strip, because zoom, move and "put it back" mean exactly as
+    # much here as on a shape. It used to get nothing, which left a reader on
+    # a phone able to zoom in and never out: the library's own toolbar is the
+    # only other way back, and that is hidden on a narrow screen.
+    check("10", "is marked as having no camera, so no movement is built",
+          '"flat": true' in body)
+    check("10", "but can still be zoomed, moved and put back",
+          "cqSpinControls" in body and '"zoom": true' in body
+          and '"move": true' in body
+          and 'button("home", "reset view"' in body)
+    # ---------------------------------------------------------------- 12
+    # THE FOURTH ARRANGEMENT, which no sample page made until now. The window
+    # can show one scene, two rooms, one cut and TWO cuts, and the last was
+    # the only one a visitor could not see. It is also the one with the most
+    # to go wrong: the two panes are tied together, so a zoom that is applied
+    # to them one after the other zooms the second one twice -- it is changed
+    # once by the link and once again by the code, which by then is reading
+    # the already-zoomed range. Two panes that disagree about scale are
+    # exactly the lie a side-by-side comparison exists to prevent.
+    print("\n12 — the same cut, a pane each")
+    w._side_by_side.setChecked(True)
+    pump(3.0)
+    p = page("12-a-cut-each.html")
+    save_to(p)
+    made.append(("12", p))
+    body = p.read_text(encoding="utf-8")
+    rooms = scenes(body)
+    check("12", "it really is two flat panes, not one",
+          len(rooms) == 2 and all(k == ["scatter"] for k in rooms.values()),
+          f"{len(rooms)}: {rooms}")
+    check("12", "and they are tied together, so both always show the same "
+          "patch of colour space", "cqLinkAxes" in body)
+    check("12", "with the strip a flat page gets",
+          "cqSpinControls" in body and '"flat": true' in body)
+    w._side_by_side.setChecked(False)
+    pump(1.0)
     w._slice_on.setChecked(False)
     pump(1.5)
 
@@ -481,13 +517,29 @@ def main() -> int:
                    and title.group(1) != " — ChromIQ Gamut Viewer"),
               title.group(1) if title else "none")
         if "cqSpinControls" not in body:
-            continue          # a flat cross-section: nothing to turn, by design
+            continue          # the strip was deliberately left off this one
         check(name, "paints its controls rather than inheriting a colour",
               '"ink":' in body and '"paper":' in body)
         check(name, "offers the reader a way back to the opening view",
               '"reset"' in body and 'button("home", "reset view"' in body)
         check(name, "was given the controls that were chosen for it",
               '"show":' in body)
+        # THE POINT OF THIS ROUND. A finger can only turn a 3D shape -- the
+        # viewer's camera reads one touch and reports it as a left-button
+        # drag, and left-button IS turn. Zooming needs the middle button and
+        # moving needs the right one, neither of which a phone has. So every
+        # page that can be turned must also carry a way to zoom and to move,
+        # or it is a page that cannot be read on a phone.
+        # Looking for the SOURCE of the buttons, not for rendered markup:
+        # the strip is built by script when the page opens, so the file holds
+        # the code that makes the buttons and never the buttons themselves.
+        check(name, "can be zoomed without a mouse wheel",
+              '"zoom": true' in body and 'button("in", "+"' in body)
+        check(name, "can be moved without a right-hand mouse button",
+              '"move": true' in body and 'button("left", "&larr;"' in body
+              and 'button("down", "&darr;"' in body)
+        check(name, "and understands a pinch, which is what a phone tries",
+              "gd._cqGestures" in body and "touchAction" in body)
 
     print("\n" + "=" * 68)
     if failures:

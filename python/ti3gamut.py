@@ -1297,6 +1297,29 @@ window.cqSpin = (function () {
     if (s && s.setCamera) s.setCamera(cam);          // cheap: no relayout
     else if (window.Plotly) Plotly.relayout(gd, {"scene.camera": cam});
   }
+  // A CROSS-SECTION HAS NO CAMERA. It is drawn flat, looking straight down,
+  // and what stands in for moving the eye is the pair of axis ranges. Every
+  // one of zoom, move and reset therefore has two bodies -- the same idea
+  // expressed in the only terms each kind of picture has. Everything above
+  // this line belongs to the turning, which a flat page never does.
+  // A SCENE THAT EXISTS BUT IS NOT DRAWN YET IS STILL A SCENE. Asking whether
+  // the built 3D scene is there would call a page flat for the first frames
+  // after it opens -- and a flat page's zoom, applied to a scene, moves the
+  // axes of a picture that has none.
+  function isFlat(gd) {
+    var fl = gd._fullLayout || {};
+    return !fl.scene && !!(fl.xaxis && fl.yaxis);
+  }
+  function ranges(gd) {
+    var fl = gd._fullLayout;
+    if (!fl || !fl.xaxis || !fl.xaxis.range || !fl.yaxis) return null;
+    return {x: fl.xaxis.range.slice(), y: fl.yaxis.range.slice()};
+  }
+  function setRanges(gd, r) {
+    if (!window.Plotly || !r) return;
+    Plotly.relayout(gd, {"xaxis.range": r.x.slice(),
+                         "yaxis.range": r.y.slice()});
+  }
   function cross(a, b) {
     return [a[1] * b[2] - a[2] * b[1],
             a[2] * b[0] - a[0] * b[2],
@@ -1330,13 +1353,19 @@ window.cqSpin = (function () {
                          z: (cam.center || {}).z},
                 eye: {x: cam.eye.x, y: cam.eye.y, z: cam.eye.z}};
   }
+  function keepFlat(id, r) {
+    if (home[id] || !r) return;
+    home[id] = {x: r.x.slice(), y: r.y.slice()};
+  }
   // A STILL PAGE NEVER STEPS, so it would never capture anything. Poll until
   // the drawing library has built each scene, then stop.
   function remember(tries) {
     var missing = false;
     for (var i = 0; i < ids.length; i++) {
       var gd = scene(ids[i]);
-      if (gd) keep(ids[i], liveCam(gd));
+      if (gd && isFlat(gd)) keepFlat(ids[i], ranges(gd));
+      else if (gd) keep(ids[i], liveCam(gd));
+      if (gd) gestures(gd);       // a finger works from the first frame
       if (!home[ids[i]]) missing = true;
     }
     if (missing && (tries || 0) < 60)
@@ -1345,8 +1374,10 @@ window.cqSpin = (function () {
   function reset() {
     rest();
     for (var i = 0; i < ids.length; i++) {
-      var gd = scene(ids[i]);
-      if (gd && home[ids[i]]) setCam(gd, home[ids[i]]);
+      var gd = scene(ids[i]), was = home[ids[i]];
+      if (!gd || !was) continue;
+      if (was.eye) setCam(gd, was);
+      else setRanges(gd, was);
     }
   }
   function hold() { held = Date.now(); rest(); }
@@ -1400,6 +1431,209 @@ window.cqSpin = (function () {
     setCam(gd, {up: {x: u[0], y: u[1], z: u[2]}, center: c,
                 eye: {x: c.x + e[0], y: c.y + e[1], z: c.z + e[2]}});
   }
+  // ZOOMING AND MOVING, WHICH A FINGER CANNOT OTHERWISE DO.
+  //
+  // The drawing library's 3D camera decides between turning, moving and
+  // zooming by WHICH MOUSE BUTTON is down -- left turns, right moves, middle
+  // zooms -- or by a held Ctrl or Alt. Its touch handler reads one finger and
+  // reports it as the left button, so on a phone the only one of the three
+  // that can ever happen is turning. There is no gesture for the other two
+  // and no key to hold down. Measured on a page in a browser told it was a
+  // phone: a pinch and a two-finger drag both moved the picture by 0.0000.
+  //
+  // So both are done here instead, on the same eye/centre/up the turning uses.
+
+  //: How close and how far the reader may get, as a multiple of the distance
+  //: the page opened at. Far enough in to read one dent, far enough out to
+  //: lose the shape in the middle of the screen -- and no further, because a
+  //: view you cannot get back from is a broken page when reset is switched off.
+  var NEAREST = 0.12, FURTHEST = 8;
+
+  function zoomOne(one, scale) {
+    var gd = one.gd, id = one.id;
+    if (one.flat) {
+      var r = one.was; if (!r) return;
+      keepFlat(id, r);
+      var was = home[id] || r;
+      var span = (was.x[1] - was.x[0]);
+      var now = (r.x[1] - r.x[0]) / scale;
+      // The same stops as a scene, expressed in the width of the picture:
+      // zoomed IN is a SMALLER span, so the near limit is the small one.
+      now = Math.max(span * NEAREST, Math.min(span * FURTHEST, now));
+      var k = now / (r.x[1] - r.x[0]);
+      var mx = (r.x[0] + r.x[1]) / 2, my = (r.y[0] + r.y[1]) / 2;
+      var hy = (r.y[1] - r.y[0]) / 2 * k, hx = now / 2;
+      setRanges(gd, {x: [mx - hx, mx + hx], y: [my - hy, my + hy]});
+      return;
+    }
+    var cam = one.was; if (!cam || !cam.eye) return;
+    keep(id, cam);
+    var c = cam.center || {x: 0, y: 0, z: 0};
+    var e = [cam.eye.x - c.x, cam.eye.y - c.y, cam.eye.z - c.z];
+    var d = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+    if (!(d > 1e-9)) return;
+    var was = home[id];
+    var start = was && was.eye
+      ? Math.sqrt(Math.pow(was.eye.x - was.center.x, 2)
+                + Math.pow(was.eye.y - was.center.y, 2)
+                + Math.pow(was.eye.z - was.center.z, 2)) : d;
+    // BIGGER MEANS CLOSER, so the distance is divided rather than multiplied.
+    var want = Math.max(start * NEAREST,
+                        Math.min(start * FURTHEST, d / scale));
+    var k = want / d;
+    setCam(gd, {up: cam.up, center: c,
+                eye: {x: c.x + e[0] * k, y: c.y + e[1] * k,
+                      z: c.z + e[2] * k}});
+  }
+
+  // HOW THE PICTURE MOVES, NOT HOW THE EYE DOES: dx above zero means the
+  // shape travels to the RIGHT across the screen, dy above zero means it
+  // travels UP. Both are therefore applied backwards to the thing actually
+  // being moved -- the eye goes left for the shape to go right, and the
+  // window onto a flat cut slides left for the drawing inside it to go right.
+  //
+  // Worth stating this plainly because getting it backwards is the easiest
+  // way in the world to ship four arrow buttons that all feel broken, and
+  // because the two halves of this function had it two different ways round
+  // the first time it was written: the left-and-right pair moved the eye and
+  // the up-and-down pair moved the picture, so on a scene the arrows fought
+  // each other and on a flat cut two of the four went the wrong way.
+  function slideOne(one, dx, dy) {
+    var gd = one.gd, id = one.id;
+    if (one.flat) {
+      var r = one.was; if (!r) return;
+      keepFlat(id, r);
+      var wx = (r.x[1] - r.x[0]), wy = (r.y[1] - r.y[0]);
+      setRanges(gd, {x: [r.x[0] - dx * wx, r.x[1] - dx * wx],
+                     y: [r.y[0] - dy * wy, r.y[1] - dy * wy]});
+      return;
+    }
+    var cam = one.was; if (!cam || !cam.eye) return;
+    keep(id, cam);
+    var c = cam.center || {x: 0, y: 0, z: 0};
+    var e = [cam.eye.x - c.x, cam.eye.y - c.y, cam.eye.z - c.z];
+    var d = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+    var u = cam.up ? [cam.up.x, cam.up.y, cam.up.z] : [0, 0, 1];
+    // The two directions across the screen, taken from the camera itself so
+    // they stay true however far it has been turned or tumbled.
+    var right = unit(cross(u, e));
+    if (!right) return;
+    var upv = unit(cross(e, right));
+    if (!upv) return;
+    // SCALED BY THE DISTANCE, so one press moves the same fraction of the
+    // picture whether you are far out or right up against the surface.
+    // Negated: see above -- the eye goes the other way from the picture.
+    var sx = -dx * d, sy = -dy * d;
+    var mv = [right[0] * sx + upv[0] * sy,
+              right[1] * sx + upv[1] * sy,
+              right[2] * sx + upv[2] * sy];
+    setCam(gd, {up: cam.up,
+                center: {x: c.x + mv[0], y: c.y + mv[1], z: c.z + mv[2]},
+                eye: {x: cam.eye.x + mv[0], y: cam.eye.y + mv[1],
+                      z: cam.eye.z + mv[2]}});
+  }
+
+  // READ EVERY PICTURE FIRST, THEN CHANGE THEM ALL.
+  //
+  // Two cross-sections side by side are tied together: change the range on
+  // one and a listener copies it to the other, so that the two always show
+  // the same patch of colour space. Zooming them one after the other in a
+  // single loop therefore zooms the second one twice -- it is changed once by
+  // the link, and then again by this code, which by then is reading the
+  // ALREADY zoomed range and dividing it a second time. The right-hand pane
+  // would end up smaller than the left with every press, which is precisely
+  // the fault the link exists to prevent.
+  //
+  // Reading all of them before writing any of them makes each step depend
+  // only on where things were when the button was pressed.
+  function each(apply) {
+    var live = [], i;
+    for (i = 0; i < ids.length; i++) {
+      var gd = scene(ids[i]);
+      if (!gd) continue;
+      var flat = isFlat(gd);
+      // The reading is taken HERE, before anything has been written to
+      // anything -- that is the whole point of this function.
+      live.push({gd: gd, id: ids[i], flat: flat,
+                 was: flat ? ranges(gd) : liveCam(gd)});
+    }
+    for (i = 0; i < live.length; i++)
+      if (live[i].was) apply(live[i]);
+  }
+  function zoom(scale) {
+    if (!(scale > 0)) return;
+    each(function (one) { zoomOne(one, scale); });
+  }
+  function slide(dx, dy) {
+    each(function (one) { slideOne(one, dx || 0, dy || 0); });
+  }
+
+  // TWO FINGERS, WHICH THE LIBRARY THROWS AWAY.
+  //
+  // Its own handler reads changedTouches[0] and nothing else, so during a
+  // pinch it takes whichever finger moved last for a one-finger drag and
+  // turns the shape wildly while you are trying to zoom. Both have to be
+  // taken over together: doing the pinch without silencing the turning would
+  // be worse than not doing it at all.
+  //
+  // Caught on the way DOWN the tree (capture) rather than on the way up,
+  // because the library listens on the canvas inside this element -- a
+  // listener here in the capture phase runs first, and stopping the event
+  // there means the canvas never sees it. One finger is deliberately left
+  // completely alone, so turning goes on working exactly as it did.
+  function gestures(gd) {
+    if (gd._cqGestures) return;
+    gd._cqGestures = true;
+    // THE ELEMENT HANDLES ITS OWN TOUCHES. Without this the browser is free
+    // to read a drag as a page scroll and simply stop delivering the moves --
+    // measured: a page whose touchstart nobody objects to gets touchstart and
+    // touchend and not one touchmove in between.
+    gd.style.touchAction = "none";
+    var live = false, was = 0, mid = null;
+    function span(t) {
+      var dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+    function middle(t) {
+      return {x: (t[0].clientX + t[1].clientX) / 2,
+              y: (t[0].clientY + t[1].clientY) / 2};
+    }
+    function stop(ev) { ev.preventDefault(); ev.stopPropagation(); }
+    gd.addEventListener("touchstart", function (ev) {
+      if (ev.touches.length < 2) return;
+      live = true; was = span(ev.touches); mid = middle(ev.touches);
+      stop(ev);
+    }, {capture: true, passive: false});
+    gd.addEventListener("touchmove", function (ev) {
+      if (!live) return;
+      stop(ev);
+      if (ev.touches.length < 2) return;
+      var now = span(ev.touches), here = middle(ev.touches);
+      if (was > 1 && now > 1) {
+        var scale = now / was;
+        // A sixtieth is below what a hand can hold still; acting on it makes
+        // the picture creep while somebody is only trying to slide it.
+        if (Math.abs(scale - 1) > 1 / 60) zoom(scale);
+      }
+      var box = gd.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0 && mid) {
+        // The picture follows the fingers: they go right, it goes right.
+        slide((here.x - mid.x) / box.width, -(here.y - mid.y) / box.height);
+      }
+      was = now; mid = here;
+    }, {capture: true, passive: false});
+    function ended(ev) {
+      if (!live) return;
+      stop(ev);
+      // HELD UNTIL THE LAST FINGER IS UP. Handing a half-finished pinch back
+      // to the library mid-gesture makes it turn the shape from wherever its
+      // own stale last-position was, which reads as the picture jumping.
+      if (ev.touches.length === 0) { live = false; mid = null; was = 0; }
+    }
+    gd.addEventListener("touchend", ended, {capture: true, passive: false});
+    gd.addEventListener("touchcancel", ended, {capture: true, passive: false});
+  }
+
   function frame(now) {
     if (!on) { raf = null; return; }
     raf = window.requestAnimationFrame(frame);
@@ -1439,7 +1673,7 @@ window.cqSpin = (function () {
       raf = window.requestAnimationFrame(frame);
     }
   }
-  return {set: set, nudge: nudge, reset: reset};
+  return {set: set, nudge: nudge, reset: reset, zoom: zoom, slide: slide};
 })();
 """
 
@@ -1577,6 +1811,11 @@ def _spin_script(ids, spin, mode: str = "dark",
     goes on showing a number that is no longer true and pressing + on it
     yanks the movement back to that stale figure. The engine still travels
     into the live view; only the strip stays out of it.
+
+    *spin* may be ``{"flat": True}`` and nothing else, which is a page with no
+    movement in it at all -- a cross-section, drawn looking straight down.
+    That still wants the engine, because zooming, moving and getting back to
+    where you started are not movement settings and apply to any picture.
     """
     if not spin:
         return ""
@@ -1632,7 +1871,21 @@ window.cqSpinControls = function (settings) {
   // can be a bare picture with a Pause button and the next can hand over
   // everything. Anything not named here is simply not built.
   var show = settings.show || {};
+  // A CROSS-SECTION IS ALREADY FLAT. It is drawn looking straight down and
+  // there is no third direction to turn it in, so every control about
+  // movement is not merely switched off here -- it is never built. A button
+  // that is present and does nothing is worse than a missing one: the reader
+  // presses it, nothing happens, and now they doubt the whole page.
+  //
+  // Zooming, moving and putting it back are exactly as useful on a flat cut
+  // as on a shape, and that is why this page has a strip at all now: the
+  // drawing library's own toolbar is its only way back from a zoom, and that
+  // toolbar is hidden on anything narrower than a tablet. On a phone, a
+  // cross-section could be zoomed into and never zoomed out of.
+  var flat = !!settings.flat;
+  var TURNS = {play: 1, speed: 1, speed_each: 1, lr: 1, ud: 1};
   function on(what, fallback) {
+    if (flat && TURNS[what]) return false;
     return show[what] === undefined ? fallback : !!show[what];
   }
   var speeds = {turn: saved.turn.speed || 6, tilt: saved.tilt.speed || 6};
@@ -1654,7 +1907,7 @@ window.cqSpinControls = function (settings) {
   // the page has to be able to become the other one without asking anybody.
   var palettes = settings.palettes || null;
   var mode = settings.mode || "dark";
-  var picture = {grid: true, labels: true, key: true};
+  var picture = {grid: true, labels: true, key: true, notes: true};
 
   function tint(hex, alpha) {
     var h = String(hex).replace("#", "");
@@ -1693,8 +1946,15 @@ window.cqSpinControls = function (settings) {
       if (!was) return;
       running = !!was.running;
       both = was.both || both;
-      if (was.speeds) speeds = was.speeds;
-      if (was.picture) picture = was.picture;
+      // MERGED, NEVER REPLACED. What is remembered was written by whatever
+      // version of this page the reader last opened, and a later one knows
+      // about things an earlier one had never heard of. Assigning the stored
+      // object straight over the defaults means every setting added since
+      // arrives as "undefined", which reads as OFF -- so a reader who had
+      // simply visited the page before would have come back to find the
+      // written-out numbers gone, with nothing they did to explain it.
+      if (was.speeds) speeds = Object.assign({}, speeds, was.speeds);
+      if (was.picture) picture = Object.assign({}, picture, was.picture);
       if (was.turn !== undefined) turn.mode = was.turn;
       if (was.tilt !== undefined) tilt.mode = was.tilt;
       if (was.mode) mode = was.mode;
@@ -1722,17 +1982,37 @@ window.cqSpinControls = function (settings) {
   if (on("play", true))
     head += button("play", "Pause", "Stop the movement, or start it again. "
       + "You can always drag the shape yourself, moving or not.");
+  // A MINUS AND A PLUS EITHER SIDE OF WHAT THEY CHANGE, wrapped together.
+  // With speed and zoom both in the strip and every gap the same width, the
+  // row read "speed 6 + − zoom +" -- and the plus for the speed sat next to
+  // the minus for the zoom with nothing to say which belonged to which. The
+  // wrapper makes the space between two groups twice the space inside one,
+  // which is the whole fix: no dividers, no extra furniture, just grouping.
+  function group(inner) {
+    return '<span class="cq-grp">' + inner + '</span>';
+  }
   if (on("speed", true) && !on("speed_each", false))
-    head += button("slower", "&minus;", "Turn more slowly.")
+    head += group(button("slower", "&minus;", "Turn more slowly.")
           + '<span data-cq="speed">speed ' + both + '</span>'
-          + button("faster", "+", "Turn more quickly.");
+          + button("faster", "+", "Turn more quickly."));
+  // ZOOM SITS IN THE OPEN, not behind more…, because on a phone it is the
+  // one thing a reader cannot do any other way. A pinch works on this page
+  // now, but nobody is told that, and a pinch is also the gesture people try
+  // once and give up on.
+  if (on("zoom", true))
+    head += group(button("out", "&minus;", "Zoom out — see more of it, "
+            + "smaller.")
+          + '<span data-cq="zoomed">zoom</span>'
+          + button("in", "+", "Zoom in — get closer, and see less of it. "
+            + "On a phone or a tablet you can also pinch with two fingers."));
   if (on("reset", true))
     head += button("home", "reset view", "Put the shape back the way the page "
-      + "opened. Only your own turning and zooming is undone — nothing is "
-      + "closed and no figure changes.");
+      + "opened. Only your own turning, zooming and moving is undone — "
+      + "nothing is closed and no figure changes.");
   var HAS_PANEL = on("lr", true) || on("ud", true) || on("speed_each", false)
-    || on("grid", false) || on("labels", false) || on("key", false)
-    || on("appearance", false);
+    || on("move", true) || on("grid", false) || on("labels", false)
+    || on("key", false) || on("appearance", false)
+    || (on("notes", true) && !!document.querySelector(".cq-notes"));
   if (HAS_PANEL)
     head += button("more", "more…", "Everything else you can change about "
       + "this picture: which way it moves and how fast, whether the box and "
@@ -1764,6 +2044,29 @@ window.cqSpinControls = function (settings) {
            + button("tilt-faster", "+", "Tip more quickly.")
          : "")
       + '</span></div>';
+  if (on("move", true))
+    body += '<div class="cq-row"><span>move it</span>'
+      + '<span class="cq-ctl">'
+      + button("left", "&larr;", "Move the picture to the left, to bring "
+        + "something on the right-hand side into the middle.")
+      + button("right", "&rarr;", "Move the picture to the right, to bring "
+        + "something on the left-hand side into the middle.")
+      + button("up", "&uarr;", "Move the picture up.")
+      + button("down", "&darr;", "Move the picture down. Together with the "
+        + "zoom this lets you go and look at one corner of the shape closely. "
+        + "On a phone or a tablet you can also drag with two fingers, and "
+        + "“reset view” always brings the whole thing back.")
+      + '</span></div>';
+  // ONLY IF THERE ARE ANY. Offering to hide something that is not on the
+  // page is the clearest way there is to make a reader think it is broken.
+  var HAS_NOTES = !!document.querySelector(".cq-notes");
+  if (on("notes", true) && HAS_NOTES)
+    body += row("notes", "the numbers",
+      "Show or hide the written-out figures under the picture — what each "
+      + "shape holds, how much of one fits inside the other, and any drift "
+      + "between two readings. On a small screen they can be taller than the "
+      + "screen itself, so putting them away gives the whole window back to "
+      + "the shape. Nothing is lost: press it again and they come back.");
   if (on("grid", false))
     body += row("grid", "walls &amp; grid",
       "Draw the box around the shape, with its ruled walls, or take it away. "
@@ -1804,7 +2107,11 @@ window.cqSpinControls = function (settings) {
   css.id = "cq-spin-css";
   function paint() {
     css.textContent =
-      ".cq-spin-bar{flex:0 0 auto;display:flex;gap:6px;align-items:center;"
+      // TWICE THE SPACE BETWEEN GROUPS AS INSIDE ONE. See `group()` above:
+      // this pair of numbers is what tells a reader which minus goes with
+      // which label, and it is the only thing that does.
+      ".cq-grp{display:inline-flex;gap:6px;align-items:center}"
+      + ".cq-spin-bar{flex:0 0 auto;display:flex;gap:18px;align-items:center;"
       + "justify-content:center;flex-wrap:wrap;margin:0 auto;max-width:100%;"
       + "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
       + "padding:8px 10px;color:" + ink + ";background:" + paper + ";"
@@ -1818,7 +2125,7 @@ window.cqSpinControls = function (settings) {
       + ".cq-spin-bar button:focus-visible,.cq-spin-panel button:focus-visible"
       + "{outline:2px solid " + ink + ";outline-offset:2px}"
       + ".cq-spin-bar button[aria-pressed=false]{opacity:.55}"
-      + ".cq-spin-bar span{opacity:.85;min-width:64px;text-align:center}"
+      + ".cq-spin-bar span{opacity:.85;min-width:54px;text-align:center}"
       + ".cq-spin-panel{flex:0 0 auto;color:" + ink + ";background:" + paper
       + ";border-top:1px solid " + tint(ink, 0.14) + ";padding:10px 14px 12px;"
       + "font:12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
@@ -1832,12 +2139,46 @@ window.cqSpinControls = function (settings) {
       + ".cq-spin-panel button{font:inherit;cursor:pointer;border-radius:999px;"
       + "padding:4px 9px;border:1px solid " + tint(ink, 0.45) + ";"
       + "background:transparent;color:inherit;min-width:34px}"
-      + ".cq-spin-panel button[aria-pressed=false]{opacity:.5}";
+      + ".cq-spin-panel button[aria-pressed=false]{opacity:.5}"
+      // CLOSED MEANS CLOSED.
+      //
+      // The panel is marked hidden the moment it is built and the button
+      // reads "more…", and it was on screen the whole time regardless: a
+      // rule written by the page ALWAYS beats the browser's own
+      // [hidden]{display:none}, whatever its specificity, because author
+      // styles outrank the browser's default styles by definition. So
+      // "display:grid" two lines above quietly cancelled being hidden.
+      //
+      // Measured on a phone-sized window before this line existed: the panel
+      // was 259px of an 844px screen, the picture was 78px, and 91% of what
+      // the reader could see was controls. On every page since the panel was
+      // introduced.
+      //
+      // It went unnoticed because the test that guarded it asked the element
+      // whether it was hidden -- and it truthfully answered yes. Asking what
+      // the browser actually DRAWS is the only question worth asking.
+      + ".cq-spin-panel[hidden]{display:none}";
   }
   paint();
   document.head.appendChild(css);
-  document.body.appendChild(panel);
-  document.body.appendChild(bar);
+  // DIRECTLY UNDER THE PICTURE, not at the end of the page.
+  //
+  // Appended to the body it landed after the written-out numbers, which on a
+  // page carrying them is several screens of text on a phone -- so the
+  // controls for the picture sat below everything, and a reader who wanted to
+  // pause the movement had to scroll away from the very thing they were
+  // trying to pause. Put next to what it acts on, it is on screen whenever
+  // the picture is, and the numbers follow underneath where they are read.
+  var anchor = document.getElementById((settings.ids || [])[0]);
+  while (anchor && anchor.parentNode && anchor.parentNode !== document.body)
+    anchor = anchor.parentNode;
+  if (anchor && anchor.parentNode === document.body) {
+    anchor.parentNode.insertBefore(bar, anchor.nextSibling);
+    bar.parentNode.insertBefore(panel, bar.nextSibling);
+  } else {
+    document.body.appendChild(bar);
+    document.body.appendChild(panel);
+  }
 
   // AND NOW TELL THE DRAWING LIBRARY THE PICTURE IS SHORTER. A plot measures
   // its box once, when it is created, and only looks again on a window
@@ -1879,6 +2220,34 @@ window.cqSpinControls = function (settings) {
     if (el) el.textContent = text;
   }
   function applyPicture() {
+    // THE NUMBERS ARE PART OF THE PAGE, NOT OF THE DRAWING, so they are shown
+    // and hidden here rather than through the drawing library. Hiding them
+    // shortens the page, which is the whole point on a phone.
+    var written = document.querySelector(".cq-notes");
+    if (written) {
+      written.style.display = picture.notes ? "" : "none";
+      press("notes", picture.notes);
+      fit();
+    }
+    // A FLAT CUT HAS PLAIN AXES, NOT A SCENE, and the paths differ by that
+    // one word. Asked to change a setting that is not there, the drawing
+    // library complains into the console and changes nothing -- so the
+    // switch would sit there looking live and do nothing at all.
+    if (flat) {
+      relayout({"xaxis.showgrid": picture.grid,
+                "yaxis.showgrid": picture.grid,
+                "xaxis.zeroline": picture.grid,
+                "yaxis.zeroline": picture.grid,
+                "xaxis.showticklabels": picture.labels,
+                "yaxis.showticklabels": picture.labels,
+                "xaxis.title.font.size": picture.labels ? 12 : 1,
+                "yaxis.title.font.size": picture.labels ? 12 : 1,
+                "showlegend": picture.key});
+      press("grid", picture.grid);
+      press("labels", picture.labels);
+      press("key", picture.key);
+      return;
+    }
     relayout({"scene.xaxis.showgrid": picture.grid,
               "scene.yaxis.showgrid": picture.grid,
               "scene.zaxis.showgrid": picture.grid,
@@ -1904,6 +2273,16 @@ window.cqSpinControls = function (settings) {
     paint();
     document.documentElement.style.background = p.page;
     document.body.style.background = p.page;
+    if (flat) {
+      relayout({"paper_bgcolor": p.page, "plot_bgcolor": p.plot,
+                "font.color": p.text,
+                "xaxis.gridcolor": p.grid, "yaxis.gridcolor": p.grid,
+                "xaxis.zerolinecolor": p.grid, "yaxis.zerolinecolor": p.grid,
+                "xaxis.color": p.caption, "yaxis.color": p.caption,
+                "legend.font.color": p.text, "title.font.color": p.caption});
+      say("appearance", mode === "light" ? "light" : "dark");
+      return;
+    }
     relayout({"paper_bgcolor": p.page, "plot_bgcolor": p.plot,
               "font.color": p.text,
               "scene.xaxis.backgroundcolor": p.plot,
@@ -1921,6 +2300,9 @@ window.cqSpinControls = function (settings) {
   }
 
   function push() {
+    // NOTHING TURNS ON A FLAT CUT, whatever a stored choice from some other
+    // page or an older version of this one might say.
+    if (flat) running = false;
     window.cqSpin.set(
       {on: running,
        turn: {mode: turn.mode, range: turn.range, speed: speedFor("turn")},
@@ -1950,6 +2332,16 @@ window.cqSpinControls = function (settings) {
       if (window.cqSpin.reset) window.cqSpin.reset();
       return;
     }
+    // A QUARTER BIGGER OR SMALLER A PRESS. Small enough that nobody
+    // overshoots and loses the shape, large enough that one press is plainly
+    // something rather than nothing.
+    if (what === "in") { window.cqSpin.zoom(1.25); return; }
+    if (what === "out") { window.cqSpin.zoom(1 / 1.25); return; }
+    // A TWELFTH OF THE PICTURE a press, for the same reason.
+    if (what === "left") { window.cqSpin.slide(-1 / 12, 0); return; }
+    if (what === "right") { window.cqSpin.slide(1 / 12, 0); return; }
+    if (what === "up") { window.cqSpin.slide(0, 1 / 12); return; }
+    if (what === "down") { window.cqSpin.slide(0, -1 / 12); return; }
     if (what === "play") { running = !running; if (running) wake(); }
     if (what === "slower") both = Math.max(1, both - 1);
     if (what === "faster") both = Math.min(12, both + 1);
@@ -1968,6 +2360,7 @@ window.cqSpinControls = function (settings) {
     if (what === "grid") { picture.grid = !picture.grid; applyPicture(); }
     if (what === "labels") { picture.labels = !picture.labels; applyPicture(); }
     if (what === "key") { picture.key = !picture.key; applyPicture(); }
+    if (what === "notes") { picture.notes = !picture.notes; applyPicture(); }
     if (what === "appearance") {
       mode = (mode === "light") ? "dark" : "light";
       applyMode();
@@ -2064,7 +2457,7 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
           font-family:Menlo,Consolas,"Courier New",monospace;
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
  .half > div:last-child {{ flex:1 1 auto; min-height:0; }}
-</style></head><body><div class="row">{''.join(blocks)}</div>{resize}{link}{_spin_script(ids, None if flat else spin, mode, controls, offer)}</body></html>"""
+</style></head><body><div class="row">{''.join(blocks)}</div>{resize}{link}{_spin_script(ids, {"flat": True} if flat else spin, mode, controls, offer)}</body></html>"""
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
 
@@ -2148,8 +2541,30 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
         #
         # !important because that height is written inline, and an inline
         # style beats a rule that does not say so.
-        style += ("<style>body > div:first-of-type"
-                  "{height:auto !important;}</style>")
+        #
+        # THE PAGE GROWS; THE PICTURE DOES NOT SHRINK AWAY. Everything above
+        # was still inside a body fixed at exactly the height of the window,
+        # and a column of flexible children in a box that cannot grow does not
+        # scroll -- it squeezes. Measured on a phone-sized window: a page of
+        # numbers 466px tall left the picture 78px. The picture was the
+        # smallest thing on a page whose entire purpose is the picture.
+        #
+        # So the body may grow past the window (min-height, not height), the
+        # numbers keep whatever height they need (flex:0 0 auto), and the
+        # picture is promised a good share of the first screen it can never be
+        # squeezed below. Anything that does not fit goes below the fold,
+        # which is what scrolling is for.
+        #
+        # 62vh is chosen so that the strip of controls and the first line or
+        # two of the numbers are always visible under the picture: that is
+        # what tells a reader on a phone there is more to come, and it leaves
+        # them somewhere to put a thumb that is not the picture -- because the
+        # picture now takes touches over completely.
+        style += ("<style>html{height:100%;}"
+                  "body{height:auto;min-height:100%;}"
+                  "body > div:first-of-type"
+                  "{height:auto !important;min-height:62vh;}"
+                  ".cq-notes{flex:0 0 auto;}</style>")
     if "</head>" in html:
         html = html.replace("</head>", style + "</head>", 1)
     else:
@@ -2159,10 +2574,13 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
         # without them is a shape they cannot check, and "which paper was
         # that?" is where every one of these ends up otherwise.
         colours = SCENE_COLOURS["light" if mode == "light" else "dark"]
-        block = ("<div style=\"font:13px/1.6 -apple-system,Segoe UI,Roboto,"
-                 f"sans-serif;color:{colours['text']};background:"
-                 f"{colours['page']};padding:14px 22px 78px;white-space:pre-wrap"
-                 f"\">{notes}</div>")
+        # NAMED, so the reader can be given a switch for it. On a phone the
+        # numbers are easily taller than the screen, and somebody who has read
+        # them once wants them out of the way -- see the "notes" control.
+        block = ("<div class=\"cq-notes\" style=\"font:13px/1.6 -apple-system,"
+                 f"Segoe UI,Roboto,sans-serif;color:{colours['text']};"
+                 f"background:{colours['page']};padding:14px 22px 78px;"
+                 f"white-space:pre-wrap\">{notes}</div>")
         html = (html.replace("</body>", block + "</body>", 1)
                 if "</body>" in html else html + block)
     turn = _spin_script(["scene0"], spin, mode, controls, offer)
@@ -2277,10 +2695,18 @@ def build_slice_figure(gamuts, lightness: float, title: str,
 
 
 def write_slice_html(gamuts, out: Path, lightness: float, title: str,
-                     mode: str = "dark") -> Path:
-    """One page holding one flat cross-section. See :func:`build_slice_figure`."""
+                     mode: str = "dark", controls: bool = False,
+                     offer=None) -> Path:
+    """One page holding one flat cross-section. See :func:`build_slice_figure`.
+
+    *controls* is the reader's strip. There is nothing to turn on a flat cut,
+    so it carries only what still means something -- zoom, move, and back to
+    where it opened -- and the strip itself leaves out everything about
+    movement rather than showing it switched off.
+    """
     _write_dark_html(build_slice_figure(gamuts, lightness, title, mode), out,
-                     mode)
+                     mode, spin={"flat": True} if controls else None,
+                     controls=controls, offer=offer)
     return out
 
 

@@ -1,5 +1,112 @@
 # Changelog
 
+## v2.9.0
+
+### 📱 A saved page can be zoomed and moved — which on a phone it could not
+
+Reported from a phone: *pinching did not work to zoom in or out, or to move
+left, right, up and down.* That is exactly right, and it was not a small
+oversight — it was a hole in the middle of the feature.
+
+**Why it happened.** The viewer that draws these shapes decides between
+turning, moving and zooming by **which mouse button is down**: left turns,
+right moves, middle zooms, or a held Ctrl or Alt. Its touch handler reads a
+single finger and reports it as the left button. A phone has no second button
+and no Ctrl key, so on a touch screen the only one of the three that could
+ever happen was **turning**. A shape could be spun and never approached.
+Measured on a page in a browser told it was a phone: a pinch and a two-finger
+drag each moved the picture by 0.0000.
+
+**Two answers, and both were needed.**
+
+- **The gestures themselves.** A pinch now zooms and two fingers dragged
+  together move the picture, handled by the page rather than by the viewer.
+  One finger still turns the shape exactly as before.
+- **Buttons, for anyone who would rather press something** — and for a desktop
+  with no wheel, and for a keyboard. A **zoom** pair sits in the open next to
+  the speed, and four arrows live behind **more…**. Both are ticked by default
+  when you save, because without them a page cannot be read on a phone at all.
+
+There are stops at both ends of the zoom, so nobody can send the shape so far
+away or get so close that they lose it and cannot find it again, and **reset
+view** now puts back moving and zooming as well as turning.
+
+### 🔎 A flat cross-section gets the strip too
+
+It used to get no controls, on the grounds that there is nothing to turn. True
+— but zooming, moving and getting back to where you started mean as much on a
+cut as on a shape, and the drawing library's own toolbar (the only other way
+back from a zoom) is hidden on anything narrower than a tablet. **On a phone a
+cross-section could be zoomed into and never zoomed out of.**
+
+It now carries zoom, move and reset, and everything about movement is left out
+rather than shown switched off.
+
+### 🐛 The "more…" panel was never actually closed
+
+**On every page since v2.8.0.** The panel is marked hidden the moment it is
+built and the button reads *more…* — and it was on screen the whole time,
+because a rule the page writes always beats the browser's own
+`[hidden]{display:none}`, whatever the specificity. Its own `display:grid`
+quietly cancelled being hidden.
+
+Measured on a phone-sized window before the fix: the panel was **259 px of an
+844 px screen, the picture was 78 px, and 91 per cent of what the reader could
+see was controls.**
+
+It went unnoticed because the test guarding it asked the element whether it was
+hidden, and it truthfully answered *yes*. The test now checks the rule that
+decides what is actually drawn.
+
+### 🐛 The numbers under a picture squeezed it to nothing
+
+The written-out figures were being packed into a page fixed at exactly the
+height of the window, and a column of flexible things in a box that cannot grow
+does not scroll — it squeezes. On a phone, 466 px of figures left **78 px of
+picture**, on a page whose entire purpose is the picture.
+
+Now the page may grow past the window, the figures keep the height they need,
+and the picture is promised a share of the first screen it can never fall
+below. Anything that does not fit goes below the fold, which is what scrolling
+is for.
+
+**The controls also moved to sit directly under the picture** instead of after
+the figures — on a phone that was several screens of text, so pausing the
+movement meant scrolling away from the thing being paused.
+
+### ✨ The reader can put the numbers away
+
+A new switch, offered by default whenever you include the numbers. On a small
+screen those figures are easily taller than the screen itself, so somebody who
+has read them once can give the whole window back to the shape. Nothing is
+recalculated and nothing is lost.
+
+### 🐛 The strip's two minus-and-plus pairs ran together
+
+With speed and zoom both in the strip and every gap the same width, the row
+read *speed 6 + − zoom +* — the plus for the speed sat right beside the minus
+for the zoom with nothing to say which belonged to which. Each pair is now
+grouped, so the space between two groups is twice the space inside one.
+
+### 📄 A twelfth sample page
+
+The window can show four arrangements — one scene, two rooms, one cut, and two
+cuts — and the last of them appeared in no sample page, so nothing was checking
+it. It is the one with the most to go wrong: the two panes are tied together,
+so a zoom applied to them one after another zooms the second one twice, and two
+panes that disagree about scale are exactly the lie a side-by-side comparison
+exists to prevent. Verified identical to three decimals through zoom, move and
+reset.
+
+### 🔒 Kept safe
+
+- A reader who had opened one of these pages before will not find the numbers
+  missing. What a page remembers is written by whatever version was last
+  opened, and settings added since now fall back to their defaults instead of
+  arriving as *off*.
+- A page saved without the strip is unchanged, and still drags, zooms and
+  clicks exactly as before.
+
 ## v2.8.0
 
 ### ✨ You choose what the person opening a page can change

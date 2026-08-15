@@ -231,7 +231,49 @@ def test_the_page_scrolls_when_the_numbers_are_under_it(tmp_path):
     # AND THE PICTURE MAKES ROOM. Letting it scroll is not enough on its own:
     # a 3D scene the full height of the window takes the wheel for zooming, so
     # there is nowhere left to scroll from and the figures stay out of reach.
-    assert "body > div:first-of-type{height:auto !important;}" in page
+    assert "height:auto !important" in page
+
+
+def test_the_numbers_cannot_squeeze_the_picture_away(tmp_path):
+    """The defect, measured on a phone-sized window: the picture came out
+    78px tall on an 844px screen because 466px of figures and 259px of
+    controls were all being packed into a body fixed at exactly the height of
+    the window. A column of flexible children in a box that cannot grow does
+    not scroll, it squeezes -- and the picture was the smallest thing on a
+    page that exists to show a picture.
+
+    Three parts to the answer, and all three are needed: the body may grow
+    past the window, the figures keep the height they ask for, and the picture
+    is promised a share of the first screen it can never fall below."""
+    page = _page(tmp_path, notes="Colour held: 702,327 cubic Lab units")
+    assert "min-height:100%" in page, "the page must be allowed to grow"
+    assert ".cq-notes{flex:0 0 auto;}" in page, "the figures must not shrink"
+    floor = re.search(r"min-height:(\d+)vh", page)
+    assert floor and 50 <= int(floor.group(1)) <= 75, (
+        "the picture needs a guaranteed share of the first screen -- big "
+        "enough to be the picture, small enough to leave the controls and "
+        "the first lines of the figures visible under it")
+
+
+def test_a_page_that_fills_the_screen_has_nothing_to_scroll_to(tmp_path):
+    """THE TRAP THIS AVOIDS. The picture takes touches over completely now --
+    one finger turns it, two zoom and move it, and it tells the browser in so
+    many words not to treat any of that as scrolling. If such a picture filled
+    the whole screen on a page that HAD something below it, every place a
+    thumb could land would turn the shape instead of scrolling, and the rest
+    of the page would be unreachable.
+
+    The invariant that makes that impossible: a page only fills the screen
+    exactly when there is nothing under it to reach. With figures, the
+    picture is capped and the page scrolls; without them, there is nothing
+    below the fold in the first place."""
+    alone = _page(tmp_path)
+    assert "overflow:hidden" in alone, "nothing below it, so nothing scrolls"
+    assert "min-height:62vh" not in alone, (
+        "with nothing under it the picture may have the whole window")
+    with_notes = _page(tmp_path, notes="Colour held: 702,327")
+    assert "overflow:auto" in with_notes
+    assert "min-height:62vh" in with_notes
 
 
 def test_the_strip_does_not_sit_on_top_of_the_numbers(tmp_path):
@@ -332,3 +374,111 @@ def test_the_toolbar_gets_out_of_the_way_of_a_long_caption(tmp_path):
     that cannot wrap and runs to 821px on the ink-amount page. On a tablet the
     two met. Above 1024px they never have."""
     assert "@media (max-width:1024px)" in _page(tmp_path)
+
+
+# --------------------------------------------------------------------------
+# The control strip, and two bugs that stayed invisible because the tests
+# guarding them asked the wrong question.
+# --------------------------------------------------------------------------
+
+def test_the_more_panel_is_actually_hidden_when_it_is_closed():
+    """The bug: the panel was marked hidden the moment it was built, the
+    button read "more…", and it was on screen the entire time -- because a
+    rule the page writes always beats the browser's own
+    ``[hidden]{display:none}``, whatever the specificity, and the panel's own
+    ``display:grid`` therefore cancelled being hidden.
+
+    Measured on a phone-sized window before the fix: the panel was 259px of
+    an 844px screen, the picture was 78px, and 91 per cent of what the reader
+    could see was controls. On every page since the panel was introduced.
+
+    The test that guarded it asked the element whether it was hidden. It
+    truthfully answered yes. So the rule has to be checked instead: setting
+    ``display`` on a class is only safe next to a rule that puts it back."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert ".cq-spin-panel[hidden]{display:none}" in js, (
+        "the panel sets its own display, so it must also say what hidden "
+        "means -- or being hidden does nothing at all"
+    )
+    # And the rule has to come AFTER the one it is undoing: two rules of the
+    # same weight are settled by which is written last.
+    assert js.index(".cq-spin-panel[hidden]") > js.index("display:grid")
+
+
+def test_the_strip_sits_with_the_picture_not_after_the_numbers():
+    """Appended to the body it landed after the written-out figures, which on
+    a phone is several screens of text -- so the controls for the picture were
+    below everything, and pausing the movement meant scrolling away from the
+    thing being paused."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "insertBefore(bar, anchor.nextSibling)" in js
+    assert js.index("insertBefore(bar") < js.index("appendChild(bar)"), (
+        "appending to the body is the fallback, not the normal route")
+
+
+def test_the_reader_can_put_the_numbers_away():
+    """They can be taller than a phone screen, and somebody who has read them
+    once wants the window back for the picture."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert 'row("notes", "the numbers"' in js
+    assert 'querySelector(".cq-notes")' in js, (
+        "offering to hide something that is not on the page is the clearest "
+        "way there is to make a reader think the page is broken")
+
+
+def _js_strings_are_closed(js: str):
+    """Every quoted string in *js* ends on the line it starts on.
+
+    Returns the offending line numbers. This exists because the script is
+    written inside a PLAIN triple-quoted Python string, where a ``\\n`` typed
+    into a tooltip is not two characters -- Python turns it into a real
+    newline, which lands in the middle of a JavaScript string literal and
+    stops the whole page working. Costing one round to find, twice.
+    """
+    bad, quote, comment = [], None, False
+    for n, line in enumerate(js.splitlines(), 1):
+        i = 0
+        while i < len(line):
+            c = line[i]
+            if comment:
+                if line[i:i + 2] == "*/":
+                    comment = False
+                    i += 1
+            elif quote:
+                if c == "\\":
+                    i += 1
+                elif c == quote:
+                    quote = None
+            elif line[i:i + 2] == "//":
+                break
+            elif line[i:i + 2] == "/*":
+                comment = True
+                i += 1
+            elif c in "\"'":
+                quote = c
+            i += 1
+        if quote:
+            bad.append(n)
+            quote = None
+        if comment:
+            comment = False
+    return bad
+
+
+def test_no_stray_escape_breaks_the_script():
+    for name in ("_SPIN_JS", "_SPIN_CONTROLS_JS", "_LINK_AXES_JS"):
+        js = getattr(ti3gamut, name)
+        assert not _js_strings_are_closed(js), (
+            f"{name}: a string is left open at line(s) "
+            f"{_js_strings_are_closed(js)} -- most likely a backslash-n typed "
+            f"into a tooltip, which Python turned into a real newline")
+
+
+def test_the_scanner_would_have_caught_it():
+    """The guard above is worth only as much as its ability to fail."""
+    # Both lines are flagged -- the first opens a string it never closes, and
+    # the second is left holding the other half of it. The first is the one
+    # that names the mistake.
+    assert _js_strings_are_closed('var a = "one\ntwo";')[0] == 1
+    assert _js_strings_are_closed('var a = "fine"; // a library\'s comment') == []
+    assert _js_strings_are_closed("var a = 'it\\'s fine';") == []

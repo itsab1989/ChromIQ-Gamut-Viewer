@@ -678,30 +678,50 @@ about 5 MB. Double-click it and it opens in any browser — and it needs **no
 internet at all**, because the 3D viewer travels inside the page. It works from
 a memory stick, from an email attachment, on a plane, in ten years.
 
-**[▶ See ten of them, live →](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/)**
+**[▶ See twelve of them, live →](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/)**
 
 What the person you send it to gets is not a picture — it is the scene. They
 can drag it round, zoom in, click the names underneath to hide and show shapes,
-and use the strip along the bottom to **start it turning, stop it, change the
-speed, switch the left-and-right and up-and-down movement on and off, and put
-the shape back the way it opened**. That works on every page, including one you
-saved standing still: it simply opens with the button reading **Play** and
-nothing moving until they ask.
+and use the strip under the picture to **start it turning, stop it, change the
+speed, zoom in and out, move the picture about, switch the left-and-right and
+up-and-down movement on and off, and put the shape back the way it opened**.
+That works on every page, including one you saved standing still: it simply
+opens with the button reading **Play** and nothing moving until they ask.
 
-<p align="center"><img src="docs/screenshots/21-a-saved-page-as-its-reader-sees-it.webp" width="880" alt="A saved page open in a browser: a measured paper in CIELAB, the name of the paper underneath it, the figures below that, and a strip of controls along the bottom reading Pause, minus, speed 6, plus, left and right, up and down, reset view"></p>
+**On a phone, one finger turns it and two fingers pinch to zoom or drag it
+about.** That is worth spelling out, because it is new and because it was
+genuinely impossible before. The viewer that draws these shapes decides
+between turning, moving and zooming by *which mouse button is down* — left
+turns, right moves, middle zooms — and its touch handler reads a single finger
+and reports it as the left button. A phone has no second button and no Ctrl
+key, so on a touch screen the only one of the three that could ever happen was
+turning: a shape could be spun and never approached. Both gestures are now
+handled by the page itself, and the **zoom** buttons and the four arrows
+behind **more…** are there for anyone who would rather press something — or
+who is on a desktop with no wheel.
+
+<p align="center"><img src="docs/screenshots/21-a-saved-page-as-its-reader-sees-it.webp" width="880" alt="A saved page open in a browser: two measured papers in CIELAB, one solid and one as an outline, their names underneath, then a strip of controls reading Pause, minus, zoom, plus, reset view, less…, then an opened panel of switches for left and right, up and down, move it with four arrows, the numbers, walls and grid, lettering, the names, and light or dark, and below all of it the written-out figures"></p>
 
 **You choose which controls the page carries**, each time you save it. The
 save dialog has a section — *What the person opening it can change* — with a
 switch for each one, and an explanation of when it is worth handing over:
 
-<p align="center"><img src="docs/screenshots/22-choosing-what-the-reader-can-change.webp" width="470" alt="The save dialog, showing a list of switches under the heading What the person opening it can change: stop and start the movement, one speed for the movement, a speed for each direction, turn left and right on or off, tip up and down on or off, put the view back, show or hide the box and its grid, show or hide the lettering, show or hide the names underneath, switch the page light or dark, and remember what they chose"></p>
+<p align="center"><img src="docs/screenshots/22-choosing-what-the-reader-can-change.webp" width="470" alt="The save dialog, showing a list of switches under the heading What the person opening it can change: stop and start the movement, one speed for the movement, a speed for each direction, turn left and right on or off, tip up and down on or off, zoom in and out, move the picture about, put the view back, put the numbers away, show or hide the box and its grid, show or hide the lettering, show or hide the names underneath, switch the page light or dark, and remember what they chose"></p>
 
-The six that were always there stay ticked, so a page you save without opening
-that section is exactly the page you would have got before. Beyond those you
-can hand over **a speed for each direction** (what this window itself gives
-you), **the box and its grid**, **the lettering**, **the list of names**, and
-**a light-or-dark switch for the page**. Everything past Play, speed and reset
-lives behind a **more…** button, so the strip stays one line on a phone.
+The ones that were always there stay ticked, along with **zoom** and **move**,
+which are ticked by default because without them a page cannot be read
+properly on a phone at all. Beyond those you can hand over **a speed for each
+direction** (what this window itself gives you), **the box and its grid**,
+**the lettering**, **the list of names**, **a switch that puts the written-out
+numbers away**, and **a light-or-dark switch for the page**. Everything past
+Play, speed, zoom and reset lives behind a **more…** button, so the strip
+stays short on a phone.
+
+**Putting the numbers away** is worth a word. On a small screen the figures
+under a picture are easily taller than the screen itself, so the reader gets a
+switch for them: pressing it gives the whole window back to the shape, and
+pressing it again brings them back. Nothing is recalculated and nothing is
+lost.
 
 You can also turn the strip off altogether — for a page going inside a website
 beside your own text, where a row of buttons you did not design would look out
