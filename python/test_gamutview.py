@@ -1179,21 +1179,29 @@ def test_showing_the_greys_makes_room_to_see_them(monkeypatch):
         def __init__(self, opacity):
             self._opacity = Slider(opacity)
             self._ideal_neutral = Box()
-            self.redrawn = []
-        def _on_opacity_changed(self, value):
-            self.redrawn.append(value)
+            self.recorded = []
+        def _after_shape_setting(self, key):
+            # WHAT THIS TEST HAS TO WATCH, and did not. The old version
+            # asserted that _on_opacity_changed had been called -- the live
+            # restyle pushed into the page while a slider is being dragged.
+            # That call does not record anything, and the next rebuild draws
+            # from _shared, so the shape closed up again a moment later. The
+            # test was green the whole time the feature did nothing.
+            self.recorded.append((key, self._opacity.value()))
         _make_room_to_see_inside = gamut_app.GamutApp._make_room_to_see_inside
         _follow_neutral = gamut_app.GamutApp._follow_neutral
 
     full = Stand(100)
     full._follow_neutral(True)
     assert full._opacity.value() == 38, "an opaque shape hides the line"
-    assert full.redrawn == [38], "the picture has to be redrawn to show it"
+    assert full.recorded == [("opacity", 38)], (
+        "the value has to be RECORDED, not only pushed into the page — a "
+        "rebuild reads it back from where a slider release puts it")
 
     chosen = Stand(70)
     chosen._follow_neutral(True)
     assert chosen._opacity.value() == 70, "a value somebody chose is theirs"
-    assert chosen.redrawn == []
+    assert chosen.recorded == []
 
 
 def test_turning_the_greys_off_does_not_put_the_shape_back():

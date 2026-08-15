@@ -3619,6 +3619,10 @@ class GamutApp(QMainWindow):
         self._coverage = WrappedLabel("", g_vol, hide_when_empty=True)
         self._coverage.setObjectName("hint"); _wrapped(self._coverage)
         vv.addWidget(self._coverage)
+        # Only a picture has one of these, so it is empty the rest of the time.
+        self._picture_loss = WrappedLabel("", g_vol, hide_when_empty=True)
+        _wrapped(self._picture_loss)
+        vv.addWidget(self._picture_loss)
         self._range = WrappedLabel("", g_vol, hide_when_empty=True)
         self._range.setObjectName("hint")
         vv.addWidget(self._range)
@@ -4061,7 +4065,7 @@ class GamutApp(QMainWindow):
         volume = self._volume.text().strip()
         if volume and volume != "—":
             parts.append(f"Colour held: {volume} {self._volume_units()}")
-        for name in ("_coverage", "_pair", "_drift", "_drift_worst",
+        for name in ("_coverage", "_picture_loss", "_pair", "_drift", "_drift_worst",
                      "_chart_headline", "_chart_rows", "_chart_spread"):
             label = getattr(self, name, None)
             if label is None:
@@ -6985,10 +6989,21 @@ class GamutApp(QMainWindow):
         Only from FULL strength, and only downwards. Somebody who has already
         chosen a value has said what they want, and this must not overrule it;
         and it is never put back, because by then the number is theirs.
+
+        RECORDED, NOT ONLY PUSHED — and that distinction was the whole bug.
+        Moving the slider by hand does two things: it restyles the page live
+        while the handle is down (``valueChanged``), and it records the value
+        when the handle is let go (``sliderReleased``). Calling ``setValue``
+        from code fires the first and never the second, so the number went into
+        the picture on screen and never into ``_shared`` — where every rebuild
+        reads it from. Ticking Show the greys also triggers a redraw, so the
+        page was rebuilt at full strength a moment later and the shape closed
+        up again. It looked exactly like the feature doing nothing, twice
+        reported, and once published in the gallery.
         """
         if self._opacity.value() >= 100:
             self._opacity.setValue(38)
-            self._on_opacity_changed(38)
+            self._after_shape_setting("opacity")
 
     def _follow_neutral(self, on: bool) -> None:
         """A line to compare the greys against means nothing without them.
@@ -7154,6 +7169,7 @@ class GamutApp(QMainWindow):
                     (self._slots[1][0].stem, self._slots[1][1]))
         if pair is None:
             self._coverage.setText("")
+            self._picture_loss.setText("")
             self._shared_lbl.setText("")
             self._reach.setText("")
             self._pair_box.setVisible(False)
@@ -7164,6 +7180,7 @@ class GamutApp(QMainWindow):
             ba, _ = coverage(b.vertices, a.vertices)
         except Exception:      # noqa: BLE001 — a readout must never crash a view
             self._coverage.setText("")
+            self._picture_loss.setText("")
             self._pair_box.setVisible(False)
             return
         # A PICTURE DOES NOT PRINT ANYTHING. "What X can print" is right for
@@ -7172,12 +7189,64 @@ class GamutApp(QMainWindow):
         # that makes somebody distrust the number beside it.
         holds = "holds" if self._is_picture(a_name) else "can print"
         self._coverage.setText(
-            f"{100 * ab:.1f}% of what {a_name} {holds} also fits inside "
+            f"{100 * ab:.1f}% of the colour {a_name} {holds} also fits inside "
             f"{b_name}.\n"
             f"{100 * ba:.1f}% of {b_name} fits inside {a_name}.\n"
             "The two numbers differ because fitting inside is not the same "
             "question in both directions.")
+        self._update_picture_loss(a_name, a, b_name, b)
         self._update_pair(a_name, a, b_name, b)
+
+    def _update_picture_loss(self, a_name, a, b_name, b) -> None:
+        """For a picture, how much of the PICTURE a shape cannot print.
+
+        WHY THIS IS A SEPARATE NUMBER, and why the coverage figure above is not
+        the answer people read it as. Coverage measures a share of the SPACE a
+        shape encloses. Most of that space is unsaturated middle colour that
+        any paper reaches easily, while a photograph's pixels crowd towards the
+        edges — so the two come apart badly. Measured on a real Display P3
+        photograph against a real glossy paper:
+
+            of the space its colours enclose     7.3% out of reach
+            of its distinct colours             27.1% out of reach
+            of the picture itself, by pixel     39.8% out of reach
+
+        "92.7% fits" is true and reads as "93% of my photograph will print",
+        which is out by a factor of five in the comforting direction. A paper
+        or a profile has no such number — nobody has said which of its colours
+        matter more — but a picture does, so where there is one it is shown.
+        """
+        from imagegamut import out_of_reach
+
+        self._picture_loss.setText("")
+        for name, shape, against, against_name in ((a_name, a, b, b_name),
+                                                   (b_name, b, a, a_name)):
+            if not self._is_picture(name):
+                continue
+            facts = None
+            for path, kept in self._image_facts.items():
+                if Path(path).stem == name:
+                    facts = kept
+                    break
+            if facts is None:
+                continue
+            try:
+                lost = out_of_reach(facts, against)
+            except Exception:      # noqa: BLE001 — a readout must never crash
+                return
+            if lost is None:
+                return
+            if not lost["of_the_picture"]:
+                self._picture_loss.setText(
+                    f"Every colour in {name} is one {against_name} can print.")
+                return
+            self._picture_loss.setText(
+                f"{100 * lost['of_the_picture']:.0f}% of {name} itself is out "
+                f"of reach of {against_name} — counting how much of the "
+                f"picture each colour covers, not how much space its colours "
+                f"enclose. The worst is {lost['worst']:.1f} ΔE beyond what "
+                f"{against_name} can print.")
+            return
 
     #: Below this much chroma apart, two hue families are called the same.
     #: Roughly the point where a difference stops being visible, and well

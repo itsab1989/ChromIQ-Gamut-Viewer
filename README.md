@@ -392,11 +392,20 @@ section — see [what it is for](#7-will-the-chart-i-am-about-to-print-actually-
 **A picture can be one of them too** — a photograph, or anything else you can
 open. What is drawn is *the colours actually in that picture*, not the space it
 was saved in, and the difference is the whole point. Open one beside a paper
-you have measured and the readouts answer the real question: **92.7%** of a
-wide-gamut photograph fits inside the demo paper, so 7% of it will not survive
-the print. Tick **Show what the comparison cannot print** and the parts that
-reach past the paper are painted on the shape itself — always the deep
-saturated corners, which is what a camera catches and a paper cannot.
+you have measured and the readouts answer the real question — and it is worth
+knowing that there are **two** answers, because they come apart badly.
+
+**92.7%** of the *space* a Display P3 photograph's colours occupy fits inside
+the demo paper. But **38% of the photograph itself** is out of reach, counting
+how much of the picture each colour actually covers. Both are true. Most of the
+space inside a gamut is unsaturated middle colour that any paper reaches
+easily, while a photograph's pixels crowd towards the edges — so reading the
+first as "93% of my picture will print" is out by a factor of five, in the
+comforting direction. The window shows both, and says which is which.
+
+Tick **Show what the comparison cannot print** and the parts that reach past
+the paper are painted on the shape itself — always the deep saturated corners,
+which is what a camera catches and a paper cannot.
 
 <p align="center"><img src="docs/screenshots/c3-a-photograph-against-a-paper.webp" width="880" alt="A photograph's gamut turning inside a paper's measured gamut, with the parts beyond the paper painted red"></p>
 

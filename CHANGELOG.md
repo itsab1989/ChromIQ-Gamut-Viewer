@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.2.1
+
+### 🐞 Fixed
+
+- **Showing the greys left the shape opaque, so the line stayed invisible.**
+  Ticking **Show the greys** turns the shape down to a third so the line
+  running up the inside can be seen — and it did, for about a second. Moving
+  the slider by hand does two things: it fades the picture while the handle is
+  down, and it records the value when the handle is let go. Doing it from code
+  did only the first, so the number never reached the place every redraw reads
+  it from, and the next redraw closed the shape up again. Reported twice, and
+  it went out in one of the gallery loops.
+
+- **How much of a picture will actually print, as its own figure.** The
+  coverage percentage is a share of the SPACE a picture's colours occupy, and
+  it reads as "how much of my photograph will print". Those are not the same
+  thing and they are not close: for a Display P3 photograph against the demo
+  paper, **92.7%** of the space its colours occupy fits inside the paper, while
+  **38% of the photograph itself** is out of reach — counting how much of the
+  picture each colour actually covers. Most of the space inside a gamut is
+  unsaturated middle colour any paper reaches easily; a photograph's pixels
+  crowd towards the edges. Both numbers are now shown, each saying which it is.
+
 ## v2.2.0
 
 ### ✨ New

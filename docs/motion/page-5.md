@@ -28,9 +28,11 @@ The trade is the play button: a film does not start by itself on a page like thi
 
 **A photograph, and the colours the paper cannot print.**
 
-The fourth kind of file this opens is an ordinary picture, and what it draws is *the colours actually in that picture* rather than the space it was saved in. Here a real photograph sits inside the cage of a paper that was measured, and **92.7% of it fits**. That is the number people want before they print.
+The fourth kind of file this opens is an ordinary picture, and what it draws is *the colours actually in that picture* rather than the space it was saved in. Here a real Display P3 photograph sits inside the cage of a paper that was measured.
 
-**Red is where its surface passes the paper**, not how much of it is lost — a thin shell of unreachable colour wraps a good deal of a shape while adding up to very little of its volume, so the picture and the percentage answer two different questions and both are worth having. The spikes are what a camera catches and a paper cannot: deep saturated corners, always the first thing to go.
+**Two numbers, and they are further apart than anyone expects.** 92.7% of the *space* its colours occupy fits inside the paper — and **38% of the photograph itself** does not, counting how much of the picture each colour actually covers. Most of the space inside a gamut is unsaturated middle colour any paper reaches easily, while a photograph's pixels crowd towards the edges. The window reports both, because reading the first as "93% of my picture will print" is wrong by a factor of five and wrong in the comforting direction.
+
+The red is where its surface passes the paper. The spikes are what a camera catches and a paper cannot: deep saturated corners, always the first thing to go.
 
 **How:** the photograph opened **first** and the measurement second, because **Show what the comparison cannot print** paints the first shape against the second — the other way round paints the paper against the photograph, which is true and useless. Photograph → *solid*, paper → *outline*.
 
