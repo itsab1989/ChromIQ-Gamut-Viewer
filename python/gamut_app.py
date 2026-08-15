@@ -8954,13 +8954,14 @@ class GamutApp(QMainWindow):
         paper that cannot go dark loses shadow detail whatever its gamut
         volume says. Needs a lightness axis, so it is left blank in CIE XYZ.
         """
-        from gamutview import (AXES, describe_white, lightness_range,
-                               paper_white)
+        from gamutview import (AXES, describe_white, hidden_end,
+                               lightness_range, paper_white)
         if not self._slots or not AXES[self._space.currentData()]["cylindrical"]:
             self._range.setText("")
             return
         try:
             lines = []
+            lost = []
             for path, g, _m in self._slots:
                 dark, light = lightness_range(g)
                 # AND WHAT COLOUR THAT WHITE IS. Every other number in this
@@ -8975,10 +8976,81 @@ class GamutApp(QMainWindow):
                         else f" and {how} (a* {lab[1]:+.1f}, b* {lab[2]:+.1f})")
                 lines.append(f"{path.stem}: blacks reach L* {dark:.0f}, "
                              f"paper white L* {light:.0f}{tint}")
+                # AND WHETHER THAT END CAN ACTUALLY BE SEEN. The numbers above
+                # are printed whether or not the shape they describe is
+                # visible, and at one end of the picture it may not be: a
+                # glossy paper's blacks come within four levels of a dark
+                # page. Saying "blacks reach L* 4" beside a part of the shape
+                # nobody can make out is the readout quietly disagreeing with
+                # the picture. Only for True colours, because that is the only
+                # painting that uses the measured colour -- By lightness and
+                # the rest already draw both ends in something visible, which
+                # is exactly what the note goes on to suggest.
+                if getattr(self, "_paint", "true") == "true":
+                    end = hidden_end(g, self._page_colour())
+                    if end is not None:
+                        lost.append((path.stem, *end))
+            # INSIDE THE GUARD, not after it. The promise on this method is
+            # that a readout never takes the view down with it, and a note
+            # built outside the try would be the one line here that could.
+            note = self._hidden_end_note(lost)
+            if note:
+                lines.append(note)
         except Exception:      # noqa: BLE001 — a readout must never crash a view
             self._range.setText("")
             return
         self._range.setText("\n".join(lines))
+
+    def _page_colour(self) -> str:
+        """The colour actually behind the shape in the view, right now.
+
+        Read rather than assumed. The window has a light appearance as well as
+        a dark one and they hide OPPOSITE ends of the shape -- the dark page
+        loses the blacks, the light page loses the paper white -- so a rule
+        written against either one alone would be wrong half the time.
+
+        Only the two themes are consulted. The colour pickers further up this
+        file belong to the still-picture dialog and change what is exported,
+        not what is on screen here; reading one of those would warn about a
+        page the reader is not looking at.
+        """
+        from ti3gamut import SCENE_COLOURS
+        which = ("light" if getattr(self, "_appearance", "dark") == "light"
+                 else "dark")
+        return SCENE_COLOURS[which]["page"]
+
+    @staticmethod
+    def _hidden_end_note(lost) -> str:
+        """One plain sentence about an end of the shape that cannot be seen.
+
+        Written out in full for one shape and for two rather than with an
+        "(s)", because a reader should never have to do grammar to read a
+        warning. Both ends need their own verb as well: "blacks" is plural and
+        "paper white" is not, and one sentence serving both produced "Glossy's
+        paper white come within four levels", which is the kind of thing that
+        makes a reader distrust the number beside it.
+        """
+        if not lost:
+            return ""
+        which = lost[0][1]
+        blacks = which == "blacks"
+        end = "deepest black" if blacks else "brightest white"
+        near = min(g for _n, _w, _s, g in lost)
+        share = max(s for _n, _w, s, _g in lost)
+        if len(lost) == 1:
+            who = f"{lost[0][0]}'s {which} {'come' if blacks else 'comes'}"
+            reach = "the paper reaches"
+            it = "them" if blacks else "it"
+        else:
+            names = " and ".join(n for n, *_ in lost)
+            plural = "blacks" if blacks else "paper whites"
+            who = f"{names} have {plural} that come"
+            reach = "either paper reaches"
+            it = "them"
+        return (f"{who} within {near:.0f} levels of the page behind {it}, so "
+                f"{share:.0f}% of that end is drawn but cannot be seen — and "
+                f"it is the {end} {reach}. Under “How the shapes are "
+                f"coloured”, choose “By lightness” to see it.")
 
     def _update_volume(self) -> None:
         self._update_range()

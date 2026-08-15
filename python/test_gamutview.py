@@ -1371,3 +1371,120 @@ def test_the_two_demo_papers_really_do_differ_in_their_white():
     assert describe_white(out["Matte-paper.ti3"]) == "slightly warm"
     apart = abs(out["Glossy-paper.ti3"][2] - out["Matte-paper.ti3"][2])
     assert apart > 4.0, f"only {apart:.1f} b* apart"
+
+
+def _demo(name):
+    from pathlib import Path
+    import ti3gamut
+    from gamutview import build_gamut
+    demo = Path(__file__).resolve().parent.parent / "demo"
+    m = ti3gamut.read_ti3(demo / name)
+    return build_gamut(m.lab, m.device, input_space="lab", space="lab")
+
+
+def test_the_glossy_paper_loses_its_blacks_against_the_dark_page():
+    """The report that found this: "something black at the bottom of the
+    shape". It is not a spike and not a drawing fault -- the lowest vertex of
+    either paper sits 0.00 below the next one, so there is no protrusion at
+    all. It is the deepest black the paper prints, drawn in the colour it
+    truly is, on a page of very nearly that colour."""
+    from gamutview import hidden_end
+    got = hidden_end(_demo("Glossy-paper.ti3"), "#111111")
+    assert got is not None, "the blacks vanish on a dark page and it said nothing"
+    which, share, near = got
+    assert which == "blacks"
+    assert share > 40.0, f"only {share:.1f}% called invisible"
+    assert near < 5.0, f"nearest colour {near:.1f} levels from the page"
+
+
+def test_the_matte_paper_keeps_its_blacks_against_the_same_page():
+    """The half that makes the warning worth having. Both papers are drawn the
+    same way on the same page and only one of them disappears -- and it is the
+    one whose blacks are BETTER, L* 4.0 against L* 12.7. Somebody comparing
+    the two sees more of the worse paper."""
+    from gamutview import hidden_end
+    assert hidden_end(_demo("Matte-paper.ti3"), "#111111") is None
+
+
+def test_the_light_page_hides_the_other_end_instead():
+    """The mirror image, and the reason the rule reads the page rather than
+    the name of the theme."""
+    from gamutview import hidden_end
+    got = hidden_end(_demo("Glossy-paper.ti3"), "#efebe6")
+    assert got is not None
+    assert got[0] == "paper white", got
+
+
+def test_a_mid_grey_page_hides_neither_end():
+    """A page is a colour, not a theme. Nothing about "dark" or "light" is
+    consulted; a background halfway between them loses no part of the shape
+    and must produce no warning."""
+    from gamutview import hidden_end
+    for paper in ("Glossy-paper.ti3", "Matte-paper.ti3"):
+        assert hidden_end(_demo(paper), "#7a7a7a") is None, paper
+
+
+def test_the_page_may_be_written_any_of_the_usual_ways():
+    """Short hex, long hex, 0-255 and 0-1 all name the same background."""
+    from gamutview import hidden_end
+    g = _demo("Glossy-paper.ti3")
+    want = hidden_end(g, "#111111")
+    for other in ("#111", "111111", (17, 17, 17), [17 / 255, 17 / 255, 17 / 255]):
+        assert hidden_end(g, other) == want, other
+
+
+def test_nonsense_page_colours_are_declined_rather_than_guessed():
+    """A readout must never crash a view, and a warning invented from a
+    colour nobody can parse is worse than no warning."""
+    from gamutview import hidden_end
+    g = _demo("Glossy-paper.ti3")
+    for junk in (None, "", "not a colour", "#12345", (1, 2)):
+        assert hidden_end(g, junk) is None, junk
+
+
+def test_the_hidden_end_note_reads_as_english_in_all_four_shapes():
+    """One shape or two, and either end -- four sentences, all of which a
+    reader sees. The first draft produced "Glossy's paper white COME within
+    four levels" and "it is the deepest black THE PAPER reaches" beside two
+    named papers; a warning whose grammar is wrong invites doubt about the
+    number in it, which is the opposite of what it is for."""
+    import gamut_app
+    note = gamut_app.GamutApp._hidden_end_note
+    assert note([]) == ""
+
+    one_dark = note([("Glossy", "blacks", 41.9, 4.4)])
+    assert "Glossy's blacks come within 4 levels" in one_dark
+    assert "the deepest black the paper reaches" in one_dark
+    assert "page behind them" in one_dark
+
+    one_light = note([("Glossy", "paper white", 12.7, 3.5)])
+    assert "Glossy's paper white comes within" in one_light
+    assert "page behind it" in one_light
+    assert "the brightest white the paper reaches" in one_light
+
+    two_dark = note([("Glossy", "blacks", 41.9, 4.4),
+                     ("Other", "blacks", 22.0, 6.1)])
+    assert "Glossy and Other have blacks that come" in two_dark
+    assert "either paper reaches" in two_dark
+
+    two_light = note([("Glossy", "paper white", 12.7, 3.5),
+                      ("Other", "paper white", 15.0, 2.0)])
+    assert "have paper whites that come" in two_light
+    # The WORST of the two, not the first of them: a reader told "2 levels"
+    # and "15%" knows how bad it gets, and one told the better figure does not.
+    assert "within 2 levels" in two_light and "15% of that end" in two_light
+
+
+def test_the_note_names_the_control_that_actually_fixes_it():
+    """Naming the exact words on the exact control, because "try a different
+    colouring" leaves a beginner hunting. If either label is ever reworded,
+    this fails rather than letting the window send somebody to a control that
+    no longer exists."""
+    import gamut_app
+    note = gamut_app.GamutApp._hidden_end_note(
+        [("Glossy", "blacks", 41.9, 4.4)])
+    assert "How the shapes are coloured" in note
+    assert "By lightness" in note
+    labels = dict(gamut_app.PAINTS)
+    assert labels["lightness"] == "By lightness", (
+        "the note points at a control label that has been changed")

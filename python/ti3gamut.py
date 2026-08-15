@@ -1448,6 +1448,12 @@ SCENE_COLOURS = {
 
 _PAGE_BACKGROUND = "#111318"
 
+#: How a shape may be drawn. Exactly the three the window offers, and the only
+#: three :func:`build_figure` knows what to do with. Kept here rather than
+#: written into the branches that test it, so that the check and the drawing
+#: cannot drift apart.
+SHAPE_STYLES = ("solid", "solid+mesh", "mesh")
+
 
 #: Keeps two scenes pointing the same way. Taken from ChromIQ's own
 #: cqLinkCameras (workflow/patch_cube.py), including the two subtleties that
@@ -4921,6 +4927,24 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         rings_i = own.get("rings", rings)
         mesh_paint_i = own.get("mesh_paint", mesh_paint)
         how = (styles[i] if styles is not None and i < len(styles) else "solid")
+        # A STYLE NOBODY HANDLES MUST NOT DRAW NOTHING.
+        #
+        # The two branches below ask for "solid", "solid+mesh" and "mesh", and
+        # anything else falls between them and adds no trace at all -- a page
+        # that opens, reports no error, and holds an empty box. Found by
+        # asking this function for "outline", which is a real style name in
+        # this file and belongs to a chart's skin rather than to a shape; the
+        # page came back with nought traces and looked like a rendering fault.
+        #
+        # The window can only send the three, so this is not reachable from
+        # the controls. It is reachable from the command line and from any
+        # other caller, and an empty picture is the least useful way to be
+        # told a name is wrong.
+        if how not in SHAPE_STYLES:
+            raise ValueError(
+                f"unknown shape style {how!r}; expected one of "
+                f"{', '.join(sorted(SHAPE_STYLES))}. (\"outline\" is a chart "
+                f"skin, not a shape style -- see chart_look.)")
         marked = lost[i] if lost is not None and i < len(lost) else None
         # WHERE THIS SHAPE AGREES WITH THE OTHERS, AND WHERE IT DOES NOT.
         #

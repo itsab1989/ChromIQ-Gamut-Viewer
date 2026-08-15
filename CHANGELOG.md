@@ -1,5 +1,144 @@
 # Changelog
 
+## v2.13.0
+
+### 🔍 The audit that found the last one was itself only a spot check
+
+Everything in 2.12.0 was measured at **one camera angle**, (1.5, 1.5, 1.5).
+Eight cases, one angle each. Turning the same shape somewhere else shows why
+that was never enough — the error swings from nothing to almost everything
+depending only on which way you are looking.
+
+Re-measured at **six angles**, worst case reported, with the ordering cut out
+of the file rather than switched off:
+
+| what is drawn | before | after |
+|---|---|---|
+| the shape itself | **88.8%** | **0.7%** |
+| the shape with its wires shown | 83.5% | 10.2% |
+| red and grey: what it cannot print | 68.4% | 0.7% |
+| faded where two shapes agree | 84.2% | **0.0%** |
+| faded where they disagree | 82.7% | **0.0%** |
+| with every measured patch shown | 77.8% | 1.1% |
+| with the neutral axis drawn | 86.9% | 0.7% |
+| with lightness rings | 86.7% | 2.3% |
+| painted by lightness | 86.4% | 0.7% |
+| painted one flat colour | 48.1% | 0.7% |
+| with the grid turned off | 96.6% | 0.8% |
+| a skin over a chart's patches | 26.0% | 3.3% |
+| the shape on a light page | 26.7% | **0.2%** |
+| drawn as a cage only | 0.0% | 0.0% |
+| three shapes at once | 88.5% | 3.5% |
+| **two shapes, each at its own strength** | 90.2% | **77.1%** |
+
+**The figure published for that last row in 2.12.0 — 58.1% → 10.5% — was one
+camera and understated it badly.** The honest number is 77.1%, and the row is
+the known limitation, not a regression: see below.
+
+Every case was also checked to be **still see-through**, by swapping the wall
+behind the shape between near-white and near-black. A shape drawn opaque hides
+that change completely; this separates cleanly, **96.4% against 2.3%** on a
+half-strength shape versus a solid one. Three shapes stacked pass only 4.0
+levels of a 234-level swing — genuinely see-through, and close to the point
+where an eye stops seeing it too.
+
+### 🔬 The hover objection was wrong, and it cost a fix
+
+2.12.0 rejected ordering whole shapes partly because the draw array "carries
+the click-and-hover identities". That was never measured. It is false. The
+library resolves a hover by **object identity**, never by position:
+
+    yZ.handlePick = function (e) { if (e.object === this.mesh) { ... } }
+    for (u = Object.keys(e.traces), ...) r.handlePick(f) && (c = r)
+
+Measured on screen: forty points taken from lit pixels, thirty-six of them on
+a shape, the draw order reversed — and **all thirty-six named the same paper
+and the same patch**, with their labels still appearing. Reordering costs
+nothing.
+
+**The fix is still not shipped, for the reason that should have been given.**
+Measured against a real reference — both papers welded into ONE surface, same
+colours, lighting and strength, sorted as a single pool, which leaves no
+"which shape is in front" question in it — ordering whole shapes makes the
+average **worse**:
+
+| | unlike correct blending, averaged over eight angles |
+|---|---|
+| as shipped | **20.7%** |
+| shapes ordered by depth as well | 24.4% |
+
+It rescues two angles (27.9% → 0.3%) and ruins two others (0.2% → 32.7%,
+0.1% → 48.9%). Two gamuts that nest have no correct order as whole shapes, so
+the sort flips on a near-tie. That is the limitation, and it is about geometry
+rather than about hover.
+
+### 👁 The blacks you cannot see, and the whites
+
+Reported as "something black at the bottom of the shape. is spike the correct
+word?" — and no, because there is nothing sticking out. The lowest vertex of
+either demo paper sits **0.00 below the next one**; seventy-odd vertices share
+the bottom eighth. It is not a spike, an ordering fault or a shading fault.
+
+It is the deepest black the paper prints, drawn in the colour it truly is, on
+a page of almost exactly that colour:
+
+| | mean colour of the darkest eighth | dark page |
+|---|---|---|
+| Glossy | 19, 19, 29 (nearest 4.4 levels away) | 17, 17, 17 |
+| Matte | 43, 35, 41 | 17, 17, 17 |
+
+**41.9% of the glossy paper's darkest eighth is invisible** against the dark
+page. Matte loses none of it — and matte is the paper whose blacks are
+*worse*, L\* 12.7 against L\* 4.0. Somebody comparing the two on a dark page
+sees more of the poorer paper. The light page does the mirror image, hiding
+**12.7%** of the glossy paper's white.
+
+Nothing has been repainted: the shape stays the colour it measured. The window
+now **says so**, naming the control that fixes it —
+
+> Glossy-paper's blacks come within 4 levels of the page behind them, so 42%
+> of that end is drawn but cannot be seen — and it is the deepest black the
+> paper reaches. Under "How the shapes are coloured", choose "By lightness" to
+> see it.
+
+— and the note disappears the moment you take the advice. It is worked out
+against the **page actually behind the shape**, so a light appearance warns
+about the white instead, and a mid grey warns about neither.
+
+### ⚡ Ordering keeps up on every kind of page
+
+Not one shape at one size. The whole spread, with frames counted while the
+camera moves every frame rather than divided out of the pass time:
+
+| page | triangles | one pass | frames/s while turning |
+|---|---|---|---|
+| one shape | 978 | 1.4 ms | **61** |
+| one shape, wires shown | 978 | 1.2 ms | **61** |
+| two shapes | 1,956 | 2.3 ms | **61** |
+| three shapes | 2,934 | 3.1 ms | **61** |
+| split: agree and differ | 1,956 | 1.7 ms | **61** |
+| every patch shown | 978 | 1.8 ms | **61** |
+| two scenes side by side | 1,956 | 3.1 ms | **61** |
+| sRGB at Detail 40 | 18,252 | 15.1 ms | **61** |
+| Detail 40 against a paper | 19,230 | 19.0 ms | **61** |
+
+The largest is longer than a frame, which is what the cost budget exists for:
+it waits three times as long as the last pass took, so a big shape is ordered
+four or five times a second while it turns and the frame rate never drops.
+The first pass on the largest page costs 99 ms because the vertex normals are
+worked out then; every one after it is 15 ms.
+
+### 🩹 A style nobody handles no longer draws nothing
+
+Found while auditing, by asking `build_figure` for the shape style `"outline"`
+— which is a real name in that file and belongs to a **chart's skin**. It
+matched neither branch that adds a surface, so the page came back with **nought
+traces**: it opened, reported nothing wrong, and held an empty box, which reads
+exactly like a rendering fault. It now refuses, and says which three styles it
+knows. Not reachable from the window's controls, which offer only those three;
+reachable from the command line and from any other caller.
+
+
 ## v2.12.0
 
 ### 🩹 A see-through shape no longer tears itself apart

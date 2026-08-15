@@ -607,6 +607,30 @@ version-numbered folder the official download unpacks into
 the same toolkit that reads a printed chart in the first place. Nothing nags
 you about it on startup, because most people never need it.
 
+### The blacks a dark page hides, and the whites a light one hides
+
+The shape is painted the colour each point really is. The page it is drawn on
+is a colour too, and at one end of the shape the two can be the same colour.
+
+On the dark page, the glossy demo paper's darkest eighth has a mean of
+**19, 19, 29** against a page of **17, 17, 17** — 41.9% of that end is drawn
+and cannot be seen. The matte paper loses none of it, and matte is the paper
+whose blacks are *worse*: L* 12.7 against L* 4.0. Comparing the two on a dark
+page shows you more of the poorer paper. A light page does the mirror image and
+hides 12.7% of the glossy paper's white instead.
+
+Nothing is repainted — that would be a lie about the print. Instead the window
+says so, and names the control that fixes it:
+
+> Glossy-paper's blacks come within 4 levels of the page behind them, so 42% of
+> that end is drawn but cannot be seen — and it is the deepest black the paper
+> reaches. Under "How the shapes are coloured", choose "By lightness" to see
+> it.
+
+The note is worked out against whatever is actually behind the shape, so it
+warns about the white on a light page, about the blacks on a dark one, and
+about neither on a mid grey. Choose **By lightness** and it disappears.
+
 ### See-through shapes are drawn in the right order
 
 A shape drawn solid hides itself; a shape drawn even slightly see-through does
@@ -617,14 +641,22 @@ shows. Pieces of the far side punch through the near side as hard-edged
 triangles, and the shape reads as torn, sliced, or oddly dark.
 
 Both the window and every saved page now put each see-through surface's
-triangles in far-to-near order before drawing. At a *thousandth* of
-see-through, where nothing can blend, the worst of seven camera angles went
-from **92.1% of the picture unlike the solid one to 0.3%**.
+triangles in far-to-near order before drawing. Measured on sixteen different
+things this can draw, at six camera angles each, worst angle reported: the
+shape itself goes from **88.8% of the picture unlike the solid one to 0.7%**,
+and the two fades used for comparing papers go to **0.0%**.
 
-It keeps up while the shape turns: 60 frames a second up to 5,310 triangles,
-56 at 19,230. Where it cannot help is two shapes that cross — triangles can
-only be ordered *within* one surface, and a paper sitting entirely inside
-another would need the two interleaved, which the library cannot do.
+It keeps up while the shape turns — **61 frames a second on every kind of
+page**, from a single 978-triangle chart to a 19,230-triangle comparison at
+full Detail, and on a page holding two scenes side by side.
+
+Where it cannot help is **two shapes that cross**. Triangles can only be put in
+order *within* one surface, and a paper sitting entirely inside another needs
+the two interleaved — glossy's back, matte's back, matte's front, glossy's
+front — which the drawing library cannot do, because it draws one whole surface
+at a time. Ordering the shapes themselves does not rescue it either: measured
+against a correct reference it helps at two angles and makes two others
+markedly worse, because two shapes that nest have no correct order as wholes.
 
 ### It moves, and you can take the movement with you
 

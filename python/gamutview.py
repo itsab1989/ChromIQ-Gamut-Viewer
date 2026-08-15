@@ -766,6 +766,95 @@ def describe_white(lab) -> str:
     return f"{strength}{'pink' if a > 0 else 'green'}-tinted"
 
 
+#: How near two colours have to be before a reader stops telling them apart on
+#: an ordinary screen at ordinary brightness. Eight levels out of 255 is about
+#: 3%, which is roughly where a large flat area stops separating from its
+#: background; below that the shape is still drawn and still correct and
+#: simply cannot be seen.
+INVISIBLE_LEVELS = 8.0
+
+#: How much of one end has to vanish before it is worth saying so. One vertex
+#: lost in the background is nothing -- the surface around it still draws the
+#: shape. A tenth of that end gone is a face, not a point.
+END_IS_LOST = 10.0
+
+
+def hidden_end(gamut, page) -> tuple[str, float, float] | None:
+    """The end of the shape that cannot be told apart from the page behind it.
+
+    Returns ``(which, share, nearest)`` -- the name of the end in the words the
+    window uses, how much of it is invisible as a percentage, and how many
+    levels the closest colour of all comes to the page. Returns None when both
+    ends stand clear, which is the ordinary case.
+
+    WHY THIS EXISTS. The shape is painted the colour each point really is,
+    which is the honest picture and the whole reason for True colours. But the
+    page it is drawn on is a colour too, and at one end of the shape the two
+    can be the same colour. Measured on the two demo papers: the darkest
+    eighth of the glossy paper has a mean of 19,19,29 against a dark page of
+    17,17,17, and its nearest colour comes within 4.4 levels -- 41.9% of that
+    end is invisible. The light page does the mirror image of it, hiding 12.7%
+    of the paper white.
+
+    That is the worst possible thing to lose, because the black end is exactly
+    where two papers differ most: the glossy paper here reaches L* 4.0 and the
+    matte one stops at L* 12.7, and it is the deeper black that disappears.
+    Somebody comparing the two on a dark page sees the shape whose blacks are
+    WORSE more completely than the shape whose blacks are better.
+
+    Nothing here changes a colour. The shape stays honest; this only makes it
+    possible to say so.
+
+    *page* is the real background in use -- the appearance setting, or a colour
+    the user chose -- as anything :func:`_as_levels` understands. Reading it
+    rather than assuming the dark theme is the point: the window lets any
+    colour behind the shape, and a mid grey hides neither end.
+    """
+    rgb = np.asarray(getattr(gamut, "colors", ()), float)
+    v = np.asarray(getattr(gamut, "vertices", ()), float)
+    if rgb.size == 0 or v.size == 0 or len(rgb) != len(v):
+        return None
+    if rgb.max() <= 1.0:
+        rgb = rgb * 255.0
+    paper = _as_levels(page)
+    if paper is None:
+        return None
+    L = v[:, 0]
+    span = float(L.max() - L.min())
+    if span <= 0:
+        return None
+    worst = None
+    for which, pick in (("blacks", L < L.min() + 0.08 * span),
+                        ("paper white", L > L.max() - 0.08 * span)):
+        if not pick.any():
+            continue
+        gap = np.abs(rgb[pick] - paper).max(axis=1)
+        share = 100.0 * float((gap < INVISIBLE_LEVELS).sum()) / int(pick.sum())
+        if share >= END_IS_LOST and (worst is None or share > worst[1]):
+            worst = (which, share, float(gap.min()))
+    return worst
+
+
+def _as_levels(page):
+    """A background colour as three numbers 0-255, however it was written."""
+    if page is None:
+        return None
+    if isinstance(page, str):
+        text = page.strip().lstrip("#")
+        if len(text) == 3:
+            text = "".join(c * 2 for c in text)
+        if len(text) != 6:
+            return None
+        try:
+            return np.array([int(text[i:i + 2], 16) for i in (0, 2, 4)], float)
+        except ValueError:
+            return None
+    got = np.asarray(page, float).ravel()[:3]
+    if got.size != 3:
+        return None
+    return got * 255.0 if got.max() <= 1.0 else got
+
+
 def hue_reach(gamut, families=HUE_FAMILIES) -> dict[str, float]:
     """The furthest each hue family reaches from the grey axis.
 

@@ -1073,3 +1073,54 @@ def test_the_ordering_never_takes_more_than_its_share_of_the_time():
     js = ti3gamut._ORDER_JS
     assert "var cost = 0, ready = 0;" in js
     assert "cost * 3" in js
+
+
+def test_a_shape_style_nobody_handles_is_refused_rather_than_drawn_empty():
+    """Found while auditing, by asking for "outline".
+
+    That is a real style name in this file -- it belongs to a CHART'S SKIN --
+    and handing it to build_figure as a shape style matched neither of the two
+    branches that add a surface. The page came back with nought traces: it
+    opened, reported nothing wrong, and held an empty box, which reads exactly
+    like a rendering fault. The window can only send the three, so this is not
+    reachable from the controls, but it is reachable from the command line and
+    from any other caller."""
+    import pytest
+    from pathlib import Path
+    import ti3gamut
+    from gamutview import build_gamut
+    demo = Path(__file__).resolve().parent.parent / "demo"
+    m = ti3gamut.read_ti3(demo / "Glossy-paper.ti3")
+    g = build_gamut(m.lab, m.device, input_space="lab", space="lab")
+
+    # Every style the window offers still draws something.
+    for style in ti3gamut.SHAPE_STYLES:
+        fig = ti3gamut.build_figure([("g", g)], "", styles=[style])
+        assert len(fig.data) >= 2, f"{style} drew {len(fig.data)} traces"
+
+    with pytest.raises(ValueError) as complaint:
+        ti3gamut.build_figure([("g", g)], "", styles=["outline"])
+    said = str(complaint.value)
+    assert "outline" in said
+    # It has to say what IS allowed, not only that this was not.
+    for style in ti3gamut.SHAPE_STYLES:
+        assert style in said, f"the complaint never mentions {style}"
+
+
+def test_the_styles_the_window_offers_are_the_styles_that_can_be_drawn():
+    """The list and the controls must not drift apart. If a fourth style is
+    ever added to one and not the other, this says so rather than letting a
+    page come out empty."""
+    import ti3gamut
+    import gamut_app
+    import inspect
+    src = inspect.getsource(gamut_app.GamutApp)
+    offered = set()
+    for line in src.splitlines():
+        if "combo.addItem(" in line and line.rstrip().endswith(")"):
+            bits = line.split('"')
+            if len(bits) >= 5:
+                offered.add(bits[3])
+    assert set(ti3gamut.SHAPE_STYLES) <= offered | {"solid"}, (
+        f"a style is drawable but not offered: "
+        f"{set(ti3gamut.SHAPE_STYLES) - offered}")
