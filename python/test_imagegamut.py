@@ -111,3 +111,77 @@ def test_only_formats_this_machine_can_really_open_are_offered():
     assert ".png" in got and ".jpg" in got and ".tif" in got
     assert len(got) > 20
     assert all(e.startswith(".") == True for e in got)
+
+
+def test_how_much_of_a_picture_is_out_of_reach_is_weighted_by_the_picture():
+    """THE NUMBER THAT WAS WRONG IN THE README, and by a factor of five.
+
+    Coverage is a share of the SPACE a picture's colours enclose. Most of that
+    space is unsaturated middle colour any paper reaches easily, while a
+    photograph's pixels crowd towards the edges — so the two come apart badly.
+    Measured on a real Display P3 photograph against a real glossy paper: 7.3%
+    of the space it occupies is out of reach, and 39.8% of the actual picture
+    is.
+
+    Here that is made unmistakable: one colour well outside covers most of the
+    frame, and a thousand colours inside cover a handful of pixels each.
+    """
+    import numpy as np
+
+    from imagegamut import out_of_reach
+
+    corners = np.array([[0.0, 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100]])
+    inside = np.column_stack([np.linspace(5, 20, 999),
+                              np.full(999, 3.0), np.full(999, 3.0)])
+    outside = np.array([[50.0, 90.0, 90.0]])
+    facts = {"lab": np.vstack([inside, outside]),
+             "weights": np.concatenate([np.ones(999), [9000.0]])}
+    lost = out_of_reach(facts, corners)
+
+    assert lost["n_colours"] == 1
+    # One colour in a thousand, and nine tenths of the picture.
+    assert lost["of_its_colours"] == pytest.approx(1 / 1000, abs=1e-6)
+    assert lost["of_the_picture"] == pytest.approx(0.9, abs=0.01)
+    assert lost["worst"] > 5.0
+
+
+def test_a_picture_entirely_within_reach_says_nothing_is_lost():
+    import numpy as np
+
+    from imagegamut import out_of_reach
+
+    corners = np.array([[0.0, 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100]])
+    facts = {"lab": np.column_stack([np.linspace(5, 20, 40),
+                                     np.full(40, 3.0), np.full(40, 3.0)]),
+             "weights": np.ones(40)}
+    lost = out_of_reach(facts, corners)
+    assert lost["of_the_picture"] == 0.0 and lost["n_colours"] == 0
+
+
+def test_facts_without_the_colours_answer_nothing_rather_than_guess():
+    """A saved state from a version that did not keep them must not invent a
+    figure out of the shape alone — that is the very substitution this exists
+    to stop."""
+    from imagegamut import out_of_reach
+    import numpy as np
+    corners = np.array([[0.0, 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100]])
+    assert out_of_reach({}, corners) is None
+    assert out_of_reach({"lab": np.empty((0, 3)), "weights": np.empty(0)},
+                        corners) is None
+
+
+def test_the_counts_add_up_to_every_pixel_that_was_looked_at(tmp_path):
+    """The weights ARE the picture: if they did not sum to the pixels, every
+    share computed from them would be quietly wrong."""
+    import numpy as np
+    from PIL import Image
+
+    from imagegamut import read_colours
+
+    rng = np.random.default_rng(5)
+    data = rng.integers(0, 255, size=(60, 80, 3), dtype=np.uint8)
+    where = tmp_path / "p.png"
+    Image.fromarray(data, "RGB").save(where)
+    _values, _profile, looked_at, _space, weights = read_colours(where)
+    assert looked_at == 60 * 80
+    assert weights.sum() == looked_at
