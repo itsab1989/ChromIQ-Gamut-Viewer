@@ -6673,10 +6673,32 @@ class GamutApp(QMainWindow):
         except OSError as exc:
             Notice.warn(self, "That could not be saved", str(exc))
             return
+        # THE NEXT QUESTION IS ALWAYS "HOW DO I SHOW THIS TO SOMEBODY", and
+        # the honest answer is not the obvious one: a forum will not run a
+        # page like this, however it is pasted in. Saying so here saves an
+        # evening of trying, and names the thing that does work.
         Notice.say(
             self, "Saved",
-            f"Written to\n{target}\n\nIt opens in any browser and needs no "
-            "network — the viewer travels inside the page.")
+            f"Written to\n{target}\n\n"
+            f"{picture.human_size(target.stat().st_size)}. It opens in any "
+            "browser by double-clicking it, and needs no network at all — the "
+            "3D viewer travels inside the page. Whoever you send it to can "
+            "turn the shape, zoom in, and click the names underneath to hide "
+            "and show them.\n\n"
+            "SENDING IT BY EMAIL OR CHAT: attach the file as it is. Nothing "
+            "else has to travel with it.\n\n"
+            "PUTTING IT IN A FORUM POST: a forum will not run this page — "
+            "they all strip out the part that draws it, whichever way you "
+            "paste it in. What works is two things together: post a moving "
+            "picture so there is something to look at in the thread, made "
+            "with Save this view as a picture… → A moving picture, and put a "
+            "link beside it to this page for anybody who wants to turn it "
+            "themselves. Most forums will take the page as a file attachment "
+            "as well.\n\n"
+            "PUTTING IT ON A WEBSITE: upload it and link to it. If it is "
+            "going somewhere with a reliable connection you can save it again "
+            "without the viewer inside — the same page at about a sixtieth of "
+            "the size, which fetches the viewer instead.")
 
     def _load(self, path: Path) -> None:
         # ONE RULE: OPENING A FILE SHOWS YOU THAT FILE. A profile opened here

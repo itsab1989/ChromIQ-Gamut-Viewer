@@ -671,6 +671,32 @@ your own or see-through, so the shape can float on any page you drop it onto.
 It says roughly how big the file will be before you make it, and never writes
 over a file that is already there.
 
+### A page somebody can turn themselves
+
+**Save this view as a web page…** writes **one self-contained `.html` file** of
+about 5 MB. Double-click it and it opens in any browser — and it needs **no
+internet at all**, because the 3D viewer travels inside the page. It works from
+a memory stick, from an email attachment, on a plane, in ten years.
+
+**[▶ See eight of them, live →](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/)**
+
+What the person you send it to gets is not a picture — it is the scene. They
+can drag it round, zoom in, click the names underneath to hide and show shapes,
+and use the strip along the bottom to **start it turning, stop it, change the
+speed, and switch the left-and-right and up-and-down movement on and off**.
+That works on every page, including one you saved standing still: it simply
+opens with the button reading **Play** and nothing moving until they ask.
+
+That makes it the right thing for one job in particular: **sending a paper
+measurement to somebody who does not have the app** — a printer, a client, a
+forum. A picture shows them your angle; this lets them find their own.
+
+**Putting one in a forum post** takes two things, and the app says so when it
+saves: a forum will not run a page like this however you paste it in, so post a
+**moving picture** for the thread to show, and put a **link** beside it to the
+page for anybody who wants to turn it. Most forums take the page as a file
+attachment too.
+
 ### The numbers, as a table you can hand to somebody
 
 **Save the numbers as a table…** writes an ordinary `.csv` — the kind any

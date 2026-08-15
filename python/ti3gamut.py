@@ -1423,8 +1423,108 @@ def _spin_script(ids, spin) -> str:
 
     settings = dict(spin)
     settings["ids"] = list(ids)
-    return (f"<script>{_SPIN_JS}\nwindow.addEventListener('load', function () "
-            f"{{window.cqSpin.set({json.dumps(settings)});}});</script>")
+    return (f"<script>{_SPIN_JS}\n{_SPIN_CONTROLS_JS}\n"
+            f"window.addEventListener('load', function () "
+            f"{{window.cqSpin.set({json.dumps(settings)});"
+            f"window.cqSpinControls({json.dumps(settings)});}});</script>")
+
+
+#: The strip of controls the reader of a saved page gets.
+#:
+#: WHY IT IS BUILT IN JAVASCRIPT rather than written into the page's HTML: the
+#: page is assembled by three different routes (one scene, two rooms, a flat
+#: slice) and a bar added to each of them is three places to forget. Built by
+#: the engine that does the turning, it appears exactly where the turning does
+#: and nowhere else.
+#:
+#: IT APPEARS ON EVERY PAGE, moving or not. A first version showed it only
+#: where the page was already turning, which meant a scene saved still could
+#: never be set moving by the person reading it — and being able to is the
+#: whole advantage a page has over a picture. A still page simply opens with
+#: the button reading Play and nothing moving: no movement ever starts unbidden.
+_SPIN_CONTROLS_JS = """
+window.cqSpinControls = function (settings) {
+  settings = settings || {};
+  // COPIES, not the settings themselves. These are mutated as the reader
+  // switches an axis off, and holding a reference to the originals is how
+  // "switch it back on" would restore whatever it had just been set to
+  // instead of what the page was saved with.
+  var saved = {turn: Object.assign({}, settings.turn || {}),
+               tilt: Object.assign({}, settings.tilt || {})};
+  var turn = Object.assign({}, saved.turn), tilt = Object.assign({}, saved.tilt);
+  var speed = Math.max(turn.speed || 0, tilt.speed || 0) || 6;
+  var running = !!settings.on;
+  // A PAGE SAVED STILL HAS NOTHING TO TURN. Pressing Play on one has to do
+  // something, so it falls back to turning all the way round — the movement
+  // somebody means when they press Play on a shape.
+  function wake() {
+    if ((!turn.mode || turn.mode === "off") &&
+        (!tilt.mode || tilt.mode === "off")) {
+      turn.mode = "round";
+      if (!turn.range) turn.range = 60;
+    }
+  }
+  var bar = document.createElement("div");
+  bar.className = "cq-spin-bar";
+  bar.innerHTML =
+    '<button type="button" data-cq="play" title="Stop the movement, or start '
+    + 'it again. You can always drag the shape yourself, moving or not.">'
+    + 'Pause</button>'
+    + '<button type="button" data-cq="slower" title="Turn more slowly.">'
+    + '&minus;</button>'
+    + '<span data-cq="speed">speed ' + speed + '</span>'
+    + '<button type="button" data-cq="faster" title="Turn more quickly.">'
+    + '+</button>'
+    + '<button type="button" data-cq="lr" title="Turn left and right, or stop '
+    + 'turning that way.">left &amp; right</button>'
+    + '<button type="button" data-cq="ud" title="Tip up and down, or stop '
+    + 'tipping.">up &amp; down</button>';
+  var css = document.createElement("style");
+  css.textContent =
+    ".cq-spin-bar{position:fixed;left:50%;transform:translateX(-50%);"
+    + "bottom:14px;display:flex;gap:6px;align-items:center;z-index:9;"
+    + "font:12px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+    + "padding:6px 8px;border-radius:999px;opacity:.35;transition:opacity .2s}"
+    + ".cq-spin-bar:hover{opacity:1}"
+    + ".cq-spin-bar button{font:inherit;cursor:pointer;border-radius:999px;"
+    + "padding:5px 10px;border:1px solid currentColor;background:transparent;"
+    + "color:inherit;opacity:.85}"
+    + ".cq-spin-bar button:hover{opacity:1}"
+    + ".cq-spin-bar button[aria-pressed=false]{opacity:.45}"
+    + ".cq-spin-bar span{opacity:.7;min-width:64px;text-align:center}";
+  document.head.appendChild(css);
+  document.body.appendChild(bar);
+
+  function push() {
+    window.cqSpin.set({on: running,
+                       turn: {mode: turn.mode, range: turn.range, speed: speed},
+                       tilt: {mode: tilt.mode, range: tilt.range, speed: speed}});
+    bar.querySelector('[data-cq=speed]').textContent = "speed " + speed;
+    bar.querySelector('[data-cq=play]').textContent = running ? "Pause" : "Play";
+    bar.querySelector('[data-cq=lr]').setAttribute(
+      "aria-pressed", turn.mode && turn.mode !== "off" ? "true" : "false");
+    bar.querySelector('[data-cq=ud]').setAttribute(
+      "aria-pressed", tilt.mode && tilt.mode !== "off" ? "true" : "false");
+  }
+  bar.addEventListener("click", function (ev) {
+    var what = ev.target.getAttribute("data-cq");
+    if (!what) return;
+    if (what === "play") { running = !running; if (running) wake(); }
+    if (what === "slower") speed = Math.max(1, speed - 1);
+    if (what === "faster") speed = Math.min(12, speed + 1);
+    // REMEMBERS WHAT IT WAS, so switching an axis off and on again brings back
+    // the movement the page was saved with rather than a guess at one.
+    if (what === "lr") turn.mode = (turn.mode && turn.mode !== "off")
+      ? "off" : (saved.turn.mode && saved.turn.mode !== "off"
+                 ? saved.turn.mode : "round");
+    if (what === "ud") tilt.mode = (tilt.mode && tilt.mode !== "off")
+      ? "off" : (saved.tilt.mode && saved.tilt.mode !== "off"
+                 ? saved.tilt.mode : "swing");
+    push();
+  });
+  push();
+};
+"""
 
 
 def write_side_by_side_html(pages, out: Path, mode: str = "dark",

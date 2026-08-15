@@ -1,5 +1,40 @@
 # Changelog
 
+## v2.4.0
+
+### ✨ New
+
+- **A saved web page can now be set turning by whoever opens it.** Every page
+  written by **Save this view as a web page…** gets a small strip along the
+  bottom: **Play/Pause**, slower and faster, and switches for the left-and-right
+  and up-and-down movement. It sits at a third opacity until the pointer is near
+  it, so it never competes with the shape.
+
+  **It is on every page, including one saved standing still.** A still page
+  simply opens with the button reading **Play** and nothing moving — no movement
+  ever starts unbidden — and pressing Play on a page with no movement saved in
+  it falls back to turning all the way round, which is what somebody means when
+  they press Play on a shape.
+
+- **A live gallery of eight saved pages**, at
+  <https://itsab1989.github.io/ChromIQ-Gamut-Viewer/> — a paper standing still
+  and turning, two papers compared, a chart in ink amounts with its skin, the
+  same chart in CIELAB, a light-mode page, and the small 80 kB variant that
+  fetches its viewer instead of carrying it. Every one written by the app and
+  not edited afterwards, so it is exactly what the button gives you.
+
+- **The Saved message now answers the next question**, which is always "how do I
+  show this to somebody". It names what works for email, for a website, and —
+  the one that surprises people — for a forum, where the page will not run
+  however it is pasted in, so a moving picture plus a link is the answer.
+
+### 🔍 Verified end to end
+
+Each page was rendered in a real browser with **every non-file request blocked**:
+nothing is fetched, the camera really moves, Pause really stops it, a still page
+really has no motion until asked, and the strip appears on all of them.
+
+
 ## v2.3.0
 
 ### ✨ New
