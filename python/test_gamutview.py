@@ -534,6 +534,11 @@ class _FakeApp:
             setattr(self, name, None)
         self._light_sliders = {k: (None,) for k, *_ in gamut_app.LIGHT_CONTROLS}
         # The movement controls are read, not just listed, so these answer.
+        # Two rooms look up the slot each shape came from, so that the
+        # paper can be rebuilt in CIELAB for judging. No slots here means no
+        # chart to mark, which is what this stub is describing.
+        self._slots = []
+        self._lab_gamuts = {}
         self._spin_on = _Value(False)
         self._grid_on = _Value(True)
         self._turn_mode, self._turn_speed, self._turn_sweep = (

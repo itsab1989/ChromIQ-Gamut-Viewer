@@ -293,17 +293,26 @@ def main() -> int:
     if shots:
         out.mkdir(exist_ok=True)
 
-    for width in WIDTHS:
+    for appearance in ("dark", "light"):
+      # BOTH APPEARANCES. A label that fits is a label that fits, but an ⓘ
+      # or a swatch that reads on one background can vanish on the other,
+      # and the panel is re-polished when the theme changes — which is when
+      # Qt applies stylesheet padding, so widths can move with it.
+      window._set_appearance(appearance) if hasattr(
+          window, "_set_appearance") else None
+      pump(app, 2)
+      for width in WIDTHS:
         window.resize(width, 940)
         pump(app, 1.5)
         for i in range(window._space.count()):
             space = window._space.itemData(i)
             window._space.setCurrentIndex(i)
             pump(app, 2)
-            label = f"{width}px/{space}"
+            label = f"{appearance}/{width}px/{space}"
             problems += audit_once(window, panel, label)
             if shots:
-                panel.grab().save(str(out / f"panel-{width}-{space}.png"))
+                panel.grab().save(
+                    str(out / f"panel-{appearance}-{width}-{space}.png"))
 
     print()
     if problems:
@@ -311,9 +320,10 @@ def main() -> int:
             print("  " + line)
         print(f"\n{len(problems)} problem(s).")
         return 1
-    checked = len(WIDTHS) * window._space.count()
+    checked = 2 * len(WIDTHS) * window._space.count()
     print(f"  Clean: {checked} panel states checked "
-          f"({len(WIDTHS)} widths × {window._space.count()} spaces), "
+          f"(2 appearances × {len(WIDTHS)} widths × "
+          f"{window._space.count()} spaces), "
           f"every control answered for.")
     return 0
 

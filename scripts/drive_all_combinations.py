@@ -112,7 +112,13 @@ def phase_a():
         fig = build_figure([], "t", space=space,
                            chart=("c", lab, outside, device),
                            chart_look=look)
-        dots = [t for t in fig.data if t.type == "scatter3d"]
+        # A LEGEND PROXY IS NOT A DOT. It is a scatter3d holding no points at
+        # all, drawn only so the key beside the name carries a colour that can
+        # be seen — see _legend_proxy. Counting it as data made every
+        # position check fail at once, which is a harness fault and looked
+        # exactly like a catastrophic one.
+        dots = [t for t in fig.data
+                if t.type == "scatter3d" and t.hoverinfo != "skip"]
         meshes = [t for t in fig.data if t.type == "mesh3d"]
 
         # 1. No look setting may move a single dot. This is the invariant the
@@ -319,6 +325,25 @@ def phase_b():
                     return len(t.x)
             return 0
         a, b = lost_in(room1), lost_in(room2)
+        # And in a space the shapes are NOT built in: judging is rebuilt in
+        # CIELAB from the slot, so the two rooms must still disagree here.
+        w._space.setCurrentIndex(w._space.findData("luv"))
+        pump(8)
+        o2 = w._render_options()
+        g2, c2, _s2, _l2 = w._scene_contents()
+        luv = [lost_in(build_figure(
+                   [g2[i]], "", patches=[c2[i]], styles=["solid"], lost=None,
+                   chart=w._chart_marked_against(o2.get("chart"), g2[i][1],
+                                                 w._slots[i]),
+                   **{k: v for k, v in o2.items() if k != "chart"}))
+               for i in (0, 1)]
+        must(luv == [a, b],
+             "the two rooms answer differently in CIELUV than in CIELAB, so "
+             "one of them is judging against a shape in the wrong space",
+             f"CIELAB {[a, b]} vs CIELUV {luv}")
+        print(f"  two rooms in CIELUV agree with CIELAB: {luv}")
+        w._space.setCurrentIndex(w._space.findData("lab"))
+        pump(6)
         must(a != b,
              "both rooms mark the chart identically, so at least one of them "
              "is judging it against the other room's paper",

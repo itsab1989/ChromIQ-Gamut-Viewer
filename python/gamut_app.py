@@ -3338,6 +3338,43 @@ class GamutApp(QMainWindow):
         # --- appearance -------------------------------------------------------
         g_look = QGroupBox("How it looks", col)
         lv = QVBoxLayout(g_look)
+
+        # THE NAMES UNDER THE PICTURE ARE BUTTONS, and nothing said so. Every
+        # 3D view here has had that behaviour from the start — it is Plotly's
+        # own — and somebody who does not already know it has no way to find
+        # it. Said once, at the top of the group about how the picture looks,
+        # because it applies to every shape in it rather than to one control.
+        legend_note = WrappedLabel(
+            "Click a name under the picture to hide or show that shape.",
+            g_look)
+        legend_note.setObjectName("hint"); _wrapped(legend_note)
+        legend_hint = Hint(
+            "The names along the bottom of the picture are not just a key — "
+            "each one is a switch.\n\n"
+            "CLICK A NAME to take that shape out of the picture, and click it "
+            "again to bring it back. Nothing is closed and no number changes: "
+            "the file stays open, every figure in this panel stays exactly as "
+            "it was, and only the drawing of it goes. It is the quickest way "
+            "to answer \"which of these am I actually looking at\" when two "
+            "shapes overlap, or to lift a solid paper off a chart's patches "
+            "for a moment without changing a single setting.\n\n"
+            "DOUBLE-CLICK A NAME to show that one on its own and hide "
+            "everything else. Double-click it again to bring the rest back.\n\n"
+            "It works for every name there: the papers, the comparison, the "
+            "measured patches, a chart's patches, the ones out of reach and "
+            "the skin over them — so a chart can be looked at with its lost "
+            "patches hidden without ever touching Show the ones out of "
+            "reach.\n\n"
+            "What you hide this way is a way of LOOKING, not a setting. It is "
+            "not remembered, and a picture saved while something is hidden is "
+            "saved with everything in it, because the hiding lives in the page "
+            "on screen rather than in what was drawn.", g_look)
+        legend_hint.setObjectName("hint_legend_hint")
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0); _r.setSpacing(6)
+        _r.addWidget(legend_note, 1)
+        _r.addWidget(legend_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_r)
+
         self._target = NoScrollComboBox(g_look)
         # THE NAME BELONGS BESIDE THE CONTROL, ONCE -- not inside every item.
         # Carried in the item text it was repeated on all four lines of the
@@ -6260,7 +6297,7 @@ class GamutApp(QMainWindow):
                         self._reference_path, measured))
         return out
 
-    def _chart_marked_against(self, chart, gamut):
+    def _chart_marked_against(self, chart, gamut, slot=None):
         """The chart, with its lost patches worked out against *this* shape.
 
         Each room in the side-by-side view holds one paper, and the chart in
@@ -6275,9 +6312,11 @@ class GamutApp(QMainWindow):
         if lab is None:
             return chart
         import chart as chart_mod
+        path = slot[0] if slot else None
+        measurement = slot[2] if slot else None
         try:
             marked = chart_mod.outside_report(
-                lab, self._in_lab(gamut)).beyond
+                lab, self._in_lab(gamut, path, measurement)).beyond
         except Exception:          # noqa: BLE001 — a view must never crash
             marked = None
         return (name, lab, marked, device)
@@ -6624,6 +6663,11 @@ class GamutApp(QMainWindow):
                 "goes to the right place by itself.")
             return
         self._slots.append((path, g, m))
+        # A FILE MAY HAVE CHANGED ON DISK since it was last judged against.
+        # The cache is keyed by path, so an edited measurement reopened under
+        # the same name would be judged against the shape it used to have.
+        # Emptying it here costs one rebuild and cannot be wrong.
+        self._lab_gamuts.clear()
         _log().info("opened %s (%s): %s%d vertices, volume %.0f",
                     path.name, "measurement" if m is not None else "profile",
                     f"{m.n_patches} patches, " if m is not None else "",
@@ -7655,12 +7699,18 @@ class GamutApp(QMainWindow):
         chart = options.pop("chart", None)
         figures = []
         for i, (name, gamut) in enumerate(gamuts[:2]):
+            # THE SLOT, not just the shape. Judging happens in CIELAB, and
+            # rebuilding a paper there needs the file it came from — handing
+            # over the drawn shape alone left CIELUV and CIE XYZ marking the
+            # chart against a shape in the wrong space, which is the fault
+            # this room-by-room marking was added to fix.
+            slot = self._slots[i] if i < len(self._slots) else None
             figures.append((name, build_figure(
                 [(name, gamut)], "",
                 patches=[clouds[i]] if clouds and i < len(clouds) else None,
                 styles=["solid"],
                 lost=[lost[i]] if lost and i < len(lost) else None,
-                chart=self._chart_marked_against(chart, gamut),
+                chart=self._chart_marked_against(chart, gamut, slot),
                 **options)))
         write_side_by_side_html(figures, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked(),

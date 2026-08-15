@@ -998,7 +998,7 @@ def _chart_skin(points, colours, name: str, style: str, opacity: float,
     common = dict(
         x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-        name=f"{name} — a skin over the patches", showlegend=True,
+        name=f"{name} — a skin over the patches", showlegend=False,
         hoverinfo="name", flatshading=False,
         lighting=_lighting(depth), lightposition=light or _LIGHT_OVERHEAD,
         contour=dict(show=wire, color="#888", width=2),
@@ -1010,15 +1010,23 @@ def _chart_skin(points, colours, name: str, style: str, opacity: float,
         common["opacity"] = 0.02
     else:
         common["opacity"] = float(opacity)
+    key = "#8b93a3"
     if colours is None:
         common["color"] = "#8b93a3"
     elif isinstance(colours, str):
         # One colour for the whole skin — the window's accent.
         common["color"] = colours
+        key = colours
     else:
         common["vertexcolor"] = colours
-        common["color"] = _legend_swatch([(0.5, 0.55, 0.6)], page)
-    return [go.Mesh3d(**common)]
+        common["color"] = _legend_swatch(colours, page)
+        key = common["color"]
+    # A PROXY FOR THE KEY, like every other surface here: Plotly draws a
+    # mesh's own key by rendering a scrap of that mesh, lighting and opacity
+    # included, so at a low opacity on a dark page the marker beside the name
+    # all but disappears.
+    return [go.Mesh3d(**common),
+            _legend_proxy(f"{name} — a skin over the patches", key)]
 
 
 def _patch_cloud(lab, name: str, space: str = "lab"):
@@ -1038,7 +1046,7 @@ def _chart_cloud(lab, name: str, outside=None, space: str = "lab",
                  device=None, size: float = 3.2, show_inside: bool = True,
                  show_outside: bool = True, with_positions: bool = False,
                  dot_opacity: float = 1.0, out_size: float = 5.5,
-                 out_opacity: float = 1.0):
+                 out_opacity: float = 1.0, page: str = "#111318"):
     """A chart's patches: dots where a profile says each one would land.
 
     DOTS, NEVER A SURFACE, and that is the whole design rather than a
@@ -1096,19 +1104,33 @@ def _chart_cloud(lab, name: str, outside=None, space: str = "lab",
     traces = []
     inside = ~outside
     if inside.any() and show_inside:
+        kept = [c for c, keep in zip(colours, inside) if keep]
         traces.append(go.Scatter3d(
             x=v[inside, 0], y=v[inside, 1], z=v[inside, 2], mode="markers",
-            marker=dict(size=size, opacity=dot_opacity,
-                        color=[c for c, keep in zip(colours, inside) if keep],
+            marker=dict(size=size, opacity=dot_opacity, color=kept,
                         line=dict(width=0)),
-            name=f"{name} — to be printed", showlegend=True,
-            hoverinfo="name"))
+            # THE KEY IS DRAWN SEPARATELY. Given a list of colours Plotly
+            # keys the legend on the FIRST of them, and the first patch of a
+            # chart is very often black — RGB 0,0,0 is where targen starts —
+            # so the marker beside the name vanished into a dark page
+            # entirely. The same fault the meshes already had, and the same
+            # cure: a proxy carrying a colour that represents the cloud and
+            # can still be seen. Reported from the real window.
+            showlegend=False, hoverinfo="name",
+            name=f"{name} — to be printed"))
+        traces.append(_legend_proxy(f"{name} — to be printed",
+                                    _legend_swatch(kept, page)))
     if outside.any() and show_outside:
         traces.append(go.Scatter3d(
             x=v[outside, 0], y=v[outside, 1], z=v[outside, 2], mode="markers",
             marker=dict(size=out_size, opacity=out_opacity, color=_LOST,
                         symbol="circle", line=dict(width=0)),
-            name=f"{name} — outside", showlegend=True, hoverinfo="name"))
+            # One flat colour, so its own key is already right — except that
+            # a low opacity is carried into the key and fades it away.
+            showlegend=out_opacity > 0.6, hoverinfo="name",
+            name=f"{name} — outside"))
+        if out_opacity <= 0.6:
+            traces.append(_legend_proxy(f"{name} — outside", _LOST))
     if not with_positions:
         return traces
     # THE POINTS A SKIN MAY GO OVER: the ones that survive, never the lost
@@ -1610,7 +1632,8 @@ def build_slice_figure(gamuts, lightness: float, title: str,
         yaxis=dict(title="b*   blue ← → yellow", zeroline=True,
                    zerolinecolor=c["axis"], gridcolor=c["grid"]),
         paper_bgcolor=c["page"], plot_bgcolor=c["plot"], font_color=c["text"],
-        legend=dict(orientation="h", y=-0.12), showlegend=legend,
+        legend=dict(orientation="h", y=-0.12, itemclick="toggle",
+                    itemdoubleclick="toggleothers"), showlegend=legend,
         margin=dict(l=0, r=0, t=54, b=0))
     if extent is not None:
         # BOTH PANES ON ONE RANGE, so their sizes mean something. autorange
@@ -1745,7 +1768,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             chart_lab, chart_name, chart_outside, _axes_space,
             device=chart_device, size=look["dot_size"],
             dot_opacity=look["dot_opacity"], out_size=look["out_dot_size"],
-            out_opacity=look["out_dot_opacity"],
+            out_opacity=look["out_dot_opacity"], page=c["page"],
             show_inside=look["show_inside"], show_outside=look["show_outside"],
             with_positions=True)
         if look["skin"] != "none" and positions is not None:
@@ -1807,7 +1830,8 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                        visible=grid),
         ),
         paper_bgcolor=c["page"], font_color=c["text"],
-        legend=dict(orientation="h", y=-0.02),
+        legend=dict(orientation="h", y=-0.02, itemclick="toggle",
+                    itemdoubleclick="toggleothers"),
         margin=dict(l=0, r=0, t=54, b=0),
     )
     return fig
