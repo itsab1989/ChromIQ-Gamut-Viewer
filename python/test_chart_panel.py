@@ -200,3 +200,28 @@ def test_the_chart_is_drawn_over_the_shapes_rather_than_under_them(app):
         [("sRGB", reference_gamut("sRGB"))], "t", chart=("mine", lab, None))
     last = figure.data[-1]
     assert "to be printed" in (last.name or "")
+
+
+def test_a_saved_page_carries_the_chart_as_well(app, tmp_path):
+    """The save route and the live view are two calls with almost identical
+    argument lists, which is how the save route came to be broken once before
+    while the window looked perfectly fine.
+
+    The names are searched for as plotly ESCAPES them: an em dash goes into the
+    page as \\u2014, so looking for the literal character reports a trace
+    missing that is right there. That false alarm cost a few minutes.
+    """
+    import ti3gamut
+    from references import reference_gamut
+    lab = np.column_stack([np.linspace(10, 95, 40),
+                           np.linspace(-60, 60, 40), np.linspace(-50, 50, 40)])
+    outside = np.zeros(40, dtype=bool)
+    outside[::5] = True
+    out = tmp_path / "page.html"
+    ti3gamut.write_html([("paper", reference_gamut("sRGB"))], out, "t",
+                        chart=("mine", lab, outside), carry_viewer=False,
+                        notes="248 inside, 72 on the edge, 160 outside.")
+    page = out.read_text()
+    assert "to be printed" in page
+    assert "outside" in page
+    assert "on the edge" in page          # the figures travelled too
