@@ -1,5 +1,86 @@
 # Changelog
 
+## v2.2.0
+
+### ✨ New
+
+- **Charts that have not been printed yet.** **Open a chart to be printed…**
+  takes a `.ti1` or `.ti2` from ChromIQ or ArgyllCMS, or the `.txt` or `.pxf`
+  file i1Profiler saves for a target, and shows you where its patches would
+  land — so you can see, before spending the paper, whether the chart you are
+  about to print asks for colours your printer can actually make.
+
+  A chart is a list of ink amounts. Nothing in it has been printed and nothing
+  measured, so it is never drawn as a shape: a shape thrown around a set of
+  *requested* ink amounts is not the gamut of anything. The patches appear as a
+  cloud of dots, put where an ICC profile you choose says each one would land,
+  and the ones that fall outside are picked out on the picture.
+
+- **Three counts, not two: inside, on the edge, and outside.** A gamut surface
+  is worked out from a grid of samples, and between them the real boundary
+  bulges out a little further than the shape drawn through them — so a handful
+  of patches always land a whisker outside any surface, including the surface
+  of the very profile that placed them. Anything within 1 ΔE, closer than
+  anyone can see with the two side by side, is counted as **on the edge**.
+  Without that, a perfectly good chart reports hundreds of patches "outside"
+  and sends you hunting a fault that is the sampling of the surface.
+
+- **It tells the two questions apart, and says which one you are asking.**
+  Against the profile the chart was built *from*, the answer checks the chart
+  builder rather than your printer, and the panel says so in those words — it
+  is still a real check, and it catches a mismatched rendering intent, ink
+  counted 0–255 where the file wants 0–100, patches clipped to a box around the
+  gamut instead of to its surface, or simply the wrong profile. Against the
+  **measurement** of your paper, it checks the printer. Both appear at once,
+  one line each, so neither can be mistaken for the other.
+
+- **It notices when the two are measured against different whites.** A chart is
+  placed relative to the paper's white; a measurement read absolutely keeps the
+  white the instrument saw. Comparing them puts the light patches outside for
+  no reason to do with your printer — 624 of them on the demo paper, against
+  none once the two are judged the same way. The panel says so and names the
+  tick box that fixes it, and never moves it for you.
+
+- **Save the numbers as a table now writes the patches themselves**, one line
+  each: which shape it is outside, the patch number, its position on the
+  printed sheet when the chart is a `.ti2`, the ink amounts in the file's own
+  units, where it was predicted to land, and how far outside it is in ΔE2000.
+
+- **Compare with takes a picture.** Photographs were readable all along and
+  simply were not offered there, so holding a paper up against one meant
+  opening it as a shape. Now it is one of the things to compare against, like
+  any other file.
+
+### 🐞 Fixed
+
+- **A `.ti1` opened as a measurement drew a gamut made entirely of
+  predictions.** Those files carry XYZ columns written by ArgyllCMS's device
+  model, not read off any paper — with no profile to predict with, the black
+  patch comes out as XYZ 1, 1, 1. It is refused by name now, and pointed at the
+  right button.
+
+- **A `.ti1` could not be read at all**, and failed with a message naming a word
+  out of a comment: `could not convert string to float: 'chart'`. A `.ti1` is
+  three tables in one file — the chart, the density extremes, the device
+  combinations — and the reader took everything between the first and last
+  markers, headers included. Measurements are read the same way now, so a
+  `.ti3` carrying more than one table can no longer confuse it either.
+
+- **Close both** is **Close them all**, and closes the chart with the rest.
+
+### 🔍 Under the bonnet
+
+- `cgats.py`, a proper multi-table CGATS reader, and `chart.py`, which reads a
+  chart and counts it. Neither needs Qt; both are meant to be lifted into
+  ChromIQ, and `docs/PORTING-TO-CHROMIQ.md` says how.
+- The distance a patch sits outside is measured to the nearest point **on the
+  surface**, not to the nearest corner of it — which on a real gamut, where the
+  corners are tens of ΔE apart, is a very different number. A shortlist of
+  nearby triangles was wrong by 4.1 ΔE on a real printer gamut, so every
+  triangle is measured against; it costs a fraction of a second.
+- 59 more tests, 317 in all, and `scripts/drive_chart.py` drives the real
+  window through the whole journey.
+
 ## v2.1.0
 
 ### ✨ New

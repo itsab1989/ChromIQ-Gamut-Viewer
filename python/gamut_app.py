@@ -2682,24 +2682,35 @@ class GamutApp(QMainWindow):
         # --- the measurements -------------------------------------------------
         g_files = QGroupBox("What you are looking at", col)
         fv = QVBoxLayout(g_files)
-        # ALL THREE KINDS ARE NAMED, and the width was measured rather than
-        # guessed: a full-width button in this column is 282 px, and this
-        # label needs 261. "Open a measurement, profile or chart…" needs 272,
-        # which leaves ten pixels and would clip on the first platform whose
-        # font runs a shade wider.
-        self._open_btn = QPushButton("Open measurement, profile or chart…",
-                                     g_files)
+        # GENERAL RATHER THAN A LIST, and the measurement is why. There are
+        # FOUR kinds of file now, and naming them all needs far more room than
+        # a button in a 346 px column has: a full-width button here is 276 px,
+        # "Open a measurement, profile or chart…" needs 272 and does not even
+        # mention pictures. Four pixels of clearance is a label that clips on
+        # the first platform whose font runs a shade wider. This one needs 201,
+        # and the tooltip beside it has room to name all four properly.
+        self._open_btn = QPushButton("Open something to look at…", g_files)
         self._open_btn.setToolTip(
-            "Opens any of the three kinds of file this window understands.\n\n"
+            "Opens any of the four kinds of file this window understands. You "
+            "can drag one onto the window instead, and you can start with "
+            "whichever kind you have.\n\n"
             "A MEASUREMENT (.ti3, .cxf, .mxf, .txt) is what your instrument "
-            "read off a printed chart — what your printer really did.\n\n"
+            "read off a printed chart — what your printer really did, on that "
+            "paper, on that day.\n\n"
             "An ICC PROFILE (.icc, .icm) or an ArgyllCMS gamut file (.gam) is "
-            "what your printer is described as being able to do.\n\n"
+            "what your printer is *described* as being able to do. Opening the "
+            "profile and the measurement it was built from, together, shows "
+            "you how well the description matches.\n\n"
+            "A PICTURE — a photograph, or anything else you can open — shows "
+            "the colours that are actually in it, which is rarely as many as "
+            "people expect. Open one beside a paper and the readouts answer "
+            "the real question: will this image survive on that paper, and "
+            "which of its colours will not make it?\n\n"
             "A CHART (.ti1, .ti2, or an i1Profiler target) is the other end of "
             "the story: patches waiting to be printed, none of them measured "
-            "yet. One opened here goes to A chart to be printed, further down, "
-            "because it is drawn as a cloud of dots rather than as a shape.\n\n"
-            "You can drag any of them onto this window instead.")
+            "yet. One opened here goes to A chart to be printed, further down "
+            "this column, because it is drawn as a cloud of dots rather than "
+            "as a shape.")
         self._open_btn.clicked.connect(self._on_open)
         fv.addWidget(self._open_btn)
         # One row per open chart, each with its own way out. A single "close
@@ -2738,8 +2749,9 @@ class GamutApp(QMainWindow):
         self._clear_btn = QPushButton("Close them all", g_files)
         self._clear_btn.setObjectName("secondary")
         self._clear_btn.setToolTip(
-            "Closes everything open at once — both measurements or profiles, "
-            "and the chart with them if one is open.\n\n"
+            "Closes everything open at once — both of the shapes, whatever "
+            "kind of file they came from, and the chart with them if one is "
+            "open.\n\n"
             "To close just one, use the × beside its name. Nothing is deleted "
             "either way: closing only takes it off the screen, and the files "
             "on your drive are untouched.")
@@ -2834,10 +2846,11 @@ class GamutApp(QMainWindow):
         self._compare.addItem("Nothing — this one on its own", None)
         for _name in REFERENCE_SPACES:
             self._compare.addItem(_name, ("space", _name))
-        # Measured: the box gives the text 212px, and naming both kinds in a
-        # sentence needs 332. The ⓘ beside it carries the longer explanation,
-        # which is what it is for.
-        self._compare.addItem("A profile or a measurement file…", ("icc", None))
+        # Measured: the box gives its text 276 px. "A profile, measurement or
+        # picture…" needs 257, which is nineteen pixels of clearance and the
+        # kind of margin that clips on somebody else's font; this one needs
+        # 209. The ⓘ beside it carries the full list, which is what it is for.
+        self._compare.addItem("A profile, paper or picture…", ("icc", None))
         self._compare.addItem("Everything the eye can see", ("visible", None))
         # ACTIVATED, NOT currentIndexChanged. Choosing the entry you are
         # already on changes no index, so nothing fired and the dialog never
@@ -2845,9 +2858,14 @@ class GamutApp(QMainWindow):
         # first and coming back. activated fires whenever a person picks a
         # line, which is the thing actually being responded to.
         self._compare.setToolTip(
-            "Adds a third shape to hold your measurement against: a standard "
-            "colour space, another profile or measurement from a file, or "
-            "every colour the eye can see.\n\n"
+            "Adds a third shape to hold what you have open against.\n\n"
+            "A standard colour space — sRGB and the rest — asks whether the "
+            "images people send you will survive on this paper. A file off "
+            "your drive can be another paper's measurement, an ICC profile, an "
+            "ArgyllCMS .gam, or a PICTURE: hold a paper up against a "
+            "photograph and the readouts say how much of that photograph it "
+            "can print. Every colour the eye can see asks how much of what "
+            "your eyes manage this paper holds at all.\n\n"
             "This is for SHAPES. A chart that has not been printed yet is not "
             "one — it is a list of ink amounts with no place in colour space "
             "until a profile says where they land — so charts have their own "
@@ -5403,12 +5421,20 @@ class GamutApp(QMainWindow):
                     space=self._space.currentData()))
                 self._compare_note.setText(REFERENCE_SPACES[name]["note"])
             elif choice[0] == "icc":
+                # PICTURES BELONG HERE TOO. They were readable all along --
+                # _build_one has handled them since pictures were added -- and
+                # simply were not offered, so "hold this paper up against that
+                # photograph" could only be done by opening the photograph as
+                # one of the two shapes.
+                pictures = " ".join(f"*{e}" for e in IMAGE_EXTENSIONS)
                 dlg = self._file_dialog(
                     "Choose a file to compare against",
                     QFileDialog.FileMode.ExistingFile,
-                    "Profiles and measurements (*.icc *.icm *.gam *.ti3 *.cxf "
-                    "*.mxf *.txt);;ICC profiles (*.icc *.icm);;"
+                    "Everything this can compare against "
+                    f"(*.icc *.icm *.gam *.ti3 *.cxf *.mxf *.txt {pictures});;"
+                    "ICC profiles (*.icc *.icm);;"
                     "Measurements (*.ti3 *.cxf *.mxf *.txt);;"
+                    f"Pictures ({pictures});;"
                     "ArgyllCMS gamut files (*.gam);;All files (*)")
                 if not dlg.exec():
                     self._compare.setCurrentIndex(0)
@@ -5422,6 +5448,9 @@ class GamutApp(QMainWindow):
                 self._compare_note.setText(
                     "The gamut this profile describes, asked of the profile "
                     "itself." if chosen.suffix.lower() in (".icc", ".icm", ".gam")
+                    else "The colours actually in this picture — not the space "
+                         "it was saved in."
+                    if chosen.suffix.lower() in IMAGE_EXTENSIONS
                     else "The gamut this measurement reached — every corner of "
                          "it a patch that was printed and read.")
             elif choice[0] == "visible":

@@ -17,7 +17,7 @@ printer?
 
 <p align="center"><sub>A real measured gamut, turning. Made by the
 application itself — <b>Turn it by itself</b>, then <b>Save this view as a
-picture…</b>. <a href="docs/MOTION.md">Eight more, two to a page →</a></sub></p>
+picture…</b>. <a href="docs/MOTION.md">Twelve more, two to a page →</a></sub></p>
 
 <p align="center">
   <a href="https://ko-fi.com/itsab1989"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support this on Ko-fi" height="36"></a>
@@ -226,6 +226,53 @@ grey patch is marked with how far it has drifted from neutral.
 A colour cast in the greys is the thing viewers notice first in a black and
 white print, and it is invisible in the overall shape.
 
+### 7. Will the chart I am about to print actually fit?
+
+This one is about a file you have **not** printed yet. A `.ti1` or `.ti2` — or
+the `.txt` or `.pxf` file i1Profiler saves for a target — is a list of ink
+amounts about to be asked for. Nothing in it has been printed and nothing
+measured, so there is no shape to draw: click **Open a chart to be printed…**,
+choose the ICC profile the chart was built for under **Placed through**, and
+the patches appear as a cloud of dots, put where that profile says each one
+would land.
+
+<img src="docs/screenshots/c1-every-patch-the-paper-can-reach.webp" width="880" alt="A 480-patch chart drawn as dots inside the wire cage of a paper's measured gamut, every dot inside">
+
+> 480 patches placed through the glossy paper's profile, against the
+> measurement of that same paper: **361 inside, 119 on the edge, 0 outside.**
+> Everything this chart asks for is a colour the paper really achieved.
+
+Now the same chart, the same profile, and a **different paper**:
+
+<img src="docs/screenshots/c2-the-ones-a-different-paper-cannot.webp" width="880" alt="The same chart against a matte paper, with 160 patches picked out in red outside the cage">
+
+> **248 inside, 72 on the edge, 160 outside**, the worst by 8.1 ΔE. Print this
+> chart on the matte paper and a third of it asks for colours that paper cannot
+> make. The ones outside are picked out on the picture, and **Save the numbers
+> as a table** writes one line for each — including *where it sits on the
+> sheet*, when the chart is a `.ti2`.
+
+**Inside, on the edge, outside — three counts, and the middle one matters.** A
+gamut surface is worked out from a grid of samples, and between them the real
+boundary bulges out a little further than the shape drawn through them. So a
+handful of patches always land a whisker outside any surface, including the
+surface of the profile that placed them. Anything within **1 ΔE** — closer than
+anyone can see with the two side by side — is counted as *on the edge* rather
+than outside.
+
+**Judge both against the same white.** A chart is placed relative to the
+paper's white, so tick **Judge each paper against its own white** when you
+compare it with a measurement. Without it, the profile's L\* 100 white floats
+above the measured shape and the light patches are reported outside for no
+reason to do with your printer — on the demo paper, 624 of them. The panel
+notices and says so, and leaves the tick box to you.
+
+**Which question you are asking depends on what else is open.** With the
+profile the chart was built *from*, the answer checks the chart builder, not
+your printer, and the panel says so in those words. With the **measurement** of
+the paper, it checks the printer — that is the one that finds trouble. Both
+appear at once, one line each, so neither can be mistaken for the other.
+
 ---
 
 ## Reading the picture
@@ -326,26 +373,36 @@ words mean?** — fifteen of them, covering every such term the window can show.
 | `.txt` | a measurement table ArgyllCMS understands | converted with ArgyllCMS `txt2ti3` |
 | `.icc`, `.icm` | an ICC profile — open it on its own, or use it as the comparison | ArgyllCMS `iccgamut`, or read directly if it declines |
 | `.gam` | an ArgyllCMS gamut file | directly |
+| `.ti1`, `.ti2` | a chart **waiting to be printed** — patches, not measurements | directly, and placed through a profile you choose |
+| `.txt`, `.pxf` | an i1Profiler target — the same thing, i1Profiler's way | directly; ArgyllCMS cannot convert these, because there is nothing measured in them to convert |
+| pictures | a photograph or anything else you can open | through its own colour profile, or sRGB when it carries none |
 
 Converted copies are written to a temporary folder, **never beside your
 original** — opening a file to look at it should not leave new files in your
 measurement folder.
 
-### Any of three kinds of file, in either place
+### Any of four kinds of file, in either place
 
-**Open a measurement or a profile…** shows you the file you opened, whichever
-kind it is. You can start with a profile and never open a chart at all. Open a
-second and the two are drawn together.
+**Open something to look at…** shows you the file you opened, whichever kind it
+is. You can start with a profile and never open a measurement at all. Open a
+second and the two are drawn together. A **chart** opened here goes to its own
+section — see [what it is for](#7-will-the-chart-i-am-about-to-print-actually-fit)
+— because it is drawn as a cloud of dots rather than as a shape.
 
 **A picture can be one of them too** — a photograph, or anything else you can
-open. What is drawn is *the colours actually in that picture*, not the space
-it was saved in, and the difference is the whole point: measured on this
-project's own test pictures, a warm sunset encloses **19% of sRGB** and a misty
-morning **8%**. Open one beside a paper you have measured and the readouts
-answer the real question — the sunset prints at **98%** on the demo paper and
-the misty morning at **99.9%**, where an image using all of sRGB would lose a
-third of its colours. Tick **Show what the comparison cannot print** and the
-ones that fall outside are picked out on the shape itself.
+open. What is drawn is *the colours actually in that picture*, not the space it
+was saved in, and the difference is the whole point. Open one beside a paper
+you have measured and the readouts answer the real question: **92.7%** of a
+wide-gamut photograph fits inside the demo paper, so 7% of it will not survive
+the print. Tick **Show what the comparison cannot print** and the parts that
+reach past the paper are painted on the shape itself — always the deep
+saturated corners, which is what a camera catches and a paper cannot.
+
+<p align="center"><img src="docs/screenshots/c3-a-photograph-against-a-paper.webp" width="880" alt="A photograph's gamut turning inside a paper's measured gamut, with the parts beyond the paper painted red"></p>
+
+Open the photograph **first** and the measurement second: the painting shows
+the first shape against the second, and the other way round paints the paper
+against the photograph, which is true and answers nothing anybody asked.
 
 A picture is read through its own colour profile when it carries one. When it
 does not, sRGB is assumed — the usual convention — and the line under its name
@@ -354,9 +411,9 @@ never be made quietly. JPEG, PNG, TIFF, WebP, AVIF, HEIC, JPEG XL, BMP, GIF
 and JPEG 2000 all open; the list is asked of your own machine, so nothing is
 offered that would fail.
 
-**Compare with → A profile or a measurement file…** puts a third shape beside
-them, and takes either kind as well — so you can hold a paper up against
-another paper's measurement as readily as against a profile, sRGB or
+**Compare with → A profile, paper or picture…** puts a third shape beside them,
+and takes any of those kinds — so you can hold a paper up against another
+paper's measurement as readily as against a profile, a photograph, sRGB or
 everything the eye can see.
 
 Every open file says underneath which kind it is. That distinction is the

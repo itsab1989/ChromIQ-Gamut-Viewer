@@ -1,6 +1,6 @@
 # It moves — two rooms, and dressed for a white page
 
-*Page 4 of 5*
+*Page 4 of 6*
 
 ---
 
@@ -30,4 +30,4 @@ Nothing about the reading changed — only what is behind it, what the three wal
 
 [← Previous](page-3.md) · [The README](../../README.md) · [Next →](page-5.md)
 
-*[1](../MOTION.md) · [2](page-2.md) · [3](page-3.md) · **4** · [5](page-5.md)*
+*[1](../MOTION.md) · [2](page-2.md) · [3](page-3.md) · **4** · [5](page-5.md) · [6](page-6.md)*

@@ -1,8 +1,10 @@
 # Design — opening a `.ti1` / `.ti2` chart, and checking it against a profile
 
-**Status: decided, not yet built.** Basti's ruling, 2026-08-15, is recorded in
-§0. The open questions at the end are answered there; what remains is the
-building.
+**Status: built and shipped in v2.2.0.** Basti's ruling, 2026-08-15, is
+recorded in §0. §10 records what the real files turned out to be, which is not
+what §4 and §5 assumed — four of the assumptions here were wrong, and every one
+of them was found by opening an actual file rather than by reasoning about the
+format.
 
 ## 0. What was decided
 
@@ -176,15 +178,110 @@ maths. Efficiency **9** — a few thousand points is nothing.
 **Answered in §0:** all three, A first, with the file types supported
 regardless.
 
-Still worth deciding while building, but none of them blocks a start:
-1. Should a chart be a *thing you open* (its own slot, like a measurement) or a
-   *thing you compare with*? Opening it means it can be shown alone, which is
-   right for **C** and wrong for **A**.
-2. Which intent should the prediction use — relative colorimetric, or whatever
-   the chart was built with, if the chart records it?
-3. Should `.ti2` sheet positions be used at all (they would allow "this corner
-   of the sheet is where the out-of-gamut patches are"), or ignored?
-4. i1Profiler `.pxf`/`.txt` targets: convert through ArgyllCMS as now, or read
-   directly? ArgyllCMS is not always installed.
-5. Does the answer need to be exportable — a table of the outside patches — or
-   is seeing it enough?
+All five are now answered, and four of them by the files rather than by
+argument:
+
+1. **A chart is a thing you open**, in a slot of its own — never in `_slots`
+   beside the shapes, so "a chart must not be drawn as a solid" is structural
+   rather than a convention somebody has to keep. It coexists with the two
+   shape slots and the comparison, so **A** and **B** fall out of the same
+   mechanism: the answer is reported against *every* shape on screen, one line
+   each. That also makes the circularity visible rather than hidden — the line
+   for the profile that placed the patches says so, in those words.
+2. **Relative colorimetric**, from `A2B1`, with `A2B0` as a fallback, and the
+   one actually used is named on screen. No real `.ti1` records the intent it
+   was built with, so there is nothing to follow.
+3. **The `.ti2` positions are used** — not to draw with, but in the exported
+   table, so a patch reported outside can be found on the printed sheet. It
+   costs one column and turns "627 are outside" from where the question ends
+   into where it starts.
+4. **Read directly.** Not a preference: `txt2ti3` refuses an i1Profiler target
+   outright — *"doesn't contain field XYZ_X, LAB_L or spectral"* — because it
+   converts measurements and a chart has none. Reading it here also means it
+   works with no ArgyllCMS installed at all.
+5. **Yes, exportable.** Save the numbers as a table gains the counts per shape
+   and then one line per patch that is outside: which shape, patch number,
+   position on the sheet, the ink amounts in the file's own units, the
+   predicted Lab, and how far outside in ΔE2000.
+
+## 10. What the real files turned out to be
+
+Every one of these was found by opening a file, and every one contradicts
+something written above in good faith.
+
+**A `.ti1` is three tables, not one.** Not a corner case — it is what `targen`
+writes every time. The first table is the chart, the second the eight density
+extremes, the third the nine device combinations. §4 said *"nothing new is
+needed to read the file"*, and that was wrong: reading from the first
+`BEGIN_DATA` to the last `END_DATA` swallows all three with their headers, and
+the first thing the number parser meets is the word `chart` out of the second
+table's `DESCRIPTOR` line:
+
+    ValueError: could not convert string to float: 'chart'
+
+A perfectly well-formed file, and an error naming a word from a comment. Hence
+`cgats.py`. The same fix makes `read_ti3` take the first table rather than
+everything between the first and last markers.
+
+**A `.ti1` carries XYZ columns.** §2's table says a `.ti1` holds *"device
+values only"*. It does not: `targen` writes `XYZ_X XYZ_Y XYZ_Z` from its own
+device model. With no `-c` profile that model is crude — the black patch comes
+out as XYZ 1, 1, 1 — so the file read as a perfectly plausible measured gamut
+made entirely of predictions. They are kept as `Chart.expected`, never used to
+place a patch, and `ACCURATE_EXPECTED_VALUES "true"` marks the files where
+`targen` was given a real profile to predict with.
+
+**`COLOR_REP` is `iRGB`, not `RGB`.** Anything matching on the literal string
+`"RGB"` rejects every inkjet chart ArgyllCMS has ever written.
+
+**Counting what is outside needs three numbers, not two.** A gamut surface is
+built from a grid of samples and the real edge bulges between them, so patches
+always land a whisker outside any surface — including the surface of the very
+profile that placed them. Pushing the 5960-patch ChromIQ verification set
+through a real printer profile and measuring against that same profile:
+
+| grid | vertices | outside | worst ΔE | average ΔE |
+|---|---|---|---|---|
+| 9³ | 486 | 353 | 0.584 | 0.063 |
+| 17³ | 1734 | 262 | 0.220 | 0.022 |
+| 25³ | 3750 | 209 | 0.185 | 0.013 |
+| 33³ | 6534 | 162 | 0.073 | 0.008 |
+| 41³ | 10086 | 122 | 0.046 | 0.007 |
+
+The count barely moves and the distance collapses. The count is the sampling;
+the distance is the answer. Anything within **1.0 ΔE2000** of the surface is
+reported as *on the edge* rather than outside.
+
+### The one that would have shipped a false alarm
+
+**A chart and a measurement are not necessarily measured against the same
+white**, and nothing above noticed. A chart is placed through the profile's
+relative colorimetric table, and *relative colorimetric* means, by definition,
+that the paper's white becomes L\* 100. A measurement read absolutely keeps the
+white the instrument saw. On the demo glossy paper that is L\* 100 against
+L\* 93.8, so every light patch floats above the measured shape for no reason to
+do with the printer. The same chart, the same paper, the same profile:
+
+| the measurement judged against | outside | worst ΔE |
+|---|---|---|
+| an absolute D50 | **624** | 4.54 |
+| its own white | **0** | 0.96 |
+
+Six hundred patches of pure artefact, and a picture of them would have looked
+entirely convincing. The window says which one is being looked at and names the
+tick box that changes it — and never moves it, because that setting changes
+every other figure on screen as well.
+
+## 11. What is deliberately not claimed
+
+* **The test is against a skin over the shape's own corners**, the same surface
+  the rest of the application paints with, so the counts here can never
+  disagree with the colouring beside them. A real printer's edge has dents and
+  a skin bridges them, which makes the test careful in exactly one direction: a
+  patch it calls outside really is outside, and a patch down in a dent may be
+  called inside. It can miss something; it cannot invent something.
+* **A `.ti1`'s own XYZ is never drawn.** It is a prediction from a device
+  model, and drawing it would be inventing a measurement.
+* **Question A is not a colour verification** and the window says so in those
+  words whenever the profile doing the judging is the one that placed the
+  patches.

@@ -1,6 +1,6 @@
 # It moves — and the same thing as a film
 
-*Page 5 of 5*
+*Page 5 of 6*
 
 ---
 
@@ -22,6 +22,21 @@ The trade is the play button: a film does not start by itself on a page like thi
 
 ---
 
-[← Previous](page-4.md) · [The README](../../README.md)
+## A photograph, and the colours the paper cannot print.
 
-*[1](../MOTION.md) · [2](page-2.md) · [3](page-3.md) · [4](page-4.md) · **5***
+<p align="center"><img src="../screenshots/c3-a-photograph-against-a-paper.webp" width="880" alt="A photograph's gamut turning inside the wire cage of a paper's measured gamut, with the parts that reach past the paper painted red"></p>
+
+**A photograph, and the colours the paper cannot print.**
+
+The fourth kind of file this opens is an ordinary picture, and what it draws is *the colours actually in that picture* rather than the space it was saved in. Here a real photograph sits inside the cage of a paper that was measured, and **92.7% of it fits**. That is the number people want before they print.
+
+**Red is where its surface passes the paper**, not how much of it is lost — a thin shell of unreachable colour wraps a good deal of a shape while adding up to very little of its volume, so the picture and the percentage answer two different questions and both are worth having. The spikes are what a camera catches and a paper cannot: deep saturated corners, always the first thing to go.
+
+**How:** the photograph opened **first** and the measurement second, because **Show what the comparison cannot print** paints the first shape against the second — the other way round paints the paper against the photograph, which is true and useless. Photograph → *solid*, paper → *outline*.
+
+
+---
+
+[← Previous](page-4.md) · [Next →](page-6.md) · [The README](../../README.md)
+
+*[1](../MOTION.md) · [2](page-2.md) · [3](page-3.md) · [4](page-4.md) · **5** · [6](page-6.md)*

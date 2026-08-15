@@ -301,8 +301,18 @@ for label, button in (("Open", w._open_btn), ("Close", w._clear_btn),
           f"needs {need}, has {room}")
     check(f"{label} has a tooltip that explains it",
           len(button.toolTip()) > 80, button.toolTip()[:40])
-check("the Open button names charts as well",
-      "chart" in w._open_btn.text().lower(), w._open_btn.text())
+# THE LABEL IS GENERAL AND THE TOOLTIP IS SPECIFIC, which is the only way
+# four kinds of file fit: naming three of them already needed 272 of the 276
+# pixels a button in this column has.
+check("the Open button does not claim to open only some kinds",
+      not any(word in w._open_btn.text().lower()
+              for word in ("measurement", "profile", "chart", "picture")),
+      w._open_btn.text())
+for word in ("measurement", "profile", "chart", "picture"):
+    check(f"its tooltip names {word}s", word in w._open_btn.toolTip().lower())
+entries = [w._compare.itemText(i) for i in range(w._compare.count())]
+check("Compare with offers pictures too",
+      any("picture" in e.lower() for e in entries), " | ".join(entries))
 check("the Close button no longer promises only two",
       "both" not in w._clear_btn.text().lower(), w._clear_btn.text())
 check("Compare with says where charts go instead",

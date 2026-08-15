@@ -16,7 +16,7 @@ for. That is what stops a loop jumping every time it comes round.
 
 ---
 
-*Page 1 of 5*
+*Page 1 of 6*
 
 ---
 
@@ -46,4 +46,4 @@ The surface as an outline only, with all 1168 measured patches floating in place
 
 [The README](../README.md) · [Next →](motion/page-2.md)
 
-***1** · [2](motion/page-2.md) · [3](motion/page-3.md) · [4](motion/page-4.md) · [5](motion/page-5.md)*
+***1** · [2](motion/page-2.md) · [3](motion/page-3.md) · [4](motion/page-4.md) · [5](motion/page-5.md) · [6](motion/page-6.md)*
