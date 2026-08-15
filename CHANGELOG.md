@@ -13,6 +13,11 @@
   it from, and the next redraw closed the shape up again. Reported twice, and
   it went out in one of the gallery loops.
 
+- **The chart section shrank when it was empty**, so its box was narrower than
+  every other one in the column and its ⓘ dropped onto a line of its own. It
+  now says what it is for before anything is open, which fills the row and
+  answers the question a beginner has at that moment anyway.
+
 - **How much of a picture will actually print, as its own figure.** The
   coverage percentage is a share of the SPACE a picture's colours occupy, and
   it reads as "how much of my photograph will print". Those are not the same

@@ -311,6 +311,21 @@ check("the Open button does not claim to open only some kinds",
 for word in ("measurement", "profile", "chart", "picture"):
     check(f"its tooltip names {word}s", word in w._open_btn.toolTip().lower())
 entries = [w._compare.itemText(i) for i in range(w._compare.count())]
+# EVERY GROUP THE SAME WIDTH. A group whose only wide child is hidden shrinks
+# to its button and drops its ⓘ onto a line of its own, which is what the
+# chart section did before it had something to say when empty.
+from PyQt6.QtWidgets import QGroupBox
+w._close_chart()
+pump(1.0)
+col = w._open_btn.parent().parent()
+widths = {g.title(): g.width() for g in col.findChildren(QGroupBox)
+          if g.title() and g.isVisible()}
+check("every visible group fills the column",
+      len(set(widths.values())) == 1,
+      ", ".join(f"{t}={x}" for t, x in widths.items()))
+check("the chart section says what it is for before anything is open",
+      ".ti1" in w._chart_note.text(), w._chart_note.text())
+
 check("Compare with offers pictures too",
       any("picture" in e.lower() for e in entries), " | ".join(entries))
 check("the Close button no longer promises only two",

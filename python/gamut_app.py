@@ -2630,6 +2630,7 @@ class GamutApp(QMainWindow):
         self._apply_spin_availability()
         self._recolour_hints()
         self._apply_mode()
+        self._refresh_chart_panel()      # its empty state, before anything is open
         self._show_placeholder()
         # Anything the user moves is written straight away, so a crash or a
         # force-quit cannot lose a setting they just chose.
@@ -5700,7 +5701,16 @@ class GamutApp(QMainWindow):
         self._chart_through_row.setVisible(self._chart is not None)
         if self._chart is None:
             self._chart_label.setText("")
-            self._chart_note.setText("")
+            # A LINE HERE EVEN WITH NOTHING OPEN, for two reasons. It says what
+            # the section is for before anybody has to click to find out — and
+            # it is the only wide thing in the group when it is empty, so
+            # without it the box shrinks to the width of its button and the ⓘ
+            # drops onto a line of its own, which is what every other group in
+            # this column does not do.
+            self._chart_note.setText(
+                "A .ti1 or .ti2 from ChromIQ or ArgyllCMS, or an i1Profiler "
+                "target: the patches you are about to print, shown where a "
+                "profile says each one would land.")
             self._chart_box.setVisible(False)
             return
         path, read = self._chart
