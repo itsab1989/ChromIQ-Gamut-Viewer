@@ -1,5 +1,188 @@
 # Changelog
 
+## v2.10.0
+
+### 🎚 A saved page hands over each shape on its own
+
+Every shape on a page now gets its own row of controls — **fainter / more
+solid**, **wires**, and **grey** — behind **more…**, one row per name in the
+key underneath. That last part is deliberate: a page can hold a solid surface,
+a wire cage round a second paper, a cloud of chart patches and a skin over
+them, and nobody reading it knows which of those the code calls a shape. What
+they can see is the list of names. The rows are built from exactly that list,
+so the thing they press and the thing they read are the same thing.
+
+- **Fainter / more solid** is the answer to the oldest problem a picture of
+  two gamuts has: the front one hides the back one, and no amount of turning
+  fixes it. The sender picks one strength when they save; this lets the reader
+  pick a different one for the shape *they* care about, which is not a
+  decision anybody can make in advance. It stops short of invisible and of
+  solid, so nobody fades a shape away and is left wondering whether the page
+  failed to draw it.
+- **Wires** lays a net of fine lines over a surface, following the measured
+  points — so it shows where the measurement is dense and where the shape
+  between two readings is the drawing's guess. Turned faint at the same time,
+  what is left is the cage alone, which is the clearest way to show one shape
+  inside another. On a cross-section the same switch fills the outline in or
+  empties it.
+- **Grey** takes the colour out of one shape so the other becomes obvious. It
+  keeps the light and dark exactly: each colour becomes its own true
+  brightness, worked out the way sRGB itself defines brightness, not by
+  averaging the three numbers — which would make a pure blue and a pure yellow
+  the same grey when one is nearly black to look at and the other nearly
+  white.
+
+**Some shapes are never offered the grey switch, and that is the point.**
+Where the colour *is* the measurement — the comparison shape that is red for
+what a paper cannot reach, and a chart's out-of-reach patches — a greyed
+picture would still carry a name promising two things while showing one, and a
+reader who pressed a button three screens ago would have no way of knowing the
+picture had stopped saying anything. Those traces are marked in the file and
+the switch is not built for them at all. Not built rather than built and
+refused: a control that is there and declines to work is the worse of the two.
+
+### 🎚 And a cross-section can be slid up and down, as in the window itself
+
+A saved cut was frozen at whatever lightness the sender happened to be looking
+at. It now carries the same slider the window has, from the shadows to the
+paper white.
+
+The page cannot work these out for itself — slicing a gamut needs the whole 3D
+shape and a triangulation of it, and a flat page carries neither. So every cut
+the reader can reach is worked out **when the page is saved** and travels
+inside it: 2 L\* apart, 120 points each, which comes to about 170 kB on a file
+that is already several megabytes. It moves as fast as a finger can drag it
+and needs nothing from the internet.
+
+The axes are pinned across every height, so the outline shrinks and grows as
+you slide instead of being rescaled to fit — which is the one thing this view
+exists to show. Heights where nothing is drawn at all are trimmed off both
+ends, so the slider has no dead travel. The caption follows, and names any
+shape that does not reach the height you are at.
+
+### 👁 Four places to stand, full screen, and a picture file
+
+- **above · front · side · angle.** Dragging is how you explore a shape and a
+  poor way to arrive at a known position: getting the eye squarely over the top
+  of a gamut by hand takes several goes and is never quite square. So two
+  people comparing two pages are comparing two different angles without
+  realising, and a difference they see may be nothing but that. Pressing the
+  same button on both makes the pictures strictly comparable. Only the
+  direction changes — how far away the eye is and what it is pointed at stay
+  as the reader had them.
+- **Full screen**, built only where the browser has it. Safari on an iPhone
+  offers full screen for video and nothing else, so there the button is simply
+  not there rather than there and dead. The controls go full screen with the
+  picture, so there is always a visible way back out.
+- **Save a picture** writes what is on screen — that angle, those faded
+  shapes — as a PNG at twice the size it is drawn, which is enough to put in a
+  document and still read. Made by the reader's own browser out of numbers
+  already in the page; nothing is sent anywhere.
+
+### 🗂 Twenty controls needed a shape, on a phone and on a laptop
+
+The panel behind **more…** was one flat list, which was right for nine
+controls and is not right for twenty — a flat list of twenty unrelated things
+is not a panel, it is an inventory, and somebody looking for *make the front
+one fainter* reads every line to find it. It is now five short lists under
+plain headings: **how it moves**, **where you look from**, **each shape**,
+**what is drawn**, **the page itself**. Empty groups are never drawn, so a page
+that hands over two controls still shows two controls and no scaffolding.
+
+The layout follows the screen, measured at 320, 390, 500, 768, 844 and 1280
+pixels: one column up to a phone's width, two on a tablet, three on a laptop,
+and the shape rows two abreast once there is room. A fixed set of columns was
+written first and then measured against what the grid was already doing —
+identical everywhere, and worse in one case, because a group of two rows given
+three fixed columns leaves the third empty for nothing. On a **short** screen —
+a phone held sideways, where there is 390 pixels of height in total — the
+panel is capped and scrolls, because otherwise it pushes the picture it
+controls clean off the screen. On a tall phone it is left to grow and the page
+simply gets longer: a panel with its own scrollbar inside a page that also
+scrolls is a trap for anybody whose thumb lands on it, and it buys nothing
+where there is room.
+
+The save dialog got the same treatment — twenty checkboxes in one column is a
+dialog taller than a 13-inch laptop screen, which is a dialog whose Save button
+cannot be reached. Five named groups in a scroll area, sized from the screen it
+is actually on.
+
+### 🔴 Fixed: the red and the grey were the same brightness
+
+Reported as *red and grey with no clear distinction*, and measurement agreed
+exactly. The comparison mesh paints out-of-reach red and within-reach grey. On
+the dark page those were `rgb(232,23,93)` and `rgb(105,112,126)` — a contrast
+ratio of **1.12:1**, which is to say the same brightness, with hue alone
+telling them apart. Hue is the weakest cue there is on a surface whose shading
+already varies its brightness everywhere, and for the one reader in twelve who
+cannot separate red from grey-blue it is no cue at all.
+
+The grey is now `rgb(68,74,87)`: **1.99:1** against the red, and 2.12:1 against
+the page so the shape does not sink into the background instead. **The honest
+limit:** the 3:1 that WCAG asks of a graphic against what is next to it cannot
+be reached on a near-black page with this red — it needs the grey below a
+luminance of 0.029, and there the reachable part of the shape all but
+disappears. 1.99:1 is the best available before one problem is traded for the
+other, and the key now carries the rest: it says **"red is out of reach, grey
+is within it"** rather than naming one colour of a two-coloured shape and
+leaving the reader to take the other for background.
+
+The whole test suite was green while 1.12:1 was true. There is now a test that
+measures it.
+
+### ➕ Fixed: the number between a minus and a plus shoved them apart
+
+Reported from a real page. `100%` is wider than `50%`, and with the reading
+sitting between the two buttons, every press that crossed a digit moved both —
+so the plus walked out from under the finger pressing it. Both halves of the
+fix were needed: a floor on the width so the widest reading still fits, and
+tabular figures so every digit is the same width as every other. Without the
+second, `11%` and `88%` are different widths in most interface fonts and the
+buttons twitch inside the space rather than jumping out of it.
+
+### ⓘ Fixed: one help icon was in the wrong place, and usually absent
+
+*A chart to be printed* begins with an open button exactly as *Files* does, but
+its explanation was left beside a note three rows further down — and that note
+hides itself when no chart is open, taking the icon with it. So the group
+carried its help only *after* you had already done the thing the help was there
+for. It now sits beside the open button, always, six pixels below its top:
+the same place, to the pixel, as the one above it.
+
+### 📄 A thirteenth showcase page, and a note about reading it
+
+**[What a paper can no longer reach, months later](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/pages/13-what-a-paper-can-no-longer-reach.html)**
+— the same glossy paper measured twice, months apart, with the surface painted
+red where the later measurement can no longer reach it. It is also the page
+that demonstrates the rule about colour: the grey switch is not offered for
+this shape.
+
+**Read the red as a share of the surface, not of the gamut.** It marks the
+measured boundary points that fall outside the other shape, and on two gamuts
+that graze each other a great many boundary points fall just outside while
+almost no volume does. On this pair it is 54.1% of the surface and 1.8% of the
+volume. The two numbers answer different questions and neither is wrong.
+
+Which two papers this page compares was itself measured rather than chosen: the
+glossy against the matte paints 91.3% of the surface red — a solid red blob
+that demonstrates two colours by showing almost none of one of them — and the
+other way round it is 0.0%, because the matte fits entirely inside the glossy.
+
+### Also
+
+- The settings a page carries are written into it **once** and handed to both
+  things that need them. That cost nothing while they were a dozen numbers;
+  with the cross-sections in there, one page was carrying 336 kB of outlines
+  where it needed 168.
+- Attribute selectors in the control strip are quoted. The new names carry a
+  number on the end, an unquoted attribute selector is a CSS identifier, and
+  `querySelector` **throws** on one it cannot parse rather than returning
+  nothing — which would take the whole strip down with it.
+- Buttons in the panel are at least 34 pixels tall on a phone. These sit in
+  pairs where hitting the minus instead of the plus is an actual mistake.
+- 405 tests, up from 389.
+
+
 ## v2.9.0
 
 ### 📱 A saved page can be zoomed and moved — which on a phone it could not

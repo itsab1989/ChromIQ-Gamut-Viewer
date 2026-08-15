@@ -2148,7 +2148,21 @@ class WebPageDialog(QDialog):
         # The four that were always there stay ticked, so a person who never
         # opens this section gets exactly the page they got before.
         self._offer: dict = {}
+        # WHAT THE PERSON OPENING IT CAN CHANGE, IN GROUPS.
+        #
+        # This was one flat list of nine, which was the right shape for nine.
+        # It is twenty now, and twenty checkboxes in a column is a dialog
+        # taller than a laptop screen and a list nobody reads to the end of.
+        # Grouped, the person saving a page can find the one they came for by
+        # reading five headings instead of twenty labels -- and skip four
+        # groups whole when they only wanted to add a zoom button.
+        #
+        # THE ORDER MIRRORS THE PANEL the reader gets, deliberately: whoever
+        # ticks these boxes is the first person to open the page they make,
+        # and a settings list that arrives in a different order from the
+        # thing it configures makes them hunt twice.
         offers = [
+            ("Moving the shape", [
             ("play", "Stop and start the movement", True,
              "Puts a Play and Pause button on the page.\n\n"
              "Worth keeping on for anything that moves. A shape turning by "
@@ -2192,6 +2206,26 @@ class WebPageDialog(QDialog):
              "is dented rather than smooth. On its own it can be unsettling "
              "to watch, which is exactly why it is worth letting somebody "
              "turn it off."),
+            ]),
+            ("Looking at it", [
+            ("cut", "Move the cut up and down  (cross-sections only)", True,
+             "Puts the same slider under a saved cross-section that this "
+             "window has: it slides the cut up and down through the shapes, "
+             "from the shadows to the paper white.\n\n"
+             "WITHOUT IT A SAVED CUT IS FROZEN at whatever lightness you "
+             "happened to be looking at, and that is a real loss — which "
+             "paper reaches further into the cyans has a different answer "
+             "near the white point from the one it has in the shadows, and "
+             "the person you sent it to can only see the one you left it "
+             "at.\n\n"
+             "Every outline they can slide to is worked out here, when you "
+             "save, and travels inside the page — a flat cut on its own does "
+             "not carry enough to work one out. So it moves as fast as they "
+             "can drag it and needs nothing from the internet, and it adds "
+             "about 170 kB to a file that is already several megabytes.\n\n"
+             "It only appears on a page showing a cross-section. On a page "
+             "showing the 3D shape there is nothing to slide, and no slider "
+             "is built."),
             ("zoom", "Zoom in and out", True,
              "A minus and a plus that bring the shape closer or take it "
              "further away.\n\n"
@@ -2218,6 +2252,25 @@ class WebPageDialog(QDialog):
              "Most useful together with the zoom above: get close first, "
              "then move to the part you actually wanted. “Put the view back” "
              "returns the whole shape whenever it goes wrong."),
+            ("views", "Four fixed places to look from", True,
+             "Four buttons — above, front, side and angle — that put the eye "
+             "exactly square to the shape instead of wherever a drag "
+             "happened to leave it.\n\n"
+             "WHY IT IS MORE THAN A CONVENIENCE. Dragging is how you explore "
+             "a shape and a poor way to arrive at a known position: getting "
+             "the eye squarely over the top of a gamut by hand takes several "
+             "goes and is never quite square. So two people looking at two "
+             "of your pages are comparing two different angles without "
+             "either of them realising, and a difference they see may be "
+             "nothing but that. Pressing “above” on both makes the two "
+             "pictures strictly comparable.\n\n"
+             "“Above” is worth knowing about: it looks straight down the "
+             "lightness axis, which is the same direction a cross-section is "
+             "drawn in — so a shape seen from above and a cut through it can "
+             "be read side by side.\n\n"
+             "It only turns the eye. How far away it is and what it is "
+             "pointed at stay exactly as they were, so pressing one after "
+             "zooming into a corner keeps you at that corner."),
             ("reset", "Put the view back", True,
              "A reset button that returns the shape to the way the page "
              "opened.\n\n"
@@ -2227,6 +2280,73 @@ class WebPageDialog(QDialog):
              "most people would not think to reload it.\n\n"
              "It undoes only their own turning and zooming. Nothing is "
              "closed and no figure changes."),
+            ("fullscreen", "Fill the screen", True,
+             "A switch that gives the picture the whole screen, with the "
+             "browser’s own bars out of the way, and puts it back again.\n\n"
+             "The controls go full screen with it, so there is always a "
+             "visible way out; the Escape key works too.\n\n"
+             "ON AN IPHONE THE BUTTON SIMPLY WILL NOT BE THERE. Safari on a "
+             "phone offers full screen for video and for nothing else, and a "
+             "button that is present and does nothing is worse than a "
+             "missing one — the reader presses it, nothing happens, and now "
+             "they doubt the whole page. The page asks the browser it is "
+             "opened in and builds the button only where it works, so the "
+             "same file behaves correctly everywhere. Leaving this ticked "
+             "costs nothing on the devices that cannot use it."),
+            ]),
+            ("How each shape is drawn", [
+            ("opacity", "Make a shape fainter or more solid", True,
+             "A minus, a percentage and a plus for every shape on the page, "
+             "each one on its own.\n\n"
+             "THIS IS THE CONTROL FOR THE OLDEST PROBLEM a picture of two "
+             "gamuts has: the one in front hides the one behind, and no "
+             "amount of turning fixes it. You choose one strength when you "
+             "save the page; this lets the person reading it choose a "
+             "different one for the shape they happen to care about, which "
+             "is not a decision you can make for them in advance.\n\n"
+             "It stops short of invisible at one end and solid at the other, "
+             "so nobody can fade a shape away and be left wondering whether "
+             "the page failed to draw it. Hiding one outright is what the "
+             "names underneath are for, and those at least say so.\n\n"
+             "The little marker beside each name keeps its full strength "
+             "whatever the shape does, so the key stays readable."),
+            ("wires", "Draw the edges instead of the surface", True,
+             "A switch per shape that changes what the surface is made of.\n\n"
+             "ON A SOLID SHAPE it lays a net of fine lines over the surface. "
+             "The lines follow the measured points, so they show where the "
+             "measurement is dense and where the shape between two readings "
+             "is the drawing’s guess rather than anything anybody measured — "
+             "which is worth knowing before trusting a bulge. Turned down to "
+             "faint at the same time, what is left is the cage alone, and "
+             "that is the clearest way there is to show one shape sitting "
+             "inside another.\n\n"
+             "ON A CROSS-SECTION it fills the outline in or empties it. Two "
+             "filled cuts lying over each other are hard to read however "
+             "faint they are; two outlines never are.\n\n"
+             "Nothing is added to or taken from the measurement either way. "
+             "Only the colouring-in changes."),
+            ("grey", "Take the colour out of a shape", True,
+             "A switch per shape that draws it in grey instead of its own "
+             "colours, and back again.\n\n"
+             "The usual reason to want it: two shapes both painted in the "
+             "colours they hold make a picture nobody can untangle, and "
+             "putting one of them in grey makes the other obvious "
+             "immediately.\n\n"
+             "IT KEEPS THE LIGHT AND DARK EXACTLY. Each colour becomes its "
+             "own true brightness — worked out the way the screen itself "
+             "defines brightness, not by averaging the three numbers, which "
+             "would make a pure blue and a pure yellow the same grey when "
+             "one is nearly black to look at and the other nearly white. So "
+             "the shape stays every bit as readable and simply stops "
+             "competing for attention.\n\n"
+             "SOME SHAPES ARE NOT OFFERED IT, and that is deliberate. Where "
+             "the colour IS the measurement — the comparison shape that is "
+             "red for what a paper cannot reach, and a chart’s out-of-reach "
+             "patches — a greyed picture would still carry a name promising "
+             "two things while showing one. Those keep their colours and the "
+             "switch is not built for them at all."),
+            ]),
+            ("What the picture shows", [
             ("notes", "Put the numbers away", True,
              "Lets whoever opens the page hide the written-out figures "
              "underneath it, and bring them back.\n\n"
@@ -2262,6 +2382,8 @@ class WebPageDialog(QDialog):
              "double-clicking shows it on its own — so hiding the list takes "
              "that away too. Best kept for a page with a single shape on it, "
              "where the list says nothing they cannot already see."),
+            ]),
+            ("The page itself", [
             ("appearance", "Switch the page light or dark", False,
              "Puts a light-or-dark switch on the page, so whoever opens it "
              "can match it to whatever they are reading it in.\n\n"
@@ -2271,17 +2393,34 @@ class WebPageDialog(QDialog):
              "This only decides whether they can change it afterwards. It "
              "adds a second set of page colours to the file, which is a few "
              "hundred bytes."),
+            ("picture", "Save it as a picture file", True,
+             "A button that writes what is on screen — at that exact angle, "
+             "with whatever they have faded or greyed — into an ordinary "
+             "PNG in their downloads.\n\n"
+             "This is what somebody needs when your page is the evidence and "
+             "their report is where it has to go. Without it they are taking "
+             "a screenshot, which comes out at whatever their screen "
+             "happens to be; this comes out at twice the size the picture is "
+             "drawn, which is enough to put in a document and still read.\n\n"
+             "Nothing is sent anywhere to do it. The picture is made by "
+             "their own browser out of the numbers already inside the page, "
+             "with no internet involved at any point.\n\n"
+             "A page with two pictures side by side saves two files, "
+             "numbered, rather than one file holding half of what they can "
+             "see."),
             ("remember", "Remember what they chose", True,
              "The page keeps whatever the reader set — paused, faster, "
-             "tipping switched off — and opens that way next time they come "
-             "back to it.\n\n"
+             "tipping switched off, one shape faded, the numbers put away — "
+             "and opens that way next time they come back to it.\n\n"
              "This matters most when somebody has several of your pages to "
              "look through: without it, every one of them has to be paused "
              "again by hand, which is the sort of small annoyance that stops "
              "people looking properly.\n\n"
              "It is kept by their own browser, for that page alone. Nothing "
              "is sent anywhere and nothing about them is stored."),
+            ]),
         ]
+
         strip = QCheckBox("Give them controls at all", self)
         strip.setChecked(True)
         self._strip = strip
@@ -2298,22 +2437,55 @@ class WebPageDialog(QDialog):
         rows.addWidget(strip_hint, 2, 2, Qt.AlignmentFlag.AlignVCenter)
         strip_hint.follow(strip)
 
-        box = QGroupBox("What the person opening it can change", self)
-        grid = QGridLayout(box)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(6)
-        grid.setColumnStretch(0, 1)
-        for i, (name, label, default, why) in enumerate(offers):
-            check = QCheckBox(label, box)
-            check.setChecked(default)
-            self._offer[name] = check
-            grid.addWidget(check, i, 0)
-            hint = Hint(why, box)
-            hint.setObjectName(f"hint_offer_{name}")
-            grid.addWidget(hint, i, 1, Qt.AlignmentFlag.AlignVCenter)
-            hint.follow(check)
-        strip.toggled.connect(box.setEnabled)
-        outer.addWidget(box)
+        # ONE BOX PER GROUP, ALL OF THEM INSIDE A SCROLL AREA.
+        #
+        # Twenty checkboxes in a column is about 640 pixels before the two
+        # questions above them, the note below and the buttons -- a dialog
+        # comfortably taller than the usable height of a 13-inch laptop, and
+        # a dialog taller than the screen is one whose Save button cannot be
+        # reached. Given a ceiling and a scrollbar it grows as far as the
+        # screen allows and then stops, on any machine.
+        #
+        # The ceiling is worked out from the screen this window is actually
+        # on rather than fixed, because the two ends of that range are a
+        # 768-pixel-high laptop and a 27-inch desktop, and one number cannot
+        # be right for both.
+        held = QWidget(self)
+        stack = QVBoxLayout(held)
+        stack.setContentsMargins(0, 0, 0, 0)
+        stack.setSpacing(10)
+        self._offer_groups: list = []
+        for title, items in offers:
+            box = QGroupBox(title, held)
+            grid = QGridLayout(box)
+            grid.setHorizontalSpacing(8)
+            grid.setVerticalSpacing(6)
+            grid.setColumnStretch(0, 1)
+            for i, (name, label, default, why) in enumerate(items):
+                check = QCheckBox(label, box)
+                check.setChecked(default)
+                self._offer[name] = check
+                grid.addWidget(check, i, 0)
+                hint = Hint(why, box)
+                hint.setObjectName(f"hint_offer_{name}")
+                grid.addWidget(hint, i, 1, Qt.AlignmentFlag.AlignVCenter)
+                hint.follow(check)
+            stack.addWidget(box)
+            self._offer_groups.append(box)
+            strip.toggled.connect(box.setEnabled)
+        stack.addStretch(1)
+
+        area = QScrollArea(self)
+        area.setWidget(held)
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        screen = self.screen() or (parent.screen() if parent else None)
+        room = screen.availableGeometry().height() if screen else 900
+        area.setMaximumHeight(max(300, int(room * 0.52)))
+        outer.addWidget(area, 1)
+        strip.toggled.connect(area.setEnabled)
         note = WrappedLabel(
             "The page opens in any browser and keeps everything you can do "
             "here: turning it, zooming in, and reading a name by pointing at "
@@ -2836,6 +3008,17 @@ class GamutApp(QMainWindow):
         # explaining nothing.
         for _name, _control in (
                 ("hint_hint", self._open_btn),
+                # BESIDE ITS OWN OPEN BUTTON, exactly as the group above it.
+                #
+                # This explanation was left where it was written, which put it
+                # beside the note near the bottom of the group -- and that
+                # note hides itself when there is no chart open, taking the ⓘ
+                # with it. So the two groups that begin with an open button
+                # did not match: one carried its explanation beside the
+                # button, always, and the other carried it three rows down
+                # and only once you had already done the thing the
+                # explanation was there to help you do.
+                ("hint_chart_hint", self._chart_btn),
                 ("hint_cmp_hint", self._compare),
                 ("hint_style_hint", self._style_combos[0][0]),
                 ("hint_paint_hint", self._paint_label),
@@ -8013,17 +8196,30 @@ class GamutApp(QMainWindow):
         scales to whatever is in it, so a small gamut and a large one come out
         the same size and the picture says the opposite of the truth.
         """
-        from ti3gamut import (build_slice_figure, slice_extent,
+        from ti3gamut import (build_slice_figure, slice_extent, slice_levels,
                               write_side_by_side_html)
 
         lightness = float(self._slice_at.value())
-        extent = slice_extent(gamuts, lightness)
+        # THE SLIDER GOES ON BOTH PANES OR NEITHER. Worked out from both
+        # shapes at once so the two panes step through the same list of
+        # heights -- two panes on two lists is a side-by-side comparison of
+        # two different cuts, which is the one thing this view must never be.
+        cuts = None
+        if controls and (offer is None or offer.get("cut", True)):
+            cuts = slice_levels(gamuts[:2])
+            if cuts is not None:
+                cuts["title"] = ""
+                cuts["at"] = min(
+                    range(len(cuts["levels"])),
+                    key=lambda i: abs(cuts["levels"][i] - lightness))
+        extent = cuts["extent"] if cuts else slice_extent(gamuts, lightness)
         pages = [(name, build_slice_figure(
             [(name, g)], lightness, "", mode=self._appearance,
-            extent=extent, legend=False, first=i))
+            extent=extent, legend=False, first=i, slidable=cuts is not None))
             for i, (name, g) in enumerate(gamuts[:2])]
         write_side_by_side_html(pages, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked(),
+                                spin={"cuts": cuts} if cuts else None,
                                 controls=controls, offer=offer)
 
     def _write_two_rooms(self, gamuts, out, clouds, lost,

@@ -297,6 +297,60 @@ window.cqSpin = (function () {
     each(function (one) { slideOne(one, dx || 0, dy || 0); });
   }
 
+  // STANDING SOMEWHERE PARTICULAR TO LOOK FROM.
+  //
+  // Dragging is how you explore a shape and a poor way to arrive at a known
+  // position: getting the eye exactly over the top of a gamut by hand takes
+  // several goes and is never quite square, and two people comparing two
+  // pages by eye are comparing two different angles unless both can get to
+  // the same one. Four fixed places to stand fix that -- press the same one
+  // on both pages and the two pictures are strictly comparable.
+  //
+  // The direction is in the picture's own three axes, whatever they are
+  // named, so this means the same thing in ink amounts as in CIELAB.
+  //
+  // ONLY THE DIRECTION CHANGES. How far away the eye is and what it is
+  // pointed at are left exactly as the reader had them, so pressing one of
+  // these after zooming in on a corner keeps you at that corner, seen from
+  // somewhere else. That is the useful behaviour: the alternative throws
+  // away the very thing they were looking at.
+  var LOOKS = {
+    // Straight down the third axis. Its `up` cannot be the third axis too --
+    // the eye would be sitting on it, the view would have no left or right,
+    // and the picture flips or vanishes.
+    above:  {eye: [0, 0, 1],          up: [0, 1, 0]},
+    front:  {eye: [0, -1, 0],         up: [0, 0, 1]},
+    side:   {eye: [1, 0, 0],          up: [0, 0, 1]},
+    angle:  {eye: [1.3, -1.3, 0.85],  up: [0, 0, 1]}
+  };
+  function lookOne(one, where) {
+    if (one.flat) return;                 // a cut is already looked straight at
+    var cam = one.was; if (!cam || !cam.eye) return;
+    keep(one.id, cam);
+    var c = cam.center || {x: 0, y: 0, z: 0};
+    var e = [cam.eye.x - c.x, cam.eye.y - c.y, cam.eye.z - c.z];
+    var d = Math.sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+    if (!(d > 1e-9)) return;
+    var want = unit(where.eye);
+    if (!want) return;
+    setCam(one.gd, {
+      up: {x: where.up[0], y: where.up[1], z: where.up[2]},
+      center: c,
+      eye: {x: c.x + want[0] * d, y: c.y + want[1] * d,
+            z: c.z + want[2] * d}});
+  }
+  function look(name) {
+    var where = LOOKS[name];
+    if (!where) return;
+    // STANDING STILL TO DO IT. Left turning, the shape would be carried on
+    // round from the position just set and the reader would see it swing
+    // away from the very view they asked for -- so the movement stops, which
+    // is also what somebody pressing "from above" plainly means.
+    on = false;
+    rest();
+    each(function (one) { lookOne(one, where); });
+  }
+
   // TWO FINGERS, WHICH THE LIBRARY THROWS AWAY.
   //
   // Its own handler reads changedTouches[0] and nothing else, so during a
@@ -402,7 +456,8 @@ window.cqSpin = (function () {
       raf = window.requestAnimationFrame(frame);
     }
   }
-  return {set: set, nudge: nudge, reset: reset, zoom: zoom, slide: slide};
+  return {set: set, nudge: nudge, reset: reset, zoom: zoom, slide: slide,
+          look: look, moving: function () { return on; }};
 })();
 
 
@@ -457,6 +512,209 @@ window.cqSpinControls = function (settings) {
   var mode = settings.mode || "dark";
   var picture = {grid: true, labels: true, key: true, notes: true};
 
+  // ------------------------------------------------------------------ shapes
+  //
+  // ONE ROW PER THING THE KEY NAMES, and that is deliberate rather than
+  // convenient. A page may hold a solid surface, a wire cage round a second
+  // paper, a cloud of chart patches and a skin over them, and the reader has
+  // no idea which of those the code calls a "gamut". What they can see is the
+  // list of names under the picture. Building the rows from exactly that list
+  // means the thing they press and the thing they read are the same thing.
+  //
+  // Gathered across EVERY picture on the page, so on a two-pane comparison a
+  // name that appears in both panes is one row that acts on both. Two rows
+  // doing half the job each is how a side-by-side page ends up with one pane
+  // faded and the other not.
+  function findShapes() {
+    var found = [], byKey = {};
+    (settings.ids || []).forEach(function (id) {
+      var gd = document.getElementById(id);
+      if (!gd || !gd.data) return;
+      gd.data.forEach(function (t, at) {
+        var key = t.legendgroup || t.name || (id + " " + at);
+        var g = byKey[key];
+        if (!g) {
+          g = byKey[key] = {key: key, label: t.name || key, parts: [],
+                            mesh: false, fill: false, points: 0,
+                            plain: true, drawn: false};
+          found.push(g);
+        }
+        // A KEY-ONLY TRACE DRAWS NOTHING. Every mesh here is accompanied by a
+        // scatter of one empty point that exists solely to put a readable
+        // marker beside the name -- see _legend_proxy. Fading that along with
+        // the surface fades the key itself, and a key nobody can see is how
+        // this page lost its legend twice before.
+        var count = (t.x && t.x.length) || 0;
+        var proxy = count === 1 && (t.x[0] === null || t.x[0] === undefined);
+        if (t.showlegend && t.name) g.label = t.name;
+        g.parts.push({gd: gd, id: id, at: at, proxy: proxy});
+        if (!proxy) {
+          g.drawn = true;
+          g.points += count;
+          if (t.type === "mesh3d") g.mesh = true;
+          if (t.fill && t.fill !== "none") g.fill = true;
+          // See _COLOUR_IS_THE_ANSWER in the Python that wrote this page.
+          if (t.meta && t.meta.cq === "colour") g.plain = false;
+        }
+      });
+    });
+    // A ROW FOR ANYTHING THAT ACTUALLY DRAWS A SHAPE. The cross-section pages
+    // carry a single cross at the origin, named "neutral grey", to say where
+    // no colour at all sits. It is one point. Offering to fade it, wire it or
+    // take the colour out of it is three controls for a tick mark.
+    return found.filter(function (g) {
+      return g.drawn && (g.mesh || g.fill || g.points > 8);
+    });
+  }
+  var shapes = on("opacity", true) || on("wires", true) || on("grey", true)
+    ? findShapes() : [];
+
+  // WHAT EACH SHAPE IS DOING NOW, started from what the page was saved with
+  // rather than from a guess. A skin saved at three-tenths opens reading 30%.
+  var dressed = {};
+  shapes.forEach(function (g) {
+    var first = null, i;
+    for (i = 0; i < g.parts.length; i++)
+      if (!g.parts[i].proxy) { first = g.parts[i]; break; }
+    var t = first ? first.gd.data[first.at] : {};
+    dressed[g.key] = {
+      opacity: (typeof t.opacity === "number") ? t.opacity : 1,
+      wires: !!(t.contour && t.contour.show),
+      filled: !!(t.fill && t.fill !== "none"),
+      grey: false};
+    g.opened = Object.assign({}, dressed[g.key]);
+  });
+
+  // WHICH CROSS-SECTIONS THIS PAGE CARRIES, if it is one that can be slid
+  // through at all. Settled HERE, above the part that reads back what the
+  // reader last chose, and that position is the whole of a bug: read out
+  // first, the restore ran while this was still undefined, quietly did
+  // nothing, and the page opened at the height it was saved at every single
+  // time however far the reader had moved the slider.
+  var cuts = settings.cuts || null;
+  if (cuts && !(cuts.levels && cuts.levels.length > 1)) cuts = null;
+  if (!on("cut", true)) cuts = null;
+  var cutAt = cuts ? (cuts.at || 0) : 0;
+
+  // TAKING THE COLOUR OUT OF SOMETHING, PROPERLY.
+  //
+  // Averaging the three numbers is the quick way and it is wrong: it makes
+  // pure blue and pure yellow the same grey, when one is nearly black to look
+  // at and the other nearly white. Since everything drawn here is already an
+  // sRGB screen colour, the honest conversion is the one sRGB itself defines
+  // -- undo the transfer curve, take the luminance Y with the Rec. 709
+  // weights sRGB is built on, and put the curve back. A gamut greyed this way
+  // keeps its light top and dark bottom, which is what makes the shape still
+  // readable once the hue has gone.
+  var GREY = {};
+  function toGrey(c) {
+    if (GREY[c] !== undefined) return GREY[c];
+    var s = String(c).trim(), r, g2, b;
+    var m = s.match(/^rgba?\(([^)]+)\)/i);
+    if (m) {
+      var bits = m[1].split(",");
+      r = parseFloat(bits[0]); g2 = parseFloat(bits[1]); b = parseFloat(bits[2]);
+    } else if (s.charAt(0) === "#") {
+      var h = s.slice(1);
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      var n = parseInt(h, 16);
+      if (!isFinite(n) || h.length < 6) return (GREY[c] = s);
+      r = (n >> 16) & 255; g2 = (n >> 8) & 255; b = n & 255;
+    } else {
+      return (GREY[c] = s);          // a name we do not know: leave it alone
+    }
+    if (!(isFinite(r) && isFinite(g2) && isFinite(b))) return (GREY[c] = s);
+    function lin(v) {
+      v = v / 255;
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    }
+    var Y = 0.2126 * lin(r) + 0.7152 * lin(g2) + 0.0722 * lin(b);
+    var e = Y <= 0.0031308 ? 12.92 * Y : 1.055 * Math.pow(Y, 1 / 2.4) - 0.055;
+    var v = Math.max(0, Math.min(255, Math.round(e * 255)));
+    return (GREY[c] = "rgb(" + v + "," + v + "," + v + ")");
+  }
+
+  // THE COLOUR EACH TRACE WAS DRAWN WITH, kept outside the drawing library's
+  // own data. Stashing it on the trace object would work until the day
+  // something re-reads that object and complains about a field it has never
+  // heard of; a map of our own cannot collide with anything.
+  var ORIGINAL = {};
+  function was(part, field, value) {
+    var k = part.id + "\u0000" + part.at + "\u0000" + field;
+    if (!(k in ORIGINAL)) ORIGINAL[k] = value;
+    return ORIGINAL[k];
+  }
+  function greyed(value) {
+    return Array.isArray(value) ? value.map(toGrey) : toGrey(value);
+  }
+  //: Where a colour can live on the traces this page draws. Measured from the
+  //: real pages rather than listed from the documentation: a mesh carries
+  //: `vertexcolor` (and a `color` its key is drawn from), a cage carries
+  //: `line.color`, a cloud of patches carries `marker.color`, and a filled
+  //: cross-section carries `line.color` with the fill derived from it.
+  var COLOUR_FIELDS = ["vertexcolor", "color", "line.color", "marker.color",
+                       "fillcolor"];
+  function reach(t, field) {
+    var bits = field.split("."), v = t, i;
+    for (i = 0; i < bits.length; i++) {
+      if (v === null || v === undefined) return undefined;
+      v = v[bits[i]];
+    }
+    return v;
+  }
+  function dressOne(g) {
+    var st = dressed[g.key];
+    g.parts.forEach(function (part) {
+      var t = part.gd.data[part.at];
+      var patch = {}, any = false;
+      // THE KEY KEEPS ITS FULL STRENGTH AND ITS COLOUR unless the reader
+      // asked for grey, in which case it follows -- otherwise the list of
+      // names would go on showing colours the picture no longer has.
+      if (!part.proxy) {
+        if (on("opacity", true)) { patch.opacity = st.opacity; any = true; }
+        if (on("wires", true) && t.type === "mesh3d") {
+          patch["contour.show"] = !!st.wires; any = true;
+        }
+        if (on("wires", true) && g.fill && t.fill !== undefined) {
+          patch.fill = st.filled ? "toself" : "none"; any = true;
+        }
+      }
+      if (on("grey", true) && g.plain) {
+        COLOUR_FIELDS.forEach(function (field) {
+          var had = reach(t, field);
+          if (had === undefined || had === null) return;
+          var origin = was(part, field, had);
+          var want = st.grey ? greyed(origin) : origin;
+          // AN ARRAY HAS TO BE WRAPPED IN ANOTHER ONE. Handed a bare array,
+          // restyle reads it as one value per trace and hands the FIRST
+          // element to this trace -- so 491 vertex colours quietly became the
+          // single string "rgb(15,12,21)" and the whole surface turned that
+          // colour. Measured, not guessed: it fails silently and looks like a
+          // rendering bug.
+          patch[field] = Array.isArray(want) ? [want] : want;
+          any = true;
+        });
+      }
+      if (any && window.Plotly) window.Plotly.restyle(part.gd, patch, [part.at]);
+    });
+  }
+  function moved(g) {
+    var a = dressed[g.key], b = g.opened;
+    return a.opacity !== b.opacity || a.wires !== b.wires
+        || a.filled !== b.filled || a.grey !== b.grey;
+  }
+  // ONLY WHAT HAS ACTUALLY CHANGED. Called once when the page opens, this
+  // would otherwise re-draw every surface on it to the values it already has
+  // -- a whole re-render of a chart of a thousand patches, for nothing, in
+  // the first second somebody is looking at it.
+  function dressAll() { shapes.filter(moved).forEach(dressOne); }
+  function undress() {
+    shapes.forEach(function (g) {
+      dressed[g.key] = Object.assign({}, g.opened);
+      dressOne(g);
+    });
+  }
+
   function tint(hex, alpha) {
     var h = String(hex).replace("#", "");
     if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
@@ -485,6 +743,7 @@ window.cqSpinControls = function (settings) {
     try {
       localStorage.setItem(STORE, JSON.stringify(
         {running: running, both: both, speeds: speeds, picture: picture,
+         shapes: dressed, cutAt: cutAt,
          mode: mode, turn: turn.mode, tilt: tilt.mode}));
     } catch (e) {}
   }
@@ -503,6 +762,22 @@ window.cqSpinControls = function (settings) {
       // written-out numbers gone, with nothing they did to explain it.
       if (was.speeds) speeds = Object.assign({}, speeds, was.speeds);
       if (was.picture) picture = Object.assign({}, picture, was.picture);
+      // ONLY SHAPES THIS PAGE ACTUALLY HAS. What was stored may have been
+      // written by an earlier page at the same address, or by a version of
+      // this one drawn from a different measurement. Reading it back name by
+      // name means an unknown name is simply ignored rather than creating a
+      // row for a shape that is not there.
+      if (was.shapes) {
+        Object.keys(dressed).forEach(function (k) {
+          if (was.shapes[k]) dressed[k] = Object.assign({}, dressed[k],
+                                                        was.shapes[k]);
+        });
+      }
+      // BOUNDED BY WHAT THIS PAGE ACTUALLY HAS. A remembered height from a
+      // page with more cuts in it than this one would otherwise ask for a
+      // level that does not exist, and the picture would open empty.
+      if (was.cutAt !== undefined && cuts)
+        cutAt = Math.max(0, Math.min(cuts.levels.length - 1, was.cutAt | 0));
       if (was.turn !== undefined) turn.mode = was.turn;
       if (was.tilt !== undefined) tilt.mode = was.tilt;
       if (was.mode) mode = was.mode;
@@ -516,17 +791,124 @@ window.cqSpinControls = function (settings) {
   panel.className = "cq-spin-panel";
   panel.hidden = true;
 
-  function button(what, label, title) {
-    return '<button type="button" data-cq="' + what + '" title="' + title
-           + '">' + label + '</button>';
+  function safe(text) {
+    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      // THE QUOTE IS WRITTEN \u0022 rather than typed. A regular expression
+      // holding a quote character reads, to anything scanning this file for
+      // an unclosed string, exactly like an unclosed string -- and one of
+      // those really would take the whole strip down, so the check that looks
+      // for them is worth keeping sharp rather than teaching exceptions to.
+      .replace(/>/g, "&gt;").replace(/\u0022/g, "&quot;");
+  }
+  function button(what, label, title, extra) {
+    return '<button type="button" data-cq="' + what + '" title="' + safe(title)
+           + '"' + (extra || "") + '>' + label + '</button>';
   }
   function row(what, label, title, extra) {
     return '<div class="cq-row"><span>' + label + '</span>'
            + '<span class="cq-ctl">'
            + button(what, "on", title) + (extra || "") + '</span></div>';
   }
+  // A HEADING AND THE ROWS UNDER IT, added only if there are any rows.
+  //
+  // WHY SECTIONS AT ALL. This panel began as four switches and one flat list
+  // was the right shape for it. It now runs to a speed for each direction,
+  // four arrows, four places to stand, three controls for every shape on the
+  // page and six more for the page itself -- and a flat list of twenty
+  // unrelated things is not a panel, it is an inventory. Somebody looking for
+  // "make the front one fainter" reads every line to find it.
+  //
+  // Grouped under plain-language headings there are five short lists instead,
+  // and the heading answers "is what I want in here?" before any of the lines
+  // are read. Empty groups are never drawn, so a page that hands over two
+  // controls still shows two controls and no scaffolding.
+  var body = "";
+  function section(heading, rows, wide) {
+    if (!rows) return;
+    body += '<div class="cq-sect' + (wide ? " cq-wide" : "") + '">'
+      + '<h4>' + heading + '</h4><div class="cq-rows">' + rows + '</div></div>';
+  }
+
+  // ------------------------------------------------- moving the cut up and down
+  //
+  // THE ONE CONTROL A CROSS-SECTION PAGE WAS MISSING, and the one the window
+  // itself has always had: a cut is taken at a lightness, and which lightness
+  // is the interesting question. A page frozen at one of them can only ever
+  // answer "does this paper reach further into the cyans" at whatever height
+  // the sender happened to be looking at -- and the answer is different near
+  // the white point from what it is in the shadows, which is the entire
+  // reason the window has a slider rather than a number.
+  //
+  // The page cannot work these out for itself: slicing a gamut needs the
+  // whole 3D shape, and a flat page has none. Every cut it can show was
+  // therefore worked out when it was saved and travels inside it -- see
+  // slice_levels in the Python. The slider only chooses between them, which
+  // is why it is instant.
+  function cutTraces() {
+    var out = [];
+    (settings.ids || []).forEach(function (id) {
+      var gd = document.getElementById(id);
+      if (!gd || !gd.data) return;
+      gd.data.forEach(function (t, at) {
+        if (t.name && cuts.rings[t.name]) out.push({gd: gd, at: at, name: t.name});
+      });
+    });
+    return out;
+  }
+  function showCut(i) {
+    if (!cuts) return;
+    i = Math.max(0, Math.min(cuts.levels.length - 1, Math.round(i)));
+    cutAt = i;
+    var level = cuts.levels[i], missing = [], panes = {};
+    cutTraces().forEach(function (one) {
+      var ring = cuts.rings[one.name][i] || {x: [], y: []};
+      if (!ring.x.length && missing.indexOf(one.name) < 0) missing.push(one.name);
+      panes[one.gd.id] = one.gd;
+      // Wrapped, because these are arrays -- see the note on restyle above.
+      window.Plotly.restyle(one.gd, {x: [ring.x], y: [ring.y]}, [one.at]);
+    });
+    // THE CAPTION IS EDITED, NOT REBUILT. Two panes side by side each carry
+    // their own, naming their own shape, and a caption rebuilt from one
+    // template would put the same words over both. Replacing only the part
+    // that says which height it is leaves everything else exactly as the
+    // page was written, whichever pane it belongs to.
+    var note = "";
+    if (missing.length === 1)
+      note = "  \u2014  " + missing[0] + " does not reach this lightness";
+    else if (missing.length > 1)
+      note = "  \u2014  " + missing.join(" and ") + " do not reach this lightness";
+    Object.keys(panes).forEach(function (id) {
+      var gd = panes[id];
+      var was = (gd.layout && gd.layout.title && gd.layout.title.text) || "";
+      if (was.indexOf("L* = ") < 0) return;
+      window.Plotly.relayout(gd, {"title.text":
+        was.slice(0, was.indexOf("L* = ")) + "L* = "
+        + (Math.round(level * 10) / 10) + note});
+    });
+    say("cut-at", "L* " + Math.round(level));
+    var slider = find("cut");
+    if (slider && String(slider.value) !== String(i)) slider.value = String(i);
+  }
 
   var head = "";
+  if (cuts)
+    head += group(button("cut-down", "&minus;", "Take the cut lower — nearer "
+            + "black. A gamut is at its widest somewhere in the middle and "
+            + "narrows to almost nothing at both ends, so this is where you "
+            + "see how much colour is really left in the shadows.")
+          + '<input type="range" class="cq-slider" data-cq="cut" min="0" max="'
+          + (cuts.levels.length - 1) + '" step="1" value="' + cutAt
+          + '" aria-label="the lightness the cut is taken at"'
+          + ' title="Slide the cut up and down through the shape. Every one '
+          + 'of these was worked out when the page was saved, so it moves as '
+          + 'fast as you can drag it and needs nothing from the internet.">'
+          + '<span class="cq-num" data-cq="cut-at">L* '
+          + Math.round(cuts.levels[cutAt]) + '</span>'
+          + button("cut-up", "+", "Take the cut higher — nearer white. Worth "
+            + "going right to the top: near the paper white almost every "
+            + "paper narrows to a small patch, and which of them keeps the "
+            + "most colour up there is what decides whether a pale sky comes "
+            + "out flat."));
   if (on("play", true))
     head += button("play", "Pause", "Stop the movement, or start it again. "
       + "You can always drag the shape yourself, moving or not.");
@@ -557,43 +939,134 @@ window.cqSpinControls = function (settings) {
     head += button("home", "reset view", "Put the shape back the way the page "
       + "opened. Only your own turning, zooming and moving is undone — "
       + "nothing is closed and no figure changes.");
+  // ---------------------------------------------------------------- shapes
+  // WHAT CAN BE OFFERED FOR A SHAPE depends on what that shape is made of. A
+  // wire cage has no surface to draw wires over; a cross-section has no wires
+  // at all but can be an outline instead of a filled area; and a mesh whose
+  // colour IS the answer is never offered in grey. Each row is built from
+  // what its own shape can actually do, so no row anywhere carries a button
+  // that would do nothing.
+  function canWire(g) { return on("wires", true) && (g.mesh || g.fill); }
+  function canGrey(g) { return on("grey", true) && g.plain; }
+  function canFade(g) { return on("opacity", true) && !!g; }
+  var HAS_SHAPES = shapes.some(function (g) {
+    return canFade(g) || canWire(g) || canGrey(g);
+  });
+
+  // ------------------------------------------------------ where to stand
+  // The tooltips name the picture's OWN axes, read off the drawing rather
+  // than assumed, because these pages are drawn in two quite different kinds
+  // of space: a* b* L* for a measured colour gamut and Cyan/Magenta/Yellow
+  // percentages for a chart in ink amounts. A tooltip that says "lightness"
+  // over a picture of ink amounts is simply wrong.
+  function axisNames() {
+    var out = null;
+    (settings.ids || []).some(function (id) {
+      var gd = document.getElementById(id);
+      var sc = gd && gd._fullLayout && gd._fullLayout.scene;
+      if (!sc) return false;
+      function nm(ax) {
+        var t = ax && ax.title;
+        t = (t && (t.text !== undefined ? t.text : t)) || "";
+        // "a*  (chroma →)" is the drawn label; the axis is called a*.
+        return String(t).split(/\s{2,}/)[0].trim();
+      }
+      var got = {x: nm(sc.xaxis), y: nm(sc.yaxis), z: nm(sc.zaxis)};
+      if (got.x || got.y || got.z) { out = got; return true; }
+      return false;
+    });
+    return out;
+  }
+  var AX = flat ? null : axisNames();
+  function named(which, fallback) {
+    return (AX && AX[which]) ? ("the " + AX[which] + " axis") : fallback;
+  }
+  var VIEWS = [
+    ["above", "above",
+     "Look straight down at it from above, along " + named("z", "the upright axis")
+     + ". The height goes out of the picture and you see the spread across "
+     + named("x", "the two flat axes").replace("the ", "") + " and "
+     + named("y", "").replace("the ", "") + " — which is the same direction a "
+     + "cross-section is drawn in, so the two pictures can be read together."],
+    ["front", "front",
+     "Stand square in front of it. Height on the screen is "
+     + named("z", "the upright axis") + ", so this is the view for judging "
+     + "how far up and down the shape reaches."],
+    ["side", "side",
+     "Step round ninety degrees and look at it from the side. Worth pressing "
+     + "straight after “front”: two square-on views at right angles say more "
+     + "about a shape than any single angle can."],
+    ["angle", "angle",
+     "Back to a three-quarter view, which is the one that reads as a solid "
+     + "object rather than a flat outline. This is where most of these "
+     + "pictures open."]
+  ];
+  function canStand() { return on("views", true) && !flat; }
+
+  // ------------------------------------------------------- the page itself
+  // ASKED OF THE BROWSER, NOT ASSUMED OF IT. Full screen for an ordinary
+  // element does not exist on an iPhone at all — Safari there offers it for
+  // video and nothing else — so on the very device this panel matters most,
+  // a full-screen button would be a button that does nothing. Built only
+  // where it works, missing everywhere else.
+  //
+  // It is the whole page that goes full screen rather than the picture on its
+  // own, and that is deliberate: full-screening the picture alone would take
+  // this strip off the screen with it, leaving somebody on a tablet with no
+  // visible way back out of it.
+  function canFull() {
+    return on("fullscreen", true) && !!document.fullscreenEnabled
+      && !!document.documentElement.requestFullscreen;
+  }
+  function canSave() {
+    return on("picture", true) && !!(window.Plotly && window.Plotly.downloadImage);
+  }
+
   var HAS_PANEL = on("lr", true) || on("ud", true) || on("speed_each", false)
     || on("move", true) || on("grid", false) || on("labels", false)
     || on("key", false) || on("appearance", false)
+    || HAS_SHAPES || canStand() || canFull() || canSave()
     || (on("notes", true) && !!document.querySelector(".cq-notes"));
   if (HAS_PANEL)
     head += button("more", "more…", "Everything else you can change about "
-      + "this picture: which way it moves and how fast, whether the box and "
-      + "its lettering are drawn, whether the names are shown, and whether "
-      + "the page is light or dark.");
+      + "this picture: which way it moves and how fast, where you look at it "
+      + "from, how solid each shape is drawn and whether it keeps its colour, "
+      + "whether the box and its lettering are there, and whether the page is "
+      + "light or dark.");
   bar.innerHTML = head;
 
-  var body = "";
+  // ============================================================ the panel
+  var moves = "";
   if (on("lr", true))
-    body += '<div class="cq-row"><span>left &amp; right</span>'
+    moves += '<div class="cq-row"><span>left &amp; right</span>'
       + '<span class="cq-ctl">'
       + button("lr", "on", "Turn the shape left and right, or stop it turning "
         + "that way. This is the movement most people mean by “spin it”.")
       + (on("speed_each", false)
          ? button("turn-slower", "&minus;", "Turn left and right more slowly.")
-           + '<span data-cq="turn-speed">' + Math.round(speeds.turn) + '</span>'
+           + '<span class="cq-num" data-cq="turn-speed">'
+           + Math.round(speeds.turn) + '</span>'
            + button("turn-faster", "+", "Turn left and right more quickly.")
          : "")
       + '</span></div>';
   if (on("ud", true))
-    body += '<div class="cq-row"><span>up &amp; down</span>'
+    moves += '<div class="cq-row"><span>up &amp; down</span>'
       + '<span class="cq-ctl">'
       + button("ud", "on", "Tip the shape towards you and away again, or stop "
         + "it tipping. A little of this alongside the turning is what shows "
         + "the dents in a surface.")
       + (on("speed_each", false)
          ? button("tilt-slower", "&minus;", "Tip more slowly.")
-           + '<span data-cq="tilt-speed">' + Math.round(speeds.tilt) + '</span>'
+           + '<span class="cq-num" data-cq="tilt-speed">'
+           + Math.round(speeds.tilt) + '</span>'
            + button("tilt-faster", "+", "Tip more quickly.")
          : "")
       + '</span></div>';
+  section("how it moves", moves);
+
+  var looking = "";
   if (on("move", true))
-    body += '<div class="cq-row"><span>move it</span>'
+    looking += '<div class="cq-row"><span>move it</span>'
       + '<span class="cq-ctl">'
       + button("left", "&larr;", "Move the picture to the left, to bring "
         + "something on the right-hand side into the middle.")
@@ -605,41 +1078,129 @@ window.cqSpinControls = function (settings) {
         + "On a phone or a tablet you can also drag with two fingers, and "
         + "“reset view” always brings the whole thing back.")
       + '</span></div>';
+  if (canStand()) {
+    var stand = "";
+    VIEWS.forEach(function (v) { stand += button("look-" + v[0], v[1], v[2]); });
+    looking += '<div class="cq-row"><span>look from</span>'
+      + '<span class="cq-ctl">' + stand + '</span></div>';
+  }
+  section("where you look from", looking);
+
+  var each = "";
+  shapes.forEach(function (g, n) {
+    var st = dressed[g.key], ctl = "";
+    if (canFade(g))
+      ctl += group(button("shape-fainter-" + n, "&minus;",
+          "Make " + g.label + " fainter, so whatever is behind it shows "
+          + "through. This is the control for the oldest problem a picture of "
+          + "two gamuts has: the one in front hides the one behind, and no "
+          + "amount of turning fixes it.")
+        + '<span class="cq-num" data-cq="shape-lit-' + n + '">'
+        + Math.round(st.opacity * 100) + '%</span>'
+        + button("shape-stronger-" + n, "+",
+          "Make " + g.label + " more solid. At full strength a surface hides "
+          + "everything behind it, which is exactly what you want when it is "
+          + "the shape itself you are studying rather than the comparison."));
+    if (canWire(g))
+      ctl += button("shape-wires-" + n, g.mesh ? "wires" : "filled",
+        g.mesh
+          ? ("Draw " + g.label + " as a net of fine lines over its surface. "
+             + "The lines follow the measured points, so they show where the "
+             + "measurement is dense and where the shape between two readings "
+             + "is the drawing's guess rather than anything anybody measured. "
+             + "Turn the strength down at the same time and you are left with "
+             + "the cage alone, which is the clearest way to show one shape "
+             + "sitting inside another.")
+          : ("Fill " + g.label + " in, or leave only its outline. Two filled "
+             + "cross-sections lying over each other are hard to read however "
+             + "faint they are; two outlines never are. Nothing is added or "
+             + "removed from the measurement either way — only the colouring "
+             + "in."));
+    if (canGrey(g))
+      ctl += button("shape-grey-" + n, "grey",
+        "Take the colour out of " + g.label + " and draw it in grey. It "
+        + "keeps its light and dark exactly — a grey here is the true "
+        + "brightness of the colour it replaces, not an average of the three "
+        + "numbers — so the shape stays every bit as readable and simply "
+        + "stops competing for attention. The usual reason to want it: two "
+        + "shapes both painted in their own colours make a picture nobody "
+        + "can untangle, and one of them in grey makes the other obvious. "
+        + "Press it again and the colour comes straight back; nothing about "
+        + "the measurement is touched.");
+    if (!ctl) return;
+    each += '<div class="cq-row cq-shape"><span class="cq-name" title="'
+      + safe(g.label) + '">' + safe(g.label) + '</span>'
+      + '<span class="cq-ctl">' + ctl + '</span></div>';
+  });
+  if (each)
+    each += '<div class="cq-row cq-back"><span>changed your mind?</span>'
+      + '<span class="cq-ctl">'
+      + button("shapes-back", "as saved", "Put every shape back to the way "
+        + "this page was saved — its strength, its wires and its colour. "
+        + "Only how they are drawn is put back: nothing you have turned, "
+        + "zoomed or hidden is disturbed.")
+      + '</span></div>';
+  section("each shape", each, true);
+
+  var drawn = "";
   // ONLY IF THERE ARE ANY. Offering to hide something that is not on the
   // page is the clearest way there is to make a reader think it is broken.
   var HAS_NOTES = !!document.querySelector(".cq-notes");
   if (on("notes", true) && HAS_NOTES)
-    body += row("notes", "the numbers",
+    drawn += row("notes", "the numbers",
       "Show or hide the written-out figures under the picture — what each "
       + "shape holds, how much of one fits inside the other, and any drift "
       + "between two readings. On a small screen they can be taller than the "
       + "screen itself, so putting them away gives the whole window back to "
       + "the shape. Nothing is lost: press it again and they come back.");
   if (on("grid", false))
-    body += row("grid", "walls &amp; grid",
+    drawn += row("grid", "walls &amp; grid",
       "Draw the box around the shape, with its ruled walls, or take it away. "
       + "The walls are what let you judge where a bulge actually sits; "
       + "without them you get the shape on its own, which is the tidier "
       + "picture to drop into a document.");
   if (on("labels", false))
-    body += row("labels", "lettering",
+    drawn += row("labels", "lettering",
       "Show or hide the numbers and the axis names around the picture. "
       + "Hiding them leaves the shape and nothing else — useful when the "
       + "picture is going beside text that already explains it, and when you "
       + "want nobody reading numbers off a small screenshot.");
   if (on("key", false))
-    body += row("key", "the names",
+    drawn += row("key", "the names",
       "Show or hide the list of names under the picture. Each name is also a "
       + "switch: click one to hide that shape and click it again to bring it "
       + "back, or double-click to see that one on its own.");
+  section("what is drawn", drawn);
+
+  var pageRows = "";
   if (on("appearance", false))
-    body += '<div class="cq-row"><span>light or dark</span>'
+    pageRows += '<div class="cq-row"><span>light or dark</span>'
       + '<span class="cq-ctl">'
       + button("appearance", mode === "light" ? "light" : "dark",
         "Put the page on a light background or a dark one. The measured "
         + "colours themselves never change — only the paper they are drawn "
         + "on — so you can match the page to whatever you are reading it in.")
       + '</span></div>';
+  if (canFull())
+    pageRows += '<div class="cq-row"><span>full screen</span>'
+      + '<span class="cq-ctl">'
+      + button("full", "on", "Give the picture the whole screen, with the "
+        + "browser’s own bars out of the way, and press it again to come "
+        + "back. The controls come with it, so there is always a visible way "
+        + "out — the Escape key works too.")
+      + '</span></div>';
+  if (canSave())
+    pageRows += '<div class="cq-row"><span>save a picture</span>'
+      + '<span class="cq-ctl">'
+      + button("shot", "PNG", "Save what you are looking at, exactly as it "
+        + "stands, as an ordinary picture file — the angle you turned it to, "
+        + "the shapes you faded, everything. It lands in your downloads at "
+        + "twice the size it is drawn on screen, so it is worth putting in a "
+        + "document. This page is not sent anywhere to do it: the picture is "
+        + "made by your own browser, from the numbers already inside the "
+        + "page.")
+      + '</span></div>';
+  section("the page itself", pageRows);
   panel.innerHTML = body;
 
   var css = document.createElement("style");
@@ -674,16 +1235,66 @@ window.cqSpinControls = function (settings) {
       + "{outline:2px solid " + ink + ";outline-offset:2px}"
       + ".cq-spin-bar button[aria-pressed=false]{opacity:.55}"
       + ".cq-spin-bar span{opacity:.85;min-width:54px;text-align:center}"
+      // THE SLIDER IS THE WIDEST THING IN THE STRIP and the only one that
+      // wants to grow, so it is allowed to -- down to 110px on a phone,
+      // where the strip wraps around it, and capped on a desktop because a
+      // 700px slider for 45 positions is absurd to aim with.
+      + ".cq-spin-bar .cq-slider{flex:1 1 130px;max-width:230px;min-width:110px;"
+      + "margin:0 2px;accent-color:" + ink + ";height:22px;cursor:pointer}"
+      + ".cq-spin-bar .cq-slider:focus-visible{outline:2px solid " + ink + ";"
+      + "outline-offset:2px}"
+      + ".cq-spin-bar .cq-num{min-width:46px;text-align:center;"
+      + "font-variant-numeric:tabular-nums}"
       + ".cq-spin-panel{flex:0 0 auto;color:" + ink + ";background:" + paper
       + ";border-top:1px solid " + tint(ink, 0.14) + ";padding:10px 14px 12px;"
       + "font:12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
-      + "display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));"
-      + "gap:8px 22px;max-width:900px;margin:0 auto;width:100%;"
+      + "display:block;max-width:900px;margin:0 auto;width:100%;"
       + "box-sizing:border-box}"
+      // A HEADING AND ITS OWN LIST PER GROUP. The lists still flow into as
+      // many columns as the width allows, so a desktop shows a group in one
+      // line and a phone shows it stacked -- but a group never mixes with
+      // the one after it, which is the entire reason for having them.
+      + ".cq-spin-panel .cq-sect{margin:0 0 9px}"
+      + ".cq-spin-panel .cq-sect:last-child{margin-bottom:0}"
+      + ".cq-spin-panel h4{font:600 10px/1 -apple-system,BlinkMacSystemFont,"
+      + "'Segoe UI',sans-serif;letter-spacing:.09em;text-transform:uppercase;"
+      + "margin:0 0 5px;padding:0 0 4px;opacity:.55;"
+      + "border-bottom:1px solid " + tint(ink, 0.12) + "}"
+      + ".cq-spin-panel .cq-rows{display:grid;gap:7px 22px;"
+      + "grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}"
+      // THE SHAPES NEED MORE ROOM THAN A SWITCH DOES. Their labels are the
+      // names in the key and those run to "a chart of 480 patches — a skin
+      // over the patches"; squeezed into a 230px column beside four buttons
+      // there is nothing left of the name but the first word, and the first
+      // word is the same for every row on the page. A wider column of their
+      // own, still allowed to sit two abreast once there is room for two.
+      + ".cq-spin-panel .cq-wide .cq-rows{"
+      + "grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}"
+      + ".cq-spin-panel .cq-shape{flex-wrap:wrap}"
+      + ".cq-spin-panel .cq-name{flex:1 1 150px;min-width:0;overflow:hidden;"
+      + "text-overflow:ellipsis;white-space:nowrap}"
+      + ".cq-spin-panel .cq-back span:first-child{opacity:.6}"
       + ".cq-spin-panel .cq-row{display:flex;align-items:center;"
       + "justify-content:space-between;gap:10px}"
-      + ".cq-spin-panel .cq-ctl{display:flex;gap:5px;align-items:center}"
+      + ".cq-spin-panel .cq-ctl{display:flex;gap:5px;align-items:center;"
+      + "flex-wrap:wrap;justify-content:flex-end}"
       + ".cq-spin-panel span{opacity:.9}"
+      // A NUMBER BETWEEN TWO BUTTONS MUST NOT MOVE THEM.
+      //
+      // "100%" is wider than "50%", and with the readout sitting between the
+      // minus and the plus, every press that crossed a digit shoved both
+      // buttons sideways -- so the plus walked out from under the finger that
+      // was pressing it. Reported from the real page, and the same fault the
+      // strip along the top was given a minimum width for long ago; the panel
+      // simply never inherited it.
+      //
+      // Two parts to the fix, and both are needed: a floor on the width so
+      // the widest reading still fits, and tabular figures so that every
+      // digit is the same width as every other -- without that, "11%" and
+      // "88%" are different widths in most interface fonts and the buttons
+      // twitch inside the space rather than jumping out of it.
+      + ".cq-spin-panel .cq-num{display:inline-block;min-width:40px;"
+      + "text-align:center;font-variant-numeric:tabular-nums}"
       + ".cq-spin-panel button{font:inherit;cursor:pointer;border-radius:999px;"
       + "padding:4px 9px;border:1px solid " + tint(ink, 0.45) + ";"
       + "background:transparent;color:inherit;min-width:34px}"
@@ -705,7 +1316,63 @@ window.cqSpinControls = function (settings) {
       // It went unnoticed because the test that guarded it asked the element
       // whether it was hidden -- and it truthfully answered yes. Asking what
       // the browser actually DRAWS is the only question worth asking.
-      + ".cq-spin-panel[hidden]{display:none}";
+      + ".cq-spin-panel[hidden]{display:none}"
+
+      // ================================================== THREE SHAPES OF IT
+      //
+      // The same controls, laid out for the screen they are actually on.
+      // Everything above is written for the middle case and the two rules
+      // below bend it at each end; nothing appears or disappears with the
+      // width, because a control that is on a laptop and gone on a phone is
+      // the most confusing thing a page can do to somebody comparing the two.
+      //
+      // A PHONE, or a narrow window (up to 520px). One column, because two
+      // columns of 160px hold a label and no room for what it controls. A
+      // row whose buttons will not fit beside its label puts them on the
+      // next line instead of squeezing both, and the buttons are given a
+      // bigger tap area -- 34px is close to the 44pt Apple asks for once the
+      // gap between rows is counted, and these sit in pairs where hitting
+      // the minus instead of the plus is an actual mistake.
+      + "@media (max-width:520px){"
+      + ".cq-spin-panel .cq-rows,.cq-spin-panel .cq-wide .cq-rows"
+      + "{grid-template-columns:1fr;gap:9px 0}"
+      + ".cq-spin-panel .cq-row{flex-wrap:wrap}"
+      + ".cq-spin-panel .cq-ctl{justify-content:flex-start}"
+      + ".cq-spin-panel button,.cq-spin-bar button"
+      + "{min-height:34px;padding:7px 12px}"
+      + "}"
+
+      // A SHORT SCREEN -- a phone held sideways, or a browser window someone
+      // has dragged down to a strip. There is 390px of height in a sideways
+      // phone and an open panel is taller than that on its own, so without a
+      // ceiling here the picture is pushed clean off the screen by its own
+      // controls.
+      //
+      // WHY ONLY WHEN IT IS SHORT, and not always: a panel with its own
+      // scrollbar inside a page that also scrolls means a reader whose thumb
+      // lands on the panel scrolls the panel instead of the page, which on a
+      // tall phone is a trap for no gain -- there the page has room and can
+      // simply be longer. Nested scrolling is worth its cost only where the
+      // alternative is losing the picture altogether. Scroll chaining is
+      // deliberately left alone, so a thumb that reaches the end of the panel
+      // carries on to the page rather than stopping dead.
+      + "@media (max-height:560px){"
+      + ".cq-spin-panel{max-height:46vh;overflow-y:auto}"
+      + "}"
+
+      // A TABLET, AND ANYTHING BIGGER, is left to the two grids above, and
+      // that is a decision rather than an omission. A fixed three columns at
+      // some chosen width was written here first and then measured against
+      // what `auto-fit` was already doing: identical at every size tested,
+      // and worse in one case -- a group of two rows given three fixed
+      // columns leaves the third empty and squeezes both rows into
+      // two-thirds of the width for nothing. Reflow that counts the rows it
+      // actually has beats a breakpoint that guesses.
+      //
+      // What it settles on, measured at 320, 390, 500, 768, 844 and 1280:
+      // one column up to 520px, up to two from there, up to three from about
+      // 740px, and the shape rows two abreast from about 700px -- "up to",
+      // because a group of two rows takes two columns and not three.;
   }
   paint();
   document.head.appendChild(css);
@@ -757,14 +1424,20 @@ window.cqSpinControls = function (settings) {
       if (!turn.range) turn.range = 60;
     }
   }
+  // QUOTED, ALWAYS. These names now carry a number on the end ("shape-lit-2")
+  // and an unquoted attribute selector is a CSS identifier -- one character
+  // outside what an identifier may hold and querySelector throws rather than
+  // returning nothing, which takes the whole strip down with it.
+  function find(what) {
+    return bar.querySelector('[data-cq="' + what + '"]')
+        || panel.querySelector('[data-cq="' + what + '"]');
+  }
   function press(what, state) {
-    var el = bar.querySelector('[data-cq=' + what + ']')
-          || panel.querySelector('[data-cq=' + what + ']');
+    var el = find(what);
     if (el) el.setAttribute("aria-pressed", state ? "true" : "false");
   }
   function say(what, text) {
-    var el = bar.querySelector('[data-cq=' + what + ']')
-          || panel.querySelector('[data-cq=' + what + ']');
+    var el = find(what);
     if (el) el.textContent = text;
   }
   function applyPicture() {
@@ -867,9 +1540,97 @@ window.cqSpinControls = function (settings) {
   function step(which, by) {
     speeds[which] = Math.min(12, Math.max(1, Math.round(speeds[which] + by)));
   }
+
+  //: How faint a shape may be made, and how solid. Not zero at the faint end:
+  //: a shape at nothing is a shape that has vanished, and the reader who did
+  //: it by holding the minus button has no way of telling that from a page
+  //: that failed to draw. Hiding a shape outright is what the names in the
+  //: key are for, and that at least says so plainly.
+  var FAINTEST = 0.05, SOLID = 1;
+  function tellShape(n) {
+    var g = shapes[n]; if (!g) return;
+    var st = dressed[g.key];
+    say("shape-lit-" + n, Math.round(st.opacity * 100) + "%");
+    press("shape-wires-" + n, g.mesh ? st.wires : st.filled);
+    press("shape-grey-" + n, st.grey);
+  }
+  function tellShapes() { shapes.forEach(function (g, n) { tellShape(n); }); }
+  function shapePress(what) {
+    var bits = what.split("-");            // shape-fainter-2
+    var n = parseInt(bits[2], 10);
+    var g = shapes[n]; if (!g) return true;
+    var st = dressed[g.key];
+    if (bits[1] === "fainter")
+      st.opacity = Math.max(FAINTEST, Math.round((st.opacity - 0.1) * 100) / 100);
+    if (bits[1] === "stronger")
+      st.opacity = Math.min(SOLID, Math.round((st.opacity + 0.1) * 100) / 100);
+    // ONE BUTTON, TWO MEANINGS, AND NEVER BOTH AT ONCE: a solid has wires
+    // drawn over it, a flat cut is filled in or left as an outline. Which of
+    // the two a shape gets is decided when the row is built, from what that
+    // shape actually is.
+    if (bits[1] === "wires") {
+      if (g.mesh) st.wires = !st.wires; else st.filled = !st.filled;
+    }
+    if (bits[1] === "grey") st.grey = !st.grey;
+    dressOne(g);
+    tellShape(n);
+    return true;
+  }
+
+  function fullscreen() {
+    var el = document.documentElement;
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen();
+    } else if (el.requestFullscreen) {
+      // A REFUSAL IS NORMAL, NOT AN ERROR. A browser will decline this when
+      // the press did not come from a real click -- which is exactly what
+      // happens when a page is being driven by a script. Unhandled, the
+      // rejected promise prints a red line in the console of a page that is
+      // working perfectly.
+      var p = el.requestFullscreen();
+      if (p && p.catch) p.catch(function () {});
+    }
+  }
+  function snapshot() {
+    if (!(window.Plotly && window.Plotly.downloadImage)) return;
+    var name = (document.title || "gamut").replace(/[^\w .-]+/g, " ")
+      .replace(/\s+/g, " ").trim().slice(0, 70) || "gamut";
+    (settings.ids || []).forEach(function (id, i) {
+      var gd = document.getElementById(id);
+      if (!gd || !gd._fullLayout) return;
+      var box = gd.getBoundingClientRect();
+      window.Plotly.downloadImage(gd, {
+        format: "png",
+        // TWICE THE SIZE IT IS DRAWN AT. A picture grabbed at screen size
+        // looks soft the moment it is put in a document, and this costs
+        // nothing but a moment.
+        scale: 2,
+        width: Math.max(320, Math.round(box.width || 900)),
+        height: Math.max(240, Math.round(box.height || 600)),
+        // Two panes are two files, numbered, rather than one file that
+        // silently holds half of what is on screen.
+        filename: (settings.ids || []).length > 1 ? name + " " + (i + 1) : name
+      });
+    });
+  }
+
   function handler(ev) {
     var what = ev.target.getAttribute("data-cq");
     if (!what) return;
+    if (what.indexOf("shape-") === 0) { shapePress(what); push(); return; }
+    if (what === "shapes-back") { undress(); tellShapes(); push(); return; }
+    if (what.indexOf("look-") === 0) {
+      if (window.cqSpin.look) window.cqSpin.look(what.slice(5));
+      // The movement stops when a viewpoint is chosen -- see look() -- so the
+      // Play button has to stop claiming otherwise.
+      running = false;
+      push();
+      return;
+    }
+    if (what === "cut-down") { showCut(cutAt - 1); push(); return; }
+    if (what === "cut-up") { showCut(cutAt + 1); push(); return; }
+    if (what === "full") { fullscreen(); return; }
+    if (what === "shot") { snapshot(); return; }
     if (what === "more") {
       panel.hidden = !panel.hidden;
       say("more", panel.hidden ? "more…" : "less…");
@@ -917,10 +1678,35 @@ window.cqSpinControls = function (settings) {
   }
   bar.addEventListener("click", handler);
   panel.addEventListener("click", handler);
+  // A SLIDER IS NOT A BUTTON. Dragging one fires "input" the whole way and
+  // "click" only sometimes and only at the end, so the click handler above
+  // would have let somebody drag it from top to bottom with the picture
+  // never moving until they let go -- which reads as a slider that is broken
+  // rather than one that is slow.
+  bar.addEventListener("input", function (ev) {
+    if (ev.target.getAttribute("data-cq") !== "cut") return;
+    showCut(parseInt(ev.target.value, 10));
+    push();
+  });
+  // THE PICTURE IS A DIFFERENT SIZE IN FULL SCREEN, and a plot measures its
+  // box once. Without this the shape stays the size of the old window with a
+  // wide black margin round it, which looks like the button half worked.
+  ["fullscreenchange", "webkitfullscreenchange"].forEach(function (ev) {
+    document.addEventListener(ev, function () {
+      press("full", !!document.fullscreenElement);
+      window.setTimeout(fit, 60);
+    });
+  });
   applyPicture();
+  dressAll();
+  tellShapes();
+  // ONLY IF IT MOVED. The page was already drawn at the height it was saved
+  // at, so re-applying that on every load would redraw every outline for
+  // nothing in the first moment somebody is looking at it.
+  if (cuts && cutAt !== (cuts.at || 0)) showCut(cutAt);
   if (mode !== (settings.mode || "dark")) applyMode();
   push();
 };
 
-window.addEventListener('load', function () {window.cqSpin.set({"on": true, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "off", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#e6e6e6", "paper": "#111111", "mode": "dark", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true}});window.cqSpinControls({"on": true, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "off", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#e6e6e6", "paper": "#111111", "mode": "dark", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true}});});</script></body>
+window.addEventListener('load', function () {var s = {"on": true, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "off", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#e6e6e6", "paper": "#111111", "mode": "dark", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true, "opacity": true, "wires": true, "grey": true, "views": true, "fullscreen": true, "picture": true, "cut": true}};window.cqSpin.set(s);window.cqSpinControls(s);});</script></body>
 </html>

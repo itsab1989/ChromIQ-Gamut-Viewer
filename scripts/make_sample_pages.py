@@ -36,6 +36,7 @@ DEMO = pathlib.Path(os.environ.get("GAMUTVIEW_DEMO", str(HERE.parent / "demo")))
 
 GLOSSY = DEMO / "Glossy-paper.ti3"
 MATTE = DEMO / "Matte-paper.ti3"
+LATER = DEMO / "Glossy-paper-months-later.ti3"
 PROFILE = DEMO / "Glossy-paper.icc"
 CHART = DEMO / "verification-chart-480.ti1"
 
@@ -46,7 +47,14 @@ failures: list[str] = []
 #: without them asking.
 DEFAULT_OFFER = {"play": True, "speed": True, "lr": True, "ud": True,
                  "reset": True, "remember": True, "zoom": True, "move": True,
-                 "notes": True}
+                 "notes": True,
+                 # Added with the per-shape controls. On by default in the
+                 # save dialog too, so these pages show what a person gets
+                 # when they save one without opening that section at all --
+                 # which is the only honest thing for a showcase to show.
+                 "opacity": True, "wires": True, "grey": True,
+                 "views": True, "fullscreen": True, "picture": True,
+                 "cut": True}
 
 #: Everything the page can carry, for the one sample that shows it off.
 EVERY_CONTROL = dict(DEFAULT_OFFER, speed_each=True, grid=True, labels=True,
@@ -281,11 +289,22 @@ def main() -> int:
           f"tilt {tilt_speed.group(1) if tilt_speed else '?'}")
 
     # ---------------------------------------------------------------- 04
-    print("\n04 — a glossy paper inside a matte one's outline")
+    # THE SMALLER PAPER SOLID, THE BIGGER ONE AS THE CAGE, and that order is
+    # forced by the measurement rather than chosen for looks. The matte fits
+    # 100.0% inside the glossy -- entirely, with nothing sticking out -- so
+    # drawn the other way round the glossy surface is a closed lid over the
+    # matte cage and the matte is not visible at all, at any angle. The page
+    # was published that way, under a card promising you could "see exactly
+    # where the glossy one pushes out through the matte one's cage", which
+    # cannot happen when one contains the other.
+    #
+    # The window gives the FIRST paper opened the solid style and the second
+    # the outline, so which is opened first is the whole of the fix.
+    print("\n04 — a matte paper solid inside a glossy one's outline")
     fresh()
-    w._load(GLOSSY)
-    pump(2.0)
     w._load(MATTE)
+    pump(2.0)
+    w._load(GLOSSY)
     pump(2.5)
     spin(on=True, turn="swing", turn_speed=8, turn_sweep=90)
     p = page("04-two-papers.html")
@@ -304,8 +323,20 @@ def main() -> int:
     # the matte is the smaller of the two and fits entirely inside the
     # glossy. Names do not say which paper holds more; the window does.
     check("04", "the card has the two papers the right way round",
-          "100.0% of Matte-paper fits inside Glossy-paper" in said,
+          # The window words this from whichever paper is named first, so the
+          # sentence changed when the two were swapped. The FACT it pins --
+          # which of them fits inside the other -- did not.
+          "100.0% of the colour Matte-paper can print also fits inside "
+          "Glossy-paper" in said,
           "the matte is the one that fits inside")
+    # AND THE ONE THAT FITS INSIDE IS THE SOLID ONE. A shape drawn as a cage
+    # inside a closed surface is a shape nobody can see, whatever the card
+    # says about it.
+    check("04", "the shape that fits inside is the one drawn solid",
+          "Matte-paper" in body
+          and "Glossy-paper (outline)" in body
+          and "Matte-paper (outline)" not in body,
+          "otherwise the inner shape is hidden by the outer one at every angle")
     check("04", "how one is drawn stays out of the tab",
           "(outline)" not in (re.search(r"<title>(.*?)</title>", body)
                               or re.match("", "")).group(1)
@@ -507,6 +538,68 @@ def main() -> int:
     check("11", "and it carries both sets of page colours, to switch between",
           '"palettes"' in body and "#efebe6" in body and "#111111" in body)
 
+    # ---------------------------------------------------------------- 13
+    # THE ONE VIEW THE SHOWCASE NEVER HAD, and the one that most needs
+    # showing: not "here are two shapes" but "here is the part of this paper
+    # the other one cannot reproduce", painted onto the shape itself.
+    #
+    # It is also the page that proves the rule about colour. This mesh is red
+    # where a colour is out of reach and grey where it is not, so the colour
+    # IS the measurement -- and the reader is deliberately NOT offered the
+    # switch that would drain it to grey, because a greyed one would still
+    # carry a name promising two things while showing one.
+    # WHICH TWO PAPERS, and it is not a free choice. Painted against the
+    # matte paper, 91.3% of the glossy one's surface comes out red -- a solid
+    # red blob that demonstrates the two colours by showing almost none of
+    # one of them, and reads as "something is broken" rather than as an
+    # answer. The other way round it is 0.0%, because the matte fits entirely
+    # inside the glossy, and the picture is a plain grey shape.
+    #
+    # The same paper measured again months later loses 54.1% -- roughly half
+    # and half, which is the picture that actually shows what the two colours
+    # mean. It is also the more useful question of the two: a paper drifts,
+    # and "what can this batch no longer reproduce" is something a printer
+    # asks about their own stock rather than about somebody else's.
+    print("\n13 — what a paper can no longer reproduce, months later")
+    fresh()
+    w._load(GLOSSY)
+    pump(2.0)
+    w._load(LATER)
+    pump(2.5)
+    for i in range(w._compare.count()):
+        got = w._compare.itemData(i)
+        if got and got[0] == "space" and "months-later" in w._compare.itemText(i):
+            w._compare.setCurrentIndex(i)
+            w._on_compare_changed()
+            break
+    pump(2.0)
+    w._show_lost.setChecked(True)
+    pump(3.0)
+    spin(on=True, turn="round", turn_speed=5)
+    p = page("13-what-a-paper-can-no-longer-reach.html")
+    save_to(p, numbers=True, offer=EVERY_CONTROL)
+    made.append(("13", p))
+    body = p.read_text(encoding="utf-8")
+    check("13", "the shape really is painted by what is out of reach",
+          "red is out of reach" in body)
+    check("13", "and the key says what the OTHER colour means too",
+          "grey is within it" in body,
+          "naming one colour of a two-coloured shape invites the reader to "
+          "take the other for background")
+    # THE MARK THAT REFUSES THE GREY SWITCH. Written into the trace by the
+    # Python and read by the page when it decides which controls to build.
+    # Written compactly by the drawing library -- no spaces after the colons,
+    # which is what the first version of this check looked for and did not find.
+    check("13", "it is marked as a shape whose colour is the answer",
+          '"meta":{"cq":"colour"}' in body)
+    check("13", "so the page still offers the other two shape controls",
+          '"opacity": true' in body and '"wires": true' in body)
+    # AND IT IS ACTUALLY A TWO-COLOURED PICTURE. The whole point of this page
+    # is that a reader can tell the two apart, and a shape that is 91% one of
+    # them demonstrates nothing. Read off the window rather than assumed.
+    said = w._readout_text().replace("\n", " ")
+    print("           " + said[:190])
+
     # ------------------------------------------------------------ all of them
     print("\nevery page")
     for name, path in made:
@@ -540,6 +633,37 @@ def main() -> int:
               and 'button("down", "&darr;"' in body)
         check(name, "and understands a pinch, which is what a phone tries",
               "gd._cqGestures" in body and "touchAction" in body)
+        # THE CONTROLS ARE GROUPED. Twenty of them in one flat list is not a
+        # panel, it is an inventory -- and this is the check that the panel
+        # is still built in named groups rather than having quietly
+        # collapsed back into a column.
+        check(name, "sorts its controls into named groups",
+              all(f'section("{g}"' in body for g in
+                  ("how it moves", "where you look from", "each shape",
+                   "what is drawn", "the page itself")))
+        # AND EACH SHAPE CAN BE DRESSED ON ITS OWN. The reason this matters
+        # on every page rather than only the crowded ones: the person who
+        # opens it did not choose which shapes are on it and cannot know in
+        # advance which one they will want out of the way.
+        check(name, "lets the reader fade any one shape on its own",
+              '"opacity": true' in body
+              and 'button("shape-fainter-" + n' in body)
+        check(name, "and take the colour out of it",
+              '"grey": true' in body and 'button("shape-grey-" + n' in body)
+        # THE NUMBER BETWEEN A MINUS AND A PLUS MUST NOT MOVE THEM. "100%" is
+        # wider than "50%", and without both of these the plus walks out
+        # from under the finger pressing it. Reported from a real page.
+        check(name, "and the reading between the two buttons cannot move "
+              "them", ".cq-num{display:inline-block;min-width:40px;" in body
+              and "font-variant-numeric:tabular-nums" in body)
+        # A CLOSED PANEL IS CLOSED. This is the rule whose absence put 259px
+        # of controls over 78px of picture on every page for two releases,
+        # and it has to outrank every other rule that sets the panel's own
+        # display -- so the check is that nothing after it sets one.
+        check(name, "and its panel is really hidden when it is closed",
+              ".cq-spin-panel[hidden]{display:none}" in body
+              and ".cq-spin-panel{display" not in
+              body[body.index(".cq-spin-panel[hidden]{display:none}"):])
 
     print("\n" + "=" * 68)
     if failures:

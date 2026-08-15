@@ -678,7 +678,7 @@ about 5 MB. Double-click it and it opens in any browser — and it needs **no
 internet at all**, because the 3D viewer travels inside the page. It works from
 a memory stick, from an email attachment, on a plane, in ten years.
 
-**[▶ See twelve of them, live →](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/)**
+**[▶ See thirteen of them, live →](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/)**
 
 What the person you send it to gets is not a picture — it is the scene. They
 can drag it round, zoom in, click the names underneath to hide and show shapes,
@@ -700,22 +700,71 @@ handled by the page itself, and the **zoom** buttons and the four arrows
 behind **more…** are there for anyone who would rather press something — or
 who is on a desktop with no wheel.
 
-<p align="center"><img src="docs/screenshots/21-a-saved-page-as-its-reader-sees-it.webp" width="880" alt="A saved page open in a browser: two measured papers in CIELAB, one solid and one as an outline, their names underneath, then a strip of controls reading Pause, minus, zoom, plus, reset view, less…, then an opened panel of switches for left and right, up and down, move it with four arrows, the numbers, walls and grid, lettering, the names, and light or dark, and below all of it the written-out figures"></p>
+<p align="center"><img src="docs/screenshots/21-a-saved-page-as-its-reader-sees-it.webp" width="880" alt="A saved page open in a browser: two measured papers in CIELAB, one solid and one as an outline, their names underneath, then a strip of controls reading Pause, minus, speed, plus, minus, zoom, plus, reset view, less…, then an opened panel of controls in five headed groups — HOW IT MOVES with left and right and up and down, WHERE YOU LOOK FROM with move-it arrows and the buttons above, front, side and angle, EACH SHAPE with a row per paper carrying a minus, a percentage, a plus, wires and grey, WHAT IS DRAWN with the numbers, walls and grid, lettering and the names, and THE PAGE ITSELF with light or dark, full screen and PNG — and below all of it the written-out figures"></p>
 
 **You choose which controls the page carries**, each time you save it. The
 save dialog has a section — *What the person opening it can change* — with a
 switch for each one, and an explanation of when it is worth handing over:
 
-<p align="center"><img src="docs/screenshots/22-choosing-what-the-reader-can-change.webp" width="470" alt="The save dialog, showing a list of switches under the heading What the person opening it can change: stop and start the movement, one speed for the movement, a speed for each direction, turn left and right on or off, tip up and down on or off, zoom in and out, move the picture about, put the view back, put the numbers away, show or hide the box and its grid, show or hide the lettering, show or hide the names underneath, switch the page light or dark, and remember what they chose"></p>
+<p align="center"><img src="docs/screenshots/22-choosing-what-the-reader-can-change.webp" width="470" alt="The save dialog under the heading What the person opening it can change, with its switches sorted into five named boxes: Moving the shape (stop and start the movement, one speed, a speed for each direction, turn left and right, tip up and down); Looking at it (move the cut up and down, zoom in and out, move the picture about, four fixed places to look from, put the view back, fill the screen); How each shape is drawn (make a shape fainter or more solid, draw the edges instead of the surface, take the colour out of a shape); What the picture shows (put the numbers away, the box and its grid, the lettering, the names underneath); and The page itself (light or dark, save it as a picture file, remember what they chose). Each row has a help icon beside it."></p>
 
-The ones that were always there stay ticked, along with **zoom** and **move**,
+There are twenty-one of them now, in five named groups — *Moving the shape*,
+*Looking at it*, *How each shape is drawn*, *What the picture shows* and *The
+page itself* — each with an explanation of when it is worth handing over. The
+ones that were always there stay ticked, along with **zoom** and **move**,
 which are ticked by default because without them a page cannot be read
-properly on a phone at all. Beyond those you can hand over **a speed for each
-direction** (what this window itself gives you), **the box and its grid**,
-**the lettering**, **the list of names**, **a switch that puts the written-out
-numbers away**, and **a light-or-dark switch for the page**. Everything past
-Play, speed, zoom and reset lives behind a **more…** button, so the strip
-stays short on a phone.
+properly on a phone at all. Everything past Play, speed, zoom and reset lives
+behind a **more…** button, so the strip stays short on a phone.
+
+**Each shape on the page gets its own row of controls**, one row per name in
+the key underneath — and that is deliberate rather than convenient. A page can
+hold a solid surface, a wire cage round a second paper, a cloud of chart
+patches and a skin over them, and nobody reading it knows which of those the
+code calls a shape. What they can see is the list of names.
+
+| For one shape | What it is for |
+|---|---|
+| **fainter / more solid** | The front shape hides the back one and no amount of turning fixes it. You pick one strength when you save; this lets them pick a different one for the shape *they* care about. |
+| **wires** | A net of fine lines over the surface, following the measured points — so it shows where the measurement is dense and where the shape between two readings is the drawing's guess. Faint at the same time leaves the cage alone, which is the clearest way to show one shape inside another. On a cross-section, the same switch fills the outline in or empties it. |
+| **grey** | Two shapes both painted in the colours they hold make a picture nobody can untangle; one of them in grey makes the other obvious. |
+
+The grey keeps the light and dark exactly. Each colour becomes **its own true
+brightness**, worked out the way sRGB itself defines brightness — not by
+averaging the three numbers, which would make a pure blue and a pure yellow
+the same grey when one is nearly black to look at and the other nearly white.
+
+**Some shapes are never offered it, and that is the point.** Where the colour
+*is* the measurement — the comparison shape that is red for what a paper
+cannot reach, and a chart's out-of-reach patches — a greyed picture would
+still carry a name promising two things while showing one. Those are marked in
+the file and the switch is not built for them at all. Not built rather than
+built and refused: a control that is present and declines to work is the worse
+of the two.
+
+**A saved cross-section carries the same lightness slider the window has.**
+Without it a cut is frozen at whatever height the sender happened to be
+looking at — and “which paper reaches further into the cyans” has a different
+answer near the paper white from the one it has in the shadows. The page
+cannot work these out for itself, because slicing a gamut needs the whole 3D
+shape and a flat page carries none; so every cut the reader can reach is
+worked out when the page is saved and travels inside it, 2 L\* apart, about
+170 kB on a file that is already several megabytes. The axes stay pinned
+across every height, so the outline shrinks and grows as you slide rather than
+being rescaled to fit — which is the one thing the view exists to show.
+
+**Four fixed places to look from** — above, front, side, angle — matter more
+than they sound. Dragging is how you explore a shape and a poor way to arrive
+at a known position: squaring the eye over the top of a gamut by hand takes
+several goes and is never quite square, so two people comparing two of your
+pages are comparing two different angles without either of them realising.
+Pressing the same button on both makes the pictures strictly comparable.
+
+**Full screen** is built only where the browser has it — Safari on an iPhone
+offers it for video and nothing else, so there the button is simply absent
+rather than present and dead. **Save a picture** writes what is on screen, at
+that angle with those faded shapes, as a PNG at twice the size it is drawn;
+made by their own browser out of numbers already in the page, with nothing
+sent anywhere.
 
 **Putting the numbers away** is worth a word. On a small screen the figures
 under a picture are easily taller than the screen itself, so the reader gets a

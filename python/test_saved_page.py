@@ -400,9 +400,17 @@ def test_the_more_panel_is_actually_hidden_when_it_is_closed():
         "the panel sets its own display, so it must also say what hidden "
         "means -- or being hidden does nothing at all"
     )
-    # And the rule has to come AFTER the one it is undoing: two rules of the
-    # same weight are settled by which is written last.
-    assert js.index(".cq-spin-panel[hidden]") > js.index("display:grid")
+    # And it has to beat every OTHER rule that sets the panel's display.
+    # Written as "comes after display:grid" this test went on passing when
+    # the panel became display:block and grew media queries after it -- it
+    # was finding "display:grid" on the row grids inside, which is a
+    # different element entirely and settles nothing.
+    hidden = js.index(".cq-spin-panel[hidden]{display:none}")
+    assert hidden > js.index(".cq-spin-panel{"), (
+        "two rules of the same weight are settled by which is written last")
+    assert ".cq-spin-panel{display" not in js[hidden:], (
+        "a later rule setting the panel's own display would put it back on "
+        "screen while it still called itself hidden")
 
 
 def test_the_strip_sits_with_the_picture_not_after_the_numbers():
@@ -482,3 +490,199 @@ def test_the_scanner_would_have_caught_it():
     assert _js_strings_are_closed('var a = "one\ntwo";')[0] == 1
     assert _js_strings_are_closed('var a = "fine"; // a library\'s comment') == []
     assert _js_strings_are_closed("var a = 'it\\'s fine';") == []
+
+
+# --------------------------------------------------------------------------
+# The controls for each shape, and the honesty of them
+#
+# Added with the controls themselves. Two of these guard faults that were
+# already in the shipped code and that a full green suite had no opinion on.
+# --------------------------------------------------------------------------
+
+def _luminance(colour: str) -> float:
+    """Relative luminance of an sRGB colour, per IEC 61966-2-1 / Rec. 709.
+
+    The same definition WCAG uses for contrast, so the ratios below mean what
+    they mean everywhere else.
+    """
+    text = colour.strip()
+    if text.startswith("rgb"):
+        bits = [float(v) for v in text[text.index("(") + 1:text.index(")")]
+                .split(",")[:3]]
+    else:
+        h = text.lstrip("#")
+        bits = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+
+    def lin(v):
+        v /= 255.0
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (lin(v) for v in bits)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a: str, b: str) -> float:
+    la, lb = _luminance(a), _luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_the_scanner_of_brightness_agrees_with_the_two_ends():
+    """A measure that cannot fail is not a measure."""
+    assert _contrast("#000000", "#ffffff") == pytest.approx(21.0, abs=0.01)
+    assert _contrast("#777777", "#777777") == pytest.approx(1.0, abs=0.01)
+
+
+@pytest.mark.parametrize("mode", ["dark", "light"])
+def test_the_red_and_the_grey_differ_in_brightness_not_only_in_hue(mode):
+    """The comparison mesh paints out-of-reach red and within-reach grey, and
+    those two have to be told apart by somebody looking at a shaded surface.
+
+    IT SHIPPED AT 1.12:1 ON THE DARK PAGE -- the same brightness, so hue was
+    the only thing separating them. Hue is the weakest cue on a surface whose
+    shading already varies its brightness everywhere, and for a reader who
+    cannot separate red from grey-blue it is not a cue at all. Reported as
+    "red and grey with no clear distinction", and it was exactly that.
+
+    The whole suite was green while that was true, which is the reason this
+    test exists rather than a comment.
+    """
+    kept = ti3gamut.SCENE_COLOURS[mode]["kept"]
+    got = _contrast(ti3gamut._LOST, kept)
+    assert got >= 1.9, (
+        f"{mode}: the red {ti3gamut._LOST} and the grey {kept} are only "
+        f"{got:.2f}:1 apart in brightness -- at that distance the picture is "
+        f"readable by hue alone")
+
+
+@pytest.mark.parametrize("mode", ["dark", "light"])
+def test_and_the_grey_can_still_be_seen_against_the_page(mode):
+    """Pushing the grey away from the red must not push it into the paper.
+
+    The two pull in opposite directions on a near-black page and this is the
+    other end of that trade -- without it, "make them differ" is satisfied
+    perfectly by a shape nobody can see.
+    """
+    scene = ti3gamut.SCENE_COLOURS[mode]
+    got = _contrast(scene["kept"], scene["page"])
+    assert got >= 1.7, (
+        f"{mode}: the within-reach grey is only {got:.2f}:1 against the page")
+
+
+def test_the_key_says_what_both_of_those_colours_mean():
+    """"red is out of reach" names one colour of a two-coloured shape and
+    invites the reader to take the other for background."""
+    import numpy as np
+
+    class _G:
+        # "xyz" rather than "lab" only because Lab is drawn as a hue circle
+        # and that needs a real Gamut. Nothing here depends on the space.
+        vertices = np.array([[0.0, 0, 0], [1.0, 0, 0], [0.0, 1, 0]])
+        faces = np.array([[0, 1, 2]])
+        space = "xyz"
+
+    trace = ti3gamut._mesh_lost(_G(), "Paper", 1.0, [True, False, False])
+    assert "red is out of reach" in trace.name
+    assert "grey" in trace.name
+
+
+def test_colour_that_is_the_answer_is_never_offered_in_grey():
+    """A saved page lets the reader drop the colour out of a shape. On two of
+    them the colour IS the measurement -- red for what cannot be reached --
+    and a greyed one still carries a name promising two states while showing
+    one. Marked in the Python, refused in the page."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert 'meta.cq === "colour"' in js
+    assert "g.plain" in js, "the mark has to reach the decision"
+    assert ti3gamut._COLOUR_IS_THE_ANSWER == {"cq": "colour"}
+
+
+def test_grey_is_the_true_brightness_and_not_an_average():
+    """Averaging the three numbers makes pure blue and pure yellow the same
+    grey, when one is nearly black to look at and the other nearly white."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "0.2126" in js and "0.7152" in js and "0.0722" in js, (
+        "the Rec. 709 luminance weights sRGB is built on")
+    assert "0.04045" in js and "1.055" in js, (
+        "and the transfer curve, undone before weighting and put back after")
+    assert "/ 3" not in js.split("function toGrey")[1].split("function")[0]
+
+
+def test_an_array_of_colours_is_wrapped_before_it_is_handed_over():
+    """Handed a bare array, restyle reads it as one value per trace and gives
+    the FIRST element to this trace -- so 491 vertex colours quietly become
+    one string and the whole surface turns that colour. Measured in a real
+    browser: it fails silently and looks like a rendering fault."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "Array.isArray(want) ? [want] : want" in js
+
+
+def test_the_key_beside_a_name_keeps_its_strength_when_the_shape_fades():
+    """Every mesh here travels with a scatter of one empty point whose only
+    job is a readable marker in the legend. Fading that with the surface
+    fades the key, and a key nobody can see is a fault this page has had
+    twice already."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "if (!part.proxy) {" in js
+    assert "patch.opacity = st.opacity" in js
+
+
+def test_the_panel_is_grouped_under_headings():
+    """Twenty unrelated controls in one flat list is not a panel, it is an
+    inventory: somebody looking for one of them reads every line."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    for heading in ("how it moves", "where you look from", "each shape",
+                    "what is drawn", "the page itself"):
+        assert f'section("{heading}"' in js
+    assert "if (!rows) return;" in js, (
+        "a heading over nothing is scaffolding the reader has to read past")
+
+
+def test_a_control_is_never_built_where_it_could_do_nothing():
+    """The rule this page already lived by, extended to the new ones: full
+    screen does not exist for an ordinary element on an iPhone, and a cage
+    has no surface to draw wires over."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "document.fullscreenEnabled" in js
+    assert "window.Plotly && window.Plotly.downloadImage" in js
+    assert "return on(\"wires\", true) && (g.mesh || g.fill);" in js
+    assert "!flat" in js.split("function canStand")[1][:120], (
+        "a cross-section is already looked straight at")
+
+
+def test_the_number_between_two_buttons_cannot_move_them():
+    """"100%" is wider than "50%", so every press that crossed a digit shoved
+    the plus out from under the finger pressing it. Reported from the real
+    page. Both halves are needed -- a floor on the width, and figures that
+    are all the same width as each other."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert ".cq-num{display:inline-block;min-width:40px;" in js
+    assert "font-variant-numeric:tabular-nums" in js
+    assert 'class="cq-num" data-cq="shape-lit-' in js
+
+
+def test_the_panel_gives_way_on_a_short_screen_and_not_otherwise():
+    """A sideways phone has 390px of height and an open panel is taller than
+    that, so it would push the picture off the screen. A tall phone has room
+    and can simply be longer -- a panel with its own scrollbar inside a page
+    that also scrolls is a trap for anybody whose thumb lands on it."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "@media (max-height:560px){" in js
+    assert ".cq-spin-panel{max-height:46vh;overflow-y:auto}" in js
+    assert "overscroll-behavior" not in js, (
+        "chaining is what lets a thumb reaching the end of the panel carry "
+        "on to the page")
+
+
+def test_a_phone_gets_one_column_and_a_bigger_thing_to_press():
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "@media (max-width:520px){" in js
+    assert "min-height:34px" in js
+
+
+def test_the_selectors_are_quoted_because_the_names_carry_numbers():
+    """An unquoted attribute selector is a CSS identifier, and querySelector
+    THROWS on one it cannot parse rather than returning nothing -- which
+    would take the whole strip down with it."""
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "'[data-cq=\"' + what + '\"]'" in js

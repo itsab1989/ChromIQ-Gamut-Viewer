@@ -46,7 +46,22 @@ def the_page():
 
     app = QApplication.instance() or QApplication(sys.argv)
     view = QWebEngineView()
-    view.resize(1180, 940)
+    # SWITCHED ON FOR THE PICTURE, because a plain browser has it switched on.
+    #
+    # The page asks the browser whether full screen exists for an ordinary
+    # element and builds that control only where it does -- which is right,
+    # and which meant this README picture was taken in an embedded view where
+    # it does NOT, and came out missing a row that every reader on Chrome,
+    # Firefox or desktop Safari will see. A picture of the controls has to
+    # show the controls people get.
+    from PyQt6.QtWebEngineCore import QWebEngineSettings
+    view.settings().setAttribute(
+        QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)
+    # TALL ENOUGH FOR THE WHOLE PANEL. At 940 the picture took its 62% and the
+    # last group of controls fell off the bottom of the grab -- a README
+    # picture that stops in the middle of the thing it is illustrating is
+    # worse than none, because a reader counts what is in it.
+    view.resize(1180, 1500)
     view.show()
 
     def js(code, wait=0):
@@ -106,12 +121,32 @@ def the_dialog():
         time.sleep(0.005)
 
     dialog = gamut_app.WebPageDialog(window)
+    # THE CAP COMES OFF FOR THE PICTURE, and only for the picture. The list of
+    # switches is in a scroll area so the dialog fits a short screen; a
+    # photograph of a scrollbar tells a reader nothing about what is in the
+    # list, which is the entire reason this picture is in the README. Lifted,
+    # the grab shows what somebody on a big screen actually sees.
+    from PyQt6.QtWidgets import QScrollArea
+    area = dialog.findChild(QScrollArea)
+    if area is not None:
+        area.setMaximumHeight(16777215)
     dialog.show()
     dialog.adjustSize()
     end = time.time() + 1.5
     while time.time() < end:
         app.processEvents()
         time.sleep(0.005)
+    # ASKED AGAIN ONCE THE LAYOUT HAS SETTLED. Before the dialog is shown the
+    # inner widget's size hint is a guess made without a width to wrap to, and
+    # it came out one row short every time -- so the last switch in the list
+    # was cut off in a picture whose whole job is to show the list.
+    if area is not None:
+        area.setMinimumHeight(area.widget().sizeHint().height() + 4)
+        dialog.adjustSize()
+        end = time.time() + 1.0
+        while time.time() < end:
+            app.processEvents()
+            time.sleep(0.005)
     save(dialog.grab(), "22-choosing-what-the-reader-can-change.webp")
     dialog.close()
 
