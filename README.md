@@ -671,6 +671,48 @@ your own or see-through, so the shape can float on any page you drop it onto.
 It says roughly how big the file will be before you make it, and never writes
 over a file that is already there.
 
+### The numbers, as a table you can hand to somebody
+
+**Save the numbers as a table…** writes an ordinary `.csv` — the kind any
+spreadsheet opens by double-clicking, and the kind you can paste into a report
+or a forum post. A picture is convincing; a number is quotable, and this is
+every number the window is showing you at that moment.
+
+It is worth knowing about even if you never open a spreadsheet, because it
+answers the question a picture cannot: *which patches exactly, and by how
+much?*
+
+**The top of the file is the summary** — what everything was measured against,
+which space it was drawn in, and then one block per thing you have open:
+
+```
+what,value,units or note
+measured against,D50 absolute,
+drawn in,CIELAB — for print,cubic Lab units
+Matte-paper: colour held,"543,689",cubic Lab units
+Glossy-paper: colour held,"702,327",cubic Lab units
+Glossy-paper inside Matte-paper,76.4,"per cent, +/- 0.2"
+biggest difference,9.84,dE2000
+```
+
+**Then, if a chart is open, every patch that fell outside — one per line.** Not
+a count, the patches themselves:
+
+```
+outside what,patch number,position on sheet,R,G,B,L*,a*,b*,dE2000 outside
+Matte-paper,295,,100.0000,0.0000,0.0000,51.886,78.358,51.727,3.845
+```
+
+That line says: patch 295 asks for full red and no green or blue, the profile
+puts it at L\* 51.9, and the matte paper misses it by 3.8 ΔE2000. **Position on
+sheet** fills in when the chart is a `.ti2` — one that has been laid out for
+printing — so you can walk to the printed sheet and look at the patch itself.
+
+Every figure carries its own units in the third column, and nothing is rounded
+away: this is the same arithmetic the panel is quoting, written out rather than
+summarised. Sort the last column in a spreadsheet and the worst patches come to
+the top.
+
 
 Nothing, unless you ask.
 
