@@ -5674,7 +5674,22 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             for trace in _neutral_trace(neutrals[i], name, "#ff6b6b",
                                         _axes_space):
                 fig.add_trace(trace)
-        if points and patches is not None and i < len(patches):
+        # A SHAPE MAY HAVE NO MEASURED PATCHES AT ALL, and one of them is on
+        # screen the moment somebody compares against sRGB, Adobe RGB or any
+        # other named space: a reference space is worked out from its own
+        # definition, it was never printed, and nobody measured a patch of
+        # it. The list carries None in its place.
+        #
+        # Without the last test this crashed outright -- a measured chart,
+        # Compare with set to Adobe RGB (1998), tick Show every patch I
+        # measured, and the window came apart with "too many indices for
+        # array: array is 0-dimensional". Reachable in three clicks from an
+        # opened file.
+        #
+        # The greys directly below already tested for it; this one did not,
+        # which is the whole of the bug.
+        if (points and patches is not None and i < len(patches)
+                and patches[i] is not None):
             fig.add_trace(_patch_cloud(patches[i], name, _axes_space))
     # THE CHART GOES ON LAST, so its dots sit over every surface rather than
     # behind them. Drawn even when there is no gamut at all: a chart placed

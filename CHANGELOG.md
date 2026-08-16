@@ -55,6 +55,32 @@ one of which is deliberately a still frame, the poster for the MP4). And
 because they are all charts and read as a set. All three now say what is
 actually there.
 
+### 💥 Ticking a box crashed the window
+
+Found by pressing every setting with a comparison loaded, which is the audit
+that should have existed all along. Open a measured chart, set **Compare with**
+to **Adobe RGB (1998)** — or sRGB, or any other named space — and tick **Show
+every patch I measured**: the window came apart with *"too many indices for
+array: array is 0-dimensional"*. Three clicks from an opened file.
+
+A reference space is worked out from its own definition. It was never printed
+and nobody measured a patch of it, so its place in the list of patch clouds is
+empty — and the code that draws the clouds never checked. The greys directly
+beside it already did, which is the whole of the bug.
+
+### 🔺 A skin looks faceted, and that is the shape
+
+Questioned, and checked rather than assumed. Long fan-shaped streaks across a
+chart's skin are the **hull's own triangles**: it is stretched over a few
+hundred scattered patches, so it is made of large flat facets meeting at real
+angles, and each catches the light differently.
+
+The test that settles it: drawn **solid**, the picture is made entirely by the
+depth buffer, where no ordering happens at all — and the faceting is just as
+strong there. **17.7% of its pixels sit on an edge solid, 19.4% see-through.**
+Nothing about being see-through causes it. The help text now says so, because
+a picture that reads as broken and is not needs to say which it is.
+
 ### 🔍 And the audit that should have found them
 
 These were found because somebody pointed at one of them, which is not an

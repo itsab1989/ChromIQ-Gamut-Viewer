@@ -1644,3 +1644,32 @@ def test_a_row_with_a_tick_in_it_is_told_its_height_twice():
         "and the layout has to be told the same number, because it will not "
         "ask again once the stylesheet lands")
     assert "_ask_the_layouts_again" in src
+
+
+def test_a_reference_space_has_no_measured_patches_to_draw():
+    """Found by pressing every control with a comparison loaded.
+
+    A reference space is worked out from its own definition; it was never
+    printed and nobody measured a patch of it, so its place in the list of
+    patch clouds is None. Ticking "Show every patch I measured" crashed the
+    window outright -- "too many indices for array: array is 0-dimensional" --
+    three clicks from an opened file. The greys beside it already tested for
+    None; this did not.
+    """
+    from pathlib import Path
+    import ti3gamut
+    from references import reference_gamut
+    papers = _two_papers()
+    demo = Path(__file__).resolve().parent.parent / "demo"
+    m = ti3gamut.read_ti3(demo / "Glossy-paper.ti3")
+    pair = [papers[0],
+            ("Adobe RGB (1998)", reference_gamut("Adobe RGB (1998)"))]
+
+    # The measured paper has a cloud; the space beside it has none.
+    fig = ti3gamut.build_figure(pair, "", points=True, patches=[m.lab, None])
+    clouds = [t.name for t in fig.data if t.name and "patches" in t.name]
+    assert len(clouds) == 1, clouds
+
+    # And neither of them having one is drawn rather than raised.
+    fig = ti3gamut.build_figure(pair, "", points=True, patches=[None, None])
+    assert not [t for t in fig.data if t.name and "patches" in t.name]
