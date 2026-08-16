@@ -55,6 +55,22 @@ probe getting an answer wrong first:
      few thousand pixels at its edges. Judged against the wrong floor, two
      perfectly good controls looked broken.
 
+WHAT IT STILL GETS WRONG, so you do not spend an afternoon on it as I did.
+
+A control that leaves the MOVEMENT running contaminates the one tested after
+it: the shape goes on turning, the next control's "before" and "after" are
+taken at different angles, and it is reported as not coming back. Stopping the
+movement and putting the camera back between controls helps and does not cure
+it. If a control is flagged and you suspect this, test it on its own —
+
+    from the window, with nothing else touched: switch it, switch it back,
+    and compare. "Show the box and its grid" reports ~314,000 pixels inside a
+    full run and 0 pixels on its own, with the camera identical either way.
+
+A finding is a reason to go and look, not a verdict. Every one of the three
+real faults this found survived being tested on its own; every false one did
+not.
+
 Exit code is 1 if anything did nothing, so it can gate a release.
 """
 from __future__ import annotations
@@ -229,6 +245,21 @@ def audit_window(bench, w, gamut_app) -> list:
 
     rows, findings = [], []
     seen = set()
+    # THE ANGLE THE PICTURE OPENS AT, so every control is judged from the
+    # same starting point rather than from wherever the one before it left
+    # the shape.
+    opening = bench.js(
+        "JSON.stringify((function () {"
+        "  var gd = document.querySelector('.js-plotly-plot');"
+        "  var s = gd && gd._fullLayout && gd._fullLayout.scene;"
+        "  var sc = s && s._scene;"
+        "  return (sc && sc.getCamera ? sc.getCamera().eye"
+        "                             : (s && s.camera && s.camera.eye));"
+        "})());")
+    try:
+        opening_view = json.loads(opening) or {"x": 1.5, "y": 1.5, "z": 1.5}
+    except (TypeError, ValueError):
+        opening_view = {"x": 1.5, "y": 1.5, "z": 1.5}
 
     def move_and_restore(key, widget):
         kind = ("slider" if isinstance(widget, QSlider) else
@@ -252,6 +283,23 @@ def audit_window(bench, w, gamut_app) -> list:
             # control was still being measured on a turning picture, and
             # reported the identical pixel count as the one that started it.
             bench.pump(3.0)
+        # AND THE SHAPE PUT BACK WHERE IT STARTED.
+        #
+        # Stopping the movement is not enough: it leaves the shape at
+        # whatever angle it had reached, and the next control is then
+        # measured against a picture that will never come back — because
+        # redrawing does not restore a camera nobody stored. "Show the box
+        # and its grid" was reported as leaving 314,150 pixels different by
+        # exactly this, and on a page nothing had turned it leaves 0.
+        bench.js("""
+        (function () {
+          var gd = document.querySelector('.js-plotly-plot');
+          var s = gd && gd._fullLayout && gd._fullLayout.scene;
+          if (s && s._scene && s._scene.setCamera)
+            s._scene.setCamera({eye: %s, center: {x: 0, y: 0, z: 0},
+                                up: {x: 0, y: 0, z: 1}});
+        })();""" % json.dumps(opening_view))
+        bench.pump(1.2)
         parent = NEEDS.get(key)
         put_back_parent = None
         if parent and not parent.startswith("_"):
@@ -296,8 +344,11 @@ def audit_window(bench, w, gamut_app) -> list:
             verdict = "DOES NOTHING"
             findings.append(f"{key}: moving it changed {moved} px")
         elif left > 4000:
-            verdict = "DOES NOT COME BACK"
-            findings.append(f"{key}: putting it back left {left} px different")
+            verdict = "DOES NOT COME BACK — test it on its own"
+            findings.append(
+                f"{key}: putting it back left {left} px different. Test it on "
+                f"its own before believing it: a control tested after one that "
+                f"leaves the movement running is measured on a turning shape.")
         else:
             verdict = "works"
         rows.append((key, moved, left, verdict))
