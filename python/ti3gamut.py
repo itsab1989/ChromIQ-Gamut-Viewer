@@ -5622,10 +5622,34 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
         # what tells a reader on a phone there is more to come, and it leaves
         # them somewhere to put a thumb that is not the picture -- because the
         # picture now takes touches over completely.
+        # AND THE PICTURE IS SIZED BY THE COLUMN, NOT BY A PERCENTAGE OF IT.
+        #
+        # The box above keeps `height:auto`, which is the whole point of it --
+        # the page may grow past the window. But the drawing library gives its
+        # own div `height:100%`, and a percentage height only resolves against
+        # a parent whose height is DEFINITE. Chromium resolves it anyway
+        # against the height flex worked out; WebKit follows the stricter
+        # reading, finds nothing to take a percentage of, and falls back to
+        # the library's built-in default of 450px.
+        #
+        # Measured on the same page in a 1024x1366 window: the box came out
+        # 1128px tall in both engines, and the picture inside it 1128px in
+        # Chromium against **450px in WebKit** -- so two thirds of an iPad
+        # screen was black, and the same on a Mac in Safari. Reported as "a
+        # lot of black space that could be used for viewing the shape".
+        #
+        # Making the box a flex column and letting the picture be a flex item
+        # takes the percentage out of it entirely: flex sizing does not need a
+        # definite parent, so both engines agree. `min-height:0` is what lets
+        # a flex item be smaller than its contents, and without it the item
+        # refuses to shrink and the page grows a scrollbar it does not need.
         style += ("<style>html{height:100%;}"
                   "body{height:auto;min-height:100%;}"
                   "body > div:first-of-type"
-                  "{height:auto !important;min-height:62vh;}"
+                  "{height:auto !important;min-height:62vh;"
+                  "display:flex;flex-direction:column;}"
+                  "body > div:first-of-type > .js-plotly-plot"
+                  "{flex:1 1 auto;min-height:62vh;height:auto !important;}"
                   ".cq-notes{flex:0 0 auto;}</style>")
         # WHY `controls` AND NOT ONLY `notes`.
         #
