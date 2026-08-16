@@ -734,7 +734,18 @@ def _paint_vertices(gamut, paint: str, index: int) -> "list | None":
 
     Returns None for the plain case so the caller can use the gamut's own
     colours without copying them.
+
+    A NAME NOBODY HANDLES IS REFUSED. Everything below was a chain of tests
+    ending in "otherwise, by chroma", so a misspelling -- or the word "plain",
+    which belongs to a cage and not to a surface -- came back as a chroma ramp
+    and looked like a painting fault rather than a wrong name. The same shape
+    of bug as the empty picture an unknown style used to draw.
     """
+    if paint not in SHAPE_PAINTS:
+        raise ValueError(
+            f"unknown painting {paint!r}; expected one of "
+            f"{', '.join(sorted(SHAPE_PAINTS))}. (\"plain\" is a cage's own "
+            f"grey, not a way of painting a surface -- see outline_paint.)")
     if paint == "true":
         return None
     if paint == "solid":
@@ -1454,6 +1465,44 @@ _PAGE_BACKGROUND = "#111318"
 #: cannot drift apart.
 SHAPE_STYLES = ("solid", "solid+mesh", "mesh")
 
+#: How a surface may be painted. The same five the window offers as "How the
+#: shapes are coloured", named here so that a name nobody handles is refused
+#: rather than quietly painted as something else.
+SHAPE_PAINTS = ("true", "solid", "lightness", "chroma", "accent")
+
+#: How a shape's WIRE CAGE may be coloured, which is a separate question from
+#: how its surface is.
+#:
+#: It used to be one tick -- "Colour the outlines too" -- and a tick can only
+#: say "the same as the shape". That left one useful picture unreachable: a
+#: surface drained to grey by lightness or chroma, so the FORM of it reads,
+#: with the cage over it still carrying the real colours. Asked for, and the
+#: reason it could not be had was that the two questions had been folded into
+#: one control.
+#:
+#: ``"match"`` keeps the old behaviour and keeps following the shape when the
+#: shape's painting is changed; the five named ones are fixed regardless of it;
+#: ``"plain"`` is the one flat grey that reads most clearly on top of a solid.
+#: ``"colour"`` is the word older saved settings used for ``"match"`` and is
+#: still understood, because a setting written last week must not come back
+#: as an error.
+OUTLINE_PAINTS = ("plain", "match") + SHAPE_PAINTS
+
+
+def outline_paint(choice: str, shape_paint: str) -> str:
+    """Which painting a wire cage takes, given its own choice and the shape's.
+
+    Separated from :func:`build_figure` so the rule lives in one place: the
+    window, the saved page and the command line all decide it the same way.
+    """
+    if choice in ("match", "colour"):
+        return shape_paint
+    if choice in OUTLINE_PAINTS:
+        return choice
+    raise ValueError(
+        f"unknown outline colour {choice!r}; expected one of "
+        f"{', '.join(sorted(OUTLINE_PAINTS))}")
+
 
 #: Keeps two scenes pointing the same way. Taken from ChromIQ's own
 #: cqLinkCameras (workflow/patch_cube.py), including the two subtleties that
@@ -1582,6 +1631,10 @@ _ORDER_JS = """
 window.cqOrder = (function () {
   var plots = [], raf = null, still = 0, watch = null, fast = true;
   var listening = false;
+  //: Pooling can be turned off from outside. Not a setting anybody sees --
+  //: it is how the tests compare the two ways of drawing the same page
+  //: without editing the page, which is the only comparison that is fair.
+  var pooling = true;
   var BUCKETS = 4096, tally = new Int32Array(BUCKETS + 1);
 
   function graphs() {
@@ -1619,7 +1672,18 @@ window.cqOrder = (function () {
       for (var n = 0; n < full.length; n++) {
         var t = full[n];
         if (!t || t.type !== 'mesh3d' || !t.i || !t.j || !t.k) continue;
-        if (t.i.length < 2 || t.visible === false) continue;
+        // NOT DRAWN IS NOT THE SAME AS NOT THERE, and "false" is not the only
+        // way a trace is not drawn. Clicking a shape's name in the key sets
+        // its visibility to the string "legendonly", which is neither true nor
+        // false -- so a test for `=== false` let a hidden shape through, the
+        // drawn object for it could not be found, and everything else on the
+        // page went through the slow front door for as long as it stayed
+        // hidden. Measured, two papers with one of them hidden: a pass cost
+        // 4.50 ms where it now costs 1.70 -- and the engine went on putting
+        // 1,956 triangles in order for a picture showing 978, with the
+        // pooling below switched off the whole time. Hiding a shape is
+        // supposed to make the picture cheaper, and it made it dearer.
+        if (t.i.length < 2 || t.visible !== true) continue;
         // A SOLID SURFACE ALREADY HIDES ITSELF and must be left exactly as it
         // is -- there is nothing to fix and reordering it would be work for
         // no picture. The opacity is read again every time this runs, because
@@ -1667,7 +1731,9 @@ window.cqOrder = (function () {
                      return t;
                    })()});
       }
-      if (keep.length) plots.push({gd: gd, meshes: keep, was: null});
+      if (keep.length)
+        plots.push({gd: gd, meshes: keep, was: null,
+                    pool: null, blanked: null});
     }
     return plots.length;
   }
@@ -1847,7 +1913,263 @@ window.cqOrder = (function () {
     return A.normals;
   }
 
-  function hand(P) {
+  // ------------------------------------------------------------------------
+  // TWO SEE-THROUGH SHAPES HAVE NO RIGHT ORDER, SO THEY ARE MADE ONE SHAPE.
+  //
+  // Sorting each shape's own triangles fixes each shape. It cannot fix two of
+  // them against each other, because the library draws one whole surface and
+  // then the next whole surface, and two gamuts of the same printer are not
+  // one in front of the other -- they pass through each other. Whichever goes
+  // down first is wrong over half the picture.
+  //
+  // Putting the SHAPES in depth order was tried and measured and is not the
+  // answer: it rescues the angles where one really is in front and ruins the
+  // ones where they cross, and it came out worse on average than leaving them
+  // alone. There is no order of two surfaces that is right, which is the
+  // whole point.
+  //
+  // MEASURED AGAINST WHAT RIGHT LOOKS LIKE. Weld the two shapes into a single
+  // surface and the question disappears: one surface has one pool of
+  // triangles, they are all sorted together, and every one of them is drawn
+  // farthest-first. That weld is the reference, and it was checked before it
+  // was believed -- welding the other way round moves the picture by 0.00%,
+  // and at a thousandth of transparency it agrees with the solid shape to
+  // 1.0%. Against it, at eight camera angles:
+  //
+  //     two shapes, both at 0.55        no ordering 76.2%   per shape 68.5%
+  //     two shapes, 0.55 and 0.30                   73.4%             62.6%
+  //     three shapes at 0.55                        81.5%             76.3%
+  //
+  // So this does the weld itself, every frame, on the drawn objects rather
+  // than on the traces: all the see-through surfaces' vertices are laid end
+  // to end ONCE, their triangles are sorted as one pool, and the whole lot is
+  // handed to the first object while the others are given nothing to draw.
+  // The page still holds two traces -- the key, the hover, the visibility
+  // switches and the saved file are all untouched -- but the graphics card is
+  // given one correctly ordered surface.
+  //
+  // THREE THINGS HAD TO SURVIVE THE WELD, and each is why a piece of the code
+  // below exists:
+  //
+  // 1. A STRENGTH PER SHAPE. One surface has one opacity, and two shapes may
+  //    be set to two different ones. The library multiplies each vertex's own
+  //    alpha by the surface's opacity, so folding one into the other loses
+  //    nothing: the pooled surface is set to full strength and every vertex
+  //    carries alpha * its own shape's strength. Identical arithmetic, done
+  //    once instead of twice.
+  //
+  // 2. THE SHADING. One surface has one light and one roughness. Shapes may
+  //    each be given their own amount of shape definition, which is a
+  //    different lighting, and there is no honest way to give one surface
+  //    two. So shapes that are lit differently are NOT pooled: they keep
+  //    exactly the behaviour they had before this, which is the second best
+  //    picture rather than a wrong one.
+  //
+  // 3. THE HOVER. Pooled, every triangle belongs to the first surface, so
+  //    asking the picture what is under the pointer would name the first
+  //    shape everywhere. The vertices of each shape occupy a known stretch of
+  //    the pooled surface, so each trace is taught to answer for its own
+  //    stretch and to decline the rest -- which is how the right name comes
+  //    back for the right shape.
+  var EMPTY = [];
+  var LIT = ['ambient', 'diffuse', 'specular', 'roughness', 'fresnel',
+             'contourEnable', 'contourWidth', 'vertexNormalsEpsilon',
+             'faceNormalsEpsilon'];
+
+  function sameNumbers(a, b) {
+    if (a === b) return true;
+    if (!a || !b || a.length !== b.length) return false;
+    for (var n = 0; n < a.length; n++) if (a[n] !== b[n]) return false;
+    return true;
+  }
+
+  // MAY THESE SURFACES BECOME ONE? Everything that would change the picture if
+  // it were pooled is a reason to decline, and declining costs nothing: the
+  // per-shape ordering below carries on exactly as it did.
+  function poolable(objs) {
+    var first = objs[0].__cqGiven, n, q;
+    for (n = 0; n < objs.length; n++) {
+      var g = objs[n].__cqGiven;
+      if (!g || !g.positions || !g.cells || !g.positions.length) return false;
+      // COLOURED FROM A SCALE, LIT PER FACET, OR COLOURED PER TRIANGLE. None
+      // of these survive being poured together: a scale is a texture the whole
+      // surface shares, a facet normal belongs to a triangle and moves when
+      // the triangles are reordered, and a colour per triangle would have to
+      // be reordered alongside them. None is produced by this application
+      // today; all three are declined rather than assumed away.
+      if (g.colormap || g.texture || g.opacityscale || g.useFacetNormals
+          || g.cellNormals || g.cellColors || g.cellIntensity
+          || g.vertexIntensity || g.vertexUVs || g.cellUVs) return false;
+      if (!g.vertexColors && !g.meshColor) return false;
+      if (n && !sameNumbers(first.lightPosition, g.lightPosition)) return false;
+      if (n && !sameNumbers(first.contourColor, g.contourColor)) return false;
+      if (n) for (q = 0; q < LIT.length; q++)
+        if (first[LIT[q]] !== g[LIT[q]]) return false;
+      // Only triangles. A surface carrying stray points or edges would lose
+      // them, because the pool is sorted as triangles and nothing else.
+      for (q = 0; q < g.cells.length; q++)
+        if (!g.cells[q] || g.cells[q].length !== 3) return false;
+    }
+    return true;
+  }
+
+  // THE POOL ITSELF, BUILT ONCE PER SET OF SHAPES rather than once per frame.
+  // The vertices, their colours and their normals do not change while the
+  // picture is only being turned; the ONLY thing a frame changes is which
+  // order the triangles go in, and that is the one thing left to `order`.
+  function getPool(P, objs) {
+    var n, f, sig = [];
+    for (n = 0; n < objs.length; n++) {
+      var g0 = objs[n].__cqGiven;
+      sig.push(P.meshes[n].uid + ':' + g0.positions.length + ':'
+               + g0.cells.length + ':' + g0.opacity);
+    }
+    sig = sig.join('|');
+    if (P.pool && P.pool.sig === sig) return P.pool;
+    P.pool = null;
+    if (!poolable(objs)) return null;
+    var pos = [], col = [], nor = [], span = {}, faces = 0;
+    var shift = 0, haveNormals = true;
+    for (n = 0; n < objs.length; n++) {
+      var g = objs[n].__cqGiven, A = P.meshes[n];
+      var op = (typeof g.opacity === 'number') ? g.opacity : 1;
+      var vs = g.positions.length, cs = g.vertexColors;
+      for (f = 0; f < vs; f++) {
+        pos.push(g.positions[f]);
+        var c = cs ? cs[f] : g.meshColor;
+        var a = (c && c.length > 3) ? c[3] : 1;
+        col.push([c[0], c[1], c[2], a * op]);
+      }
+      // The normals are the ones already worked out for this surface on its
+      // own, and they stay right: no triangle in the pool joins one shape's
+      // vertices to another's, so a vertex has exactly the neighbours it had.
+      var norms = normalsOnce(A, g);
+      if (norms && norms.length === vs) {
+        for (f = 0; f < vs; f++) nor.push(norms[f]);
+      } else {
+        haveNormals = false;
+      }
+      span[A.uid] = {lo: shift, hi: shift + vs, mesh: objs[n]};
+      faces += g.cells.length;
+      shift += vs;
+    }
+    var m = faces;
+    var pool = {sig: sig, host: objs[0], span: span, m: m, count: objs.length,
+                positions: pos, vertexColors: col,
+                vertexNormals: haveNormals ? nor : null,
+                base: objs[0].__cqGiven,
+                i: new Int32Array(m), j: new Int32Array(m),
+                k: new Int32Array(m), mid: new Float64Array(m * 3),
+                key: new Float64Array(m), slot: new Int32Array(m),
+                bin: new Int32Array(m), tri: new Array(m)};
+    var at = 0;
+    shift = 0;
+    for (n = 0; n < objs.length; n++) {
+      var cells = objs[n].__cqGiven.cells;
+      for (f = 0; f < cells.length; f++) {
+        var t = cells[f];
+        pool.i[at] = t[0] + shift;
+        pool.j[at] = t[1] + shift;
+        pool.k[at] = t[2] + shift;
+        at++;
+      }
+      shift += objs[n].__cqGiven.positions.length;
+    }
+    // THE MIDPOINTS COME FROM THE MEASUREMENTS, NOT FROM THE DRAWN VERTICES.
+    //
+    // Both are available and they are not in the same units: what the library
+    // was handed has each axis multiplied by that axis's own scale, while the
+    // direction the eye is in -- worked out by lineOfSight -- is deliberately
+    // put back into the measurements' units so it can be compared with the
+    // midpoints each surface already carries.
+    //
+    // Drawn in true proportions the three scales are equal, so the two agree
+    // up to one common factor and the ORDER is the same either way, which is
+    // why this went unnoticed. Squared off, they are not equal, and a depth
+    // worked out in one set of units against a direction in the other puts
+    // the triangles in the wrong order on exactly the setting somebody
+    // chooses when they want to see the shape rather than its scale.
+    //
+    // Each surface has already worked its own midpoints out, in the right
+    // units, and the pool's triangles are those surfaces' triangles in the
+    // same order -- so they are copied rather than computed again, which is
+    // both correct and cheaper.
+    var into = 0;
+    for (n = 0; n < objs.length; n++) {
+      var A2 = P.meshes[n], had2 = objs[n].__cqGiven;
+      if (A2.m !== had2.cells.length) return null;   // not the same surface
+      for (f = 0; f < A2.m * 3; f++) pool.mid[into + f] = A2.mid[f];
+      into += A2.m * 3;
+    }
+    for (f = 0; f < m; f++) pool.tri[f] = [0, 0, 0];
+    P.pool = pool;
+    return pool;
+  }
+
+  // EACH SHAPE ANSWERS FOR ITS OWN STRETCH OF THE POOL.
+  //
+  // The library asks every trace in turn "is this yours?", and a trace says
+  // yes when the thing that was picked is the surface it drew. Pooled, one
+  // surface was drawn for all of them, so all of them would say yes and the
+  // first would win -- one paper's name over both shapes.
+  //
+  // What comes back from a pick is the number of a VERTEX, and each shape owns
+  // a known stretch of the pooled vertices. So each trace is wrapped: outside
+  // its stretch it declines, inside it the number is shifted back into the
+  // shape's own numbering and its own answer is used unchanged. Nothing about
+  // what hover SAYS is written here -- only which shape is asked.
+  function ownHover(P) {
+    var sc;
+    try { sc = P.gd._fullLayout.scene._scene; } catch (e) { return; }
+    if (!sc || !sc.traces) return;
+    for (var n = 0; n < P.meshes.length; n++) {
+      var tr = sc.traces[P.meshes[n].uid];
+      if (!tr || tr.__cqPick || typeof tr.handlePick !== 'function') continue;
+      tr.__cqPick = true;
+      (function (trace, uid) {
+        var was = trace.handlePick;
+        trace.handlePick = function (e) {
+          var pool = P.pool;
+          if (pool && e && e.object === pool.host && e.data
+              && typeof e.data.index === 'number') {
+            var mine = pool.span[uid];
+            if (!mine) return false;
+            var at = e.data.index;
+            if (at < mine.lo || at >= mine.hi) return false;
+            var heldObject = e.object, heldIndex = at;
+            e.object = mine.mesh;
+            e.data.index = at - mine.lo;
+            var answer = false;
+            try { answer = was.call(this, e); }
+            finally { e.object = heldObject; e.data.index = heldIndex; }
+            return answer;
+          }
+          return was.call(this, e);
+        };
+      })(tr, P.meshes[n].uid);
+    }
+  }
+
+  // GIVE A SURFACE ITS TRIANGLES BACK. Anything that was emptied into the pool
+  // has to be drawable again the moment it leaves it -- a shape whose strength
+  // is turned up to solid stops being pooled, and a surface still holding no
+  // triangles would simply vanish. Surfaces that are about to be handed their
+  // own order anyway are skipped: they are already being repaired.
+  function restore(P, objs) {
+    if (!P.blanked || !P.blanked.length) return;
+    for (var n = 0; n < P.blanked.length; n++) {
+      var o = P.blanked[n];
+      if ((objs && objs.indexOf(o) >= 0) || !o.__cqGiven) continue;
+      var back = {}, key;
+      for (key in o.__cqGiven)
+        if (o.__cqGiven.hasOwnProperty(key)) back[key] = o.__cqGiven[key];
+      back.__cq = true;
+      try { o.update(back); } catch (e) {}
+    }
+    P.blanked = null;
+  }
+
+  function hand(P, look) {
     var n, objs = [], every = true;
     for (n = 0; n < P.meshes.length; n++) {
       var o = drawn(P.gd, P.meshes[n].uid);
@@ -1858,6 +2180,52 @@ window.cqOrder = (function () {
     }
     if (fast && every) {
       try {
+        var pool = (pooling && objs.length > 1) ? getPool(P, objs)
+                                                : (P.pool = null);
+        if (pool) {
+          restore(P, objs);
+          order(pool, look);
+          var one = {}, k0;
+          for (k0 in pool.base)
+            if (pool.base.hasOwnProperty(k0)) one[k0] = pool.base[k0];
+          one.positions = pool.positions;
+          one.vertexColors = pool.vertexColors;
+          if (pool.vertexNormals) one.vertexNormals = pool.vertexNormals;
+          else delete one.vertexNormals;
+          one.cells = pool.tri;
+          // FULL STRENGTH, because every vertex is already carrying its own
+          // shape's strength in its alpha. Left at the first shape's opacity
+          // the second shape would be faded twice.
+          one.opacity = 1;
+          one.__cq = true;
+          pool.host.update(one);
+          for (n = 1; n < objs.length; n++) {
+            var blank = {}, held = objs[n].__cqGiven, k1;
+            for (k1 in held) if (held.hasOwnProperty(k1)) blank[k1] = held[k1];
+            blank.cells = EMPTY;
+            blank.__cq = true;
+            objs[n].update(blank);
+          }
+          P.blanked = objs.slice(1);
+          // AND CHECK THE POOL ACTUALLY LANDED. A handover that quietly drew
+          // the old triangles would look like a fix and be nothing; the count
+          // the surface reports back is the only thing that says otherwise.
+          if (pool.host.triangleCount !== pool.m
+              || (typeof pool.host.isTransparent === 'function'
+                  && !pool.host.isTransparent())) {
+            fast = false;
+            P.pool = null;
+          } else {
+            ownHover(P);
+            var sp = P.gd._fullLayout.scene._scene;
+            if (sp && sp.glplot && sp.glplot.redraw) sp.glplot.redraw();
+            return true;
+          }
+        }
+        // EACH SHAPE ON ITS OWN, which is right for a single surface and the
+        // best available for shapes that may not be pooled.
+        restore(P, objs);
+        for (n = 0; n < objs.length; n++) order(P.meshes[n], look);
         for (n = 0; n < objs.length; n++) {
           var send = {}, had = objs[n].__cqGiven, key;
           for (key in had) if (had.hasOwnProperty(key)) send[key] = had[key];
@@ -1885,7 +2253,12 @@ window.cqOrder = (function () {
     }
     // THE FRONT DOOR. Slower, always available, and the only thing used until
     // the library has been overheard building each surface at least once --
-    // which the very first pass through here makes it do.
+    // which the very first pass through here makes it do. It cannot pool,
+    // because it works on the traces the page is written from and pooling is
+    // deliberately confined to what is drawn.
+    P.pool = null;
+    restore(P, null);
+    for (n = 0; n < P.meshes.length; n++) order(P.meshes[n], look);
     if (!window.Plotly || !Plotly.restyle) return false;
     var ii = [], jj = [], kk = [], which = [];
     for (var q = 0; q < P.meshes.length; q++) {
@@ -1928,8 +2301,7 @@ window.cqOrder = (function () {
         if (d < 0.000064) continue;
       }
       P.was = look;
-      for (var n = 0; n < P.meshes.length; n++) order(P.meshes[n], look);
-      if (hand(P)) did = true;
+      if (hand(P, look)) did = true;
     }
     if (did) {
       // Smoothed, so one slow frame -- a browser busy with something else --
@@ -2017,13 +2389,18 @@ window.cqOrder = (function () {
 
   return {start: start, collect: collect, wake: wake,
           now: function () { return pass(true); },
+          pool: function (on) { pooling = !!on; return pass(true); },
           // For the tests: which door was used, and how much there is to do.
           how: function () {
-            var n = 0;
-            for (var q = 0; q < plots.length; q++)
+            var n = 0, pooled = 0, surfaces = 0;
+            for (var q = 0; q < plots.length; q++) {
               for (var m = 0; m < plots[q].meshes.length; m++)
                 n += plots[q].meshes[m].m;
-            return {fast: fast, plots: plots.length, faces: n};
+              surfaces += plots[q].meshes.length;
+              if (plots[q].pool) pooled += plots[q].pool.count;
+            }
+            return {fast: fast, plots: plots.length, faces: n,
+                    surfaces: surfaces, pooled: pooled};
           }};
 })();
 window.addEventListener('load', function () {
@@ -4985,40 +5362,47 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             # transparent surfaces is not visible between two sets of wires.
             parts = ([(None, 1.0)] if disagrees is None
                      else [(disagrees, differ), (~disagrees, agree)])
-            for only, strength in parts:
-                if only is not None and not np.any(only):
-                    continue
-                first = only is disagrees
+            # WORK OUT WHICH HALVES ARE ACTUALLY DRAWN BEFORE DECIDING WHICH
+            # ONE CARRIES THE NAME.
+            #
+            # A cage split in two used to hand its key to the half that
+            # DISAGREES with the other shapes, and silence the other half so
+            # the name could not appear twice. Both rules are right on their
+            # own and together they lose the name altogether, because a shape
+            # can have no disagreeing half at all: the matte paper fits
+            # entirely inside the glossy one, so 0 of its 978 triangles
+            # differ. The half carrying the key was skipped as empty and the
+            # only half left was the silenced one.
+            #
+            # Reported as "no label indicator for the matte paper outline",
+            # and it is on a published page: 11-everything-handed-over.html
+            # shows a grey cage with nothing in the key to say whose it is.
+            #
+            # Choosing from the halves that survive, rather than from the
+            # halves that were proposed, cannot lose it: whatever is drawn
+            # first is named, and there is always a first.
+            drawn_parts = [p for p in parts
+                           if p[0] is None or bool(np.any(p[0]))]
+            for at, (only, strength) in enumerate(drawn_parts):
+                first = at == 0
                 for trace in _edges(g, name, colour=c["wire"],
                                     width=1.0 if how == "mesh" else 0.7,
-                                    paint=("plain" if mesh_paint_i == "plain"
-                                           else paint_i),
+                                    # THE CAGE'S OWN COLOUR, which may follow
+                                    # the surface's and no longer has to.
+                                    paint=outline_paint(mesh_paint_i, paint_i),
                                     index=i,
-                                    # THE FIRST HALF CARRIES THE KEY, and
-                                    # only the first. Written as "the first
-                                    # half OR anything at full strength",
-                                    # both halves qualified whenever nothing
-                                    # was faded -- which is how the page
-                                    # opens -- and the cage was listed twice
-                                    # under the same name. Reported as
-                                    # "the outline was double in some".
-                                    #
-                                    # `only is disagrees` is true for the
-                                    # first half AND for the unsplit case,
-                                    # where both are None, so one test
-                                    # covers both.
+                                    # THE FIRST HALF DRAWN CARRIES THE KEY,
+                                    # and only the first, so the cage is
+                                    # named exactly once however it is split.
                                     key=c["mark"] if first else None,
                                     page=c["page"], only=only):
                     if strength < 1.0:
                         trace.update(opacity=strength)
-                    # AND SILENCED OUTRIGHT ON THE SECOND HALF.
-                    #
-                    # Passing key=None does NOT mean "no entry in the list of
-                    # names": _edges reads it as "no separate marker, so the
-                    # cage itself carries the name". So the half that was
-                    # meant to be silent was the half that spoke, and a page
-                    # with a cage on it listed that cage twice under one
-                    # name. Reported as "the outline was double in some".
+                    # AND SILENCED OUTRIGHT ON EVERY LATER HALF. Passing
+                    # key=None does NOT mean "no entry in the list of names":
+                    # _edges reads it as "no separate marker, so the cage
+                    # itself carries the name", so the half meant to be silent
+                    # would be the half that spoke.
                     if not first:
                         trace.update(showlegend=False)
                     fig.add_trace(trace)

@@ -328,6 +328,12 @@ shows whether your mid-tones or your highlights are the tight part.
 paper as a solid and show the other as an outline over it, each with its own
 opacity, colouring and depth.
 
+**Outline colour** is a separate choice from how the shapes themselves are
+coloured, which makes one picture worth knowing about possible: set *How the
+shapes are coloured* to **By lightness**, so the solid drains to grey and its
+form is what you see, and set the outline to **true colours** — the cage over
+it still carries the colour each point really is.
+
 <img src="docs/screenshots/11-controls.webp" width="880" alt="The controls column, with two explanations unfolded">
 
 Every setting has an **ⓘ** beside it. Hover for a one-line answer, click for
@@ -650,13 +656,42 @@ It keeps up while the shape turns — **61 frames a second on every kind of
 page**, from a single 978-triangle chart to a 19,230-triangle comparison at
 full Detail, and on a page holding two scenes side by side.
 
-Where it cannot help is **two shapes that cross**. Triangles can only be put in
-order *within* one surface, and a paper sitting entirely inside another needs
-the two interleaved — glossy's back, matte's back, matte's front, glossy's
-front — which the drawing library cannot do, because it draws one whole surface
-at a time. Ordering the shapes themselves does not rescue it either: measured
-against a correct reference it helps at two angles and makes two others
-markedly worse, because two shapes that nest have no correct order as wholes.
+### Two shapes that cross are drawn right as well
+
+Ordering each shape's own triangles fixes each shape. It could not fix two of
+them against each other, because the library draws one whole surface and then
+the next, and two gamuts of the same printer are not one in front of the other
+— they pass *through* each other. Whichever goes down first is wrong over half
+the picture, and there is no order of two surfaces that is right.
+
+So they are no longer drawn as two. Every see-through surface in a picture is
+handed to **one** drawn object each frame and sorted as a single pool of
+triangles, all of them far-to-near. The page still holds two shapes — the key,
+the hover, the visibility switches and the saved file are untouched — but the
+graphics card is given one correctly ordered surface.
+
+What "right" means here is not a matter of taste. Weld the shapes into a single
+surface before the page is written and the question disappears, and that weld
+is the reference. It was checked before it was believed: welding the other way
+round moves the picture by 0.00%, and at a thousandth of transparency it agrees
+with the *solid* shape — drawn by the depth buffer, which does no ordering at
+all — to 1.0%. Measured against it at eight camera angles:
+
+| | before | each shape alone | one pool |
+|---|---|---|---|
+| two shapes, both at 0.55 | 76.2% | 68.5% | **0.0%** |
+| two shapes, 0.55 and 0.30 | 73.4% | 62.6% | **0.0%** |
+| three shapes at 0.55 | 81.5% | 76.3% | **0.0%** |
+
+Two things had to survive the weld, and both do. A **strength per shape**: one
+surface has one opacity, so each vertex carries its own shape's strength in its
+alpha instead — the same arithmetic the library was doing anyway, done once.
+And **which shape the pointer is over**: each shape owns a known stretch of the
+pooled surface and answers for its own, so hover still names the right paper.
+
+The one case it declines is shapes **lit differently** — one surface has one
+light, and giving it two would be a picture nobody asked for. Those keep the
+per-shape ordering, which is the second-best picture rather than a wrong one.
 
 ### It moves, and you can take the movement with you
 

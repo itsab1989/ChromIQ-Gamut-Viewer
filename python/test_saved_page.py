@@ -1124,3 +1124,107 @@ def test_the_styles_the_window_offers_are_the_styles_that_can_be_drawn():
     assert set(ti3gamut.SHAPE_STYLES) <= offered | {"solid"}, (
         f"a style is drawable but not offered: "
         f"{set(ti3gamut.SHAPE_STYLES) - offered}")
+
+
+# ------------------------------------------------------------- one pool
+#
+# Sorting each shape's own triangles fixes each shape and cannot fix two of
+# them against each other: the library draws one whole surface and then the
+# next, and two gamuts of the same printer pass THROUGH each other, so
+# whichever goes down first is wrong over half the picture. Measured against a
+# welded reference at eight camera angles, two shapes at their own strengths
+# were 68.5% wrong on average and 76.6% at the worst angle.
+#
+# So all the see-through surfaces are handed to one drawn object per frame and
+# sorted as a single pool. These guard the three things that had to survive
+# that, each of which would fail silently.
+
+
+def test_every_see_through_surface_is_sorted_as_one_pool():
+    js = ti3gamut._ORDER_JS
+    assert "function getPool" in js and "function poolable" in js
+    assert "pool.host.update(one)" in js, (
+        "the whole pool goes to ONE drawn object; the others are emptied")
+    assert "blank.cells = EMPTY" in js
+
+
+def test_a_strength_per_shape_survives_the_pool():
+    """One surface has one opacity and two shapes may be set to two. The
+    library multiplies each vertex's alpha by the surface's opacity, so
+    folding one into the other loses nothing -- and the pooled surface must
+    then be at FULL strength, or the second shape is faded twice."""
+    js = ti3gamut._ORDER_JS
+    assert "a * op" in js, "each vertex carries its own shape's strength"
+    assert "one.opacity = 1;" in js
+
+
+def test_shapes_lit_differently_are_not_pooled():
+    """One surface has one light and one roughness. Every shape may be given
+    its own amount of shape definition, which is a different lighting, and
+    there is no honest way to give one surface two -- so those keep the
+    per-shape ordering they had rather than getting a wrong picture."""
+    js = ti3gamut._ORDER_JS
+    assert "var LIT = [" in js
+    for named in ("ambient", "diffuse", "specular", "roughness", "fresnel"):
+        assert f"'{named}'" in js, f"{named} is not compared before pooling"
+    assert "lightPosition" in js
+
+
+def test_the_pool_says_which_shape_the_pointer_is_over():
+    """Pooled, every triangle belongs to the first surface, so asking what is
+    under the pointer would name the first shape everywhere. Each shape owns a
+    known stretch of the pooled vertices and answers for its own."""
+    js = ti3gamut._ORDER_JS
+    assert "function ownHover" in js
+    assert "handlePick" in js and "mine.lo" in js and "mine.hi" in js
+    assert "e.object = heldObject" in js, (
+        "and the selection is put back, so the next trace is asked fairly")
+
+
+def test_the_pool_proves_it_landed_rather_than_assuming_it():
+    """A handover that quietly drew the old triangles would look like a fix
+    and be nothing. The count the surface reports back is the only thing that
+    says otherwise -- the same lesson as the shape that matched the solid
+    picture by having gone opaque."""
+    js = ti3gamut._ORDER_JS
+    assert "pool.host.triangleCount !== pool.m" in js
+    assert "isTransparent" in js
+
+
+def test_a_shape_hidden_from_the_key_is_not_looked_for():
+    """Clicking a shape's name hides it by setting its visibility to the
+    string "legendonly", which is neither true nor false. Tested for `false`,
+    a hidden shape got through, the drawn object for it could not be found,
+    and the whole picture fell back to the slow door for as long as it stayed
+    hidden."""
+    js = ti3gamut._ORDER_JS
+    assert "t.visible !== true" in js, (
+        "'legendonly' is not false, and a test for false lets it through")
+
+
+def test_an_emptied_surface_gets_its_triangles_back():
+    """A shape whose strength is turned up to solid stops being pooled, and a
+    surface still holding no triangles would simply vanish."""
+    js = ti3gamut._ORDER_JS
+    assert "function restore" in js
+    assert "P.blanked = objs.slice(1)" in js
+
+
+def test_the_pool_measures_depth_in_the_measurements_own_units():
+    """Two sets of numbers are available and they are not the same.
+
+    What the library was handed has each axis multiplied by that axis's own
+    scale; the direction the eye is in is deliberately put back into the
+    measurements' units. Drawn in true proportions the scales agree and the
+    order comes out the same either way, which is why using the wrong one went
+    unnoticed. Measured on a chart's skin over two shapes, where they do not
+    agree: 5.4% off a correctly blended reference, and 0.02% once the
+    midpoints came from the same place the direction does.
+    """
+    js = ti3gamut._ORDER_JS
+    assert "pool.mid[into + f] = A2.mid[f]" in js, (
+        "the pool has to take each surface's own midpoints, which are already "
+        "in the right units, rather than working new ones out from the drawn "
+        "vertices")
+    assert "if (A2.m !== had2.cells.length) return null;" in js, (
+        "and only when the two really are the same surface")

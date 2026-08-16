@@ -149,6 +149,14 @@ LIGHT_CONTROLS = (
 
 #: How the shapes in the picture are coloured. Each answers a different
 #: question, which is why this is a choice rather than a preference.
+#: How tall a row holding a tick or a radio has to be, in one place.
+#:
+#: It is both a stylesheet floor and a layout floor, and it must be the same
+#: number in both -- a stylesheet is applied at polish, long after a grid has
+#: decided how tall its rows are, so the stylesheet alone stretches the widget
+#: inside a row that was never made big enough for it.
+TICK_ROW = 20
+
 PAINTS = (
     ("true", "True colours"),
     ("solid", "One colour each"),
@@ -335,10 +343,18 @@ QSlider::handle:horizontal {{ width: 12px; height: 12px; margin: -4px 0;
    the same 1px border and simply fills. */
 /* A floor under the row height. The 14px indicator plus its border makes a
    radio 16px tall, but in a grid the rows were allotted 15px and the buttons
-   drew one pixel into each other. Reserving 20px gives the row more than the
-   widget needs, so the grid can never squeeze two rows into touching. */
-QRadioButton {{ spacing: 7px; min-height: 20px; }}
-QCheckBox {{ spacing: 8px; min-height: 20px; }}
+   drew one pixel into each other. Reserving TICK_ROW gives the row more than
+   the widget needs.
+
+   THE SAME NUMBER HAS TO REACH THE LAYOUT AS WELL, which is why it comes from
+   Python rather than being typed here: a floor set only in a stylesheet is
+   applied at polish, and by then a grid has already worked out its rows from
+   the unstyled metrics and will not be told again. Measured, before this was
+   written down: the grid gave three rows 66 pixels -- 18 each -- while every
+   radio in them insisted on 20, so the rows sat 17 apart and the checked one
+   was drawn as half a circle with the descenders of "By lightness" cut off. */
+QRadioButton {{ spacing: 7px; min-height: {TICK_ROW}px; }}
+QCheckBox {{ spacing: 8px; min-height: {TICK_ROW}px; }}
 QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 8px;
                           border: 1px solid {c["line_soft"]};
                           background: {c["field"]}; }}
@@ -4150,12 +4166,19 @@ class GamutApp(QMainWindow):
             # at polish, which happens AFTER the grid has worked out its row
             # heights from the unstyled metrics -- so the rows were sized for a
             # 14px button that then drew 20px tall and ran into the row below.
-            radio.setMinimumHeight(20)
+            radio.setMinimumHeight(TICK_ROW)
             self._paint_group.addButton(radio)
             radio.toggled.connect(
                 lambda on, which=key: self._set_paint(which) if on else None)
             self._paint_radios[key] = radio
             paint_grid.addWidget(radio, i // 2, i % 2)
+        # AND THE ROWS THEMSELVES, not only the buttons in them. Setting the
+        # floor on the widget is not enough: the grid had already answered
+        # "18 pixels a row" and does not ask again, so the buttons drew 20 into
+        # rows 17 apart. Told directly, the grid reserves the room first and
+        # the six pixels of spacing beside it are then real.
+        for _row in range((len(PAINTS) + 1) // 2):
+            paint_grid.setRowMinimumHeight(_row, TICK_ROW)
         lv.addLayout(paint_grid)
         # Directly under the radios it describes. It used to sit further down
         # the column, immediately below the rings explanation, so two "What
@@ -4169,19 +4192,52 @@ class GamutApp(QMainWindow):
             "so the shape itself is what you see.", g_look)
         paint_hint.setObjectName("hint_paint_hint")
         lv.addWidget(paint_hint)
-        self._mesh_colour = QCheckBox("Colour the outlines too", g_look)
-        self._mesh_colour.stateChanged.connect(
+        # THE OUTLINE'S COLOUR IS ITS OWN QUESTION.
+        #
+        # This was a tick, "Colour the outlines too", and a tick can only say
+        # "the same as the shape". So one genuinely useful picture could not
+        # be reached at all: the solid drained to grey by lightness, so that
+        # its FORM reads, with the cage over it still carrying the real
+        # colours. Asked for in exactly those terms -- colourful outlines,
+        # independent of whether the shape itself is grey or colourful.
+        #
+        # The five fixed choices are taken from PAINTS rather than typed out
+        # again, so the outline can never end up offering a painting the
+        # shapes do not, or missing one they gained.
+        self._outline_paint = NoScrollComboBox(g_look)
+        self._outline_paint.addItem("plain grey", "plain")
+        self._outline_paint.addItem("the same as the shapes", "match")
+        # Lower-cased from the radios above rather than typed out again: the
+        # combos on this panel read as the end of their label ("Proportions:
+        # as measured"), the radios are sentences of their own, and one list
+        # written twice is one list that will disagree with itself.
+        for _key, _label in PAINTS:
+            self._outline_paint.addItem(_label[0].lower() + _label[1:], _key)
+        self._outline_paint.currentIndexChanged.connect(
             lambda: self._after_shape_setting("mesh_paint"))
         mesh_hint = Hint(
-            "Outlines are drawn in one plain grey by default, which reads "
-            "clearly on top of a solid shape without competing with the "
-            "colours underneath. Tick this and they are painted the same way "
-            "the solid shapes are, which is worth it when a shape is shown as "
-            "an outline on its own.", g_look)
+            "An outline is the wire cage of a shape. You have one on screen "
+            "whenever First shape, Second shape or Comparison is set to "
+            "outline only or to solid with its mesh — without one, this "
+            "setting has nothing to change.\n\n"
+            "Plain grey is the starting point, and it is the right one on top "
+            "of a solid shape: hundreds of thin lines in the colours "
+            "underneath compete with those colours instead of showing the "
+            "form. Choose the same as the shapes and the cage stays in step "
+            "with whatever you pick above under How the shapes are coloured, "
+            "so changing one changes both.\n\n"
+            "The five below that ignore the shapes entirely, which is the "
+            "whole point of them. The picture worth knowing about: set How "
+            "the shapes are coloured to By lightness, so the solid drains to "
+            "grey and its form is what you see, and set this to true colours "
+            "— now the cage over it still carries the colour each point "
+            "really is. Every shape can be given its own, using Set this for "
+            "at the top of this panel.", g_look)
         mesh_hint.setObjectName("hint_mesh_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
         _r.setSpacing(6)
-        _r.addWidget(self._mesh_colour, 1)
+        _r.addWidget(QLabel("Outline colour", g_look))
+        _r.addWidget(self._outline_paint, 1)
         _r.addWidget(mesh_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
 
@@ -5692,6 +5748,28 @@ class GamutApp(QMainWindow):
         if self._slots:
             self._redraw()          # the scene is repainted to match
 
+    def _ask_the_layouts_again(self) -> None:
+        """Every layout asked how much room it needs, now the styling is on.
+
+        A layout answers that question once and keeps the answer. The
+        stylesheet is applied at POLISH, which happens later -- so a grid can
+        have decided its rows are 18 pixels tall while every button in them
+        will draw 20, and there is nothing to make it think again.
+
+        Measured, in the window and not from the code: the five radios under
+        "How the shapes are coloured" sat 17 pixels apart in rows they each
+        needed 20 for. The checked one was drawn as half a circle and the
+        descenders of "By lightness" were cut off, and it is visible in any
+        screenshot of that panel.
+
+        Asking again is cheap, happens once as the window comes up, and fixes
+        the whole family rather than the one row it was noticed on.
+        """
+        for lay in self.findChildren(QLayout):
+            lay.invalidate()
+        if self.layout() is not None:
+            self.layout().activate()
+
     def showEvent(self, event) -> None:            # noqa: N802 (Qt naming)
         """Centre the window the first time it is shown, and never again.
 
@@ -5707,6 +5785,7 @@ class GamutApp(QMainWindow):
         # The stylesheet lands at polish, which is after the names were first
         # measured. Measure them again now they are wearing it.
         self._align_names()
+        self._ask_the_layouts_again()
         if self._placed:
             return
         self._placed = True
@@ -5911,7 +5990,7 @@ class GamutApp(QMainWindow):
             ("chart_skin", self._chart_skin, "combo", "none"),
             ("chart_skin_colour", self._chart_skin_colour, "combo", "grey"),
             ("chart_skin_opacity", self._chart_skin_opacity, "slider", 30),
-            ("mesh_colour", self._mesh_colour, "check", False),
+            ("outline_paint", self._outline_paint, "combo", "plain"),
             ("rings_on", self._rings_on, "check", False),
             ("neutral", self._neutral, "check", False),
             ("ideal_neutral", self._ideal_neutral, "check", False),
@@ -6011,8 +6090,38 @@ class GamutApp(QMainWindow):
             self._target.blockSignals(True)
             self._target.setCurrentIndex(index)
             self._target.blockSignals(False)
+        self._carry_over_the_old_outline_tick()
         self._sync_slider_labels()
         self._on_manual_light()
+
+    def _carry_over_the_old_outline_tick(self) -> None:
+        """Bring a setting written by the version that had a tick, not a list.
+
+        The outline's colour used to be one tick, "Colour the outlines too",
+        remembered as ``mesh_colour`` = true/false and written into the shapes
+        as ``mesh_paint`` = "colour"/"plain". Somebody who had ticked it must
+        find the outlines still coloured after updating, not quietly back to
+        grey -- a setting that resets itself is worse than one that never
+        existed, because the picture changed and nothing said so.
+
+        Nothing is thrown away: the old key is left in the store, so going
+        back to the previous version finds it exactly as it was.
+        """
+        if self._store.value("outline_paint", None) is None:
+            was = self._store.value("mesh_colour", None)
+            if was is not None:
+                ticked = was in (True, "true", "True", 1, "1")
+                at = self._outline_paint.findData("match" if ticked else "plain")
+                if at >= 0:
+                    self._outline_paint.blockSignals(True)
+                    self._outline_paint.setCurrentIndex(at)
+                    self._outline_paint.blockSignals(False)
+        # And the same word wherever it was written against a shape.
+        if self._shared.get("mesh_paint") == "colour":
+            self._shared["mesh_paint"] = "match"
+        for own in self._per_shape.values():
+            if own.get("mesh_paint") == "colour":
+                own["mesh_paint"] = "match"
 
     def _sync_slider_labels(self) -> None:
         """Every label that mirrors a slider, told what its slider now says."""
@@ -7483,7 +7592,7 @@ class GamutApp(QMainWindow):
             (self._style_other, "shapes", False),
             (self._opacity, "shapes", False),
             (self._depth, "shapes", False),
-            (self._mesh_colour, "shapes", True),
+            (self._outline_paint, "shapes", True),
             (self._points, "shapes", True),
             (self._show_lost, "shapes", True),
             (self._agree, "shapes", True),
@@ -8493,8 +8602,7 @@ class GamutApp(QMainWindow):
             "rings": (self._rings, lambda w: (w.value()
                                               if self._rings_on.isChecked()
                                               else 0)),
-            "mesh_paint": (self._mesh_colour,
-                           lambda w: "colour" if w.isChecked() else "plain"),
+            "mesh_paint": (self._outline_paint, lambda w: w.currentData()),
             "paint": (None, lambda _w: self._paint),
         }
 
@@ -8535,7 +8643,13 @@ class GamutApp(QMainWindow):
                 self._rings_on.setChecked(bool(own[key]))
                 self._rings_on.blockSignals(False)
             elif key == "mesh_paint":
-                widget.setChecked(own[key] == "colour")
+                # "colour" is what the old tick wrote for "the same as the
+                # shapes", and a shape set on its own before this window
+                # gained the choice still says it.
+                want = "match" if own[key] == "colour" else own[key]
+                at = widget.findData(want)
+                if at >= 0:
+                    widget.setCurrentIndex(at)
             widget.blockSignals(False)
         self._sync_slider_labels()
 

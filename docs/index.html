@@ -66,13 +66,19 @@ on either. At the top of the range neither changes the picture at all: the
 fade is carried on the colours themselves rather than by drawing the shape
 twice, so full strength returns the identical picture, pixel for pixel.</p>
 
-<p><b>If a see-through shape looks sliced, nothing is missing.</b> Two things
-cause it, about half each: a closed shape drawn see-through also shows its far
-side from the inside, whose faces point away from the light, and a browser
-composites see-through surfaces in the order it draws them rather than by
-which is nearer. Measured at four times worse from the three-quarter angle
-these open at than from straight above, with the outline identical either way.
-Make the shape solid, or press <b>above</b>, and it goes.</p>
+<p><b>A see-through shape shows its own back, and that is not a fault.</b> A
+closed shape drawn see-through shows its far side from the inside as well, and
+those faces point away from the light, so they read darker than the front.
+Make the shape solid, or press <b>above</b>, and only the front is left.</p>
+
+<p><b>What is <i>not</i> happening any more is slicing.</b> A browser blends
+see-through surfaces in the order it draws them rather than by which is
+nearer, which used to punch hard-edged triangles of the far side through the
+near one — the same shape torn at one angle and flawless at another. Every
+see-through triangle in a picture, across every shape on it, is now put in
+farthest-first order before each frame. Measured against a correctly blended
+reference at eight camera angles, two papers over each other come out at
+<b>0.0%</b> unlike it.</p>
 
 <p><b>One shape is never offered in grey, on purpose.</b> Where the colour
 <i>is</i> the answer — the shape that is red for what a paper cannot reach —

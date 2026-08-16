@@ -520,7 +520,7 @@ class _FakeApp:
         for name in ("_opacity", "_depth", "_detail", "_slice_at", "_rings"):
             setattr(self, name, None)
         for name in ("_slice_on", "_points", "_show_lost", "_relative",
-                     "_manual_light", "_mesh_colour", "_rings_on", "_neutral",
+                     "_manual_light", "_rings_on", "_neutral",
                      "_ideal_neutral",
                      "_auto_update", "_side_by_side", "_link_cameras"):
             setattr(self, name, None)
@@ -530,7 +530,10 @@ class _FakeApp:
                      "_chart_dot", "_chart_show_outside", "_chart_skin",
                      "_chart_dot_opacity", "_chart_out_dot",
                      "_chart_out_opacity",
-                     "_chart_skin_colour", "_chart_skin_opacity"):
+                     "_chart_skin_colour", "_chart_skin_opacity",
+                     # The outline's colour is a list of its own, not the
+                     # tick it used to be.
+                     "_outline_paint"):
             setattr(self, name, None)
         self._light_sliders = {k: (None,) for k, *_ in gamut_app.LIGHT_CONTROLS}
         # The movement controls are read, not just listed, so these answer.
@@ -1488,3 +1491,156 @@ def test_the_note_names_the_control_that_actually_fixes_it():
     labels = dict(gamut_app.PAINTS)
     assert labels["lightness"] == "By lightness", (
         "the note points at a control label that has been changed")
+
+
+# --------------------------------------------- the outline's own colour
+#
+# The cage's colour used to be one tick, "Colour the outlines too", and a tick
+# can only say "the same as the shape". That left one genuinely useful picture
+# unreachable: the solid drained to grey by lightness so its FORM reads, with
+# the cage over it still carrying the real colours. Asked for in those terms.
+
+
+def _two_papers():
+    from pathlib import Path
+    import ti3gamut
+    from gamutview import build_gamut
+    demo = Path(__file__).resolve().parent.parent / "demo"
+    out = []
+    for name in ("Glossy-paper.ti3", "Matte-paper.ti3"):
+        m = ti3gamut.read_ti3(demo / name)
+        out.append((name.split("-")[0],
+                    build_gamut(m.lab, m.device, input_space="lab",
+                                space="lab")))
+    return out
+
+
+def test_the_outline_may_be_coloured_whatever_the_shape_is():
+    import ti3gamut
+    assert ti3gamut.outline_paint("plain", "true") == "plain"
+    assert ti3gamut.outline_paint("match", "lightness") == "lightness"
+    # The word the old tick wrote. A setting saved last week must not come
+    # back as an error.
+    assert ti3gamut.outline_paint("colour", "accent") == "accent"
+    # And a named one ignores the shape entirely, which is the whole point.
+    for named in ti3gamut.SHAPE_PAINTS:
+        assert ti3gamut.outline_paint(named, "lightness") == named
+
+
+def test_an_outline_colour_nobody_handles_is_refused():
+    import pytest
+    import ti3gamut
+    with pytest.raises(ValueError) as complaint:
+        ti3gamut.outline_paint("rainbow", "true")
+    said = str(complaint.value)
+    assert "rainbow" in said
+    for named in ti3gamut.OUTLINE_PAINTS:
+        assert named in said, f"the complaint never mentions {named}"
+
+
+def test_a_painting_nobody_handles_is_refused_rather_than_drawn_as_chroma():
+    """Every test was a chain ending in "otherwise, by chroma", so a
+    misspelling -- or "plain", which belongs to a cage and not a surface --
+    came back as a chroma ramp and read as a painting fault."""
+    import pytest
+    import ti3gamut
+    papers = _two_papers()
+    for wrong in ("plain", "gray", "match"):
+        with pytest.raises(ValueError):
+            ti3gamut.build_figure(papers[:1], "", paint=wrong)
+
+
+def test_a_grey_shape_can_carry_an_outline_in_the_real_colours():
+    import ti3gamut
+    papers = _two_papers()
+    fig = ti3gamut.build_figure(papers, "", styles=["solid", "solid+mesh"],
+                                paint="lightness", mesh_paint="true")
+    cage = [t for t in fig.data
+            if t.name and "(outline)" in t.name and t.mode == "lines"
+            and len(t.x or ()) > 3]
+    colours = {t.line.color for t in cage}
+    assert len(colours) > 20, (
+        f"a cage in true colours came out in {len(colours)} colours")
+    # And the same page with the cage left plain is one grey, so the setting
+    # is what changed it rather than the painting of the shape.
+    plain = ti3gamut.build_figure(papers, "", styles=["solid", "solid+mesh"],
+                                  paint="lightness", mesh_paint="plain")
+    grey = {t.line.color for t in plain.data
+            if t.name and "(outline)" in t.name and t.mode == "lines"
+            and len(t.x or ()) > 3}
+    assert len(grey) == 1
+
+
+def test_a_cage_is_named_once_even_when_its_shape_agrees_entirely():
+    """Reported: the matte paper's outline has no key at all on
+    11-everything-handed-over.html.
+
+    The cage is split into the half that disagrees with the other shapes and
+    the half that agrees; the first carries the name and the second is
+    silenced so it cannot be listed twice. Both rules are right on their own,
+    and together they lose the name -- the matte paper fits entirely inside
+    the glossy one, so 0 of its 978 triangles disagree, the half carrying the
+    name is skipped as empty, and the only half left is the silenced one.
+    """
+    import numpy as np
+    import ti3gamut
+    papers = _two_papers()
+    masks = ti3gamut.agreement_masks(papers)
+    assert int(masks[1].sum()) == 0, (
+        "this test is only meaningful while the second paper agrees "
+        "everywhere; it now disagrees somewhere, so pick another pair")
+    for split in (False, True):
+        fig = ti3gamut.build_figure(papers, "", styles=["solid", "mesh"],
+                                    split=split)
+        named = [t.name for t in fig.data if t.showlegend]
+        cages = [n for n in named if "(outline)" in n]
+        assert len(cages) == 1, (
+            f"split={split}: the cage is named {len(cages)} times: {named}")
+
+
+def test_a_split_cage_is_still_named_only_once():
+    """The other half of the same rule: when both halves ARE drawn, the name
+    must not appear twice."""
+    import ti3gamut
+    papers = _two_papers()
+    fig = ti3gamut.build_figure(papers, "", styles=["mesh", "mesh"],
+                                agree=0.2, differ=1.0)
+    named = [t.name for t in fig.data if t.showlegend]
+    for name, _g in papers:
+        wanted = f"{name} (outline)"
+        assert named.count(wanted) == 1, f"{wanted} appears {named.count(wanted)} times"
+
+
+def test_the_window_offers_every_outline_colour_that_can_be_drawn():
+    """The list and the control must not drift apart."""
+    import ti3gamut
+    import gamut_app
+    import inspect
+    src = inspect.getsource(gamut_app.GamutApp)
+    assert "self._outline_paint.addItem(\"plain grey\", \"plain\")" in src
+    assert "\"the same as the shapes\", \"match\"" in src
+    # The five named ones come from PAINTS itself rather than being typed
+    # again, so they cannot fall behind it.
+    assert "for _key, _label in PAINTS:" in src
+    assert set(k for k, _ in gamut_app.PAINTS) == set(ti3gamut.SHAPE_PAINTS)
+
+
+def test_a_row_with_a_tick_in_it_is_told_its_height_twice():
+    """A stylesheet floor is applied at polish, long after a grid has decided
+    how tall its rows are. Measured in the window: the five radios each
+    insisted on 20 pixels in rows the grid had sized at 18, so they sat 17
+    apart, the checked one drew as half a circle and the descenders of "By
+    lightness" were cut off."""
+    import gamut_app
+    import inspect
+    assert gamut_app.TICK_ROW >= 20
+    qss = inspect.getsource(gamut_app.stylesheet)
+    assert "min-height: {TICK_ROW}px" in qss, (
+        "the stylesheet must take the number from Python, not repeat it")
+    # And it really lands: the written-out sheet carries the number.
+    assert f"min-height: {gamut_app.TICK_ROW}px" in gamut_app.stylesheet("dark")
+    src = inspect.getsource(gamut_app.GamutApp)
+    assert "setRowMinimumHeight(_row, TICK_ROW)" in src, (
+        "and the layout has to be told the same number, because it will not "
+        "ask again once the stylesheet lands")
+    assert "_ask_the_layouts_again" in src

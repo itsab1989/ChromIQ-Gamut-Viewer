@@ -174,7 +174,7 @@ that can contradict it.
 | Show every patch I measured | on / off | off | redraw |
 | Show the greys | on / off | off | redraw |
 | Show rings inside | on / off, 1–20 | off, 6 | redraw |
-| Colour the outlines too | on / off | off | redraw |
+| Outline colour | `"plain"`, `"match"`, or any painting | `"plain"` | redraw |
 | Set this for | all shapes / first / second / comparison | all | — |
 | Show what the comparison cannot print | on / off | off | redraw |
 | Slice it at one lightness | on / off, plus L\* 0–100 | off, 50 | redraw |
@@ -199,6 +199,23 @@ Notes worth carrying over:
 * **Three separate radio groups.** Radio buttons sharing a parent are one
   exclusive group in Qt, so appearance, accent and shape-colour each need their
   own `QButtonGroup` or picking one silently unchecks another.
+* **A row with a tick in it is told its height twice.** `TICK_ROW` goes into
+  the stylesheet *and* into `setRowMinimumHeight`, because a stylesheet floor
+  is applied at polish — long after a grid has decided how tall its rows are,
+  and it does not ask again. Measured before it was: the grid gave three rows
+  18px each while every radio in them insisted on 20, so they sat 17 apart,
+  the checked one drew as half a circle and the descenders of "By lightness"
+  were cut off. `_ask_the_layouts_again()` on the first `showEvent` closes the
+  same gap for every other layout in the window.
+* **The outline's colour is its own question.** It was a tick, and a tick can
+  only say "the same as the shape" — which left the useful picture out of
+  reach: the solid drained to grey by lightness so its form reads, with the
+  cage over it still carrying the real colours. `"match"` follows the shapes
+  (and is what the old tick meant, so a stored `"colour"` is still read);
+  `"plain"` is the one grey that reads clearly over a solid; the five named
+  paintings ignore the shapes entirely. A cage carries a colour per trace
+  rather than per point, so a coloured one is a few hundred traces — measured
+  at 60 frames a second with 395 of them, which is why it is offered.
 * **The five lighting numbers are what Plotly's `mesh3d.lighting` takes.**
   Depth drives all five from one slider for everyday use; ticking "Set the
   lighting myself" reveals them and disables Depth, rather than leaving two

@@ -1,5 +1,151 @@
 # Changelog
 
+## v2.14.0
+
+### 🎯 Two see-through shapes are drawn correctly, not just less wrongly
+
+2.13.0 shipped a known limitation and named it honestly: two shapes that cross
+stayed **77.1% wrong at the worst of six angles**, because triangles could only
+be put in order *within* one surface. The reason given was that the drawing
+library draws one whole surface at a time and cannot interleave two.
+
+That reason was right and the conclusion drawn from it was not. The library
+cannot interleave two surfaces — so the shapes are no longer given to it as
+two. Every see-through surface in a picture is handed to **one** drawn object
+each frame and sorted as a single pool of triangles, all of them far-to-near.
+The page still holds two shapes: the key, the hover, the visibility switches
+and the saved file are untouched. Only what reaches the graphics card changed.
+
+**The reference was checked before anything was measured against it.** Weld the
+shapes into one surface in Python, before the page is written, and the question
+disappears — one pool, one order, correct blending by construction. Welding the
+other way round moves the picture by **0.00%**; rendering the same page twice
+moves it by **0.00%**; and at a thousandth of transparency it agrees with the
+*solid* picture — drawn by the depth buffer, which does no ordering at all — to
+**1.0%**. Measured against it at **eight** camera angles:
+
+| | no ordering | each shape alone (2.13.0) | one pool |
+|---|---|---|---|
+| two shapes, both at 0.55 | 76.2% | 68.5% | **0.0%** |
+| two shapes, 0.55 and 0.30 | 73.4% | 62.6% | **0.0%** |
+| two shapes, both at 0.999 | 64.9% | 35.6% | **0.3%** |
+| two shapes, faded where they agree | 45.7% | 9.8% | **0.0%** |
+| two shapes, faded where they differ | 39.0% | 8.6% | **0.0%** |
+| three shapes at 0.55 | 81.5% | 76.3% | **0.0%** |
+
+And against the depth buffer, which shares no machinery with the reference at
+all: **0.75% mean, 1.01% worst**, where per-shape ordering was 36.22% and
+77.07%. That 77.07% is the 2.13.0 figure, reproduced exactly.
+
+Still see-through, and asked every time rather than assumed: swapping the wall
+behind the shapes between near-white and near-black, **95.0% of it comes
+through** — identical to the un-pooled picture, against **2.2%** for a solid
+control.
+
+Two things had to survive the weld. A **strength per shape**: one surface has
+one opacity, so each vertex carries its own shape's strength in its alpha
+instead — the same multiplication the library was doing anyway, done once. And
+**which shape the pointer is over**: pooled, every triangle belongs to the
+first surface, so without a remap the picture would name the first shape
+everywhere and look completely normal doing it. Each shape owns a known stretch
+of the pooled vertices and answers for its own.
+
+The one case it declines is shapes **lit differently**. One surface has one
+light and one roughness, and every shape may be given its own shape definition;
+there is no honest way to give one surface two, so those keep the per-shape
+ordering — the second-best picture rather than a wrong one.
+
+**One thing does change, on two surfaces that lie within a hair of each
+other.** Asking the picture what is under the pointer at 66 points on the same
+paper measured twice — two gamuts that are nearly coincident everywhere — 62
+gave the identical answer and 4 named the other paper. At those pixels the two
+surfaces are inside the depth buffer's precision of each other, so which one is
+"nearest" was never anything but a tie; the un-pooled picture simply broke that
+tie by trace order. On two shapes that genuinely cross and are far apart where
+they do — sRGB against a printed paper — all **77 of 77** points agree, and
+both shapes are named.
+
+### 📏 Depth was measured in the wrong units, on one setting
+
+Found by refusing to accept a row of the audit. A chart's skin over two shapes
+came out **5.4% off the reference and 18.5% at the worst angle**, where every
+other row was under 0.3%. Supplying the normals was ruled out by measurement
+(identical to the decimal), and the reference was proved not to be at fault
+(reordering its traces moves it 0.0%).
+
+The cause: the pool worked each triangle's depth out from the vertices the
+drawing library was handed — each axis multiplied by that axis's own scale —
+while the direction the eye is in is deliberately converted back into the
+measurements' own units. Drawn in true proportions the scales agree and the
+order comes out the same either way, which is why nothing caught it. The
+triangle midpoints now come from where the direction comes from.
+
+| | before | after |
+|---|---|---|
+| a chart's skin over two shapes | 5.4% (18.5% worst) | **0.02%** |
+| the same, squared off | — | **0.03%** |
+| two shapes, squared off | — | **0.00%** |
+
+**Proportions: as a cube** is the setting this would have gone wrong on, and no
+row of the audit had used it. It is now two rows of its own.
+
+### 🏷 A paper's outline had no name in the key
+
+Reported against a published page: `11-everything-handed-over.html` draws the
+matte paper as a grey cage with **nothing in the key to say whose it is**.
+
+A cage is split into the half that disagrees with the other shapes and the half
+that agrees, so the two can be faded separately. The first half carries the
+name; the second is silenced so the cage cannot be listed twice. Both rules are
+right on their own and together they lose the name entirely — the matte paper
+fits **entirely inside** the glossy one, so **0 of its 978 triangles** disagree,
+the half carrying the name was skipped as empty, and the only half left was the
+silenced one.
+
+The name now goes to the first half **that is actually drawn**, and there is
+always a first.
+
+### 🎨 The outline's colour is its own choice
+
+"Colour the outlines too" was a tick, and a tick can only say *the same as the
+shape*. That left a genuinely useful picture out of reach: the solid drained to
+grey **By lightness** so its form reads, with the cage over it still carrying
+the real colours.
+
+**Outline colour** now offers *plain grey*, *the same as the shapes*, and the
+five paintings the shapes themselves use — taken from that list rather than
+typed out again, so the two cannot drift apart. Every shape can have its own.
+A tick you had already set is carried over rather than quietly reset, and the
+old value is left in the store so going back a version finds it unchanged.
+
+A cage carries one colour per trace rather than per point, so a coloured one is
+a few hundred traces. Measured before it was offered: **60 frames a second with
+395 of them**.
+
+### 📐 Radio rows drew into each other
+
+Visible in any screenshot of the shape-colour panel: the checked button was
+drawn as **half a circle** and the descenders of "By lightness" were cut off.
+
+A stylesheet floor is applied at *polish*, long after a layout has decided how
+tall its rows are — and it does not ask again. Measured in the window: the grid
+gave three rows 18 pixels each while every radio in them insisted on 20, so
+they sat **17 apart**. The height is now one number in Python that reaches both
+the stylesheet and the layout, and every layout is asked again once the window
+is up, which closes the same gap everywhere else it could open.
+
+### 🐢 Hiding a shape made the picture dearer, not cheaper
+
+Clicking a shape's name in the key hides it by setting its visibility to the
+string `"legendonly"` — neither true nor false. The ordering engine tested for
+`false`, so a hidden shape got through, the drawn object for it could not be
+found, and everything else on the page went through the slow door for as long
+as it stayed hidden.
+
+Measured, two papers with one of them hidden: a pass cost **4.50 ms where it
+now costs 1.70**, the engine went on putting **1,956 triangles in order for a
+picture showing 978**, and the pooling above was switched off the whole time.
+
 ## v2.13.0
 
 ### 🔍 The audit that found the last one was itself only a spot check
