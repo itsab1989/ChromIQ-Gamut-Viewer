@@ -1228,3 +1228,77 @@ def test_the_pool_measures_depth_in_the_measurements_own_units():
         "vertices")
     assert "if (A2.m !== had2.cells.length) return null;" in js, (
         "and only when the two really are the same surface")
+
+
+# ------------------------------------------------------- a wire cage
+#
+# Three controls drew a wireframe by switching a surface's `contour` setting
+# on. The drawing library documents that field as "dynamic contours … on
+# hover": it draws lines under the pointer and nothing the rest of the time.
+# Measured with the movement stopped and a noise floor of nought, pressing
+# "wires" on a published page changed the picture by 0 pixels, and the chart
+# skin's "Mesh" drew the identical 214,308 pixels that "Solid" draws.
+
+
+def test_a_surfaces_contour_setting_is_never_used_to_draw_a_cage():
+    """It is not a wireframe, it is a hover decoration, and it looks exactly
+    like the thing somebody reaches for."""
+    import inspect
+    import ti3gamut
+    src = inspect.getsource(ti3gamut)
+    # The only mentions left are the ones explaining why it is not used.
+    for line in src.splitlines():
+        if "contour=dict(show=" in line:
+            raise AssertionError(
+                f"a surface is still being asked to draw its own wires: {line}")
+
+
+def test_a_cage_is_built_from_the_edges_themselves():
+    import ti3gamut
+    import numpy as np
+    points = np.array([[0.0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]])
+    faces = np.array([[0, 1, 2], [1, 3, 2]])
+    xs, ys, zs = ti3gamut._wire_segments(points, faces)
+    # Five edges, not six: the two triangles share one, and a shared edge
+    # drawn twice is twice the work for an identical picture.
+    assert len(xs) == 5 * 3
+    assert xs.count(None) == 5
+    assert len(xs) == len(ys) == len(zs)
+
+
+def test_the_chart_skins_three_styles_draw_three_different_things():
+    from pathlib import Path
+    import numpy as np
+    import ti3gamut
+    demo = Path(__file__).resolve().parent.parent / "demo"
+    m = ti3gamut.read_ti3(demo / "Glossy-paper.ti3")
+
+    def kinds(style):
+        fig = ti3gamut.build_figure(
+            [], "", space="lab", chart=("chart", m.lab, None),
+            chart_look=dict(skin=style, skin_opacity=0.30))
+        return [t.type + ("/lines" if getattr(t, "mode", "") == "lines" else "")
+                for t in fig.data]
+
+    solid, mesh, outline = kinds("solid"), kinds("mesh"), kinds("outline")
+    assert "mesh3d" in solid and "scatter3d/lines" not in solid, solid
+    # Mesh is a surface AND its cage -- not the surface on its own, which is
+    # what it used to be.
+    assert "mesh3d" in mesh and "scatter3d/lines" in mesh, mesh
+    # Outline only means only the outline: no surface at all, rather than one
+    # at a fiftieth of strength standing in for its absence.
+    assert "mesh3d" not in outline and "scatter3d/lines" in outline, outline
+
+
+def test_the_saved_page_builds_its_cage_rather_than_carrying_one():
+    """The surface already holds every vertex and triangle, so a cage costs
+    the file nothing -- and it is drawn in the surface's own colours, which is
+    what "a net over its surface" has to mean."""
+    js = ti3gamut._CONTROLS_JS if hasattr(ti3gamut, "_CONTROLS_JS") else None
+    import inspect
+    src = js or inspect.getsource(ti3gamut)
+    assert "function buildCage" in src
+    assert "function bandOf" in src, (
+        "a line takes one colour for the whole trace, so a coloured cage is "
+        "grouped into bands the way the application groups them")
+    assert "deleteTraces" in src, "and turning it off has to remove them"

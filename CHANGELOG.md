@@ -1,5 +1,70 @@
 # Changelog
 
+## v2.15.0
+
+### 🕸 Three controls that drew a wireframe drew nothing at all
+
+Reported against a published page: *"I can't turn glossy to wires."* Measured
+on that page, with the movement stopped and a noise floor of **0 pixels**:
+pressing **wires** changed the picture by **0 pixels**.
+
+All three were built on a surface's `contour` setting, which reads exactly
+like "draw the mesh" and is documented by the drawing library itself as:
+
+> Sets whether or not dynamic contours are shown on hover
+
+It draws lines under the pointer and nothing whatever the rest of the time. A
+surface with it on and the same surface with it off differ by **0 pixels**.
+
+The other two were found by asking what else was built on it, and both are in
+the window rather than only on a saved page. Measured against a page with no
+skin on it at all:
+
+| Chart skin | pixels drawn |
+|---|---|
+| Solid | 214,308 |
+| **Mesh** | **214,308** — the same picture, to the pixel |
+| **Outline only** | **5,251** — a surface at a fiftieth of strength, no lines |
+
+So **Mesh was Solid under another name**, and **Outline only** was a nearly
+invisible film rather than a cage.
+
+There is no wireframe on a surface in this drawing library, so all three now
+draw the edges themselves — each edge once, since a triangle mesh shares every
+edge between two triangles and drawing both doubles the work for an identical
+picture.
+
+**On a saved page it costs the file nothing.** The surface already carries
+every vertex and every triangle, so the cage is worked out from those the
+first time the button is pressed — and it is drawn **in the colours the
+surface itself is painted in**, which is the second half of what was reported:
+*"clicking colourful … does not give them the same colour the shell would
+have."* Pressing **grey** now takes the colour out of the net as well as the
+surface, instead of the two controls contradicting each other.
+
+### 🔗 Seventeen loops, and one page nothing linked to
+
+`docs/motion/page-7.md` exists, holds **six of the seventeen loops** — more
+than any other page — and **page 1 was the only page in the set that did not
+link to it**. Every other page did.
+
+Two counts were wrong beside it. The README said **"Eight more loops"** in one
+place and **"Seventeen more"** in another; seventeen is right (eighteen files,
+one of which is deliberately a still frame, the poster for the MP4). And
+**"two to a page"** was true of six pages out of seven — page 7 holds six,
+because they are all charts and read as a set. All three now say what is
+actually there.
+
+### 🔍 And the audit that should have found them
+
+These were found because somebody pointed at one of them, which is not an
+audit. Every control on every published page is now pressed, with the picture
+measured before and after against a noise floor, and each kind checked against
+the rule that applies to it: a switch must come back when pressed again, a
+step must come back when its opposite is pressed, a preset must come back on
+**put the view back**, and an action is allowed to change nothing — with the
+reason named rather than shrugged at.
+
 ## v2.14.0
 
 ### 🎯 Two see-through shapes are drawn correctly, not just less wrongly

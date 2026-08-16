@@ -422,6 +422,37 @@ def _band(colour: str, steps: int = 32) -> str:
     return f"rgb({q[0]},{q[1]},{q[2]})"
 
 
+def _wire_segments(points, faces):
+    """Every edge of a triangle mesh, once, as a single broken line.
+
+    A triangle mesh shares each edge between two triangles, so drawing both
+    doubles the work for an identical picture. The ``None`` between segments
+    is what tells the drawing library to lift the pen.
+
+    THIS IS THE ONLY WAY TO GET A WIRE CAGE, and that is worth writing down
+    because there appears to be an easier one and it does nothing at all. A
+    surface takes a ``contour`` setting, and it reads as "draw the mesh":
+
+        Sets whether or not dynamic contours are shown on hover
+
+    -- the drawing library's own words. It draws contour lines under the
+    POINTER and nothing whatever the rest of the time. Measured: a surface
+    with it off and the same surface with it on differ by 0 pixels.
+    """
+    seen = set()
+    xs, ys, zs = [], [], []
+    for tri in faces:
+        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            edge = (a, b) if a < b else (b, a)
+            if edge in seen:
+                continue
+            seen.add(edge)
+            xs += [points[a, 0], points[b, 0], None]
+            ys += [points[a, 1], points[b, 1], None]
+            zs += [points[a, 2], points[b, 2], None]
+    return xs, ys, zs
+
+
 def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
            paint: str = "plain", index: int = 0, key: str | None = None,
            page: str = "#111111", only=None):
@@ -445,27 +476,8 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
     v = _plot_points(gamut)
     f = (np.asarray(gamut.faces)[np.asarray(only)] if only is not None
          else gamut.faces)
-    seen = set()
-    xs, ys, zs = [], [], []
-    for tri in f:
-        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
-            # `edge`, NOT `key`. It used to be called key, which is also the
-            # name of this function's own argument -- the colour the legend
-            # key is to be drawn in. So by the time the loop finished, that
-            # colour had been overwritten with the last edge it happened to
-            # visit, a pair of vertex numbers like (600, 610). Handed a pair
-            # of numbers instead of a colour, the drawing library falls back
-            # to black, which is why the little line beside "(outline)" in
-            # the key has been invisible on every dark page and in the
-            # window itself. Reported from a phone and then from the app.
-            edge = (a, b) if a < b else (b, a)
-            if edge in seen:
-                continue
-            seen.add(edge)
-            xs += [v[a, 0], v[b, 0], None]
-            ys += [v[a, 1], v[b, 1], None]
-            zs += [v[a, 2], v[b, 2], None]
     if paint == "plain":
+        xs, ys, zs = _wire_segments(v, f)
         cage = go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
                             line=dict(color=colour, width=width),
                             name=f"{name} (outline)",
@@ -1159,7 +1171,7 @@ def agreeing_edges(gamut, keep_faces):
     return live
 
 
-def _mesh(gamut, name: str, opacity: float, wireframe: bool,
+def _mesh(gamut, name: str, opacity: float,
           paint: str = "true", index: int = 0, depth: float = 0.35,
           page: str = "#111318", light=None, only=None, alphas=None,
           stand=None):
@@ -1212,7 +1224,10 @@ def _mesh(gamut, name: str, opacity: float, wireframe: bool,
         # THE LIGHT THE USER PLACED. Fixed overhead here, this argument was
         # accepted and then dropped, so Set the lighting myself moved nothing.
         lightposition=light or _LIGHT_OVERHEAD,
-        contour=dict(show=wireframe, color="#888", width=2),
+        # NO `contour` HERE. It reads like "draw the mesh" and is
+        # documented as "dynamic contours … on hover": measured, a surface
+        # with it on and one with it off differ by 0 pixels. A cage is a line
+        # trace -- see _wire_segments and _edges.
     )
 
 
@@ -1241,6 +1256,18 @@ def _chart_skin(points, colours, name: str, style: str, opacity: float,
         return []
     verts = np.asarray(verts, float)
     faces = np.asarray(faces, int)
+    # THE CAGE IS A LINE TRACE, because a surface has no wires to turn on.
+    #
+    # Both of these were built on the surface's `contour` setting, which reads
+    # like "draw the mesh" and is documented as "dynamic contours … on hover".
+    # Measured against a page with no skin on it at all:
+    #
+    #     solid          214,308 pixels
+    #     mesh           214,308 pixels   -- the same picture, to the pixel
+    #     outline only     5,251 pixels   -- a surface at a fiftieth strength
+    #
+    # So "Mesh" was Solid under another name, and "Outline only" was a nearly
+    # invisible film rather than a cage. Both now draw the edges themselves.
     wire = style in ("mesh", "outline")
     common = dict(
         x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
@@ -1248,15 +1275,8 @@ def _chart_skin(points, colours, name: str, style: str, opacity: float,
         name=f"{name} — a skin over the patches", showlegend=False,
         hoverinfo="name", flatshading=False,
         lighting=_lighting(depth), lightposition=light or _LIGHT_OVERHEAD,
-        contour=dict(show=wire, color="#888", width=2),
     )
-    if style == "outline":
-        # The cage alone: no filled facets at all, so everything inside stays
-        # readable. Opacity near zero rather than a separate trace type keeps
-        # the contour lines that carry the shape.
-        common["opacity"] = 0.02
-    else:
-        common["opacity"] = float(opacity)
+    common["opacity"] = float(opacity)
     key = "#8b93a3"
     if colours is None:
         common["color"] = "#8b93a3"
@@ -1273,9 +1293,29 @@ def _chart_skin(points, colours, name: str, style: str, opacity: float,
     # included, so at a low opacity on a dark page the marker beside the name
     # all but disappears.
     common["legendgroup"] = f"{name}-skin"
-    return [go.Mesh3d(**common),
-            _legend_proxy(f"{name} — a skin over the patches", key,
-                          f"{name}-skin")]
+    out = []
+    # OUTLINE ONLY MEANS ONLY THE OUTLINE. There is no surface at all now,
+    # rather than one at a fiftieth of strength standing in for its absence,
+    # so everything inside really is unobstructed.
+    if style != "outline":
+        out.append(go.Mesh3d(**common))
+    if wire:
+        xs, ys, zs = _wire_segments(verts, faces)
+        out.append(go.Scatter3d(
+            x=xs, y=ys, z=zs, mode="lines",
+            # LIGHTER OVER A SURFACE THAN ON ITS OWN, which is the same rule
+            # the gamut cages follow. A hull over 480 patches is hundreds of
+            # edges: at full weight over a coloured solid they stop reading as
+            # structure and become a grey haze — reported, on the first build
+            # that drew them at all, as "looks like triangles again". On its
+            # own there is nothing to compete with and the cage carries the
+            # whole shape, so it keeps its weight.
+            line=dict(color=key, width=1.0 if style == "outline" else 0.6),
+            name=f"{name} — a skin over the patches",
+            legendgroup=f"{name}-skin", showlegend=False, hoverinfo="name"))
+    out.append(_legend_proxy(f"{name} — a skin over the patches", key,
+                             f"{name}-skin"))
+    return out
 
 
 def _patch_cloud(lab, name: str, space: str = "lab"):
@@ -1455,9 +1495,46 @@ SCENE_COLOURS = {
                   text="#22211f", axis="#d0ccc6", kept="rgb(176,180,188)",
                   wire="#a8a4a0",     # LM_TEXT_FAINT: a cage, not a wall
                   mark="#7a7570"),    # LM_TEXT_DIM: one symbol, full weight
+    # NOTHING BEHIND IT. The shape floating on the page it is embedded in,
+    # which is what a picture dropped into a document or a forum post usually
+    # wants. The writing stays mid-grey so it can be read on either.
+    "none": dict(page="rgba(0,0,0,0)", plot="rgba(0,0,0,0)",
+                 grid="rgba(0,0,0,0)", caption="#8a8a8a", text="#8a8a8a",
+                 axis="rgba(0,0,0,0)", kept="rgb(120,124,132)",
+                 wire="#9aa3b2", mark="#9aa3b2"),
+    # A NEUTRAL GREY, which flatters neither the light end of a shape nor the
+    # dark end. A gamut on black looks brighter than it is and one on white
+    # looks duller; halfway is the honest ground to judge a colour against.
+    "slate": dict(page="#6e7278", plot="#767a80", grid="#8b8f95",
+                  caption="#20242a", text="#12151a", axis="#8b8f95",
+                  kept="rgb(122,126,134)", wire="#3d4148", mark="#20242a"),
+    # PLAIN BLACK AND WHITE, for printing a page out or throwing it on a
+    # projector, where a near-black turns to mud and a warm white to yellow.
+    "ink": dict(page="#ffffff", plot="#ffffff", grid="#c8c8c8",
+                caption="#000000", text="#000000", axis="#c8c8c8",
+                kept="rgb(190,190,190)", wire="#606060", mark="#000000"),
 }
 
 _PAGE_BACKGROUND = "#111318"
+
+#: THE PAGE COLOURINGS A SAVED PAGE CAN BE SWITCHED BETWEEN.
+#:
+#: The window itself has two appearances and always will: light and dark are
+#: what a person sets their whole computer to, and a third choice there would
+#: be a preference nobody asked for. A saved page is a different thing — it is
+#: read on somebody else's screen, in somebody else's document, next to
+#: somebody else's text — so it carries a short list of page colourings and a
+#: button to move through them.
+#:
+#: Only the PAGE changes: the paper behind the shape, the walls of the box,
+#: the grid on them and the writing. Not one measured colour is touched, which
+#: is the property that makes this safe to offer at all.
+#:
+#: Two of these are the window's own, so a page opens looking exactly as it
+#: did when it was saved. The other three are the ones people actually ask a
+#: picture to be: nothing at all behind it, a neutral grey that flatters
+#: neither end, and plain black and white for printing or for a projector.
+PAGE_SCHEMES = ("dark", "light", "none", "slate", "ink")
 
 #: How a shape may be drawn. Exactly the three the window offers, and the only
 #: three :func:`build_figure` knows what to do with. Kept here rather than
@@ -3031,6 +3108,11 @@ def _spin_script(ids, spin, mode: str = "dark",
     # and there is no reason to put it in the file.
     if settings["show"].get("appearance"):
         settings["palettes"] = {k: dict(v) for k, v in SCENE_COLOURS.items()}
+        # AND THE ORDER TO MOVE THROUGH THEM, starting from the one the page
+        # was saved in, so the first press goes somewhere rather than
+        # appearing to do nothing.
+        settings["schemes"] = ([which]
+                               + [k for k in PAGE_SCHEMES if k != which])
     if not controls:
         return (f"<script>{_SPIN_JS}\n"
                 f"window.addEventListener('load', function () "
@@ -3211,7 +3293,9 @@ window.cqSpinControls = function (settings) {
     var t = first ? first.gd.data[first.at] : {};
     dressed[g.key] = {
       opacity: (typeof t.opacity === "number") ? t.opacity : 1,
-      wires: !!(t.contour && t.contour.show),
+      // A SURFACE OPENS WITH NO CAGE OVER IT. This used to be read off the
+      // surface's `contour` setting, which never drew one in the first place.
+      wires: false,
       filled: !!(t.fill && t.fill !== "none"),
       grey: false};
     g.opened = Object.assign({}, dressed[g.key]);
@@ -3319,19 +3403,162 @@ window.cqSpinControls = function (settings) {
     }
     return v;
   }
+  // A WIRE CAGE OVER A SURFACE, BUILT HERE FROM THE SURFACE'S OWN TRIANGLES.
+  //
+  // This button used to switch the surface's `contour` setting on, which reads
+  // exactly like "draw the mesh" and is documented as
+  //
+  //     Sets whether or not dynamic contours are shown on hover
+  //
+  // -- so it drew lines under the pointer and nothing at all the rest of the
+  // time. Measured on the published page, with the movement stopped and a
+  // noise floor of nought: pressing it changed the picture by 0 pixels.
+  // Reported simply as "I can't turn glossy to wires", which is exactly what
+  // was happening.
+  //
+  // NOTHING IS ADDED TO THE FILE FOR THIS. The surface already carries every
+  // vertex and every triangle, so the cage is worked out from those when the
+  // button is first pressed: the same edges the application itself would
+  // draw, each one once, since a triangle mesh shares each edge between two
+  // triangles and drawing both doubles the work for an identical picture.
+  //
+  // AND IN THE SHAPE'S OWN COLOURS, because a cage the reader cannot tell
+  // from a plain grey wire frame is not what "over its surface" promises --
+  // asked for as "make the mesh look colourful like the shell would". A line
+  // takes one colour for the whole trace, so the edges are grouped into bands
+  // of colour, rounding each channel to the nearest 32 exactly as the
+  // application does, which turns hundreds of distinct colours into a few
+  // dozen traces and reads as the same smooth gradient.
+  var caged = {};
+  function bandOf(colour) {
+    var text = String(colour);
+    var at = text.indexOf("(");
+    if (at < 0) return text;
+    var bits = text.slice(at + 1, text.indexOf(")")).split(",");
+    var out = [];
+    for (var n = 0; n < 3; n++)
+      out.push(Math.min(255, Math.round(parseFloat(bits[n]) / 32) * 32));
+    return "rgb(" + out.join(",") + ")";
+  }
+  function buildCage(g) {
+    var made = [];
+    g.parts.forEach(function (part) {
+      var full = part.gd._fullData && part.gd._fullData[part.at];
+      var t = full || part.gd.data[part.at];
+      if (!t || t.type !== "mesh3d" || !t.i || !t.j || !t.k) return;
+      var seen = {}, bands = {}, m = t.i.length, f, e, a, b;
+      var colours = t.vertexcolor;
+      for (f = 0; f < m; f++) {
+        var tri = [t.i[f], t.j[f], t.k[f]];
+        for (e = 0; e < 3; e++) {
+          a = tri[e]; b = tri[(e + 1) % 3];
+          var lo = a < b ? a : b, hi = a < b ? b : a;
+          var id = lo + "," + hi;
+          if (seen[id]) continue;
+          seen[id] = 1;
+          var band = colours ? bandOf(colours[lo]) : "plain";
+          var into = bands[band] || (bands[band] = {x: [], y: [], z: []});
+          into.x.push(t.x[lo], t.x[hi], null);
+          into.y.push(t.y[lo], t.y[hi], null);
+          into.z.push(t.z[lo], t.z[hi], null);
+        }
+      }
+      var add = [];
+      Object.keys(bands).forEach(function (band) {
+        var s = bands[band];
+        add.push({type: "scatter3d", mode: "lines", x: s.x, y: s.y, z: s.z,
+                  line: {color: band === "plain" ? "#9aa3b2" : band,
+                         width: 1},
+                  name: t.name, legendgroup: t.legendgroup || t.name,
+                  showlegend: false, hoverinfo: "skip",
+                  scene: t.scene || undefined});
+      });
+      if (!add.length) return;
+      var from = part.gd.data.length;
+      if (window.Plotly && window.Plotly.addTraces)
+        keepingTheView(part.gd, function () {
+          return window.Plotly.addTraces(part.gd, add);
+        });
+      for (var q = 0; q < add.length; q++)
+        made.push({gd: part.gd, at: from + q, cage: true});
+    });
+    return made;
+  }
+  // ADDING OR REMOVING A TRACE MOVES THE CAMERA, so it is put back.
+  //
+  // Measured rather than guessed: turning the cage on and straight off again
+  // left 159,910 pixels different on a page that had not otherwise moved, and
+  // the difference picture was the whole scene drawn twice at two slightly
+  // different scales -- two sets of axis numbers, two "b*" labels. Nothing
+  // about the shapes had changed; the view had. Somebody who lines a shape up
+  // and then presses wires would have it jump, which is its own small fault.
+  function keepingTheView(gd, work) {
+    var held = null;
+    // A COPY, and the scene is looked up AGAIN afterwards rather than kept.
+    // Adding a trace builds a new scene object, so a reference taken before
+    // the change points at one that has been thrown away -- setting the
+    // camera on it succeeds silently and moves nothing. Measured: everything
+    // else about the scene came back identical, the axis ranges, the aspect,
+    // the trace count, and only the camera had moved.
+    try {
+      var was = gd._fullLayout && gd._fullLayout.scene;
+      var live = was && was._scene && was._scene.getCamera
+        ? was._scene.getCamera() : (was && was.camera);
+      if (live) held = JSON.parse(JSON.stringify(live));
+    } catch (e) {}
+    function putBack() {
+      if (!held) return;
+      try {
+        var now = gd._fullLayout && gd._fullLayout.scene;
+        if (now && now._scene && now._scene.setCamera)
+          now._scene.setCamera(held);
+      } catch (e) {}
+    }
+    var done = work();
+    if (done && done.then) done.then(putBack, putBack); else putBack();
+  }
+
+  function showCage(g, want) {
+    var have = caged[g.key];
+    if (want && !have) {
+      caged[g.key] = buildCage(g);
+      return;
+    }
+    if (!want && have && have.length) {
+      // TAKEN OUT FROM THE END BACKWARDS, so removing one does not renumber
+      // the ones still to be removed.
+      var byPlot = {};
+      have.forEach(function (p) {
+        (byPlot[p.gd.id] = byPlot[p.gd.id] || {gd: p.gd, at: []}).at.push(p.at);
+      });
+      Object.keys(byPlot).forEach(function (id) {
+        var one = byPlot[id];
+        one.at.sort(function (a, b) { return b - a; });
+        if (window.Plotly && window.Plotly.deleteTraces)
+          keepingTheView(one.gd, function () {
+            return window.Plotly.deleteTraces(one.gd, one.at);
+          });
+      });
+      caged[g.key] = null;
+    }
+  }
+
   function dressOne(g) {
     var st = dressed[g.key];
-    g.parts.forEach(function (part) {
+    // The cage first: greying below has to find it in place to grey it too.
+    if (on("wires", true) && g.mesh) showCage(g, !!st.wires);
+    // The cage's own traces are dressed alongside the surface, so greying a
+    // shape greys the wires over it rather than leaving them in colour.
+    var dressing = g.parts.concat(caged[g.key] || []);
+    dressing.forEach(function (part) {
       var t = part.gd.data[part.at];
+      if (!t) return;
       var patch = {}, any = false;
       // THE KEY KEEPS ITS FULL STRENGTH AND ITS COLOUR unless the reader
       // asked for grey, in which case it follows -- otherwise the list of
       // names would go on showing colours the picture no longer has.
       if (!part.proxy) {
         if (on("opacity", true)) { patch.opacity = st.opacity; any = true; }
-        if (on("wires", true) && t.type === "mesh3d") {
-          patch["contour.show"] = !!st.wires; any = true;
-        }
         if (on("wires", true) && g.fill && t.fill !== undefined) {
           patch.fill = st.filled ? "toself" : "none"; any = true;
         }
@@ -3902,13 +4129,18 @@ window.cqSpinControls = function (settings) {
     if (canWire(g))
       ctl += button("shape-wires-" + n, g.mesh ? "wires" : "filled",
         g.mesh
-          ? ("Draw " + g.label + " as a net of fine lines over its surface. "
-             + "The lines follow the measured points, so they show where the "
-             + "measurement is dense and where the shape between two readings "
-             + "is the drawing's guess rather than anything anybody measured. "
-             + "Turn the strength down at the same time and you are left with "
-             + "the cage alone, which is the clearest way to show one shape "
-             + "sitting inside another.")
+          ? ("Draw a net of fine lines over " + g.label + ", in the colours "
+             + "the surface itself is painted in. Every line runs between two "
+             + "measured points, so the net shows you where the chart sampled "
+             + "densely and where the shape between two readings is the "
+             + "drawing filling in rather than anything anybody measured — a "
+             + "wide, empty patch of net is a part of the surface nobody "
+             + "measured directly.\\n\\n"
+             + "Turn the strength down with − at the same time and you are "
+             + "left with the cage alone, which is the clearest way to show "
+             + "one shape sitting inside another. Press grey and the net goes "
+             + "grey with the shape. Nothing is added to or taken from the "
+             + "measurement either way.")
           : ("Fill " + g.label + " in, or leave only its outline. Two filled "
              + "cross-sections lying over each other are hard to read however "
              + "faint they are; two outlines never are. Nothing is added or "
@@ -3989,12 +4221,23 @@ window.cqSpinControls = function (settings) {
 
   var pageRows = "";
   if (on("appearance", false))
-    pageRows += '<div class="cq-row"><span>light or dark</span>'
+    pageRows += '<div class="cq-row"><span>page colours</span>'
       + '<span class="cq-ctl">'
-      + button("appearance", mode === "light" ? "light" : "dark",
-        "Put the page on a light background or a dark one. The measured "
-        + "colours themselves never change — only the paper they are drawn "
-        + "on — so you can match the page to whatever you are reading it in.")
+      + button("appearance", schemeName(mode),
+        "Press to move through the ways this page can be coloured. NOT ONE "
+        + "MEASURED COLOUR CHANGES — only the paper behind the shape, the "
+        + "walls of the box around it, the grid on them and the writing. The "
+        + "shape you are reading is the same shape whichever you pick.\\n\\n"
+        + "dark and light are the two the window itself uses, and the page "
+        + "opens on whichever it was saved in. none takes the background "
+        + "away completely, so the shape floats on whatever the page is sitting "
+        + "in — that is the one for dropping a picture into a document, a "
+        + "slide or a forum post. slate is a neutral grey: a gamut on black "
+        + "looks brighter than it really is and one on white looks duller, "
+        + "and halfway is the fairest ground to judge a colour against. ink "
+        + "is plain black and white, for printing the page out or putting it "
+        + "on a projector, where a near-black goes to mud and a warm white "
+        + "goes yellow.")
       + '</span></div>';
   if (canFull())
     pageRows += '<div class="cq-row"><span>full screen</span>'
@@ -4349,6 +4592,18 @@ window.cqSpinControls = function (settings) {
     press("labels", picture.labels);
     press("key", picture.key);
   }
+  // THE LIST TO MOVE THROUGH, and what each one is called on the button.
+  // A page saved before this carried two colourings and no list; it still
+  // works, and simply moves between the two it has.
+  var schemes = (settings.schemes && settings.schemes.length)
+    ? settings.schemes.slice()
+    : (palettes ? Object.keys(palettes) : [mode]);
+  function schemeName(which) { return which; }
+  function nextScheme() {
+    var at = schemes.indexOf(mode);
+    return schemes[(at < 0 ? 0 : at + 1) % schemes.length];
+  }
+
   function applyMode() {
     if (!palettes) return;
     var p = palettes[mode] || palettes.dark;
@@ -4364,7 +4619,7 @@ window.cqSpinControls = function (settings) {
                 "xaxis.zerolinecolor": p.grid, "yaxis.zerolinecolor": p.grid,
                 "xaxis.color": p.caption, "yaxis.color": p.caption,
                 "legend.font.color": p.text, "title.font.color": p.caption});
-      say("appearance", mode === "light" ? "light" : "dark");
+      say("appearance", schemeName(mode));
       return;
     }
     relayout({"paper_bgcolor": p.page, "plot_bgcolor": p.plot,
@@ -4380,7 +4635,7 @@ window.cqSpinControls = function (settings) {
               "scene.zaxis.color": p.caption,
               "legend.font.color": p.text,
               "title.font.color": p.caption});
-    say("appearance", mode === "light" ? "light" : "dark");
+    say("appearance", schemeName(mode));
   }
 
   function push() {
@@ -4672,7 +4927,7 @@ window.cqSpinControls = function (settings) {
     if (what === "key") { picture.key = !picture.key; applyPicture(); }
     if (what === "notes") { picture.notes = !picture.notes; applyPicture(); }
     if (what === "appearance") {
-      mode = (mode === "light") ? "dark" : "light";
+      mode = nextScheme();
       applyMode();
     }
     push();
@@ -5346,7 +5601,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                                      depth_i, light=light, alphas=alphas,
                                      stand=stand))
         elif how in ("solid", "solid+mesh"):
-            fig.add_trace(_mesh(g, name, opacity=base_i, wireframe=False,
+            fig.add_trace(_mesh(g, name, opacity=base_i,
                                 paint=paint_i, index=i, depth=depth_i,
                                 page=c["page"], light=light, alphas=alphas,
                                 stand=stand))

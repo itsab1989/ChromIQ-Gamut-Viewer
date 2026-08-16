@@ -2473,15 +2473,27 @@ class WebPageDialog(QDialog):
              "where the list says nothing they cannot already see."),
             ]),
             ("The page itself", [
-            ("appearance", "Switch the page light or dark", False,
-             "Puts a light-or-dark switch on the page, so whoever opens it "
-             "can match it to whatever they are reading it in.\n\n"
-             "The measured colours themselves never change — only the paper "
-             "they are drawn on. A gamut is the same gamut on either.\n\n"
-             "You still choose which one it opens as, under This window. "
-             "This only decides whether they can change it afterwards. It "
-             "adds a second set of page colours to the file, which is a few "
-             "hundred bytes."),
+            ("appearance", "Let them change the page colours", False,
+             "Puts a button on the page that moves through five ways of "
+             "colouring it, so whoever opens it can match it to whatever "
+             "they are putting it in.\n\n"
+             "NOT ONE MEASURED COLOUR CHANGES. Only the paper behind the "
+             "shape, the walls of the box around it, the grid on them and "
+             "the writing. A gamut is the same gamut on every one of "
+             "them.\n\n"
+             "dark and light are the two this window itself uses. none takes "
+             "the background away altogether, so the shape floats on "
+             "whatever the page is sitting in — that is the one for dropping "
+             "a picture into a document, a slide or a forum post. slate is a "
+             "neutral grey, which is the fairest ground to judge a colour "
+             "against: a gamut on black looks brighter than it really is and "
+             "one on white looks duller. ink is plain black and white, for "
+             "printing the page or putting it on a projector, where a "
+             "near-black goes to mud and a warm white goes yellow.\n\n"
+             "You still choose which one it OPENS as, under This window; "
+             "this only decides whether they can change it afterwards. It "
+             "adds the other sets of page colours to the file, which is a "
+             "few hundred bytes."),
             ("picture", "Save it as a picture file", True,
              "A button that writes what is on screen — at that exact angle, "
              "with whatever they have faded or greyed — into an ordinary "

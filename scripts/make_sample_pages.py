@@ -624,6 +624,80 @@ def main() -> int:
     said = w._readout_text().replace("\n", " ")
     print("           " + said[:190])
 
+    # ---------------------------------------------------------------- 14
+    # A PAPER AGAINST A STANDARD SPACE, WITH EVERY CONTROL THE PAGE CAN CARRY.
+    #
+    # Every other showcase page compares two measurements. This one asks the
+    # question most people actually arrive with -- "will the pictures people
+    # send me survive on this paper?" -- against Adobe RGB (1998), which is
+    # what a photographer editing for print is most likely to be working in.
+    #
+    # It is also the page that has to prove the shape controls really work,
+    # and that is why it is saved with the OUTLINE IN ITS OWN COLOURS rather
+    # than the plain grey every other page uses. Two things were reported on
+    # page 11 and both are about exactly this: a surface could not be turned
+    # to wires at all, and a cage saved grey has no colours for the colour
+    # button to bring back. A page where the cage is coloured demonstrates
+    # both controls doing something visible.
+    print("\n14 — a paper against Adobe RGB, with every control")
+    fresh()
+    # `fresh()` closes what is open. It does NOT put the look controls back,
+    # and the page before this one leaves "Show what the comparison cannot
+    # print" switched on -- so this page came out drawing the red-and-grey
+    # comparison painting instead of the paper, and the shape refused the
+    # grey button because for that painting the colour IS the answer. Found
+    # by reading the name of the surface the finished page actually holds.
+    w._show_lost.setChecked(False)
+    pump(0.5)
+    w._load(GLOSSY)
+    pump(2.5)
+    picked = False
+    for i in range(w._compare.count()):
+        got = w._compare.itemData(i)
+        if got and got[0] == "space" and w._compare.itemText(i).startswith(
+                "Adobe RGB"):
+            w._compare.setCurrentIndex(i)
+            w._on_compare_changed()
+            picked = True
+            break
+    check("14", "Adobe RGB (1998) is one of the built-in comparisons", picked)
+    pump(2.5)
+    # The paper solid and the space around it as a cage, which is the only way
+    # to look at a printer sitting inside a larger space and still see it.
+    w._style_mine.setCurrentIndex(0)
+    w._style_second.setCurrentIndex(2)
+    pump(1.0)
+    at = w._outline_paint.findData("true")
+    check("14", "the outline can be given the shapes' own colours", at >= 0)
+    w._outline_paint.setCurrentIndex(at)
+    pump(3.0)
+    spin(on=True, turn="round", turn_speed=6, tilt="swing", tilt_speed=4,
+         tilt_sweep=20)
+    p = page("14-a-paper-against-adobe-rgb.html")
+    save_to(p, numbers=True, offer=EVERY_CONTROL)
+    made.append(("14", p))
+    body = p.read_text(encoding="utf-8")
+    for wanted in ("speed_each", "grid", "labels", "key", "appearance",
+                   "sweep", "agree", "opacity", "wires", "grey"):
+        check("14", f"the page was given the {wanted} control",
+              f'"{wanted}": true' in body)
+    # A COLOURED CAGE IS MANY TRACES, one per band of colour, because a line
+    # takes one colour for the whole of it. One trace would mean it came out
+    # grey after all.
+    bands = len(re.findall(r'"mode":"lines"', body))
+    check("14", "the cage really is drawn in its own colours", bands > 20,
+          f"{bands} line traces; a plain grey cage is one")
+    check("14", "and it is named once in the key",
+          body.count("(outline)") >= 1)
+    # AND IT REALLY IS THE PAPER, not the red-and-grey comparison painting
+    # that the page before this one leaves switched on. Without this the leak
+    # is invisible: the page builds, every other claim passes, and the shape
+    # quietly refuses the grey button because its colour is the answer.
+    check("14", "it draws the paper itself, not the comparison painting",
+          "red is out of reach" not in body)
+    said = w._readout_text().replace("\n", " ")
+    print("           " + said[:190])
+
     # ------------------------------------------------------------ all of them
     print("\nevery page")
     for name, path in made:

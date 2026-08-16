@@ -5,9 +5,10 @@ to set the movement, then **Save this view as a picture… → A moving picture*
 Nothing was recorded another way, and every setting behind them is one you
 have — each caption says exactly which.
 
-Two to a page, so each one can be full size and full quality rather than
-squeezed to fit a dozen onto one. Page 7 is all charts — patch sets before
-anything has been printed. **Depth is genuinely hard to judge on a flat
+Seventeen loops over seven pages — two to a page so each can be full size
+and full quality rather than squeezed to fit a dozen onto one, except
+**page 7, which holds six**: those are all charts, patch sets before
+anything has been printed, and they read as a set. **Depth is genuinely hard to judge on a flat
 screen**: a dent in the deep blues and a shadow look exactly alike in a still
 picture, and half a turn settles it in a second.
 
@@ -47,4 +48,4 @@ The surface as an outline only, with all 1168 measured patches floating in place
 
 [The README](../README.md) · [Next →](motion/page-2.md)
 
-***1** · [2](motion/page-2.md) · [3](motion/page-3.md) · [4](motion/page-4.md) · [5](motion/page-5.md) · [6](motion/page-6.md)*
+***1** · [2](motion/page-2.md) · [3](motion/page-3.md) · [4](motion/page-4.md) · [5](motion/page-5.md) · [6](motion/page-6.md) · [7](motion/page-7.md)*

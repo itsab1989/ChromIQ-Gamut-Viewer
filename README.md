@@ -17,7 +17,7 @@ printer?
 
 <p align="center"><sub>A real measured gamut, turning. Made by the
 application itself — <b>Turn it by itself</b>, then <b>Save this view as a
-picture…</b>. <a href="docs/MOTION.md">Seventeen more, two to a page →</a></sub></p>
+picture…</b>. <a href="docs/MOTION.md">Seventeen more, over seven pages →</a></sub></p>
 
 <p align="center">
   <a href="https://ko-fi.com/itsab1989"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support this on Ko-fi" height="36"></a>
@@ -711,7 +711,7 @@ with the application, so there is nothing to install.
 The loop closes exactly — the file holds one complete journey fitted into the
 seconds you chose — so it never jumps as it comes round.
 
-**[Eight more loops, two to a page, each at full size and quality →](docs/MOTION.md)**
+**[Seventeen more loops, over seven pages, each at full size and quality →](docs/MOTION.md)**
 
 ### Everything around the shape is yours
 
@@ -774,7 +774,7 @@ about 5 MB. Double-click it and it opens in any browser — and it needs **no
 internet at all**, because the 3D viewer travels inside the page. It works from
 a memory stick, from an email attachment, on a plane, in ten years.
 
-**[▶ See thirteen of them, live →](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/)**
+**[▶ See fourteen of them, live →](https://itsab1989.github.io/ChromIQ-Gamut-Viewer/)**
 
 What the person you send it to gets is not a picture — it is the scene. They
 can drag it round, zoom in, click the names underneath to hide and show shapes,
