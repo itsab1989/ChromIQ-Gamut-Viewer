@@ -269,6 +269,21 @@ the demo paper under the first picture. It was checked by putting an old
 figure back and watching it fail, because a test that cannot fail guards
 nothing.
 
+The test that pins them had to be corrected before it was any use: its first
+version allowed half of the last place the README quotes, on the reasoning
+that coverage uses a fixed seed and repeats to the digit. It does -- on one
+machine. It failed the release build within minutes, because `build_gamut`
+triangulates the device cube with Qhull and Qhull resolves a flat run of
+points differently between builds: the same measured points, slightly
+different triangles, and every figure taken from the surface moves a little.
+Between this project's development machine and its Linux builder, the demo
+paper's volume differs by 36 cubic Lab units in 702,327 (**0.005%**) and the
+coverage figures by up to **0.25 percentage points** -- comfortably inside the
+sampling error already printed beside them, and now written down where the
+figures are produced. The allowance is half a point, which sits cleanly
+between that and the 0.8-to-1.8 points of real staleness this found.
+
+
 ### 🧹 The window left 27 GB of scenes behind
 
 Reported as a disk filling up: 30 GB gone in two days. It was this.

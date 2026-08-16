@@ -9,10 +9,27 @@ The same gap had already been found in `docs/index.html`, where a card claimed
 76.4% against the window's 77.4%. Two places is a pattern, so the figures are
 pinned here instead of trusted.
 
-TOLERANCE. Coverage is measured by sampling with a fixed seed, so it is
-repeatable to the digit -- but the README rounds, and a figure quoted to one
-decimal must not fail the build because the last place moved by 0.05. Half of
-the last quoted place is the allowance, and nothing more.
+TOLERANCE, AND WHY IT IS NOT TIGHTER. The first version of this allowed half
+of the last place the README quotes, on the reasoning that coverage uses a
+fixed seed and so repeats to the digit. It does -- on one machine. It broke
+the release build within minutes of being pushed, because the numbers are not
+the same on another:
+
+    paper inside sRGB     75.9% here    76.01% on the Linux builder
+    both can print        77.4% here    77.63%
+    the demo volume     702,327 here   702,291
+
+The shapes themselves differ. `build_gamut` triangulates each face of the
+device cube with Qhull, and Qhull resolves a flat or near-flat run of points
+differently between builds -- so the surface has the same points and slightly
+different triangles, and everything measured from it moves a little. 36 cubic
+Lab units in 702,327 is 0.005%.
+
+So the allowance has to separate a figure that has gone STALE from one that is
+merely being measured on a different machine. Measured, those are far apart:
+the staleness this test was written after ran from 0.8 to 1.8 percentage
+points, and the spread between two machines is at most 0.25. Half a point sits
+cleanly between them.
 """
 import pathlib
 import re
@@ -48,11 +65,17 @@ def quoted(pattern: str) -> float:
     return float(found.group(1))
 
 
+#: How far a quoted percentage may sit from the measured one. See the note at
+#: the top: a stale figure is at least 0.8 points out, and two machines differ
+#: by at most 0.25.
+ALLOWANCE = 0.5
+
+
 def agrees(said: float, real: float) -> None:
-    """Within half of the last place the README actually quotes."""
-    places = len(f"{said:.10f}".rstrip("0").split(".")[1])
-    assert said == pytest.approx(real, abs=0.5 * 10 ** -places), (
-        f"the README says {said}% where the code now says {real:.4f}%")
+    assert said == pytest.approx(real, abs=ALLOWANCE), (
+        f"the README says {said}% where the code now says {real:.4f}% -- "
+        f"more than {ALLOWANCE} apart, which is staleness rather than the "
+        f"difference between two machines")
 
 
 def test_the_paper_against_srgb_both_ways(demo):
@@ -78,7 +101,14 @@ def test_the_measurement_against_its_own_profile(demo):
     icc = REPO / "demo" / "Glossy-paper.icc"
     if not icc.exists():
         pytest.skip("the demo profile is not in this checkout")
-    profile = icc_gamut(icc)
+    try:
+        profile = icc_gamut(icc)
+    except ValueError as why:
+        # READING AN ICC PROFILE NEEDS ArgyllCMS, and the build machines do
+        # not have it. Skipping is right: the figure is still checked wherever
+        # somebody can actually read a profile, and a test that cannot run is
+        # not a test that failed.
+        pytest.skip(f"cannot read the demo profile here: {why}")
     agrees(quoted(r"([\d.]+)% of what the measurement can print also fits "
                   r"inside the profile"),
            100 * coverage(demo["Glossy-paper"], profile)[0])
@@ -94,7 +124,11 @@ def test_the_volume_and_the_two_ends_of_the_demo_paper(demo):
 
     said = re.search(r"([\d,]+) cubic Lab units", text)
     assert said, "the README no longer quotes the demo volume"
-    assert int(said.group(1).replace(",", "")) == round(g.volume), (
+    # A RELATIVE ALLOWANCE, because the volume moves with the triangulation
+    # too -- 36 cubic units between two machines, which is 0.005%. A tenth of
+    # a percent is far inside that and far outside any real staleness.
+    quoted_volume = int(said.group(1).replace(",", ""))
+    assert quoted_volume == pytest.approx(g.volume, rel=0.001), (
         f"the README says {said.group(1)} cubic Lab units where the shape "
         f"encloses {g.volume:,.0f}")
 

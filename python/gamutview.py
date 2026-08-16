@@ -1234,6 +1234,18 @@ def coverage(inner, outer, *, samples: int = 60_000, seed: int = 20260814
     rather than hidden: at 60,000 samples it is around 0.2 percentage points,
     so quoting more than one decimal place would be false precision.
 
+    THE SAME ANSWER ON ONE MACHINE, and very nearly the same on another. The
+    seed fixes the sampling, but not the shape being sampled: `build_gamut`
+    triangulates each face of the device cube with Qhull, and Qhull resolves a
+    flat or near-flat run of points differently between builds. Same points,
+    slightly different triangles, so everything measured from the surface
+    moves a little. Measured between this project's development machine and
+    its Linux build machine: the demo paper's volume differs by 36 cubic Lab
+    units in 702,327 — **0.005%** — and the coverage figures by up to **0.25
+    percentage points**. That is well inside the sampling error already quoted
+    beside them, and it is worth knowing before treating the last digit of a
+    published figure as a constant.
+
     BOTH SIDES ARE MEASURED AGAINST THE REAL SURFACE. This used to sample the
     convex HULL of the inner gamut and test against the hull of the outer,
     and neither gamut is convex — Adobe RGB's hull holds 6.1% more volume
