@@ -81,6 +81,81 @@ strong there. **17.7% of its pixels sit on an edge solid, 19.4% see-through.**
 Nothing about being see-through causes it. The help text now says so, because
 a picture that reads as broken and is not needs to say which it is.
 
+### 🚫 A control that had nothing to act on, and a page that said nothing
+
+Both found by pressing every control on every published page.
+
+**"Where they differ" was offered when nothing differs.** A shape that sits
+entirely inside the others — the matte paper inside the glossy one does, at
+every one of its 978 triangles — has a mask of nothing but zeros: everything
+agrees and nothing differs. The control was still there, and pressing it moved
+the picture by **0 pixels**, on two published pages. Each of the two fades is
+now offered only when there is something on its side of the question.
+
+**A page saved without the 3D viewer drew nothing and did not say why.** That
+page fetches the viewer from the internet, which is what keeps it to a few
+dozen kilobytes instead of about five megabytes. With no connection it opened
+as a full set of controls over an empty box — seventeen of them, none of which
+could do anything — and read as a broken file. It now says, in plain words,
+that it needs the internet the first time, that nothing is wrong with the file,
+and how to save one that works offline for good. The note appears only if the
+viewer really is missing, four seconds in, so a slow connection never flashes
+it up.
+
+### ✅ And two that turned out to be the measurement, not the app
+
+Reported here because a number that looked like a fault and was not is worth
+the same honesty as one that was. Stepping a shape's strength down and back
+up, and a cut down and back up, both left a few thousand pixels different —
+but asking the page for the **number** beside the buttons showed they returned
+exactly: 30% → 20% → 30%, and L\* 50 → 48 → 50. A picture rebuilt with the
+same values is not pixel-identical at its edges. The audit now takes its floor
+from a redraw that provably changes nothing, rather than from two idle grabs.
+
+### 🧪 The audit ships with the application
+
+`scripts/audit.py` — press every control there is, and say which ones do
+nothing.
+
+```
+python scripts/audit.py            # everything
+python scripts/audit.py --window   # only the window's own settings
+python scripts/audit.py --pages    # only saved pages
+python scripts/audit.py --list     # what it would test, and stop
+```
+
+It answers one question about each control: **when you move it, does the
+picture change — and when you put it back, does the picture come back?** Three
+controls in this application drew nothing at all for several releases, and no
+test caught them because they all *ran* perfectly: the code executed, nothing
+raised, the button lit up, and not one pixel moved.
+
+**Nothing in it is a list of controls**, which is the whole design. The
+window's settings come from `_persisted()` — the table the window already
+keeps of everything worth remembering — plus `_shape_controls()`. A page's
+controls are read out of the page itself. So a control added tomorrow is
+audited tomorrow, by whoever added it, without touching the audit. If a new
+control does *not* show up in `--list`, that is worth knowing too: it means
+the window is not remembering it either.
+
+**If you have taken only the 3D viewer**, `--pages --dir <anywhere>` presses
+whatever controls your own saved pages carry. It knows nothing about gamuts.
+
+Four rules keep it from lying, and each was learned by getting an answer wrong
+first: the movement is stopped **through the page's own button** rather than
+behind its back; the panel is **opened**, or it audits five buttons and calls
+it a page; every kind is checked by **its own rule** (a switch comes back when
+pressed again, a step when its opposite is pressed, a preset on *put the view
+back*, and an action may change nothing but has to say why); and the floor is
+**measured including a redraw**, because a picture rebuilt with the same
+numbers is not pixel-identical at its edges.
+
+It also switches a control's **parent** on first — the lightness of a cut
+means nothing until there is a cut. Without that, eleven perfectly good
+controls reported "does nothing", which is a report nobody can use.
+
+Exit code is 1 on a finding, so it can gate a release.
+
 ### 🔍 And the audit that should have found them
 
 These were found because somebody pointed at one of them, which is not an

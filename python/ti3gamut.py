@@ -3234,6 +3234,8 @@ window.cqSpinControls = function (settings) {
   // doing half the job each is how a side-by-side page ends up with one pane
   // faded and the other not.
   var agreed = false;                  // does this page carry the split at all
+  var anyDiffers = false;              // ... and is any part of it standing out
+  var anyAgrees = false;               // ... and is any part of it shared
   function findShapes() {
     var found = [], byKey = {};
     (settings.ids || []).forEach(function (id) {
@@ -3268,7 +3270,22 @@ window.cqSpinControls = function (settings) {
           // character per drawn vertex, worked out when the page was written
           // because only the Python has the whole 3D shape to work it out
           // from. Its presence is also what says this page can fade at all.
-          if (t.meta && t.meta.stand) { g.stand = true; agreed = true; }
+          // AND WHETHER THERE IS ANYTHING ON EACH SIDE OF THE QUESTION.
+          //
+          // "This page can fade" is not the same as "this page has something
+          // to fade in both directions". A shape that sits entirely inside
+          // the others -- the matte paper inside the glossy one does, at
+          // every single one of its 978 triangles -- has a mask of nothing
+          // but zeros: everything agrees and nothing differs. The control
+          // that fades away the differences was still offered, and pressing
+          // it moved the picture by 0 pixels. Measured on two published
+          // pages, and it breaks this file's own rule that no row anywhere
+          // carries a button that would do nothing.
+          if (t.meta && t.meta.stand) {
+            g.stand = true; agreed = true;
+            if (t.meta.stand.indexOf("1") >= 0) anyDiffers = true;
+            if (t.meta.stand.indexOf("0") >= 0) anyAgrees = true;
+          }
         }
       });
     });
@@ -4071,7 +4088,7 @@ window.cqSpinControls = function (settings) {
   // shapes themselves -- and it goes first because it is the one control
   // here that acts on all of them at once, so reading down the group runs
   // from "all of them" to "this one".
-  if (agreed && on("agree", true)) {
+  if (agreed && anyAgrees && on("agree", true)) {
     each += '<div class="cq-row"><span>where they agree</span>'
       + '<span class="cq-ctl">'
       + group(button("agree-less", "&minus;",
@@ -4093,7 +4110,8 @@ window.cqSpinControls = function (settings) {
     // is what you ask when choosing between two papers, and fading the
     // differences asks "what can I print on both of them?", which is what
     // you ask when the same picture has to go out on both.
-    each += '<div class="cq-row"><span>where they differ</span>'
+    if (anyDiffers)
+      each += '<div class="cq-row"><span>where they differ</span>'
       + '<span class="cq-ctl">'
       + group(button("differ-less", "&minus;",
           "Fade away the parts that only one shape reaches, leaving the part "
@@ -5052,6 +5070,55 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
     return Path(out)
 
 
+def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
+    """A page that fetches its viewer has to say so when it cannot get it.
+
+    Saved without the drawing library inside it, a page is a few dozen
+    kilobytes instead of five megabytes — and it fetches the library from the
+    internet the first time it is opened. With no connection it drew nothing:
+    a full set of controls sitting over an empty box, saying nothing about
+    why, which reads as a broken file rather than a missing download.
+
+    Reported from a run with no network, where every control on it moved the
+    picture by 0 pixels because there was no picture.
+
+    The note replaces nothing and appears only if the library really is
+    absent, so a page that loads normally never shows it.
+    """
+    c = SCENE_COLOURS["light" if mode == "light" else "dark"]
+    note = (
+        "<div id=\"cq-noviewer\" hidden style=\"position:fixed;inset:0;"
+        "display:flex;align-items:center;justify-content:center;"
+        f"background:{c['page']};color:{c['text']};z-index:9;"
+        "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
+        "\"><div style=\"max-width:34rem;padding:2rem;text-align:left\">"
+        "<p style=\"font-size:1.15rem;margin:0 0 .6rem\"><b>This page needs "
+        "the internet the first time you open it.</b></p>"
+        "<p style=\"margin:0 0 .6rem\">It was saved <i>without</i> the 3D "
+        "viewer inside it, which is what keeps it to a few dozen kilobytes "
+        "instead of about five megabytes. The viewer is fetched when the page "
+        "opens, and this time it could not be reached — so there is nothing "
+        "here to draw the shape with. Nothing is wrong with the file and no "
+        "measurement is missing.</p>"
+        "<p style=\"margin:0\">Connect to the internet and reload the page, "
+        "and it will work from then on. If it has to work offline for good, "
+        "save it again from the application with <b>Put the 3D viewer inside "
+        "the file</b> ticked.</p></div></div>\n"
+        "<script>window.addEventListener('load', function () {\n"
+        "  // GIVE IT TIME TO ARRIVE. Shown the instant the page loads, this\n"
+        "  // would flash up on every slow connection and then be replaced by\n"
+        "  // the picture, which is worse than saying nothing.\n"
+        "  window.setTimeout(function () {\n"
+        "    if (!window.Plotly) {\n"
+        "      var n = document.getElementById('cq-noviewer');\n"
+        "      if (n) n.hidden = false;\n"
+        "    }\n"
+        "  }, 4000);\n"
+        "});</script>\n")
+    at = html.rfind("</body>")
+    return html[:at] + note + html[at:] if at > 0 else html + note
+
+
 def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
                      carry_viewer: bool = True, notes: str = "",
                      controls: bool = True, offer=None) -> Path:
@@ -5075,6 +5142,8 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     # exists for sending a measurement to another person. The caption already
     # says what the picture is, so it is what the tab says too.
     html = _titled(html, _page_title(fig))
+    if not carry_viewer:
+        html = _say_if_the_viewer_never_arrives(html, mode)
     _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]
     # HIDING THE OVERFLOW HIDES THE NUMBERS. A single full-bleed scene should
     # not scroll -- there is nothing under it and a stray scrollbar only makes

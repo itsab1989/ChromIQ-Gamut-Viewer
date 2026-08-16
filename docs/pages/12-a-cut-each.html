@@ -5255,6 +5255,8 @@ window.cqSpinControls = function (settings) {
   // doing half the job each is how a side-by-side page ends up with one pane
   // faded and the other not.
   var agreed = false;                  // does this page carry the split at all
+  var anyDiffers = false;              // ... and is any part of it standing out
+  var anyAgrees = false;               // ... and is any part of it shared
   function findShapes() {
     var found = [], byKey = {};
     (settings.ids || []).forEach(function (id) {
@@ -5289,7 +5291,22 @@ window.cqSpinControls = function (settings) {
           // character per drawn vertex, worked out when the page was written
           // because only the Python has the whole 3D shape to work it out
           // from. Its presence is also what says this page can fade at all.
-          if (t.meta && t.meta.stand) { g.stand = true; agreed = true; }
+          // AND WHETHER THERE IS ANYTHING ON EACH SIDE OF THE QUESTION.
+          //
+          // "This page can fade" is not the same as "this page has something
+          // to fade in both directions". A shape that sits entirely inside
+          // the others -- the matte paper inside the glossy one does, at
+          // every single one of its 978 triangles -- has a mask of nothing
+          // but zeros: everything agrees and nothing differs. The control
+          // that fades away the differences was still offered, and pressing
+          // it moved the picture by 0 pixels. Measured on two published
+          // pages, and it breaks this file's own rule that no row anywhere
+          // carries a button that would do nothing.
+          if (t.meta && t.meta.stand) {
+            g.stand = true; agreed = true;
+            if (t.meta.stand.indexOf("1") >= 0) anyDiffers = true;
+            if (t.meta.stand.indexOf("0") >= 0) anyAgrees = true;
+          }
         }
       });
     });
@@ -6092,7 +6109,7 @@ window.cqSpinControls = function (settings) {
   // shapes themselves -- and it goes first because it is the one control
   // here that acts on all of them at once, so reading down the group runs
   // from "all of them" to "this one".
-  if (agreed && on("agree", true)) {
+  if (agreed && anyAgrees && on("agree", true)) {
     each += '<div class="cq-row"><span>where they agree</span>'
       + '<span class="cq-ctl">'
       + group(button("agree-less", "&minus;",
@@ -6114,7 +6131,8 @@ window.cqSpinControls = function (settings) {
     // is what you ask when choosing between two papers, and fading the
     // differences asks "what can I print on both of them?", which is what
     // you ask when the same picture has to go out on both.
-    each += '<div class="cq-row"><span>where they differ</span>'
+    if (anyDiffers)
+      each += '<div class="cq-row"><span>where they differ</span>'
       + '<span class="cq-ctl">'
       + group(button("differ-less", "&minus;",
           "Fade away the parts that only one shape reaches, leaving the part "
