@@ -1,5 +1,235 @@
 # Changelog
 
+## v2.15.1
+
+### 🧊 One press hung a published page, and reloading did not help
+
+Reported from a phone against the showcase page comparing a paper with Adobe
+RGB: *"it hung as soon as I tried to reduce opacity of where they agree. Then
+I could not get it back to work, not even by re-loading the page."* The page
+had **loaded quickly** — it was only the press.
+
+That page is not big. It carries 491 vertices and 978 triangles, the same as
+every other. What is different is the number of **traces**: a cage drawn in
+true colours needs one trace per colour, because a line takes a single colour
+for its whole length, so the Adobe RGB cage is 347 of them where every other
+demo page has between 2 and 12.
+
+And the code that re-dresses a shape called the drawing library **once per
+trace**. Measured on a desktop with a real graphics card:
+
+| page | traces | rebuilds asked for | one press took |
+|---|---|---|---|
+| everything handed over | 4 | 5 | 0.3 s |
+| **a paper against Adobe RGB** | **348** | **349** | **36.4 s** |
+
+Three things were wrong, and all three are fixed:
+
+* **One instruction per shape, not one per trace.** Traces are gathered by
+  which fields they need — and by which graph they belong to — and handed
+  over together.
+* **Only what is actually different.** Setting a trace to the value it
+  already holds rebuilds the scene to draw exactly what is on it. Fading
+  where two shapes *agree* touches one surface, and was rewriting the
+  strength of all 347 cage traces as well. "Not stated" now compares equal to
+  "fully solid", which is what it means — without that, the very first press
+  still rewrote all of them.
+* Together: **349 calls and 36.4 seconds became 2 calls and 0.3 seconds**,
+  and the two remaining calls are the surface's own colours and the
+  depth-sort that keeps a see-through shape drawn in the right order. Both
+  are work that has to happen.
+
+The picture is unchanged, which was checked rather than assumed: the press
+still moves 51,918 pixels, pressing back returns it exactly, the cage keeps
+its 297 distinct colours across 346 traces, and the surface keeps one colour
+per vertex — 310 faded and 181 solid, matching the page's own mask exactly.
+
+### 🪞 A shape drawn at two strengths could never come back
+
+Found by the audit, on the ink-amounts page. A chart's skin is a surface at
+**0.3** with a cage over it at **1** — one shape, two traces, two strengths.
+The shape's strength was read off its *first* trace and written to all of
+them, so the first press of anything flattened them onto one number:
+
+```
+during the fade:     cage 0.2   (with the skin)
+after putting back:  cage 0.3   ← it opened at 1
+```
+
+11,537 pixels different on a page whose noise floor is 0 — and **as saved**
+could not restore it either, because the value it restored to was already
+wrong. Each part now keeps what it opened at and the slider applies as a
+ratio of it, so at the strength the page was saved with every part is handed
+exactly its own value back. Re-measured: **0 pixels**.
+
+### ✂️ The cut slider redrew the shape cruder than the page opens
+
+The cross-sections are drawn at `slice_at`'s default of 180 steps, and the
+outlines carried for the reader's slider were worked out at 120 — on the
+reasoning that the difference cannot be seen. That is true of two outlines
+side by side and false of one page that swaps between them: the first press
+of the cut coarsened the shape from 181 points to 121, and moving the slider
+back did not restore it, because the fine outline was gone.
+
+Matched, at 73 kB on a 4.9 MB page — **1.45%** — so the page agrees with
+itself. What is left after that is the deliberate rounding of the stored
+outlines to a hundredth of a Lab unit: every point returns to within **0.005**
+Lab units, a fiftieth of what a good instrument repeats to.
+
+### 📐 "How it looks" was cut off on its right-hand side
+
+Reported from a screenshot of the real window. Every other section in the
+controls column is 346 px wide; that one is **372**, because *"Show what the
+comparison cannot print"* is 270 px of label that a tick cannot wrap and the
+ⓘ has to sit beside it. The column was pinned at 346 and the scroll area at
+366 with its horizontal scrollbar deliberately off — so the section was
+simply cut: its right-hand border gone, and about four pixels of that row's
+ⓘ with it.
+
+The column now takes its width from its widest section, with 346 as a floor,
+settled after the window is polished — before that every section still
+answers 363 and the fault survives at one pixel instead of sixteen. The audit
+checks it from now on, because a clipped control passes every press test
+there is.
+
+### 🔓 A remembered choice can no longer shut the reader out
+
+The second half of that report is the worse half. What a reader chooses is
+remembered and applied **while the page is opening**, so the press that hung
+the page was replayed on every reload — and reloading is the only thing a
+reader can do. There is no console on a phone and no menu on the page.
+
+A mark is now written before the stored choices are applied and before every
+press, and taken off a frame later. Finding it still set means the last
+attempt never finished, so the choices are thrown away and the page opens the
+way it was saved — which is always a state that works, because it is the
+state the file was written in. Proved in a browser: a page put into exactly
+the state a hang leaves behind comes back at 100% on **one** reload.
+
+This is a guard, not a cure. The rebuild storm above is the cure; this is so
+that the next thing nobody predicted cannot cost somebody their page.
+
+### 🎨 The figures under the picture follow the page colours
+
+Spotted in the new picture of the five colourings side by side, which is the
+argument for making that picture at all. The written-out numbers are put in
+the file with their colours stated on the element, from the palette the page
+was saved in — so they never followed. A page saved dark and switched to
+light kept a black block of text under a pale picture, and on **ink**, the one
+colouring that exists to be printed, it left a solid black rectangle across
+the bottom of the page.
+
+### ⬜ The neutral ground is now measurably neutral
+
+**slate** exists to be judged against: *"a gamut on black looks brighter than
+it really is and one on white looks duller."* Every part of it was a blue-grey
+of about 4 units of chroma — small to look at, and working against precisely
+that, since a faintly blue surround pushes a neutral towards warm.
+
+Each part is now the neutral grey of **the same lightness it had**, to a tenth
+of an L\* unit, so every contrast inside the scheme is exactly what it was and
+only the cast is gone: the ground goes `#6e7278` → `#727272`, L\* 47.9 → 48.0,
+chroma 3.8 → 0.0.
+
+### 🔡 The page-colour button dimmed the lettering and never put it back
+
+Found by the release audit that shipped in v2.15.0, on its first full run.
+
+Pressing the new colour button and going all the way round — dark, light,
+none, slate, ink, dark — left the page **6,264 pixels different from the one
+it opened as**, with the button reading `dark` again and the page reporting
+every one of its colours correct. Going round a second time landed on exactly
+the same picture, 0 pixels from the first lap, so nothing was accumulating.
+
+The axis numbers and names were the difference. They were never *declared*:
+each axis kept the drawing library's own default of `#444` and the lettering
+was drawn in the page font instead, which looks right and is not the same
+thing. The first relayout resolved them properly — and the colour button set
+them to `caption`, the dim grey the small title line uses, rather than to
+`text`, the colour the page is read in.
+
+So the first press faded every axis number and name, and coming back to the
+colouring the page was saved in did not bring them back: a page somebody had
+looked at no longer matched the page that was sent.
+
+Both halves are fixed — the figure now says what colour its lettering is, and
+the button keeps it. Measured on the real page, the same lap now leaves **0
+pixels**. A title is still drawn as a caption, because a title is one.
+
+### 🔍 The audit checks four things it used to excuse, and three it could not see
+
+The audit's own tables named **six controls that do not exist**: `fullscreen`,
+`picture`, `legend`, `remember`, `speed` and `sweep` are switches in the save
+dialog, and the buttons they produce are called `full`, `shot`, `key`, and a
+pair of steppers. Six excuses matched nothing, while the buttons they were
+meant to excuse were judged by the ordinary rule. `test_audit_script.py` now
+fails on a name no button has — so this class of quiet rot cannot come back.
+
+Three real improvements came out of fixing that:
+
+* **Speed and sweep are checked, not excused.** They only show themselves
+  while the shape is moving, and the audit measures it stopped — so the
+  honest verdict used to be "cannot be seen from here", and a control excused
+  is a control never tested. Each writes its value beside itself, so it is
+  read: press it, the number moves; press the opposite, it comes back.
+* **A hidden shape's controls are tested.** A page can hold one shape inside
+  another with the outer one solid, so fading the inner one changes not a
+  pixel. Asked of the drawing rather than the picture, the answer is exact —
+  that shape's strength went from 1 to 0.9 — whether or not it can be seen.
+* **A cycle is recognised as one.** The colour button walks five colourings,
+  so pressing it twice lands three short of where it started; judged as a
+  switch it reported 42,244 pixels of "does not come back". Any button that
+  renames itself when pressed is now walked round until its own name returns,
+  which handles two states and five with one rule — and a sixth added later
+  without editing the audit.
+
+`--list` also stopped over-promising: it printed the twenty-two ⓘ explanation
+folds, which a run has always skipped on purpose, so a third of the listing
+named work that was never going to happen. The listing and the run now take
+their names from the same function, and the listing says what it skips and
+why.
+
+**And it stopped crying wolf about the grid.** "Show the box and its grid"
+had been reported as leaving ~314,000 pixels for several releases; the file
+carried a paragraph admitting it and telling you to check by hand. It was the
+audit's own bug. Turning the shape leaves it at a new angle on purpose, and
+the camera was put back with `setCamera`, which moves what is on screen and
+leaves the camera stored in the **layout** where it was — so the first
+relayout inside the next control's test re-applied the old angle and undid
+the restore silently.
+
+The giveaway was in the numbers all along: `spin_on` and `grid_on` reported
+the *identical* 314,313 pixels. One difference measured twice is not two
+faults, and two independent controls agreeing to the pixel is not a
+coincidence. Put back through `relayout`, which sets both, `grid_on` leaves
+**11 pixels** and the window audit passes clean.
+
+The audit also knows about the page that deliberately ships **without** the
+drawing library, to show what a reader sees when it fails to arrive. Its
+camera controls have nothing to move, so it used to report ten faults on the
+one page whose subject is exactly that; now it checks that the page *says*
+something went wrong, which is the only thing that page can be judged on.
+
+### 📸 The README pictures are remade by one command
+
+`11-controls.webp` — the picture of the controls column — was the one remade
+by hand, from a throwaway file outside the repository, while the other two
+had a script. It is in `scripts/make_doc_shots.py` now, along with a new
+picture of the five page colourings side by side, which is the only way to
+show a control that cycles. That strip is built by pressing the page's own
+button until it comes back round, so a sixth colouring would appear in it
+without anybody editing the script.
+
+*(An earlier draft of this note claimed that picture had gone two releases
+without the **Outline colour** row. It had not — the commit that added the
+row is the commit that remade the picture, and regenerating it produced a
+byte-identical file, which is how the mistake was caught. The reason to keep
+it in a script is the ordinary one: nothing but somebody's memory was keeping
+it current.)*
+
+The five colourings are written up in the README as well, with what each one
+is for.
+
 ## v2.15.0
 
 ### 🕸 Three controls that drew a wireframe drew nothing at all

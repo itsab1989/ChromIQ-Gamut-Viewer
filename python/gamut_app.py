@@ -2492,8 +2492,9 @@ class WebPageDialog(QDialog):
              "near-black goes to mud and a warm white goes yellow.\n\n"
              "You still choose which one it OPENS as, under This window; "
              "this only decides whether they can change it afterwards. It "
-             "adds the other sets of page colours to the file, which is a "
-             "few hundred bytes."),
+             "adds the other sets of page colours to the file, which is 838 "
+             "bytes — nothing beside a page that is already several "
+             "megabytes."),
             ("picture", "Save it as a picture file", True,
              "A button that writes what is on screen — at that exact angle, "
              "with whatever they have faded or greyed — into an ordinary "
@@ -3073,11 +3074,30 @@ class GamutApp(QMainWindow):
         # on a short screen that is taller than the window. Scrolling keeps
         # every control reachable instead of trimming the explanations.
         controls = FadeScrollArea(body)
-        controls.setWidget(self._build_controls())
+        column = self._build_controls()
+        controls.setWidget(column)
         controls.setWidgetResizable(True)
         # 330 fitted before each control gained an 18px icon and 6px of spacing
         # beside it; several combo labels were clipped at the old width.
-        controls.setFixedWidth(366)
+        #
+        # AND IT IS A FLOOR, NOT THE ANSWER. Pinned at 366 flat, this clipped
+        # whatever outgrew it -- with the horizontal scrollbar deliberately
+        # off, an overflowing section is simply cut, with no way to scroll to
+        # the missing part. "How it looks" needs 372, because "Show what the
+        # comparison cannot print" is 270 px of label that cannot wrap and
+        # the ⓘ has to sit beside it; so that section lost its right-hand
+        # border and about four pixels of that row's ⓘ. Reported from a
+        # screenshot of the real window.
+        #
+        # Taken from the column itself, plus room for the scrollbar that sits
+        # beside it, so the two can never disagree again.
+        gutter = controls.verticalScrollBar().sizeHint().width()
+        controls.setFixedWidth(max(366, column.minimumWidth() + gutter
+                                   + 2 * controls.frameWidth()))
+        # KEPT, so the width can be settled again once the window is polished
+        # and the sections finally admit how wide they are -- see
+        # _widen_the_column_to_fit_it.
+        self._controls_area = controls
         controls.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         row.addWidget(controls, 0)
@@ -5062,6 +5082,31 @@ class GamutApp(QMainWindow):
         # exactly like a bug in the ones it missed.
         self._tighten_groups(col)
         v.addLayout(self._auto_update_row)
+        # AT LEAST AS WIDE AS WHAT IS IN IT.
+        #
+        # This column was pinned at 346 px, and one section outgrew it:
+        # "How it looks" asks for 372, because "Show what the comparison
+        # cannot print" is 270 px of unwrappable label and the ⓘ beside it
+        # has to go somewhere. The section was drawn 26 px wider than the
+        # column and clipped by the viewport -- its right-hand border cut
+        # off, and about four pixels of that row's ⓘ with it. Reported from
+        # a screenshot: "the How it looks section seems cut off on its right
+        # side", which is exactly what it was.
+        #
+        # 346 stays the FLOOR rather than the answer, so nothing about the
+        # column narrows, and a label added tomorrow widens it by however
+        # much it needs instead of being quietly cut. Measured here rather
+        # than guessed: the width comes from the layout once every group
+        # exists, which is why this is the last thing in the method.
+        # THE MINIMUM, NOT THE HINT. A group's size HINT is what it would
+        # like; its MINIMUM is what it will take anyway, and a section whose
+        # widest label cannot wrap takes it whatever the column says. Sized
+        # from the hint this came out 363 against a section that insists on
+        # 372, and the border was still cut -- by one pixel instead of
+        # sixteen, which is the same fault and harder to see.
+        col.setFixedWidth(max(346, col.sizeHint().width(),
+                              col.minimumSizeHint().width(),
+                              v.minimumSize().width()))
         return col
 
 
@@ -5791,6 +5836,40 @@ class GamutApp(QMainWindow):
             lay.invalidate()
         if self.layout() is not None:
             self.layout().activate()
+        self._widen_the_column_to_fit_it()
+
+    def _widen_the_column_to_fit_it(self) -> None:
+        """The controls column, now that its sections know their own size.
+
+        Same reason as above, and found the same way -- from a screenshot of
+        the real window rather than from the code. "How it looks" holds
+        "Show what the comparison cannot print", 270 px of label that a tick
+        cannot wrap, with an ⓘ beside it; the section will take 372 px
+        whatever it is told. The column was pinned at 346 and the scroll area
+        at 366 with its horizontal scrollbar deliberately off, so the section
+        was simply cut: its right-hand border gone, and about four pixels of
+        that row's ⓘ with it.
+
+        Asked before the window is polished, every section still answers 363,
+        which is why sizing it at build time left the fault behind at one
+        pixel instead of sixteen. Asked here, they answer honestly.
+
+        The 346 floor stays, so nothing narrows; a longer label widens the
+        column by exactly what it needs instead of being quietly clipped.
+        """
+        area = getattr(self, "_controls_area", None)
+        column = area.widget() if area is not None else None
+        if column is None:
+            return
+        needs = max(346, column.minimumSizeHint().width(),
+                    *(box.minimumSizeHint().width()
+                      for box in column.findChildren(QGroupBox)) or (0,))
+        if needs > column.minimumWidth():
+            column.setFixedWidth(needs)
+        gutter = area.verticalScrollBar().sizeHint().width()
+        wide = needs + gutter + 2 * area.frameWidth()
+        if wide > area.width():
+            area.setFixedWidth(wide)
 
     def showEvent(self, event) -> None:            # noqa: N802 (Qt naming)
         """Centre the window the first time it is shown, and never again.

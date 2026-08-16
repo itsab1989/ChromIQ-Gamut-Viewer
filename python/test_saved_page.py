@@ -627,9 +627,47 @@ def test_an_array_of_colours_is_wrapped_before_it_is_handed_over():
     """Handed a bare array, restyle reads it as one value per trace and gives
     the FIRST element to this trace -- so 491 vertex colours quietly become
     one string and the whole surface turns that colour. Measured in a real
-    browser: it fails silently and looks like a rendering fault."""
+    browser: it fails silently and looks like a rendering fault.
+
+    The wrapping now happens where the traces are handed over rather than
+    where the colours are worked out, because they are handed over in groups:
+    each part contributes ONE entry to a list, and the list is what restyle
+    is given. One trace still produces a one-entry list, which is the same
+    thing it always was.
+    """
     js = ti3gamut._SPIN_CONTROLS_JS
-    assert "Array.isArray(want) ? [want] : want" in js
+    assert "slot.values[k].push(patch[k])" in js, (
+        "each part must contribute one entry per field, so an array of "
+        "vertex colours arrives as one trace's worth")
+    assert "window.Plotly.restyle(slot.gd, slot.values, slot.at)" in js
+
+
+def test_a_shape_is_restyled_in_one_go_however_many_traces_it_has():
+    """One press asked for 349 rebuilds of the scene, and a phone hung.
+
+    A cage drawn in true colours is a few hundred traces, because a line
+    takes one colour for the whole trace. With restyle called inside the
+    per-part loop, one press of "where they agree" on the Adobe RGB showcase
+    page asked the drawing library to rebuild the scene once per trace:
+
+        page 11, 4 traces        5 calls      0.3 s
+        page 14, 348 traces    349 calls     36.4 s
+
+    measured on a desktop with a real graphics card. It was reported from a
+    phone as the page hanging on the press -- and staying hung through a
+    reload, because the reading is remembered and replayed while the page is
+    opening.
+    """
+    js = ti3gamut._SPIN_CONTROLS_JS
+    body = js[js.index("function dressOne"):]
+    body = body[:body.index("\n  function moved(")]
+    # The only restyle in dressOne is the one that hands over a whole group.
+    assert body.count("restyle(") == 1, (
+        "dressOne must hand its traces over in groups, not one at a time — "
+        f"found {body.count('restyle(')} restyle calls in it")
+    assert "groups[id]" in body and "divs.indexOf(part.gd)" in body, (
+        "traces are grouped by which fields they need AND by which graph "
+        "they belong to — a trace index means nothing to the wrong graph")
 
 
 def test_the_key_beside_a_name_keeps_its_strength_when_the_shape_fades():
@@ -639,7 +677,31 @@ def test_the_key_beside_a_name_keeps_its_strength_when_the_shape_fades():
     twice already."""
     js = ti3gamut._SPIN_CONTROLS_JS
     assert "if (!part.proxy) {" in js
-    assert "patch.opacity = st.opacity" in js
+    assert "patch.opacity = want_op" in js
+
+
+def test_a_shape_drawn_at_two_strengths_comes_back_to_both():
+    """A shape is not always one trace at one strength.
+
+    A chart's skin is a surface at 0.3 with a cage over it at full strength.
+    The shape's strength is read off its FIRST trace and used to be written
+    to every one of them, so the first press flattened them onto one number
+    and the cage could never come back: measured on the ink-amounts page,
+    fainter then stronger left the cage at 0.3 where it opened at 1, and
+    11,537 pixels different on a page whose noise floor is 0.
+
+    Each part now keeps what it opened at, and the slider is applied as a
+    ratio — so at the strength the page was saved with, every part is handed
+    exactly its own value back and "as saved" is exact.
+    """
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert "opened: (typeof t.opacity" in js, (
+        "each part must record the strength it opened at")
+    assert "st.opacity / g.opened.opacity" in js, (
+        "the shape's strength applies as a ratio of what it opened at")
+    assert "(st.opacity === g.opened.opacity)" in js, (
+        "back at the saved strength every part takes its own value exactly, "
+        "rather than something a rounding away from it")
 
 
 def test_the_panel_is_grouped_under_headings():
@@ -1302,3 +1364,167 @@ def test_the_saved_page_builds_its_cage_rather_than_carrying_one():
         "a line takes one colour for the whole trace, so a coloured cage is "
         "grouped into bands the way the application groups them")
     assert "deleteTraces" in src, "and turning it off has to remove them"
+
+
+def test_a_page_opens_with_the_lettering_it_will_keep():
+    """The axis numbers and names are declared, not inherited.
+
+    Left unset, each axis keeps the drawing library's own default of #444 and
+    the numbers are drawn in the page font, which LOOKS right and is not the
+    same thing. The first relayout resolves them properly and they change
+    colour — which is what happened: pressing the page-colour button dimmed
+    every axis number and name and returning to the colouring the page was
+    saved in did not bring them back, so a page that had been looked at no
+    longer matched the page that was sent. Measured on the real page, dark →
+    light → none → slate → ink → dark left 6,264 pixels different; with the
+    colour declared it leaves 0.
+    """
+    for which in ("dark", "light"):
+        fig = ti3gamut.build_figure([], "", space="lab", mode=which)
+        want = ti3gamut.SCENE_COLOURS[which]["text"]
+        scene = fig.layout.scene
+        for axis in (scene.xaxis, scene.yaxis, scene.zaxis):
+            assert axis.color == want, (
+                f"{which}: the axis lettering is {axis.color!r}, not the "
+                f"page's reading colour {want!r} — so it will change the "
+                f"first time anything redraws the axes")
+
+
+def test_the_colour_button_leaves_the_lettering_readable():
+    """It set the axis colour to `caption`, which is the dim grey the small
+    title line is drawn in — so every axis number faded on the first press."""
+    import inspect
+    src = inspect.getsource(ti3gamut)
+    for axis in ("xaxis", "yaxis", "zaxis"):
+        assert f'"scene.{axis}.color": p.text' in src, (
+            f"scene.{axis}.color must follow the page's reading colour")
+        assert f'"scene.{axis}.color": p.caption' not in src
+    # The flat cross-section view has the same two lines, and had the same bug.
+    assert '"xaxis.color": p.text, "yaxis.color": p.text' in src
+    # A title IS a caption, so that one keeps it.
+    assert '"title.font.color": p.caption' in src
+
+
+def test_a_remembered_choice_cannot_shut_the_reader_out():
+    """Reloading is the only thing a reader can do, so it has to work.
+
+    What the reader last chose is applied while the page is opening, so
+    anything that goes wrong applying it goes wrong again on every reload —
+    and there is no console on a phone and no menu on this page. Reported
+    exactly that way: a press hung the page, and reloading replayed the press
+    that hung it.
+
+    A mark is written before the choices are applied AND before every press,
+    and taken off a frame later. Finding it still set means the last attempt
+    never finished, so the choices go and the page opens the way it was
+    saved — which is always a state that works, because it is the state the
+    file was written in.
+    """
+    js = ti3gamut._SPIN_CONTROLS_JS
+    assert 'var OPENING = STORE + ":opening"' in js
+    # Set before the risky work in BOTH places, or the reader needs two
+    # reloads to get out, and nobody reloads twice.
+    recall = js[js.index("function recall()"):]
+    recall = recall[:recall.index("\n  }")]
+    assert "busy();" in recall, "the restore must mark before it applies"
+    handler = js[js.index("function handler(ev)"):]
+    handler = handler[:handler.index("\n  }")]
+    assert "busy();" in handler, "a press must mark before it does the work"
+    # Cleared only after a frame — reaching one is what proves the browser is
+    # still answering. Cleared inline it would prove nothing.
+    settled = js[js.index("function settled()"):]
+    settled = settled[:settled.index("\n  }")]
+    assert "requestAnimationFrame" in settled and "opened" in settled
+    assert "localStorage.removeItem(STORE)" in recall, (
+        "a stored choice that did not survive being applied must be thrown "
+        "away, not kept to fail again")
+
+
+def test_the_figures_underneath_follow_the_page_colours():
+    """They are part of the page, and they did not follow it.
+
+    The written-out figures are put in the file with their colours stated on
+    the element, from the palette the page was saved in. So a page saved dark
+    and switched to light kept a black block of text under a pale picture —
+    and on "ink", the one colouring that exists to be printed, it left a solid
+    black rectangle across the bottom of the page.
+
+    Spotted in a screenshot of the five colourings side by side, which is the
+    argument for making that picture at all.
+    """
+    js = ti3gamut._SPIN_CONTROLS_JS
+    mode = js[js.index("function applyMode()"):]
+    mode = mode[:mode.index("\n  }")]
+    assert 'querySelectorAll(".cq-notes")' in mode, (
+        "the figures under the picture must be repainted with the page")
+    assert "style.color = p.text" in mode and "style.background = p.page" in mode
+
+
+def _lab_of(hexcol):
+    """sRGB hex to CIELAB, D65 — enough for asking "is this grey neutral"."""
+    h = hexcol.lstrip("#")
+    rgb = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+           for c in rgb]
+    x = 0.4124 * lin[0] + 0.3576 * lin[1] + 0.1805 * lin[2]
+    y = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+    z = 0.0193 * lin[0] + 0.1192 * lin[1] + 0.9505 * lin[2]
+
+    def f(t):
+        return t ** (1 / 3) if t > (6 / 29) ** 3 else t / (3 * (6 / 29) ** 2) \
+            + 4 / 29
+    fx, fy, fz = f(x / 0.95047), f(y / 1.0), f(z / 1.08883)
+    return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+
+
+def test_the_neutral_ground_is_actually_neutral():
+    """slate exists to be judged against, so a cast in it is a fault.
+
+    Its claim is that "a gamut on black looks brighter than it really is and
+    one on white looks duller" — so this one is halfway and honest. Every
+    part of it was a blue-grey of about 4 units of chroma, which is small to
+    look at and works against exactly that: a faintly blue surround pushes a
+    neutral towards warm by simultaneous contrast, so the ground being used
+    to judge a colour was tinting it.
+
+    Each part is now the neutral grey of the same lightness it had, so the
+    contrasts are unchanged and only the cast is gone.
+    """
+    slate = ti3gamut.SCENE_COLOURS["slate"]
+    for part, colour in slate.items():
+        if not str(colour).startswith("#"):
+            continue
+        _L, a, b = _lab_of(colour)
+        chroma = (a * a + b * b) ** 0.5
+        assert chroma < 0.5, (
+            f"slate's {part} is {colour}, {chroma:.1f} units off neutral — "
+            f"the one scheme whose whole purpose is not tinting what is "
+            f"judged against it")
+
+
+def test_the_neutral_ground_sits_near_the_middle():
+    """Halfway is the point of it; a 'neutral' at L* 20 would not be."""
+    L, _a, _b = _lab_of(ti3gamut.SCENE_COLOURS["slate"]["page"])
+    assert 44 < L < 56, f"slate's ground is L* {L:.1f}, not near the middle"
+
+
+def test_the_slider_draws_the_cut_the_same_way_the_page_does():
+    """One cut, one resolution — or the picture changes when it is touched.
+
+    The page is DRAWN with `slice_at`'s default, and the reader's slider
+    restyles it from outlines carried in the file. Those were worked out at
+    120 points against a default of 180, on the argument that the difference
+    cannot be seen. Side by side it cannot; in one page it can, because the
+    first press of the cut swaps one for the other and the shape visibly
+    coarsens — and returning to the height it started at does not undo it,
+    since the fine outline is gone. Measured: the reading came back to L* 50
+    exactly and 3,141 pixels of the picture did not, on a page whose noise
+    floor is 0.
+    """
+    import inspect as _inspect
+    from gamutview import slice_at
+    drawn = _inspect.signature(slice_at).parameters["steps"].default
+    assert ti3gamut._CUT_POINTS == drawn, (
+        f"the slider carries outlines at {ti3gamut._CUT_POINTS} points while "
+        f"the page is drawn at {drawn}, so touching the cut changes the "
+        f"picture and moving it back does not change it back")

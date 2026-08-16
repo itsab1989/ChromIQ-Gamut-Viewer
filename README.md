@@ -796,13 +796,13 @@ handled by the page itself, and the **zoom** buttons and the four arrows
 behind **more…** are there for anyone who would rather press something — or
 who is on a desktop with no wheel.
 
-<p align="center"><img src="docs/screenshots/21-a-saved-page-as-its-reader-sees-it.webp" width="880" alt="A saved page open in a browser: two measured papers in CIELAB, one solid and one as an outline, their names underneath, then a strip reading Pause, minus, zoom, plus, reset view, less…, and an opened panel of controls in five headed groups — HOW IT MOVES with left-and-right and up-and-down, each carrying an on switch, a speed and a sweep reading “round” and “22°”; WHERE YOU LOOK FROM with four move-it arrows and the buttons above, front, side and angle; EACH SHAPE beginning with “where they agree” and “where they differ” at 100%, then a row per paper carrying a minus, a percentage, a plus, wires and grey, and an “as saved” button; WHAT IS DRAWN with the numbers, walls and grid, lettering and the names; and THE PAGE ITSELF with light or dark, full screen and PNG — with the written-out figures below all of it"></p>
+<p align="center"><img src="docs/screenshots/21-a-saved-page-as-its-reader-sees-it.webp" width="880" alt="A saved page open in a browser: two measured papers in CIELAB, one solid and one as an outline, their names underneath, then a strip reading Pause, minus, zoom, plus, reset view, less…, and an opened panel of controls in five headed groups — HOW IT MOVES with left-and-right and up-and-down, each carrying an on switch, a speed and a sweep reading “round” and “22°”; WHERE YOU LOOK FROM with four move-it arrows and the buttons above, front, side and angle; EACH SHAPE beginning with “where they agree” and “where they differ” at 100%, then a row per paper carrying a minus, a percentage, a plus, wires and grey, and an “as saved” button; WHAT IS DRAWN with the numbers, walls and grid, lettering and the names; and THE PAGE ITSELF with a colour button reading “dark”, full screen and PNG — with the written-out figures below all of it"></p>
 
 **You choose which controls the page carries**, each time you save it. The
 save dialog has a section — *What the person opening it can change* — with a
 switch for each one, and an explanation of when it is worth handing over:
 
-<p align="center"><img src="docs/screenshots/22-choosing-what-the-reader-can-change.webp" width="470" alt="The save dialog under the heading What the person opening it can change, with its switches sorted into five named boxes: Moving the shape (stop and start the movement, one speed, a speed for each direction, turn left and right, tip up and down); Looking at it (move the cut up and down, zoom in and out, move the picture about, four fixed places to look from, put the view back, fill the screen); How each shape is drawn (make a shape fainter or more solid, draw the edges instead of the surface, take the colour out of a shape); What the picture shows (put the numbers away, the box and its grid, the lettering, the names underneath); and The page itself (light or dark, save it as a picture file, remember what they chose). Each row has a help icon beside it."></p>
+<p align="center"><img src="docs/screenshots/22-choosing-what-the-reader-can-change.webp" width="470" alt="The save dialog under the heading What the person opening it can change, with its switches sorted into five named boxes: Moving the shape (stop and start the movement, one speed, a speed for each direction, turn left and right, tip up and down); Looking at it (move the cut up and down, zoom in and out, move the picture about, four fixed places to look from, put the view back, fill the screen); How each shape is drawn (make a shape fainter or more solid, draw the edges instead of the surface, take the colour out of a shape); What the picture shows (put the numbers away, the box and its grid, the lettering, the names underneath); and The page itself (let them change the page colours, save it as a picture file, remember what they chose). Each row has a help icon beside it."></p>
 
 There are twenty-three of them now, in five named groups — *Moving the shape*,
 *Looking at it*, *How each shape is drawn*, *What the picture shows* and *The
@@ -899,6 +899,34 @@ rather than present and dead. **Save a picture** writes what is on screen, at
 that angle with those faded shapes, as a PNG at twice the size it is drawn;
 made by their own browser out of numbers already in the page, with nothing
 sent anywhere.
+
+**Five ways of colouring the page**, if you tick *Let them change the page
+colours* when you save it. The reader gets one button that moves through them
+in turn, and the name of the one they are looking at is written on the button
+itself.
+
+<p align="center"><img src="docs/screenshots/23-five-ways-of-colouring-a-page.webp" width="880" alt="The same saved page five times side by side, labelled dark, light, none, slate and ink: on near-black, on warm white, with no background at all so the shape floats, on a neutral mid grey, and in plain black and white"></p>
+
+| | What it is for |
+|---|---|
+| **dark** | What this window itself uses, and what a page opens as unless you saved it light. |
+| **light** | The window's light appearance, for a page going next to ordinary black-on-white text. |
+| **none** | No background at all: the shape floats on whatever the page is sitting in. This is the one for dropping a picture into a document, a slide or a forum post, where a rectangle of somebody else's grey around it is exactly what you do not want. |
+| **slate** | A neutral mid grey — the fairest ground there is to judge a colour against. A gamut on black looks brighter than it really is, and the same gamut on white looks duller; on grey it looks like itself. Neutral is meant literally: every part of it is measured at under half a unit of chroma, because a surround with a cast of its own tints what you are judging. |
+| **ink** | Plain black and white, for printing the page or putting it on a projector. A near-black background goes to mud on paper and a warm white goes yellow under a lamp; this avoids both. |
+
+**Not one measured colour changes.** Only the paper behind the shape, the
+walls of the box, the grid on them and the writing — and the ground the
+written-out figures are printed on, which follows too, so a page switched to
+**ink** for printing does not carry a black rectangle across the bottom of it.
+A gamut is the same gamut on every one of the five, and the numbers underneath
+say the same thing on all of them.
+
+The switch is off by default, because it is not free: saying yes writes the
+other four sets of colours into the file, measured at **838 bytes** — nothing
+beside a page that is already several megabytes, but not nothing. If you know
+the page is going into a white document, save it in **none** and leave the
+button off.
 
 **Putting the numbers away** is worth a word. On a small screen the figures
 under a picture are easily taller than the screen itself, so the reader gets a

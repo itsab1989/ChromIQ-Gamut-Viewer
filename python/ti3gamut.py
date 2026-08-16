@@ -1505,9 +1505,24 @@ SCENE_COLOURS = {
     # A NEUTRAL GREY, which flatters neither the light end of a shape nor the
     # dark end. A gamut on black looks brighter than it is and one on white
     # looks duller; halfway is the honest ground to judge a colour against.
-    "slate": dict(page="#6e7278", plot="#767a80", grid="#8b8f95",
-                  caption="#20242a", text="#12151a", axis="#8b8f95",
-                  kept="rgb(122,126,134)", wire="#3d4148", mark="#20242a"),
+    #
+    # AND MEASURABLY NEUTRAL, which it was not. Every part of this scheme was
+    # a blue-grey of about 4 units of chroma -- small to look at, and working
+    # against the one thing the scheme is for: a faintly blue surround pushes
+    # a neutral towards warm by simultaneous contrast, so the ground being
+    # used to judge a colour was tinting it.
+    #
+    # Each colour is now the neutral grey of THE SAME LIGHTNESS it had, to a
+    # tenth of an L* unit, so every contrast inside the scheme is exactly
+    # what it was and only the cast is gone:
+    #
+    #     page  #6e7278 L* 47.9 -> #727272 L* 48.0
+    #     plot  #767a80 L* 51.1 -> #7a7a7a L* 51.2
+    #     grid  #8b8f95 L* 59.3 -> #8f8f8f L* 59.4
+    #     text  #12151a L*  6.7 -> #151515 L*  6.8
+    "slate": dict(page="#727272", plot="#7a7a7a", grid="#8f8f8f",
+                  caption="#242424", text="#151515", axis="#8f8f8f",
+                  kept="rgb(126,126,126)", wire="#414141", mark="#242424"),
     # PLAIN BLACK AND WHITE, for printing a page out or throwing it on a
     # projector, where a near-black turns to mud and a warm white to yellow.
     "ink": dict(page="#ffffff", plot="#ffffff", grid="#c8c8c8",
@@ -3258,7 +3273,18 @@ window.cqSpinControls = function (settings) {
         var count = (t.x && t.x.length) || 0;
         var proxy = count === 1 && (t.x[0] === null || t.x[0] === undefined);
         if (t.showlegend && t.name) g.label = t.name;
-        g.parts.push({gd: gd, id: id, at: at, proxy: proxy});
+        // WHAT THIS PART OPENED AT, kept per part rather than per shape.
+        //
+        // A shape can be drawn as more than one trace at DIFFERENT
+        // strengths: a chart's skin is a surface at 0.3 with a cage over it
+        // at full strength. The shape's own strength is read off its first
+        // trace, and it used to be written to every one of them -- so the
+        // first press of anything flattened them all onto one number and the
+        // cage could never come back. Measured on the ink-amounts page:
+        // fainter then stronger left the cage at 0.3 where it had opened at
+        // 1, and 11,537 pixels different on a page whose floor is 0.
+        g.parts.push({gd: gd, id: id, at: at, proxy: proxy,
+                      opened: (typeof t.opacity === "number") ? t.opacity : 1});
         if (!proxy) {
           g.drawn = true;
           g.points += count;
@@ -3567,6 +3593,72 @@ window.cqSpinControls = function (settings) {
     // The cage's own traces are dressed alongside the surface, so greying a
     // shape greys the wires over it rather than leaving them in colour.
     var dressing = g.parts.concat(caged[g.key] || []);
+    // ONE INSTRUCTION FOR THE WHOLE SHAPE, NOT ONE PER TRACE.
+    //
+    // This used to call restyle inside the loop below, once for every trace
+    // it touched. On a page whose shapes are one or two traces that is a few
+    // calls and nobody notices. On the showcase page comparing a paper with
+    // Adobe RGB it is not: the comparison cage is drawn in true colours, a
+    // line takes one colour for a whole trace, and that cage is 347 traces.
+    // So one press of "where they agree" asked the drawing library to
+    // rebuild the scene 349 times in a row.
+    //
+    // MEASURED, on a desktop with a real graphics card:
+    //
+    //     page 11, 4 traces        5 calls      0.3 s
+    //     page 14, 348 traces    349 calls     36.4 s
+    //
+    // Reported from a phone as the page hanging on the button press -- and
+    // then not coming back on reload, because the reading is remembered and
+    // replayed, so the same 349 rebuilds ran again while the page was
+    // opening. The page LOADS fine; it is only the press that is ruinous,
+    // which is exactly what was described.
+    //
+    // Traces are gathered by which fields they need and handed over in one
+    // call each. Grouped rather than merged wholesale because restyle spreads
+    // a value list across the traces it is given, so a trace that wants no
+    // vertexcolor must not be in the same call as one that does -- it would
+    // be handed `undefined` and lose its colours.
+    var groups = {}, divs = [];
+    function later(part, patch) {
+      var keys = Object.keys(patch).sort();
+      if (!keys.length) return;
+      // ONE GRAPH DIV PER CALL, AND IT IS PART OF THE KEY. Two scenes side
+      // by side are two divs, and a trace index means nothing to the wrong
+      // one -- so the div is grouped on as well as the field names.
+      var which = divs.indexOf(part.gd);
+      if (which < 0) { which = divs.length; divs.push(part.gd); }
+      var id = which + ":" + keys.join("|");
+      var slot = groups[id];
+      if (!slot) {
+        slot = groups[id] = {gd: part.gd, at: [], values: {}};
+        keys.forEach(function (k) { slot.values[k] = []; });
+      }
+      slot.at.push(part.at);
+      keys.forEach(function (k) { slot.values[k].push(patch[k]); });
+    }
+    // AND ONLY WHAT IS ACTUALLY DIFFERENT.
+    //
+    // Setting a trace to the value it already holds cannot change the
+    // picture, and it is not free: it is uploaded and the scene is rebuilt
+    // like any other change. Every part of a shape was being handed its
+    // strength on every press, whatever the press was about -- so fading
+    // where two shapes AGREE, which only ever touches the one surface that
+    // carries the mask, was rewriting the strength of all 347 traces of the
+    // comparison cage as well, to the number they were already at.
+    //
+    // Comparing first is exact rather than a guess about what a press
+    // "should" touch: if the value is the same, restyling it is a no-op by
+    // definition, so nothing can be missed by leaving it out.
+    function differs(had, want) {
+      if (Array.isArray(want)) {
+        if (!Array.isArray(had) || had.length !== want.length) return true;
+        for (var i = 0; i < want.length; i++)
+          if (had[i] !== want[i]) return true;
+        return false;
+      }
+      return had !== want;
+    }
     dressing.forEach(function (part) {
       var t = part.gd.data[part.at];
       if (!t) return;
@@ -3575,9 +3667,31 @@ window.cqSpinControls = function (settings) {
       // asked for grey, in which case it follows -- otherwise the list of
       // names would go on showing colours the picture no longer has.
       if (!part.proxy) {
-        if (on("opacity", true)) { patch.opacity = st.opacity; any = true; }
+        // NOT SET MEANS FULLY SOLID, which is the same thing as 1 and must
+        // compare equal to it. Without this the very first press rewrote the
+        // strength of all 344 traces of the cage -- from "not stated" to
+        // "1" -- which is a rebuild of the scene to draw exactly what was
+        // already on it. Measured: 359 ms of a 500 ms press.
+        var strength = (t.opacity === undefined ? 1 : t.opacity);
+        // EACH PART KEEPS ITS OWN SHARE OF THE STRENGTH.
+        //
+        // The slider is one number for the whole shape, and its parts do not
+        // all start at the same place -- a skin at 0.3 under a cage at 1. So
+        // the shape's strength is applied as a RATIO of what it opened at,
+        // which has the property that matters: back at the strength it was
+        // saved with, every part is handed exactly its own opening value,
+        // and "as saved" is exact rather than approximately right.
+        var mine = (typeof part.opened === "number") ? part.opened
+                                                     : g.opened.opacity;
+        var share = g.opened.opacity ? (st.opacity / g.opened.opacity) : 1;
+        var want_op = (st.opacity === g.opened.opacity)
+          ? mine : Math.max(0, Math.min(1, mine * share));
+        if (on("opacity", true) && differs(strength, want_op)) {
+          patch.opacity = want_op; any = true;
+        }
         if (on("wires", true) && g.fill && t.fill !== undefined) {
-          patch.fill = st.filled ? "toself" : "none"; any = true;
+          var fill = st.filled ? "toself" : "none";
+          if (differs(t.fill, fill)) { patch.fill = fill; any = true; }
         }
       }
       // TWO REASONS TO REWRITE A TRACE'S COLOURS, and they are independent.
@@ -3628,18 +3742,27 @@ window.cqSpinControls = function (settings) {
                 mark.charAt(at) === "1" ? differAt : agreeAt);
             });
           }
-          // AN ARRAY HAS TO BE WRAPPED IN ANOTHER ONE. Handed a bare array,
-          // restyle reads it as one value per trace and hands the FIRST
-          // element to this trace -- so 491 vertex colours quietly became the
-          // single string "rgb(15,12,21)" and the whole surface turned that
-          // colour. Measured, not guessed: it fails silently and looks like a
-          // rendering bug.
-          patch[field] = Array.isArray(want) ? [want] : want;
+          // ONE VALUE FOR THIS ONE TRACE. The wrapping that restyle needs --
+          // a list with one entry per trace -- is done when the group is
+          // handed over, so an array of 491 vertex colours arrives as one
+          // trace's worth rather than as 491 traces' worth. Getting that
+          // wrong fails silently and looks like a rendering bug: the colours
+          // quietly became the single string "rgb(15,12,21)" and the whole
+          // surface turned that colour.
+          if (!differs(had, want)) return;
+          patch[field] = want;
           any = true;
         });
       }
-      if (any && window.Plotly) window.Plotly.restyle(part.gd, patch, [part.at]);
+      if (any) later(part, patch);
     });
+    if (window.Plotly) {
+      Object.keys(groups).forEach(function (id) {
+        var slot = groups[id];
+        if (!slot.at.length) return;
+        window.Plotly.restyle(slot.gd, slot.values, slot.at);
+      });
+    }
   }
   function moved(g) {
     var a = dressed[g.key], b = g.opened;
@@ -3698,10 +3821,52 @@ window.cqSpinControls = function (settings) {
          mode: mode, turn: turn.mode, tilt: tilt.mode}));
     } catch (e) {}
   }
+  // A REMEMBERED CHOICE MUST NEVER BE ABLE TO SHUT THE READER OUT.
+  //
+  // What is remembered is applied while the page is opening, so anything
+  // that goes wrong applying it goes wrong again on the next load, and
+  // again after that. Reloading is the ONE thing a reader can do -- there
+  // is no console on a phone and no menu on this page -- and it is exactly
+  // the thing that would not help.
+  //
+  // It happened. A press of "where they agree" on the page comparing a
+  // paper with Adobe RGB asked for 349 rebuilds of the scene, the phone
+  // stopped responding, and reloading replayed the same 349 rebuilds while
+  // the page was opening. The rebuilds are fixed; this makes the trap
+  // itself impossible, whatever causes it next time.
+  //
+  // A mark is written before the stored choices are applied and cleared
+  // once the page is up. Finding it still there means the last attempt
+  // never finished, so the choices are thrown away and the page opens the
+  // way it was saved -- which is always a state that works, because it is
+  // the one the file was written in.
+  var OPENING = STORE + ":opening";
+  function busy() {
+    try { localStorage.setItem(OPENING, "1"); } catch (e) {}
+  }
+  function opened() {
+    try { localStorage.removeItem(OPENING); } catch (e) {}
+  }
+  //: Cleared on a LATER FRAME, never straight away. Reaching a frame is the
+  //: closest thing there is to proof that the browser is still answering the
+  //: reader, which is the whole question being asked.
+  function settled() {
+    if (window.requestAnimationFrame)
+      window.requestAnimationFrame(function () {
+        window.requestAnimationFrame(opened);
+      });
+    else window.setTimeout(opened, 300);
+  }
   function recall() {
     try {
+      if (localStorage.getItem(OPENING)) {
+        localStorage.removeItem(OPENING);
+        localStorage.removeItem(STORE);
+        return;
+      }
       var was = JSON.parse(localStorage.getItem(STORE) || "null");
       if (!was) return;
+      busy();
       running = !!was.running;
       both = was.both || both;
       // MERGED, NEVER REPLACED. What is remembered was written by whatever
@@ -4630,12 +4795,29 @@ window.cqSpinControls = function (settings) {
     paint();
     document.documentElement.style.background = p.page;
     document.body.style.background = p.page;
+    // AND THE FIGURES UNDERNEATH, which are part of the page.
+    //
+    // They are written into the file with their colours stated on the
+    // element, from the palette the page was saved in -- so they did not
+    // follow, and switching a page saved dark over to "light" left a black
+    // block of text under a pale picture. On "ink", the one colouring whose
+    // whole purpose is being printed, it left a solid black rectangle across
+    // the bottom of the page.
+    //
+    // Nothing about the numbers changes; they are the same numbers on every
+    // colouring. Only what they are written on.
+    var written = document.querySelectorAll(".cq-notes");
+    for (var w = 0; w < written.length; w++) {
+      written[w].style.color = p.text;
+      written[w].style.background = p.page;
+    }
     if (flat) {
       relayout({"paper_bgcolor": p.page, "plot_bgcolor": p.plot,
                 "font.color": p.text,
                 "xaxis.gridcolor": p.grid, "yaxis.gridcolor": p.grid,
                 "xaxis.zerolinecolor": p.grid, "yaxis.zerolinecolor": p.grid,
-                "xaxis.color": p.caption, "yaxis.color": p.caption,
+                // READING MATTER, not a caption -- see the 3D case below.
+                "xaxis.color": p.text, "yaxis.color": p.text,
                 "legend.font.color": p.text, "title.font.color": p.caption});
       say("appearance", schemeName(mode));
       return;
@@ -4648,9 +4830,15 @@ window.cqSpinControls = function (settings) {
               "scene.xaxis.gridcolor": p.grid,
               "scene.yaxis.gridcolor": p.grid,
               "scene.zaxis.gridcolor": p.grid,
-              "scene.xaxis.color": p.caption,
-              "scene.yaxis.color": p.caption,
-              "scene.zaxis.color": p.caption,
+              // THE AXIS LETTERING IS READING MATTER, not a caption. This
+              // said p.caption, which is the dim grey the small title line
+              // is drawn in -- so pressing this button dimmed every axis
+              // number and name, and returning to the colouring the page
+              // was saved in did not bring them back. The title keeps
+              // caption below, because a title IS a caption.
+              "scene.xaxis.color": p.text,
+              "scene.yaxis.color": p.text,
+              "scene.zaxis.color": p.text,
               "legend.font.color": p.text,
               "title.font.color": p.caption});
     say("appearance", schemeName(mode));
@@ -4678,6 +4866,10 @@ window.cqSpinControls = function (settings) {
     // button still claiming the page was as it was saved.
     tellMore();
     if (on("remember", true)) remember();
+    // AND THE PRESS SURVIVED. Everything the handler was going to do has
+    // been done and the page is still answering, so the mark set on the way
+    // in comes off -- on a later frame, because that is what proves it.
+    settled();
   }
 
   function step(which, by) {
@@ -4876,6 +5068,12 @@ window.cqSpinControls = function (settings) {
   function handler(ev) {
     var what = ev.target.getAttribute("data-cq");
     if (!what) return;
+    // MARKED BEFORE THE WORK, NOT AFTER IT. If this press is the one that
+    // never finishes, the mark is still set when the page is next opened,
+    // and the choices that led here are thrown away rather than replayed.
+    // Set only at the end -- or only when the page opens -- a reader would
+    // have had to reload twice to get out, and nobody reloads twice.
+    busy();
     if (what.indexOf("shape-") === 0) { shapePress(what); push(); return; }
     if (what.indexOf("agree-") === 0 || what.indexOf("differ-") === 0) {
       var by = (what.indexOf("-more") > 0 ? 1 : -1);
@@ -4980,6 +5178,11 @@ window.cqSpinControls = function (settings) {
   if (cuts && cutAt !== (cuts.at || 0)) showCut(cutAt);
   if (mode !== (settings.mode || "dark")) applyMode();
   push();
+  // THE PAGE IS UP -- said on a later frame, so the mark survives anything
+  // that stops the browser reaching one, including the tab being killed for
+  // using too much memory, which is how a phone ends a page that will not
+  // respond.
+  settled();
 };
 """
 
@@ -5346,11 +5549,26 @@ def slice_extent(gamuts, lightness: float):
 #: 4.9 MB for the viewer that draws it, so the slider is about three percent
 #: of a file that already travels.
 #:
-#: 120 POINTS is a quarter fewer than the window itself draws and the
-#: difference cannot be seen: an outline of a gamut has no feature narrower
-#: than three degrees of hue.
+#: IT MUST MATCH WHAT THE PAGE OPENS WITH, and for a while it did not.
+#:
+#: This was 120, a quarter fewer than `slice_at` draws by default, on the
+#: argument that the difference cannot be seen -- an outline of a gamut has
+#: no feature narrower than three degrees of hue, and side by side the two
+#: are indistinguishable.
+#:
+#: That argument is sound about two pictures and wrong about one. The page is
+#: DRAWN at the default, and the slider restyles it from these -- so the very
+#: first press of the cut swapped a 181-point outline for a 121-point one and
+#: the reader watched the shape coarsen. Coming back to the height it started
+#: at did not undo it, because the fine outline was gone. Measured on the
+#: cross-section pages: the reading returned to L* 50 exactly and 3,141
+#: pixels of the picture did not, on a page whose noise floor is 0.
+#:
+#: Matching costs 73 kB on a 4.9 MB page -- 1.45% -- to make the page agree
+#: with itself. `test_saved_page.py` fails if these two ever drift apart
+#: again, because nothing else would notice.
 _CUT_STEP = 2.0
-_CUT_POINTS = 120
+_CUT_POINTS = 180
 
 
 def slice_levels(gamuts, step: float = _CUT_STEP, points: int = _CUT_POINTS):
@@ -5499,11 +5717,15 @@ def build_slice_figure(gamuts, lightness: float, title: str,
     fig.update_layout(
         title=_caption((f"{title}  ·  " if title else "")
                        + f"lightness L* = {lightness:.0f}{note}", c),
+        # THE LETTERING SAID OUT LOUD, for the same reason as the 3D view:
+        # left to the library's default, the numbers are drawn in the page
+        # font and change colour the first time anything relayouts the axes.
         xaxis=dict(title="a*   green ← → red", zeroline=True,
                    zerolinecolor=c["axis"], gridcolor=c["grid"],
-                   scaleanchor="y", scaleratio=1),
+                   color=c["text"], scaleanchor="y", scaleratio=1),
         yaxis=dict(title="b*   blue ← → yellow", zeroline=True,
-                   zerolinecolor=c["axis"], gridcolor=c["grid"]),
+                   zerolinecolor=c["axis"], gridcolor=c["grid"],
+                   color=c["text"]),
         paper_bgcolor=c["page"], plot_bgcolor=c["plot"], font_color=c["text"],
         legend=dict(orientation="h", y=-0.12, itemclick="toggle",
                     itemdoubleclick="toggleothers"), showlegend=legend,
@@ -5837,12 +6059,22 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             # and the shape is left floating on the page -- which is what a
             # picture for somebody else usually wants, and which takes the
             # scale away, which is why it is not the default.
+            # THE LETTERING, SAID OUT LOUD RATHER THAN INHERITED. Left
+            # unset, each axis keeps the drawing library's own default of
+            # #444 and the numbers are drawn in the page font instead, which
+            # looks right and is not the same thing -- so the moment
+            # anything relayouts the axes, the numbers change colour. That
+            # is exactly what happened: pressing the page-colour button
+            # dimmed every axis number and name from #e6e6e6 to #8a8a8a and
+            # never put them back, so a page walked round the colourings and
+            # back to the one it was saved in no longer looked like the page
+            # that was sent.
             xaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"],
-                       visible=grid),
+                       color=c["text"], visible=grid),
             yaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"],
-                       visible=grid),
+                       color=c["text"], visible=grid),
             zaxis=dict(backgroundcolor=c["plot"], gridcolor=c["grid"],
-                       visible=grid),
+                       color=c["text"], visible=grid),
         ),
         paper_bgcolor=c["page"], font_color=c["text"],
         legend=dict(orientation="h", y=-0.02, itemclick="toggle",

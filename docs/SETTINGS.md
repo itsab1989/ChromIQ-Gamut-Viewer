@@ -216,6 +216,17 @@ Notes worth carrying over:
   paintings ignore the shapes entirely. A cage carries a colour per trace
   rather than per point, so a coloured one is a few hundred traces — measured
   at 60 frames a second with 395 of them, which is why it is offered.
+* **The window has two appearances and a saved page has five.** `SCENE_COLOURS`
+  holds all five — `dark`, `light`, `none`, `slate`, `ink` — but only the
+  first two are offered here, because the other three exist to suit a page's
+  destination rather than a person's screen: `none` drops the background so
+  the shape floats in whatever document it lands in, `slate` is the neutral
+  grey a colour is fairest judged against, `ink` is for print and projectors.
+  A window has no destination, so offering them here would be five ways of
+  answering a question nobody asked. The page carries them only when the save
+  dialog's *Let them change the page colours* is ticked, and `PAGE_SCHEMES`
+  is the order the reader's button walks — starting from the one the page was
+  saved in, so the first press visibly does something.
 * **The five lighting numbers are what Plotly's `mesh3d.lighting` takes.**
   Depth drives all five from one slider for everyday use; ticking "Set the
   lighting myself" reveals them and disables Depth, rather than leaving two
