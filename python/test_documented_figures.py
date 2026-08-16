@@ -65,17 +65,31 @@ def quoted(pattern: str) -> float:
     return float(found.group(1))
 
 
-#: How far a quoted percentage may sit from the measured one. See the note at
-#: the top: a stale figure is at least 0.8 points out, and two machines differ
-#: by at most 0.25.
-ALLOWANCE = 0.5
+#: How far the measurement may sit from the quoted figure for reasons that are
+#: nobody's fault. Measured between this project's machines: 0.25 points. The
+#: extra is headroom for a third one.
+#:
+#: THIS IS NOT THE WHOLE ALLOWANCE, and leaving it as the whole allowance
+#: broke the build a second time. A figure written as "77%" is a rounded
+#: figure: it is quoted correctly anywhere from 76.5 to 77.5, so half of the
+#: last place it is quoted TO has to be added on top. Windows measured 77.63
+#: against a README saying 77% -- 0.63 apart, and entirely correct.
+MACHINES_DIFFER_BY = 0.35
+
+
+def rounding_of(said: float) -> float:
+    """Half of the last place the sentence actually quotes to."""
+    text = f"{said:.10f}".rstrip("0")
+    places = len(text.split(".")[1]) if "." in text and text.split(".")[1] else 0
+    return 0.5 * 10 ** -places
 
 
 def agrees(said: float, real: float) -> None:
-    assert said == pytest.approx(real, abs=ALLOWANCE), (
+    room = rounding_of(said) + MACHINES_DIFFER_BY
+    assert said == pytest.approx(real, abs=room), (
         f"the README says {said}% where the code now says {real:.4f}% -- "
-        f"more than {ALLOWANCE} apart, which is staleness rather than the "
-        f"difference between two machines")
+        f"more than {room:.2f} apart, which is staleness rather than rounding "
+        f"or the difference between two machines")
 
 
 def test_the_paper_against_srgb_both_ways(demo):

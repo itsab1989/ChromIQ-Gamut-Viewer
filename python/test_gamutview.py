@@ -1839,9 +1839,20 @@ def test_the_shared_figure_is_measured_the_same_way_as_the_two_beside_it():
 def test_stripping_a_shape_to_its_points_changes_the_shared_figure():
     """Proof the line above is load-bearing rather than decorative: passing
     the bare vertices, which is what the window used to do, gives a different
-    and more flattering answer."""
+    answer.
+
+    DIFFERENT, NOT LARGER. The first version of this asserted the hull answer
+    is the bigger one, on the strength of the demo pair, where it is -- the
+    hulls hold 8.3% and 6.1% more, so the overlap comes out flattered. That is
+    a fact about those two shapes and not a theorem: the figure is a ratio of
+    overlap to union, and filling in the dents of BOTH shapes swells the
+    bottom of that fraction as well as the top. On this synthetic pair the
+    Windows build came out the other way round, and it was right to.
+    """
     from gamutview import shared_volume
     (an, a), (bn, b) = _dented_pair()
     whole = shared_volume(a, b)[2]
     stripped = shared_volume(a.vertices, b.vertices)[2]
-    assert stripped > whole
+    assert abs(stripped - whole) > 1e-4, (
+        "stripping the triangles off changed nothing, so the shapes are not "
+        "being measured by their surfaces at all")
