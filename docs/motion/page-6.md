@@ -10,7 +10,7 @@
 
 **Every patch the paper can reach.**
 
-These dots have never been printed. A `.ti1` is a list of ink amounts about to be *asked for*, so there is no shape to draw — what you see is where an ICC profile says each of those amounts would land, drawn inside the cage of what the paper measured. **361 inside, 119 on the edge, 0 outside.** Everything this chart asks for is a colour that paper really achieved, which is the answer you want before spending a sheet on it.
+These dots have never been printed. A `.ti1` is a list of ink amounts about to be *asked for*, so there is no shape to draw — what you see is where an ICC profile says each of those amounts would land, drawn inside the cage of what the paper measured. **287 inside, 193 on the edge, 0 outside.** Everything this chart asks for is a colour that paper really achieved, which is the answer you want before spending a sheet on it.
 
 Turning matters more here than anywhere else in this gallery: a dot just inside the surface and a dot just outside it look identical in a still, and half a turn separates them.
 
@@ -24,7 +24,7 @@ Turning matters more here than anywhere else in this gallery: a dot just inside 
 
 **The ones a different paper cannot.**
 
-The same chart, the same profile, a different paper — and now **248 inside, 72 on the edge, 160 outside**, the worst by 8.1 ΔE. The ones beyond reach are picked out in red, and they are not scattered: they sit in a band right around the outside, which is what running out of ink looks like rather than a fault in any one patch.
+The same chart, the same profile, a different paper — and now **204 inside, 98 on the edge, 178 outside**, the worst by 8.9 ΔE. The ones beyond reach are picked out in red, and they are not scattered: they sit in a band right around the outside, which is what running out of ink looks like rather than a fault in any one patch.
 
 Nothing changed between this loop and the one above except which measurement is open. That is the whole point of the panel — the same patches, held against whatever you want to hold them against, one line of figures for each.
 

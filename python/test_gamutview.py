@@ -1673,3 +1673,175 @@ def test_a_reference_space_has_no_measured_patches_to_draw():
     # And neither of them having one is drawn rather than raised.
     fig = ti3gamut.build_figure(pair, "", points=True, patches=[None, None])
     assert not [t for t in fig.data if t.name and "patches" in t.name]
+
+
+# --- the cut goes through the surface, not the hull around it ---------------
+
+def _box(lo=0.0, hi=10.0, shift=(0.0, 0.0)):
+    """A closed axis-aligned box, first axis = L*, as (vertices, faces)."""
+    v = np.array([[x, y + shift[0], z + shift[1]]
+                  for x in (lo, hi) for y in (lo, hi) for z in (lo, hi)], float)
+    f = np.array([[0, 1, 3], [0, 3, 2], [4, 6, 7], [4, 7, 5],
+                  [0, 4, 5], [0, 5, 1], [2, 3, 7], [2, 7, 6],
+                  [0, 2, 6], [0, 6, 4], [1, 5, 7], [1, 7, 3]], int)
+    return v, f
+
+
+class _Shape:
+    """The smallest thing `slice_at` accepts: vertices and faces."""
+    def __init__(self, v, f):
+        self.vertices, self.faces = v, f
+
+
+def test_the_cut_of_a_box_is_its_exact_perimeter():
+    """A plane through a 10-unit box meets it in a 40-unit square, exactly.
+    Not nearly: a plane crosses a triangle in a straight line, so this is
+    arithmetic rather than a search, and anything but 40.0 means the segments
+    are being built wrong."""
+    from gamutview import cut_segments
+    v, f = _box()
+    seg = cut_segments(v, f, 5.0)
+    assert len(seg) == 8                          # two per side face
+    total = sum(float(np.hypot(*(s[1] - s[0]))) for s in seg)
+    assert total == pytest.approx(40.0, abs=1e-9)
+
+
+def test_a_corner_lying_exactly_in_the_plane_does_not_double_a_point():
+    """THE CASE THAT IS NOT RARE. A measured surface and a reference cube both
+    put vertices on round numbers, and the cut slider asks for round numbers.
+    Counting a zero-height corner as on both sides -- which reads as the
+    careful thing to do -- makes a triangle report three crossings, and the
+    first two are the same point twice, so the segment has no length and the
+    outline loses that direction entirely."""
+    from gamutview import cut_segments
+    # One triangle with a corner exactly at L* = 5, spanning the plane.
+    v = np.array([[5.0, 0.0, 0.0], [9.0, 4.0, 0.0], [1.0, 4.0, 0.0]])
+    f = np.array([[0, 1, 2]])
+    seg = cut_segments(v, f, 5.0)
+    assert len(seg) == 1
+    assert float(np.hypot(*(seg[0][1] - seg[0][0]))) > 1.0
+
+
+def test_a_triangle_lying_wholly_in_the_plane_is_not_drawn_twice():
+    """Its three edges already come from the neighbours that cross it."""
+    from gamutview import cut_segments
+    v, f = _box()
+    flat = np.vstack([v, [[5.0, 20.0, 20.0], [5.0, 24.0, 20.0], [5.0, 20.0, 24.0]]])
+    with_flat = np.vstack([f, [[8, 9, 10]]])
+    assert len(cut_segments(flat, with_flat, 5.0)) == len(cut_segments(v, f, 5.0))
+
+
+def test_neither_end_of_a_shape_offers_an_outline():
+    """A cut at the very top or bottom has no inside for the grey axis to be
+    in, and whichever side a corner exactly in the plane is counted on, the two
+    ends stop behaving alike unless both are refused."""
+    from gamutview import slice_at
+    v, f = _box(shift=(-5.0, -5.0))
+    assert len(slice_at(_Shape(v, f), 0.0)) == 0
+    assert len(slice_at(_Shape(v, f), 10.0)) == 0
+    assert len(slice_at(_Shape(v, f), 5.0)) == 180      # and between them, fine
+
+
+def _box_with_a_dent():
+    """A box whose +a* face is pushed inwards at its middle.
+
+    A DENT NEEDS A FACE WITH A MIDDLE TO PUSH. Simply moving corners of a box
+    gives a smaller box, which is still convex and still equal to its own
+    hull -- so a test built that way passes on the hull code it is supposed to
+    catch, which is what the first draft of this did.
+    """
+    v = [[x, y, z] for x in (0.0, 10.0) for y in (-5.0, 5.0)
+         for z in (-5.0, 5.0)]
+    f = [[0, 1, 3], [0, 3, 2], [4, 6, 7], [4, 7, 5],          # the two L* ends
+         [0, 4, 5], [0, 5, 1],                                 # y = -5
+         [0, 2, 6], [0, 6, 4], [1, 5, 7], [1, 7, 3]]           # z = -5, z = +5
+    # y = +5, as four triangles around a centre pushed in to y = +1.
+    v.append([5.0, 1.0, 0.0])
+    for a, b in ((2, 3), (3, 7), (7, 6), (6, 2)):
+        f.append([a, b, 8])
+    return np.asarray(v, float), np.asarray(f, int)
+
+
+def _dented_pair():
+    """Two gamuts built from device values, so each follows its real boundary.
+
+    `_two_gamuts` builds from colours alone, which gives mode="hull" -- a
+    shape that IS its own convex hull, so a hull answer and a surface answer
+    agree on it by construction and no test using it can tell them apart.
+    """
+    rgb, xyz = rgb_cube(6)
+    big = build_gamut(xyz, rgb, white_point="D65")
+    lab = xyz_to_lab(xyz, "D65")
+    shrunk = lab * 0.6 + np.array([50.0, 0.0, 0.0]) * 0.4
+    small = build_gamut(shrunk, rgb, input_space="lab", white_point="D65")
+    assert big.mode == small.mode == "device-cube"
+    return [("big", big), ("small", small)]
+
+
+def test_the_outline_of_a_dented_shape_follows_the_dent():
+    """THE WHOLE POINT, and what a whole release shipped without.
+
+    The cut used to be taken through `Delaunay(vertices)`, which tessellates
+    exactly the CONVEX HULL of those vertices -- so every dent was filled in
+    before the outline was drawn, in the one picture whose entire purpose is
+    showing where one paper reaches further than another.
+
+    Measured on Adobe RGB, a distorted cube in Lab and nowhere near convex:
+    the hull outline stood outside the real one in 138 to 159 of every 180
+    directions at every lightness tried, by as much as 10.05 Lab units.
+    """
+    from gamutview import slice_at
+    v, f = _box_with_a_dent()
+    ring = slice_at(_Shape(v, f), 5.0, steps=360)
+    assert len(ring)
+    towards = np.argmin(np.abs(np.arctan2(ring[:, 1], ring[:, 0])))
+    reach = float(np.hypot(*ring[towards]))
+    assert reach == pytest.approx(1.0, abs=0.05), (
+        f"reached {reach:.2f} towards the dent, which is 1.0 deep -- "
+        "5.0 means the dent was filled in and this is the hull")
+
+
+def test_every_point_of_a_real_outline_sits_on_the_real_surface():
+    """Just inside it must be inside the gamut and just outside it must not --
+    which is what "this is the boundary" means, asked of the same containment
+    test the rest of the window uses. 720 checks per shape."""
+    from gamutview import slice_at, _Enclosure
+    for _name, g in _dented_pair():
+        skin = _Enclosure(g.vertices, g.faces)
+        lo, hi = g.vertices[:, 0].min(), g.vertices[:, 0].max()
+        for L in np.linspace(lo + 0.15 * (hi - lo), hi - 0.15 * (hi - lo), 4):
+            ring = slice_at(g, float(L), steps=180)
+            if not len(ring):
+                continue
+            inner = np.column_stack([np.full(len(ring), L), ring * 0.97])
+            outer = np.column_stack([np.full(len(ring), L), ring * 1.03])
+            assert skin.contains(inner).all()
+            assert not skin.contains(outer).any()
+
+
+def test_the_shared_figure_is_measured_the_same_way_as_the_two_beside_it():
+    """It was not, for two releases. `shared_volume` asked ConvexHull for both
+    sizes and then handed `coverage` the bare vertices -- stripping the very
+    triangles that tell it what the surface is, so that fell back to the hull
+    too. Three hull answers in two lines, in a panel whose other rows had
+    already been corrected, and every error flattered the overlap."""
+    from gamutview import coverage, shared_volume, mesh_volume
+    (an, a), (bn, b) = _dented_pair()
+    _overlap, _union, share = shared_volume(a, b)
+
+    fraction, _err = coverage(a, b)
+    va = mesh_volume(a.vertices, a.faces)
+    vb = mesh_volume(b.vertices, b.faces)
+    want = fraction * va
+    assert share == pytest.approx(want / (va + vb - want), rel=1e-9)
+
+
+def test_stripping_a_shape_to_its_points_changes_the_shared_figure():
+    """Proof the line above is load-bearing rather than decorative: passing
+    the bare vertices, which is what the window used to do, gives a different
+    and more flattering answer."""
+    from gamutview import shared_volume
+    (an, a), (bn, b) = _dented_pair()
+    whole = shared_volume(a, b)[2]
+    stripped = shared_volume(a.vertices, b.vertices)[2]
+    assert stripped > whole

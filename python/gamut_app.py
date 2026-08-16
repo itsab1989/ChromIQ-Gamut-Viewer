@@ -47,7 +47,9 @@ if __name__ == "__main__" and "--version" in sys.argv:
     print(f"{APP_NAME} {_v}")
     raise SystemExit(0)
 
+import shutil
 import tempfile
+import time
 from pathlib import Path
 from pathlib import Path as pathlib_Path
 
@@ -2992,6 +2994,66 @@ GLOSSARY = [
 ]
 
 
+#: How long a leftover folder has to have sat there before a new run will
+#: clear it away. An hour is far longer than the gap between one run writing
+#: its folder and that run being visible in the process table, and far shorter
+#: than anybody would want to keep gigabytes of dead scenes.
+FORGOTTEN_AFTER_SECONDS = 3600
+
+
+def _sweep_up_after_runs_that_never_finished(mine: Path) -> None:
+    """Clear away scene folders left by runs that were killed or crashed.
+
+    Closing the window takes its own folder with it, which covers the ordinary
+    case. It does not cover the two that actually filled a disk: a run that
+    crashes, and a run that is killed -- and a test suite, an audit or a
+    screenshot driver starts the window hundreds of times and does not always
+    let it close politely.
+
+    Measured on the machine this is developed on: **644 folders holding 27 GB**
+    after two days, which is what prompted this.
+
+    A FOLDER IS ONLY TAKEN WHEN NOBODY IS USING IT. Each run writes its process
+    id and a new run keeps any folder whose process is still alive, so two
+    windows open at once cannot delete each other's scenes. Where that cannot
+    be answered -- a recycled process id, a folder from before this was added
+    and carrying no id at all -- age decides, and the folder has to have been
+    untouched for an hour. Anything that goes wrong here is ignored: failing to
+    tidy up is not a reason to refuse to start.
+    """
+    try:
+        (mine / "owner.pid").write_text(str(os.getpid()))
+        here = mine.parent
+        now = time.time()
+        for folder in here.glob("gamutview-*"):
+            if folder == mine or not folder.is_dir():
+                continue
+            try:
+                if now - folder.stat().st_mtime < FORGOTTEN_AFTER_SECONDS:
+                    continue                  # too recent to judge by age
+                owner = folder / "owner.pid"
+                if owner.exists():
+                    try:
+                        os.kill(int(owner.read_text().strip()), 0)
+                        continue              # its window is still open
+                    except (ProcessLookupError, ValueError, OverflowError):
+                        # Gone, or the file does not hold a process id at all.
+                        # OverflowError is in there because a number too large
+                        # to BE a process id raises that rather than saying no
+                        # such process -- and without it the exception left
+                        # this function through the guard below, which is
+                        # written to ignore everything, so the sweep stopped
+                        # silently at the first such folder and swept nothing.
+                        pass
+                    except PermissionError:
+                        continue              # alive and not ours to touch
+                shutil.rmtree(folder, ignore_errors=True)
+            except OSError:
+                continue
+    except Exception:        # noqa: BLE001 — tidying must never stop a start
+        pass
+
+
 class GamutApp(QMainWindow):
     """One window: measurements on the left, the gamut on the right."""
 
@@ -3028,6 +3090,7 @@ class GamutApp(QMainWindow):
         self._chart_placed = None            # chart.Placement, or None
         self._chart_profile: Path | None = None
         self._tmp = Path(tempfile.mkdtemp(prefix="gamutview-"))
+        _sweep_up_after_runs_that_never_finished(self._tmp)
         #: Where the last file came from, so the next dialog opens there.
         self._last_folder = ""
         #: Renders so far, so each one gets a URL the view has not seen.
@@ -8537,18 +8600,55 @@ class GamutApp(QMainWindow):
         # A NEW FILE EVERY TIME. Writing to one name and loading the same URL
         # let the web view serve its cached copy, so switching to light left
         # the scene dark -- the page had been rewritten and never re-read.
-        # Counting up sidesteps caching entirely, and the old ones go with the
-        # temporary folder when the app closes.
+        # Counting up sidesteps caching entirely.
         self._render_count += 1
         out = self._tmp / f"scene-{self._render_count}.html"
         flat = self._write_scene(gamuts, clouds, styles, lost, out,
                                  controls=False)
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
+        self._drop_the_scene_before_last()
         self._update_volume()
         self._update_coverage()
         self._update_drift()
         if not flat:
             self._update_chart_numbers()
+
+    def _drop_the_scene_before_last(self) -> None:
+        """Delete the scene two redraws ago. It cost 27 GB of somebody's disk.
+
+        Every redraw writes a self-contained page with plotly.js inlined --
+        about **6 MB** -- under a name that counts up, because writing to one
+        name and reloading the same URL let the web view serve its cached
+        copy. That part is right and is kept. What was missing is that
+        nothing ever deleted them: a session that redraws sixty times left
+        360 MB behind, for ever, and the folder holding them was never
+        removed either.
+
+        Found on the machine this is developed on: **644 leftover folders,
+        27 GB**, from two days of work. A user does not redraw as often as a
+        test run does, but nothing here was bounded, so it was only a matter
+        of how long.
+
+        THE ONE BEFORE LAST, not the last. The view has been told to load the
+        newest file and may not have finished reading it, and the one before
+        that is what it was showing until a moment ago. Two back is safe by
+        the time a third redraw has happened, and keeping the names counting
+        up means a URL is never reused, so the caching this exists to avoid
+        cannot come back.
+        """
+        stale = self._tmp / f"scene-{self._render_count - 2}.html"
+        try:
+            stale.unlink()
+        except OSError:          # never written, or already gone
+            pass
+
+    def closeEvent(self, event):
+        """Take the temporary folder with us, which is what it is for."""
+        try:
+            shutil.rmtree(self._tmp, ignore_errors=True)
+        except Exception:        # noqa: BLE001 — never block a window closing
+            pass
+        super().closeEvent(event)
 
     def _write_scene(self, gamuts, clouds, styles, lost, out, *,
                      controls: bool = False, carry_viewer: bool = True,
@@ -9071,7 +9171,10 @@ class GamutApp(QMainWindow):
             self._pair_box.setVisible(False)
             return
         try:
-            _overlap, _union, share = shared_volume(a.vertices, b.vertices)
+            # THE SHAPES, NOT THEIR POINTS. Stripped to bare vertices this
+            # loses the triangles, and every figure in the sentence falls back
+            # to the convex hull -- see gamutview.shared_volume.
+            _overlap, _union, share = shared_volume(a, b)
             reach_a, reach_b = hue_reach(a), hue_reach(b)
         except Exception:      # noqa: BLE001 — a readout must never crash a view
             self._pair_box.setVisible(False)

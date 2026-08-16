@@ -140,8 +140,8 @@ coverage **in both directions**.
 Both directions, because they answer different questions and are rarely the
 same number:
 
-> 77.7% of what this paper can print also fits inside sRGB.
-> 65.2% of sRGB fits inside this paper.
+> 75.9% of what this paper can print also fits inside sRGB.
+> 64.3% of sRGB fits inside this paper.
 
 The first says how much of your paper an sRGB workflow can even address. The
 second says how much of an incoming sRGB image your paper can reproduce. A
@@ -165,7 +165,7 @@ because "which is better" is really three questions:
 <img src="docs/screenshots/13-how-the-two-compare.webp" width="880" alt="Two papers compared, showing shared colour, which reaches further in each hue family, and both lightness ranges">
 
 - **Does one fit inside the other?** Coverage, both ways round.
-- **How alike are they?** *Both can print 76% of everything either one can.*
+- **How alike are they?** *Both can print 77% of everything either one can.*
   Unlike coverage this is the same number whichever way you ask it, so it
   answers "are these two the same paper, really?"
 - **Where does each one win?** *Glossy-paper reaches further in the yellows,
@@ -216,8 +216,8 @@ A profile that bulges well outside the measured cloud is over-promising; one
 that sits well inside is leaving gamut on the table. On the demo chart and the
 profile built from it:
 
-> 97.2% of what the measurement can print also fits inside the profile.
-> 83.9% of the profile fits inside the measurement.
+> 96.4% of what the measurement can print also fits inside the profile.
+> 82.6% of the profile fits inside the measurement.
 
 The profile is always labelled **(profile)** in the figures, so a profile and
 the chart it was built from — which usually share a name — can never be
@@ -249,14 +249,14 @@ would land.
 <img src="docs/screenshots/c1-every-patch-the-paper-can-reach.webp" width="880" alt="A 480-patch chart drawn as dots inside the wire cage of a paper's measured gamut, every dot inside">
 
 > 480 patches placed through the glossy paper's profile, against the
-> measurement of that same paper: **361 inside, 119 on the edge, 0 outside.**
+> measurement of that same paper: **287 inside, 193 on the edge, 0 outside.**
 > Everything this chart asks for is a colour the paper really achieved.
 
 Now the same chart, the same profile, and a **different paper**:
 
 <img src="docs/screenshots/c2-the-ones-a-different-paper-cannot.webp" width="880" alt="The same chart against a matte paper, with 160 patches picked out in red outside the cage">
 
-> **248 inside, 72 on the edge, 160 outside**, the worst by 8.1 ΔE. Print this
+> **204 inside, 98 on the edge, 178 outside**, the worst by 8.9 ΔE. Print this
 > chart on the matte paper and a third of it asks for colours that paper cannot
 > make. The ones outside are picked out on the picture, and **Save the numbers
 > as a table** writes one line for each — including *where it sits on the
@@ -1055,6 +1055,24 @@ file, five files kept. You can read or delete it whenever you like.
   colours in those hollows were counted as reachable. Every error went the
   same way, flattering the comparison: of the demo paper's 675 boundary
   points, 191 were called outside Adobe RGB where the surface says 239.
+- **So is every other question that names a boundary**, which took a second
+  pass to finish. A cut through a gamut at one lightness was still outlined
+  against the hull, standing outside the real shape in 138 to 159 of every 180
+  directions and by as much as **10.05 Lab units**; "both can print N% of
+  everything either one can" used hull volumes *and* a hull containment test,
+  reading 51.84% where the truth is 50.03%; and a chart patch could be called
+  outside by the real surface while the distance beside it was measured to the
+  hull, which put one patch at 0.00 ΔE outside. All three now ask the same
+  surface as everything else, and the cut is computed exactly — a plane
+  crosses a triangle in a straight line — rather than searched for, which made
+  it 68× faster as well as right.
+- **Where two shapes part company is drawn as an edge, not a slope.** Fading
+  the part two gamuts have in common used an alpha per vertex, so any triangle
+  with corners on both sides had the difference smeared across its full width
+  — 173 of the demo paper's 978 triangles, a fifth of its surface, averaging
+  16.5 Lab units across. Both shapes are re-cut along the true crossing curve
+  first, so every triangle is wholly one side or the other. It stays a single
+  closed mesh; the volume and area are unchanged to seven figures.
 - **Coverage is measured by sampling**, 60,000 points with a fixed seed, so the
   same pair of gamuts always gives the same answer. The points are drawn
   directly from inside the shape rather than thrown at its bounding box and

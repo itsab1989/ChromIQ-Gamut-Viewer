@@ -638,3 +638,52 @@ def test_the_lost_patches_wrap_around_the_rest_so_they_get_no_skin():
     # the share is not the point, the ratio below it is.
     assert 0.2 < lost.mean() < 0.35
     assert around_lost / whole > 0.75
+
+
+def test_a_patch_called_outside_is_never_zero_away_from_the_boundary():
+    """The two halves of one row have to mean the same surface.
+
+    "Is this patch outside?" is asked of the gamut's real, dented boundary.
+    The distance beside it was measured to the convex HULL of that boundary,
+    which lies outside the shape wherever the shape is dented -- so a patch
+    could be reported as outside and, in the same row, as 0.00 dE2000 away
+    from the edge. That reads as a rounding error and is really the row
+    disagreeing with itself.
+
+    A box with a dent, and a patch sitting in the dent: outside the shape,
+    and comfortably inside the hull.
+    """
+    import numpy as np
+    from gamutview import Gamut, xyz_to_srgb
+
+    v = [[x, y, z] for x in (0.0, 10.0) for y in (-5.0, 5.0)
+         for z in (-5.0, 5.0)]
+    f = [[0, 1, 3], [0, 3, 2], [4, 6, 7], [4, 7, 5],
+         [0, 4, 5], [0, 5, 1], [0, 2, 6], [0, 6, 4],
+         [1, 5, 7], [1, 7, 3]]
+    v.append([5.0, -2.0, 0.0])                # the +a* face, pushed right in
+    for a, b in ((2, 3), (3, 7), (7, 6), (6, 2)):
+        f.append([a, b, 8])
+    v = np.asarray(v, float)
+    faces = np.asarray(f, int)
+    box = Gamut(vertices=v, faces=faces, colors=np.zeros((len(v), 3)),
+                volume=1.0, space="lab", mode="device-cube")
+
+    patch = np.array([[5.0, 0.0, 0.0]])       # in the dent: out of the shape
+    report = chart.outside_report(patch, box)
+    assert report.outside[0], "the dent must put this patch outside"
+
+    to_hull = chart.nearest_on_hull(patch, v)
+    to_skin = chart.nearest_on_hull(patch, v, faces)
+    hull_gap = float(np.hypot(*(to_hull[0] - patch[0])[1:]))
+    skin_gap = float(np.hypot(*(to_skin[0] - patch[0])[1:]))
+    assert skin_gap < hull_gap / 2.0, (
+        "the dent is not deep enough to tell the two surfaces apart")
+
+    # And the report must be quoting the near one.
+    from gamutview import delta_e_2000
+    assert report.distance[0] == pytest.approx(
+        float(delta_e_2000(patch, to_skin)[0]), rel=1e-9), (
+        f"{report.distance[0]:.3f} dE2000 is the distance to the HULL, "
+        f"{hull_gap:.1f} Lab units away, not to the boundary that put this "
+        f"patch outside, {skin_gap:.1f} away")

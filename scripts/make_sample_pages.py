@@ -12,7 +12,7 @@ first. Every page below is produced by pressing the window's own Save button,
 through its own dialogs.
 
 WHY EACH ONE IS THEN READ BACK. `docs/index.html` makes a claim about every
-page -- "saved with the movement running", "222 inside, 18 on the edge", "80 kB
+page -- "saved with the movement running", "202 inside, 23 on the edge", "80 kB
 instead of 5 MB". A claim nobody checks is a claim that goes stale the first
 time a default changes. Each scene therefore carries the assertions that make
 its own card on the index page true, and this exits 1 if any of them is not.
@@ -341,6 +341,28 @@ def main() -> int:
           and "Glossy-paper (outline)" in body
           and "Matte-paper (outline)" not in body,
           "otherwise the inner shape is hidden by the outer one at every angle")
+    # AND THE NUMBER ON THE CARD IS THE NUMBER THE WINDOW WORKED OUT.
+    #
+    # This was checked for the direction and not for the figure, so when
+    # containment was corrected to measure against the real dented surface
+    # instead of the convex hull around it, the card went on saying **76.4%**
+    # while the window said 77.4% -- and the generator that exists to catch
+    # exactly this reported every claim met. A percentage nobody checks is a
+    # percentage that goes stale the first time the arithmetic improves.
+    # The window words the two directions differently -- the first as "N% of
+    # the colour X can print also fits inside Y", the second as the shorter
+    # "N% of X fits inside Y". It is the second one the card quotes.
+    said_share = re.search(r"([\d.]+)% of Glossy-paper fits inside Matte-paper",
+                           said)
+    card = pathlib.Path(HERE.parent / "docs" / "index.html").read_text(
+        errors="replace")
+    on_card = re.search(r"but only ([\d.]+)% of\s+the glossy fits inside the "
+                        r"matte", card)
+    check("04", "the figure on the index card is the one the window quotes",
+          bool(said_share) and bool(on_card)
+          and said_share.group(1) == on_card.group(1),
+          f"page says {said_share.group(1) if said_share else '?'}%, "
+          f"docs/index.html says {on_card.group(1) if on_card else '?'}%")
     check("04", "how one is drawn stays out of the tab",
           "(outline)" not in (re.search(r"<title>(.*?)</title>", body)
                               or re.match("", "")).group(1)

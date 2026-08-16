@@ -552,20 +552,23 @@ def outside_report(lab, gamut, *, against: str = "",
     """Which patches fall outside *gamut*, and by how far.
 
     WHICH SURFACE IS BEING TESTED, precisely, because it decides what the
-    number means. The test is against the **convex hull of the gamut's
-    vertices** — the same surface the rest of this application uses when it
-    paints which colours a comparison loses, so a chart's answer can never
-    disagree with the colouring beside it.
+    number means. The test is against **the gamut's own measured boundary** --
+    the surface the rest of this application uses when it paints which colours
+    a comparison loses, so a chart's answer can never disagree with the
+    colouring beside it.
 
-    A real printer's boundary is dented, and a hull thrown around it is
-    slightly larger. That makes this test **conservative in one direction and
-    one direction only**: a patch called outside really is outside, and a patch
-    sitting in a dent may be called inside. It can miss a problem; it cannot
-    invent one. Said plainly on screen for the same reason it is said here.
+    IT USED TO BE THE CONVEX HULL OF THAT BOUNDARY, and it was described here,
+    and on screen, as conservative for it: a hull fills in every dent, so a
+    patch sitting in a dent was called inside, and the answer could miss a
+    problem but never invent one. That was true of the hull and is no longer
+    what happens. Measured on the demo chart against Adobe RGB, the dents hold
+    **172 patches the hull called safe**, and a chart's whole purpose is to say
+    which patches are not.
 
-    The distance is ΔE2000 from the patch to the nearest point **on that
+    The distance is ΔE2000 from the patch to the nearest point **on that same
     surface** — not to the nearest vertex, which would overstate every answer
-    by however far apart the vertices happen to be.
+    by however far apart the vertices happen to be, and no longer to the hull,
+    which understated it to zero for a patch in a shallow dent.
     """
     from gamutview import delta_e_2000, outside_of
 
@@ -587,14 +590,32 @@ def outside_report(lab, gamut, *, against: str = "",
     out = outside_of(lab[good], gamut)
     outside[rows[out]] = True
     if out.any():
-        nearest = nearest_on_hull(lab[good][out], verts)
+        # THE SAME SURFACE THAT DECIDED "OUTSIDE" MEASURES HOW FAR OUTSIDE.
+        nearest = nearest_on_hull(lab[good][out], verts,
+                                  getattr(gamut, "faces", None))
         distance[rows[out]] = delta_e_2000(lab[good][out], nearest)
     return Outside(against=against, n_patches=int(good.sum()), outside=outside,
                    distance=distance, tolerance=tolerance)
 
 
-def nearest_on_hull(points, vertices) -> np.ndarray:
-    """The closest point on the hull of *vertices*, for each of *points*.
+def nearest_on_hull(points, vertices, faces=None) -> np.ndarray:
+    """The closest point on the surface of a gamut, for each of *points*.
+
+    Pass *faces* and the measurement is against the gamut's own triangles.
+    Without them there is no surface to measure to and the convex hull of
+    *vertices* is used, which is what this did for everything.
+
+    WHY THE HULL WAS NOT GOOD ENOUGH. The question beside this one -- "is this
+    patch outside the gamut?" -- is now asked of the real, dented surface. The
+    distance was still being measured to the hull thrown around it, and a hull
+    lies outside the shape wherever the shape is dented. So a patch could be
+    reported as outside and, in the same row, as **0.00 ΔE away from the
+    boundary** -- which reads as a rounding error and is really the two halves
+    of one row disagreeing about what the boundary is.
+
+    Measured on the demo chart against Adobe RGB: of 172 patches called
+    outside, 1 came back at 0.00 ΔE. One row in a table, and it would have
+    been read as noise rather than as the contradiction it is.
 
     Not the closest vertex. On a real gamut the vertices are tens of ΔE apart
     in places, so "distance to the nearest corner" can be several times the
@@ -613,11 +634,13 @@ def nearest_on_hull(points, vertices) -> np.ndarray:
     Chunked over the points, because the whole cross-product at once is a
     gigabyte on a large chart and nothing at all in pieces.
     """
-    from scipy.spatial import ConvexHull
-
     points = np.atleast_2d(np.asarray(points, dtype=float))
     vertices = np.asarray(vertices, dtype=float)
-    triangles = vertices[ConvexHull(vertices).simplices]      # (M, 3, 3)
+    if faces is None or len(faces) == 0:
+        from scipy.spatial import ConvexHull
+        triangles = vertices[ConvexHull(vertices).simplices]  # (M, 3, 3)
+    else:
+        triangles = vertices[np.asarray(faces, dtype=int)]    # (M, 3, 3)
 
     out = np.empty_like(points)
     # ~2 million point/triangle pairs at a time: a few hundred megabytes of

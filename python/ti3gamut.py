@@ -590,11 +590,14 @@ def _mesh_lost(gamut, name: str, opacity: float, lost,
     # very same call rather than through a second one that could disagree
     # with it. _weld indexes its middle argument and does not care what is in
     # it, which is what makes this safe.
+    # THE SIDE IS PART OF WHAT MAKES A CORNER ITSELF. Two corners in the same
+    # place on opposite sides of the boundary are two corners, and welding
+    # them cost the saved page its sharp edge -- see `_weld_order`.
     carried = None
     if stand is not None:
-        keep, _remap = _weld_order(v, colours)
+        keep, _remap = _weld_order(v, colours, stand)
         carried = "".join("1" if stand[i] else "0" for i in keep)
-    v, colours, faces = _weld(v, colours, picked)
+    v, colours, faces = _weld(v, colours, picked, stand)
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
@@ -1018,7 +1021,7 @@ def light_position(direction_deg: float, height: float) -> dict:
 _LIGHT_OVERHEAD = dict(x=0, y=0, z=2000)
 
 
-def _weld(points, colours, faces):
+def _weld(points, colours, faces, sides=None):
     """Join vertices that sit in the same place and carry the same colour.
 
     A boundary built from the faces of the device cube repeats every point
@@ -1030,8 +1033,11 @@ def _weld(points, colours, faces):
     This changes no geometry, no colour and no volume -- only which triangles
     agree about a corner. The dents stay: they are real, they are the whole
     point of following the measured boundary, and nothing here smooths them.
+
+    *sides* keeps apart two corners that are in the same place for a reason --
+    see :func:`_weld_order`.
     """
-    keep, remap = _weld_order(points, colours)
+    keep, remap = _weld_order(points, colours, sides)
     if len(keep) == len(points):
         return points, colours, faces
     kept = np.asarray(keep)
@@ -1040,7 +1046,7 @@ def _weld(points, colours, faces):
     return points[kept], welded, remap[np.asarray(faces)]
 
 
-def _weld_order(points, colours):
+def _weld_order(points, colours, sides=None):
     """WHICH vertices a weld keeps, and where every old one now points.
 
     Split out of :func:`_weld` so that anything else needing to follow the
@@ -1050,12 +1056,29 @@ def _weld_order(points, colours):
     values standing in for the colours -- can group differently and come back
     a different length, lined up with nothing. Asking for the indices once
     and indexing everything with them cannot drift.
+
+    *sides* IS WHAT KEEPS THE CUT SHARP, and leaving it out put the fault
+    straight back into the one place it mattered most.
+
+    `recut_where_they_part` deliberately makes two corners in the same place,
+    one for each side of the boundary, so that no triangle straddles it. When
+    the fade is applied here they carry different alphas, so their colours
+    differ and this leaves them alone. But a SAVED PAGE is written at full
+    strength and hands the reader the slider -- and at full strength the two
+    copies are the same colour, so they welded back into one, every triangle
+    along the boundary straddled it again, and the reader's slider drew the
+    very gradient the re-cut exists to remove. Measured on the demo page: 361
+    of 1,324 triangles. The picture on screen was right and the page somebody
+    was sent was not, which is the worst way for this to be wrong.
     """
     keys, order, keep = [], {}, []
-    for point, colour in zip(points, colours):
+    if sides is None:
+        sides = [None] * len(points)
+    for point, colour, side in zip(points, colours, sides):
         keys.append((tuple(np.round(point, 6)),
                      colour if isinstance(colour, str)
-                     else tuple(np.atleast_1d(np.round(colour, 6)))))
+                     else tuple(np.atleast_1d(np.round(colour, 6))),
+                     None if side is None else bool(side)))
     remap = np.empty(len(keys), dtype=np.int64)
     for i, key in enumerate(keys):
         at = order.get(key)
@@ -1143,6 +1166,16 @@ def _with_alpha(colours, alphas):
     strings they always were, so the top of the slider is not merely close to
     a no-op -- it is the same array of colours and therefore the same picture.
     Measured at **0 pixels different**.
+
+    ONE THING DOES CHANGE at the top of the slider, and it is not this
+    function. A page that hands the reader the control is re-cut along the
+    boundary first (`recut_where_they_part`), so a shape drawn as a WIRE CAGE
+    gains wires: the extra triangle edges lie exactly along the curve where
+    the two shapes cross. Measured on the demo page at full strength, 1,252
+    pixels of 3,936,000 differ from the same page before the re-cut, and every
+    one of them is on that curve. The surface itself is unchanged -- it is
+    shaded smoothly, so more triangles covering the same shape draw the same
+    picture -- and the volume and area are unchanged to seven figures.
     """
     out = []
     for colour, alpha in zip(colours, alphas):
@@ -1153,6 +1186,169 @@ def _with_alpha(colours, alphas):
         inside = text[text.index("(") + 1:text.index(")")].split(",")
         out.append(f"rgba({inside[0]},{inside[1]},{inside[2]},{alpha:.3f})")
     return out
+
+
+def surfaces_of(gamuts):
+    """One reusable containment test per shape, built once.
+
+    Asking "is this colour inside that shape" needs the shape's surface
+    prepared first, and preparing it is the expensive half. `outside_of` does
+    that and throws it away, which is right for one question asked once and
+    wrong for a redraw that asks four questions of two shapes.
+
+    Measured on the demo pair: building a faded scene prepared **four
+    surfaces where two would do** -- once to decide which vertices stand out,
+    and again to find where the boundary crosses each edge -- at about 10 ms
+    each.
+
+    A shape too small to enclose anything gets ``None``, and every caller
+    treats that as "agrees with nothing", which is what the containment test
+    would have raised about.
+    """
+    from gamutview import enclosure
+
+    out = []
+    for _name, g in gamuts:
+        try:
+            out.append(enclosure(g))
+        except Exception:          # noqa: BLE001 — see disagreeing_vertices
+            out.append(None)
+    return out
+
+
+def disagreeing_vertices(gamuts, skins=None):
+    """Which vertices of each shape lie somewhere the others do not reach.
+
+    The same question `agreement_masks` answers for triangles, kept at the
+    resolution it is actually decided at. A vertex is either outside the
+    other shapes or it is not; nothing about a neighbouring triangle changes
+    that.
+
+    WHY THIS EXISTS. The surface is faded with an alpha per vertex, and that
+    alpha used to be worked out by taking the per-TRIANGLE answer and marking
+    every vertex those triangles touch. That dilates the disagreement by a
+    whole ring: a vertex sitting comfortably inside the other gamut was
+    painted as standing out because one triangle beside it did.
+
+    Measured on the demo pair against Adobe RGB: 239 vertices are genuinely
+    outside, 335 were painted as though they were -- **96 of them, a seventh
+    of the whole surface, drawn as disagreement where the paper and the space
+    agree**. Every error went the same way. Reported as "parts of where they
+    agree do not become transparent", which is exactly what it was.
+
+    *skins* is an optional list of prepared surfaces, one per shape, from
+    :func:`surfaces_of` -- so a caller that already has them, or that needs
+    them again afterwards, does not pay to build them twice.
+    """
+    if skins is None:
+        skins = surfaces_of(gamuts)
+
+    out = []
+    for i, (_name, a) in enumerate(gamuts):
+        others = [s for j, s in enumerate(skins) if j != i]
+        if not others:
+            # Nothing to agree with, so all of it stands -- the same choice
+            # agreement_masks makes, and for the same reason.
+            out.append(np.ones(len(a.vertices), bool))
+            continue
+        stands = np.zeros(len(a.vertices), bool)
+        for skin in others:
+            if skin is None:       # too small to contain anything
+                stands |= True
+            else:
+                stands |= ~skin.contains(a.vertices)
+        out.append(stands)
+    return out
+
+
+def recut_where_they_part(gamuts, lost=None):
+    """Re-cut every shape so the fade has an edge instead of a slope.
+
+    Returns ``(gamuts, per_triangle, per_vertex, lost)`` -- the same shapes,
+    re-triangulated so that no triangle straddles the boundary between where
+    they agree and where they do not, together with the masks that go with
+    the new meshes.
+
+    THE FADE IS AN ALPHA PER VERTEX, so a triangle with two corners agreeing
+    and one not has that difference painted smoothly across its whole width.
+    "Does this colour fall outside the other shape?" has two answers and no
+    third, and it was being drawn as a slope between them.
+
+    Measured on the demo pair: of the glossy paper's 978 triangles, **173
+    straddled the boundary -- a fifth of the surface, averaging 16.5 Lab units
+    across**. So turning the agreement down did not open a clean hole where
+    the two shapes part company; it thinned a wide band around it, and the
+    parts that plainly agreed never went away. Reported as "parts of where
+    they agree do not become transparent -- the cut should be more straight",
+    and it should.
+
+    After this, every triangle is one flat colour at one flat alpha and the
+    edge lies exactly where the two surfaces cross. The shape itself does not
+    move: the new corners sit on the straight edges between the old ones, and
+    the volume and surface area are unchanged to seven figures.
+
+    A SHAPE SHOWING ITS LOST COLOURS IS RE-CUT ONLY WHEN THAT MASK ASKS THE
+    SAME QUESTION. "What can this paper no longer reach" is a second boolean
+    per vertex, measured against one chosen shape; the fade is measured
+    against ALL the others. With two shapes on screen -- the ordinary case,
+    and every saved page -- those are the same question and the new corners
+    inherit the answer exactly. With a chart, a second paper AND a reference
+    they are not, and there is no way to answer for a new corner without the
+    test that made the mask. Rather than guess, that shape keeps its old
+    mesh: the marking stays right and the fade keeps its slope.
+    """
+    from gamutview import Gamut, split_at_crossing
+
+    # ONE SURFACE PER SHAPE, PREPARED ONCE. Deciding which vertices stand out
+    # and finding where the boundary crosses an edge are the same question
+    # asked of the same shapes, and each used to prepare its own copy -- four
+    # surfaces per redraw where two will do, at about 10 ms each.
+    skins = surfaces_of(gamuts)
+    stands = disagreeing_vertices(gamuts, skins)
+    out_g, out_faces, out_stands = [], [], []
+    out_lost = None if lost is None else []
+    for i, (name, g) in enumerate(gamuts):
+        mine = stands[i]
+        marked = lost[i] if lost is not None and i < len(lost) else None
+        others = [s for j, s in enumerate(skins) if j != i and s is not None]
+        same_question = marked is None or (
+            len(marked) == len(mine) and np.array_equal(np.asarray(marked, bool),
+                                                        mine))
+        recut = None
+        if len(others) == len(gamuts) - 1 and others and same_question:
+            try:
+                def outside_them_all(points, others=others):
+                    beyond = np.zeros(len(points), bool)
+                    for skin in others:
+                        beyond |= ~skin.contains(points)
+                    return beyond
+
+                recut = split_at_crossing(g.vertices, g.faces, g.colors,
+                                          mine, outside_them_all)
+            except Exception:          # noqa: BLE001 — a shape too small to
+                # enclose anything cannot be cut along its boundary either,
+                # and the picture is left exactly as it was.
+                recut = None
+        if recut is None:
+            out_g.append((name, g))
+            out_stands.append(mine)
+            faces = np.asarray(g.faces)
+            out_faces.append(~(mine[faces[:, 0]] & mine[faces[:, 1]]
+                               & mine[faces[:, 2]]) if len(faces)
+                             else np.zeros(0, bool))
+            if out_lost is not None:
+                out_lost.append(marked)
+            continue
+        v2, f2, c2, s2 = recut
+        out_g.append((name, Gamut(vertices=v2, faces=f2, colors=c2,
+                                  volume=g.volume, space=g.space, mode=g.mode)))
+        out_stands.append(s2)
+        # EVERY TRIANGLE IS ONE-SIDED NOW, so one corner answers for it and
+        # the per-triangle mask cannot disagree with the per-vertex one.
+        out_faces.append(s2[f2[:, 0]] if len(f2) else np.zeros(0, bool))
+        if out_lost is not None:
+            out_lost.append(None if marked is None else s2)
+    return out_g, out_faces, out_stands, out_lost
 
 
 def agreeing_edges(gamut, keep_faces):
@@ -1205,11 +1401,14 @@ def _mesh(gamut, name: str, opacity: float,
     # very same call rather than through a second one that could disagree
     # with it. _weld indexes its middle argument and does not care what is in
     # it, which is what makes this safe.
+    # THE SIDE IS PART OF WHAT MAKES A CORNER ITSELF. Two corners in the same
+    # place on opposite sides of the boundary are two corners, and welding
+    # them cost the saved page its sharp edge -- see `_weld_order`.
     carried = None
     if stand is not None:
-        keep, _remap = _weld_order(v, colours)
+        keep, _remap = _weld_order(v, colours, stand)
         carried = "".join("1" if stand[i] else "0" for i in keep)
-    v, colours, faces = _weld(v, colours, picked)
+    v, colours, faces = _weld(v, colours, picked, stand)
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
@@ -5835,9 +6034,13 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
     # trace that was never written cannot be faded by anybody. On screen the
     # split is only made when it changes something, because it costs a
     # containment test per pair on every redraw.
-    splits = None
+    #
+    # AND THE SHAPES ARE RE-CUT ALONG THAT BOUNDARY FIRST, so the fade has an
+    # edge rather than a slope across every triangle that straddles it -- see
+    # `recut_where_they_part`.
+    splits = stands = None
     if len(gamuts) > 1 and (split or agree < 1.0 or differ < 1.0):
-        splits = agreement_masks(gamuts)
+        gamuts, splits, stands, lost = recut_where_they_part(gamuts, lost)
     for i, (name, g) in enumerate(gamuts):
         # Each shape may carry its own settings. Anything it does not name
         # falls back to the window-wide value, so a caller that knows nothing
@@ -5878,15 +6081,19 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # thing as one: see _with_alpha, where that was measured.
         alphas = None
         disagrees = splits[i] if splits is not None else None
-        if disagrees is not None:
-            standing = agreeing_edges(g, disagrees)
+        # EACH VERTEX ANSWERS FOR ITSELF. Taking the per-triangle answer and
+        # marking every vertex those triangles touch dilates the
+        # disagreement by a ring: 96 vertices of the demo paper -- a seventh
+        # of its surface -- were drawn as standing out from Adobe RGB where
+        # they sit inside it. See `disagreeing_vertices`.
+        standing = (stands[i] if stands is not None else None)
+        if standing is not None:
             alphas = np.where(standing, differ, agree)
         # CARRIED INTO THE PAGE only when the reader is being given the
         # control. It is one character per vertex -- about half a kilobyte a
         # shape -- against the 66 kB a second copy of the mesh would have
         # cost, and a page nobody can fade has no use for it at all.
-        stand = (agreeing_edges(g, disagrees)
-                 if (split and disagrees is not None) else None)
+        stand = (standing if (split and standing is not None) else None)
         if marked is not None:
             fig.add_trace(_mesh_lost(g, name, base_i, marked, c["kept"],
                                      depth_i, light=light, alphas=alphas,

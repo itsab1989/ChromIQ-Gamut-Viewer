@@ -164,3 +164,50 @@ def test_the_sampler_fills_the_shape_evenly():
     assert in_arm == pytest.approx(1 / 3, abs=0.02), (
         f"{in_arm:.3f} of the points landed in the arm, which is a third of "
         f"the shape")
+
+
+def test_the_answer_does_not_depend_on_how_many_are_asked_at_once():
+    """Points are answered for in blocks, so the working space does not grow
+    with the question. A block boundary must not be visible in the answer --
+    which is the one way a change made purely for speed could quietly change
+    what the picture says."""
+    import numpy as np
+    from gamutview import _Enclosure, build_gamut
+    from references import reference_gamut
+
+    g = reference_gamut("sRGB", steps=10)
+    skin = _Enclosure(g.vertices, g.faces)
+    rng = np.random.default_rng(19)
+    lo, hi = g.vertices.min(axis=0), g.vertices.max(axis=0)
+    pts = np.vstack([rng.uniform(lo - 5, hi + 5, size=(3000, 3)),
+                     g.vertices])          # and some exactly on the surface
+
+    whole = skin.contains(pts)
+    for block in (1, 2, 7, 999, 100_000):
+        try:
+            _Enclosure.BLOCK = block
+            assert (skin.contains(pts) == whole).all(), (
+                f"answering {block} at a time changed the answer")
+        finally:
+            _Enclosure.BLOCK = 8192
+
+    # And one at a time, which is the slowest possible way to ask and the
+    # least likely to share a mistake with the fast one.
+    singly = np.array([bool(skin.contains(p[None])[0]) for p in pts[:300]])
+    assert (singly == whole[:300]).all()
+
+
+def test_a_point_in_a_cell_no_triangle_reaches_is_outside():
+    """The grid is built from the triangles, so a cell can hold none at all --
+    a corner of the bounding box beside a rounded shape. Nothing to cross
+    means nothing crossed, which means outside, and it must not mean an
+    error or an empty answer."""
+    import numpy as np
+    from gamutview import _Enclosure
+    from references import reference_gamut
+
+    g = reference_gamut("sRGB", steps=8)
+    skin = _Enclosure(g.vertices, g.faces)
+    far = g.vertices.max(axis=0) + 500.0
+    got = skin.contains(np.vstack([far, far + 1.0]))
+    assert got.shape == (2,) and not got.any()

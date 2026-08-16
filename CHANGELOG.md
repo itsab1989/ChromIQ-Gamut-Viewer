@@ -68,6 +68,233 @@ surface being star-shaped, which it is.
 
 The reported figure for the demo pair moves from 76.4% to **77.4%**.
 
+### ✂️ The fade was a slope where the answer is yes or no
+
+The same reader, on the same page: *"parts of where they agree do not become
+transparent — the cut so to say should be more straight."* Two separate faults
+were doing that, one on top of the other.
+
+**The mask was dilated.** The surface is faded with an alpha per *vertex*, and
+that alpha was worked out by taking the per-*triangle* answer and marking
+every vertex those triangles touch — so a vertex sitting comfortably inside
+the other gamut was painted as standing out because one triangle beside it
+did. Measured on the demo pair: **239** vertices are genuinely outside Adobe
+RGB, **335** were painted as though they were. 96 of them — a seventh of the
+whole surface — drawn as disagreement where the two agree, and every error the
+same way.
+
+**And what was left was still a gradient.** With the alpha per vertex, a
+triangle with two corners agreeing and one not has that difference painted
+smoothly across its whole width. Of the glossy paper's 978 triangles:
+
+| | triangles | |
+|---|---|---|
+| wholly agreeing | 586 | |
+| wholly differing | 219 | |
+| **straddling the boundary** | **173** | **19.9% of the surface, 16.5 Lab units across on average, worst 36.2** |
+
+A fifth of the shape was a slope standing in for an edge. That is why turning
+the agreement down thinned a wide band instead of opening a clean hole.
+
+Both shapes are now **re-cut along the boundary before anything is faded**.
+Each straddling triangle is split where the two surfaces really cross — found
+by bisection on the containment test, so it works for one other shape or for
+six — and the new corners are made **twice**, once for each side. Every
+triangle is then one flat colour at one flat alpha, and the edge lies exactly
+on the crossing curve.
+
+It is still **one mesh**. Cutting the shape into a faded piece and a solid
+piece was tried in an earlier release and left 120,481 pixels wrong, because a
+browser blends two open surfaces in the order it draws them and that is not
+what one closed surface does. Nothing here opens the surface; only the corners
+are renumbered.
+
+Checked rather than assumed:
+
+* triangles still straddling the boundary afterwards: **0** of 1,324 and 0 of
+  4,760;
+* volume and area unchanged to **seven figures** (+0.000033% and +0.000000%);
+* every one of the 692 and 856 new corners sits on the other surface to within
+  a **thousandth of a Lab unit**;
+* the drawn cut leaves the true crossing curve by a median of **0.002 Lab**
+  (paper) and **0.000** (Adobe RGB) — 236 of 346 and 258 of 428 cut edges are
+  exactly straight, which is what a flat facet should give;
+* fading the *disagreement* instead gives the identical edge: the two hidden
+  sets are exact complements, and the two halves add back to the whole surface
+  with **nothing drawn twice and nothing missing** — same triangle count, same
+  area, and rims that match edge for edge (173 edges, 857.1 Lab long).
+
+**The saved page nearly lost all of this.** Two corners in the same place
+survive the weld only because the fade has already given them different
+colours — and a page is written at *full* strength, where they are the same
+colour. They welded back into one and **361 of 1,324 triangles straddled the
+boundary again**, so the picture on screen was right and the page somebody was
+sent was not. The side a corner is on is now part of what makes it that
+corner.
+
+At full strength the page differs from before by **1,252 pixels of 3,936,000**,
+all of them on one curve: a shape drawn as a wire cage gains the cut edges as
+wires, which trace exactly where the two shapes cross. The surface itself is
+pixel-identical.
+
+### 📏 The cut through a gamut was taken through the hull, not the gamut
+
+The same fault as above, still in place in the one picture whose entire
+purpose is showing where one paper reaches further than another. `slice_at`
+found its outline with `Delaunay(v).find_simplex` — the convex hull again — so
+every dent was filled in before the outline was drawn.
+
+Measured on Adobe RGB, at seven lightnesses from L\* 20 to 80:
+
+| | |
+|---|---|
+| directions where the hull outline stood outside the real one | **138 to 159 of every 180** |
+| worst overshoot | **10.05 Lab units** |
+| slice area | **+4.6%** |
+
+Wrong everywhere, always outwards, and worst at the light and dark ends where
+two papers differ most.
+
+A plane crosses a triangle in a straight line, so the cross-section of a mesh
+can simply be computed rather than searched for. There is now no bisection, no
+containment test and no triangulation to build — and it is **68× faster**: one
+cut 54.4 ms → **0.8 ms**, and the whole set a page carries 3,588 ms → **52 ms**.
+
+Checked against the containment test the rest of the window uses: 1,440 points
+of the new outlines, on both demo shapes, at four lightnesses each — just
+inside every one of them is inside the gamut and just outside is outside.
+**None wrong.**
+
+Whether a gamut's slice is star-shaped about its grey axis was measured rather
+than assumed: over 15,300 rays through both demo shapes, exactly two met more
+than one boundary.
+
+Both ends of a shape now behave alike. A cut has to say which side a corner
+lying exactly in the plane is on, and whichever it says, one end of the shape
+draws an outline and the other draws nothing — a box cut at its ceiling
+returned the outline of its top face and the same box cut at its floor
+returned nothing at all. Neither end is offered now, because at the very top
+of a real gamut the cut is the single point of the paper white.
+
+### 🧮 Three more answers were still coming from a convex hull
+
+Found by sweeping every remaining use of `ConvexHull` and `Delaunay` rather
+than waiting for the next photograph of a phone.
+
+**"Both can print N% of everything either one can"** was wrong twice over.
+`shared_volume` asked `ConvexHull` for both sizes *and* handed `coverage` the
+bare vertices — stripping off the very triangles that tell it what the surface
+is, so that fell back to the hull too. Three hull answers in two lines, in a
+panel whose other rows had already been corrected. The hulls hold **8.3%** and
+**6.1%** more than the shapes do; the sentence read **51.84% where the truth is
+50.03%**, next to two percentages that were already right.
+
+**A patch could be called outside and, in the same row, 0.00 ΔE from the
+boundary.** "Is this patch outside?" is asked of the real, dented surface; the
+distance beside it was measured to the hull thrown around it, which lies
+outside the shape wherever the shape is dented. On the demo chart against
+Adobe RGB, 1 of 172 patches came back at 0.00 — one row in a table, and it
+would have been read as a rounding error rather than the two halves of a row
+disagreeing about what the boundary is.
+
+**And the help text still described the old behaviour.** It said the test was
+against the convex hull and was therefore conservative — "it can miss a
+problem; it cannot invent one". True of the hull, and no longer what happens:
+the dents hold **172 patches the hull called safe**, and saying which patches
+are not safe is what a chart is for.
+
+### ⚡ The containment test, which everything here rests on, is much faster
+
+Correcting the arithmetic made the picture right and the redraw slow: a faded
+scene took **268 ms** where an unfaded one takes 19 ms, because deciding where
+two shapes part company asks the containment test sixteen times over while it
+bisects. Three changes, none of which give up a decimal place.
+
+**Every point at once, instead of one grid cell at a time.** The test buckets
+triangles into a 48×48 grid so a colour is only compared with the few
+overhead. It then walked the cells in Python — and with a few hundred points
+spread over 2,304 cells that is a few hundred passes through numpy on a
+handful of rows each, where the arithmetic is the small part. Every candidate
+pair is now built as one flat list and tested in a single stroke, and the grid
+itself is built the same way rather than by three nested loops.
+
+**The surfaces are prepared once.** A faded scene prepared **four where two
+would do** — once to decide which vertices stand out, again to find where the
+boundary crosses each edge.
+
+**Sixteen halvings, not twenty-four.** The longest edge on either demo shape
+is 36 Lab units, so sixteen place the cut within **0.0006 Lab** of the true
+crossing — a thousandth of the smallest difference a good eye can find. The
+other eight bought decimal places nothing can measure and a third of the time.
+
+| | before | after | |
+|---|---|---|---|
+| containment, 675 colours | 9.9 ms | **0.6 ms** | 17× |
+| preparing a surface | 6.6 ms | **2.3 ms** | 2.9× |
+| re-cutting both shapes | 243 ms | **16.6 ms** | 14.6× |
+| **a faded scene** | **268 ms** | **43 ms** | **6.2×** |
+| a saved page | 274 ms | **50 ms** | 5.5× |
+
+A faded scene is now 2.2× an unfaded one rather than 14×.
+
+**The rewrite was proved identical, not assumed to be.** Old and new were run
+against each other on **111,000 colours** per shape — random ones, ones far
+outside, the shapes' own vertices, every triangle centre (all of which sit
+exactly ON the surface, where this is hardest), and the empty case. **Zero
+disagreements.** A test also pins that answering 1, 2, 7, 999 or 100,000 at a
+time gives the same answer, because blocking is the one way a change made
+purely for speed could quietly change what the picture says.
+
+### 📉 Five figures the README states as fact were wrong
+
+Found by checking them rather than by reading them. Every percentage the front
+page quotes was recomputed from the demo files:
+
+| the README said | the truth |
+|---|---|
+| 77.7% of the paper fits inside sRGB | **75.9%** |
+| 65.2% of sRGB fits inside the paper | **64.3%** |
+| both can print 76% of everything either can | **77%** |
+| 97.2% of the measurement fits inside its profile | **96.4%** |
+| 83.9% of the profile fits inside the measurement | **82.6%** |
+
+Four of the five were flattering, which is the convex hull's signature -- they
+had been written from a containment test that filled in every dent. The fifth
+moved because `shared_volume` was wrong in the other direction.
+
+They are pinned by a test now, recomputed from the demo files and compared to
+half of the last place the sentence actually quotes, so prose cannot drift
+away from the code again. The same test covers the volume and the two ends of
+the demo paper under the first picture. It was checked by putting an old
+figure back and watching it fail, because a test that cannot fail guards
+nothing.
+
+### 🧹 The window left 27 GB of scenes behind
+
+Reported as a disk filling up: 30 GB gone in two days. It was this.
+
+Every redraw writes a self-contained page with plotly.js inlined — about
+**6 MB** — under a name that counts up, because reloading one URL let the web
+view serve its cached copy and switching to light left the scene dark. Nothing
+ever deleted them, and the folder holding them was never removed either,
+though the comment beside it said it was. **644 folders, 27 GB.**
+
+Three fixes: the scene from two redraws ago is deleted, which caps a session
+at two files however long somebody works; the folder goes when the window
+closes, which is what it always claimed; and a starting window clears folders
+left by runs that crashed or were killed. That last one writes down its own
+process id and keeps any folder whose process is still alive, so two windows
+open at once cannot delete each other's scenes — with age as the fallback
+where there is no id to ask about.
+
+### 📊 A card on the showcase quoted a figure nobody checked
+
+`docs/index.html` said **76.4%** of the glossy paper fits inside the matte
+where the window now says 77.4%. The generator that writes those pages exists
+to catch exactly this and reported every claim met: it checked which of the
+two papers fits inside the other, and never the number. It checks the number
+now.
+
 ## v2.15.1
 
 ### 🧊 One press hung a published page, and reloading did not help

@@ -106,7 +106,7 @@ Everything comes back the moment a colour space is chosen: the paper is drawn
 again as a shape, and the patches sit where the profile says they will land.
 
 Worth watching next to the loop three above. The **numbers are identical** —
-222 inside, 18 on the edge, 240 outside — and the **picture is not**. Here the
+202 inside, 23 on the edge, 255 outside — and the **picture is not**. Here the
 red is spread all round the surface; there it was one clean shell. Two true
 pictures of one measurement, answering different questions.
 

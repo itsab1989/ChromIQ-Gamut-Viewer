@@ -231,6 +231,20 @@ WINDOW_ACTIONS = {
                 "turns the shape down the first time this is ticked -- once, "
                 "deliberately, and it does not put it back, because by then "
                 "the number is the user's"),
+    "agree": ("the shape drawn SOLID here contains every other shape on "
+              "screen, so no part of its surface lies inside them and there "
+              "is nothing for this to fade. Measured on the state below: "
+              "0.0% of the glossy paper's surface -- 0 of 52,673 square Lab "
+              "units -- agrees with both the matte paper and the comparison, "
+              "and it comes to 0.0% against every one of the five built-in "
+              "spaces, because the matte paper fits ENTIRELY inside the "
+              "glossy one and a larger shape's boundary cannot lie inside a "
+              "smaller shape it encloses. The 131 pixels that do move are the "
+              "two wire cages, which are thin. Its opposite, `differ`, moves "
+              "248,361 -- and on a saved page where the two shapes really do "
+              "cross, this same control moves 55,756. THIS IS THE STATE'S "
+              "DOING, NOT THE CONTROL'S: to exercise it here, the solid shape "
+              "would have to be one that is not the largest on screen"),
 }
 
 

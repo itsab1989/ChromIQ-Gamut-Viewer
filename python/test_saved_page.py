@@ -855,10 +855,66 @@ def test_the_mask_follows_the_same_welding_as_the_colours_it_indexes():
     come back a different length -- lined up with nothing, so the fade lands
     on the wrong points and looks like a fault in the measurement."""
     import inspect
+    import numpy as np
+    from gamutview import build_gamut
+    from references import reference_gamut
 
     assert "_weld_order" in inspect.getsource(ti3gamut._weld), (
         "one rule, used by both, rather than two implementations of it")
-    assert "_weld_order(v, colours)" in inspect.getsource(ti3gamut._mesh)
+
+    # ASKED OF THE TRACE. The mask the page carries has one character per
+    # DRAWN vertex, so if it were welded by a different rule it would come
+    # back a different length and index nothing.
+    rng = np.random.default_rng(3)
+    lab = np.column_stack([rng.uniform(20, 90, 400),
+                           rng.uniform(-70, 70, 400),
+                           rng.uniform(-70, 70, 400)])
+    pair = [("g", build_gamut(lab, input_space="lab")),
+            ("s", reference_gamut("sRGB", steps=12))]
+    fig = ti3gamut.build_figure(pair, "t", split=True)
+    carried = [t for t in fig.data if (t.meta or {}).get("stand")]
+    assert carried, "no shape carried the mask the reader's slider needs"
+    for trace in carried:
+        assert len(trace.meta["stand"]) == len(trace.vertexcolor), (
+            "the mask and the colours came back different lengths — they were "
+            "welded by different rules")
+
+
+def test_the_saved_page_keeps_the_cut_sharp_at_full_strength():
+    """THE WORST WAY FOR THIS TO BE WRONG: right on screen, wrong in the page
+    somebody was sent.
+
+    The shapes are re-cut so no triangle straddles the boundary, which needs
+    two corners in the same place carrying different answers. On screen the
+    fade is already applied when they are welded, so their colours differ and
+    they survive. A saved page is written at FULL strength and hands the
+    reader the slider -- and at full strength the two copies are the same
+    colour, so they welded back into one and the reader's slider drew the very
+    gradient the re-cut exists to remove. Measured on the demo page: 361 of
+    1,324 triangles straddled again.
+    """
+    import numpy as np
+    from gamutview import build_gamut
+    from references import reference_gamut
+
+    rng = np.random.default_rng(5)
+    lab = np.column_stack([rng.uniform(20, 90, 400),
+                           rng.uniform(-70, 70, 400),
+                           rng.uniform(-70, 70, 400)])
+    pair = [("g", build_gamut(lab, input_space="lab")),
+            ("s", reference_gamut("sRGB", steps=12))]
+    fig = ti3gamut.build_figure(pair, "t", split=True)
+    for trace in fig.data:
+        mark = (trace.meta or {}).get("stand")
+        if not mark:
+            continue
+        side = np.array([ch == "1" for ch in mark])
+        faces = np.column_stack([trace.i, trace.j, trace.k])
+        n = side[faces].sum(axis=1)
+        straddling = int(((n > 0) & (n < 3)).sum())
+        assert straddling == 0, (
+            f"{straddling} of {len(faces)} triangles straddle the boundary, so "
+            "the reader's slider will paint a gradient across each of them")
 
 
 def test_the_reader_gets_both_directions_and_they_are_not_the_same_control():
@@ -872,8 +928,77 @@ def test_the_reader_gets_both_directions_and_they_are_not_the_same_control():
 def test_the_page_only_carries_the_mask_when_it_hands_over_the_control():
     """One character per measured point is small, and a page nobody can fade
     has no use for it at all."""
-    assert 'stand = (agreeing_edges(g, disagrees)' in inspect.getsource(
-        ti3gamut.build_figure)
+    src = inspect.getsource(ti3gamut.build_figure)
+    assert "stand = (standing if (split and standing is not None) else None)" \
+        in src, "the mask travels only when the reader gets the control"
+
+
+def test_the_fade_asks_each_vertex_for_its_own_answer():
+    """Not the triangles beside it.
+
+    The alpha is per vertex, and it used to be worked out by taking the
+    per-TRIANGLE agreement and marking every vertex those triangles touch.
+    That dilates the disagreement by a whole ring: measured on the demo pair
+    against Adobe RGB, 239 vertices are genuinely outside and 335 were
+    painted as though they were — 96 of them, a seventh of the surface, drawn
+    as disagreement where the two agree. Every error went the same way, and
+    it was reported as "parts of where they agree do not become transparent".
+    """
+    src = inspect.getsource(ti3gamut.build_figure)
+    assert "agreeing_edges(g, disagrees)" not in src, (
+        "the surface's alpha must not come from a dilated per-triangle mask")
+
+    # ASKED OF THE DRAWING, not of the source line that makes it. Pinning the
+    # spelling of a statement makes the test fail when the line moves and pass
+    # when the behaviour is lost some other way, which is backwards.
+    import numpy as np
+    from gamutview import build_gamut
+    from references import reference_gamut
+
+    rng = np.random.default_rng(11)
+    lab = np.column_stack([rng.uniform(20, 90, 400),
+                           rng.uniform(-70, 70, 400),
+                           rng.uniform(-70, 70, 400)])
+    pair = [("g", build_gamut(lab, input_space="lab")),
+            ("s", reference_gamut("sRGB", steps=12))]
+    fig = ti3gamut.build_figure(pair, "t", agree=0.2, differ=1.0)
+    faded = [t for t in fig.data
+             if getattr(t, "vertexcolor", None) is not None]
+    assert faded, "no surface carried a colour per vertex"
+    for trace in faded:
+        strengths = {round(float(str(c).split(",")[3].rstrip(")")), 3)
+                     for c in trace.vertexcolor if "rgba(" in str(c)}
+        # Two strengths and no others: a vertex is either outside the other
+        # shape or it is not, and a value between them is a vertex that was
+        # given somebody else's answer.
+        assert len(strengths) <= 1, (
+            f"the surface carries {sorted(strengths)} — a fade with more than "
+            "one faded value is a gradient, not a decision")
+
+
+def test_a_dilated_mask_never_says_less_than_the_true_one():
+    """The property that makes the old behaviour a one-way error.
+
+    Built rather than measured, so it holds whatever demo files exist: a
+    shape whose vertices are half in and half out of another.
+    """
+    import numpy as np
+    from gamutview import build_gamut
+    from references import reference_gamut
+
+    rng = np.random.default_rng(4)
+    lab = np.column_stack([rng.uniform(20, 90, 500),
+                           rng.uniform(-70, 70, 500),
+                           rng.uniform(-70, 70, 500)])
+    g = build_gamut(lab, input_space="lab")
+    ref = reference_gamut("sRGB", steps=20)
+    per_vertex = ti3gamut.disagreeing_vertices([("g", g), ("s", ref)])[0]
+    dilated = ti3gamut.agreeing_edges(
+        g, ti3gamut.agreement_masks([("g", g), ("s", ref)])[0])
+    assert (dilated | per_vertex == dilated).all(), (
+        "the dilated mask must be a superset — if it ever says LESS, the two "
+        "disagree about something other than the ring")
+    assert dilated.sum() >= per_vertex.sum()
 
 
 def test_a_strength_moves_in_steps_the_eye_can_see_evenly():
