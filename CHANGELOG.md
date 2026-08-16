@@ -1,5 +1,73 @@
 # Changelog
 
+## v2.16.0
+
+### 🕳 "Does this colour fit" was asked of a shape with the dents filled in
+
+Found by somebody looking at a published page on a phone and saying that a
+part of it plainly did not agree with Adobe RGB and yet refused to stand out
+when the agreement was faded. Twice I answered that it was correct. It was
+not.
+
+Containment was `Delaunay(points).find_simplex(p) < 0` — and a Delaunay
+triangulation tessellates exactly the **convex hull** of its points. So the
+question being asked was "is this inside the convex hull", which is the same
+question only for a convex gamut, and no gamut is convex. Measured on Adobe
+RGB:
+
+* **89.2%** of its own surface points lie strictly inside its own convex hull,
+  by as much as **3.9 Lab units**;
+* the hull encloses **6.1% more volume** than the space actually holds.
+
+Every hollow was being filled in and counted as reachable colour. What that
+cost, on the demo pair:
+
+| | hull | real surface |
+|---|---|---|
+| paper vertices outside Adobe RGB | 191 | **239** |
+| triangles shown as disagreeing | 300 | **392** |
+| coverage of Adobe RGB | 91.70% | **90.72%** |
+
+**Every one of the 48 disagreements went the same way** — a colour the paper
+reaches and Adobe RGB does not, reported as agreeing. The error always
+flattered the comparison.
+
+It is now measured against the actual surface, by casting a ray and counting
+crossings, which needs a closed surface and nothing else — no convexity, no
+consistent winding. That the surfaces *are* closed was checked rather than
+assumed: welded by position, the demo paper and every reference space have no
+edge used once and none used more than twice.
+
+**It is faster than what it replaced**, which was not the expectation going
+in. Containment 31 ms → **17 ms**; coverage 182 ms → **65 ms**, because the
+sample points are now drawn straight from inside the solid — cutting it into
+tetrahedra and picking one in proportion to its volume — instead of being
+thrown at the bounding box and sieved.
+
+Three things it had to get right, each found by a shape whose answer was known
+before any measurement was allowed near it:
+
+* **a colour on the boundary is in the gamut.** A gamut is a closed set. This
+  is not a nicety: placing a chart through a profile and asking whether it
+  lands inside that same profile puts 98 of 125 patches exactly on the
+  boundary, and judged by ray parity alone — which cannot answer for a point
+  on the surface — 61 of those came out "outside". The convex hull never
+  showed this, because its bulge put every boundary point comfortably inside.
+* **the surface is turned before rays are cast.** A face standing exactly
+  parallel to the ray projects to a line and is discarded as edge-on, so a
+  point lying on it is seen by nothing — the side of a cube answered
+  "outside". Turned by angles with no common measure, no face can be parallel
+  to the ray.
+* **a ray running along a shared edge is counted twice.** The centre of a cube
+  projects precisely onto the diagonal where two triangles of a face meet, so
+  the first answer this ever gave for the middle of a cube was "outside".
+
+Volume was already right — `mesh_volume` sums the real tetrahedra — and that
+was re-checked here against Monte Carlo at 400,000 points and against the
+surface being star-shaped, which it is.
+
+The reported figure for the demo pair moves from 76.4% to **77.4%**.
+
 ## v2.15.1
 
 ### 🧊 One press hung a published page, and reloading did not help

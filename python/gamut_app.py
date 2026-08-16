@@ -6427,8 +6427,8 @@ class GamutApp(QMainWindow):
         if pair is not None:
             (an, a), (bn, b) = pair
             try:
-                ab, ab_err = coverage(a.vertices, b.vertices)
-                ba, ba_err = coverage(b.vertices, a.vertices)
+                ab, ab_err = coverage(a, b)
+                ba, ba_err = coverage(b, a)
                 rows.append((f"{an} inside {bn}", f"{100 * ab:.1f}",
                              f"per cent, +/- {100 * ab_err:.1f}"))
                 rows.append((f"{bn} inside {an}", f"{100 * ba:.1f}",
@@ -8980,8 +8980,8 @@ class GamutApp(QMainWindow):
             return
         (a_name, a), (b_name, b) = pair
         try:
-            ab, _ = coverage(a.vertices, b.vertices)
-            ba, _ = coverage(b.vertices, a.vertices)
+            ab, _ = coverage(a, b)
+            ba, _ = coverage(b, a)
         except Exception:      # noqa: BLE001 — a readout must never crash a view
             self._coverage.setText("")
             self._picture_loss.setText("")

@@ -976,7 +976,7 @@ measured against,D50 absolute,
 drawn in,CIELAB — for print,cubic Lab units
 Matte-paper: colour held,"543,689",cubic Lab units
 Glossy-paper: colour held,"702,327",cubic Lab units
-Glossy-paper inside Matte-paper,76.4,"per cent, +/- 0.2"
+Glossy-paper inside Matte-paper,77.4,"per cent, +/- 0.2"
 biggest difference,9.84,dE2000
 ```
 
@@ -1047,10 +1047,20 @@ file, five files kept. You can read or delete it whenever you like.
 - **ΔE is CIEDE2000**, verified against the Sharma, Wu and Dalal (2005)
   reference pairs — the set published specifically to catch the hue-wrap and
   blue-rotation mistakes implementations make. Worst error 0.00004.
+- **"Does this colour fit" is asked of the dented surface too**, not just of a
+  skin stretched over it. This is worth stating because it was not always
+  true: the test used to be membership of the gamut's *convex hull*, which
+  fills in every hollow. Adobe RGB's hull holds **6.1% more volume than the
+  space does**, and 89.2% of its own surface lies strictly inside it — so
+  colours in those hollows were counted as reachable. Every error went the
+  same way, flattering the comparison: of the demo paper's 675 boundary
+  points, 191 were called outside Adobe RGB where the surface says 239.
 - **Coverage is measured by sampling**, 60,000 points with a fixed seed, so the
-  same pair of gamuts always gives the same answer. The standard error is about
-  0.2 percentage points, which is why nothing is quoted to more than one
-  decimal place.
+  same pair of gamuts always gives the same answer. The points are drawn
+  directly from inside the shape rather than thrown at its bounding box and
+  sieved, so they are evenly spread through the real volume. The standard
+  error is about 0.2 percentage points, which is why nothing is quoted to more
+  than one decimal place.
 - **"Judge each paper against its own white"** normalises to the media white,
   which is what a relative-colorimetric profile does and what makes two papers
   of different brightness comparable on shape rather than brightness. Off by

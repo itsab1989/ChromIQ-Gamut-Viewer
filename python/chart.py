@@ -580,7 +580,11 @@ def outside_report(lab, gamut, *, against: str = "",
     verts = np.asarray(
         gamut.vertices if hasattr(gamut, "vertices") else gamut, dtype=float)
     rows = np.nonzero(good)[0]
-    out = outside_of(lab[good], verts)
+    # THE GAMUT, NOT ITS POINTS. Stripped to bare vertices the
+    # containment test has no surface to measure against and
+    # falls back to the convex hull, which is what this whole
+    # change is about -- see gamutview._Enclosure.
+    out = outside_of(lab[good], gamut)
     outside[rows[out]] = True
     if out.any():
         nearest = nearest_on_hull(lab[good][out], verts)
