@@ -450,3 +450,45 @@ def test_a_legend_key_is_lifted_until_it_can_be_seen(app):
     on_light = _legend_swatch(["rgb(255,255,255)"] * 4, light)
     assert lum(on_dark) > lum(dark) + 0.3, on_dark
     assert lum(on_light) < lum(light) - 0.2, on_light
+
+
+def test_the_save_dialog_opens_at_a_size_that_fits_a_screen(app):
+    """It had grown to twenty-one switches in five groups and opened taller
+    than most windows anybody keeps open -- 1,138 points on a 1440-point
+    screen. Reported as "pretty high ... maybe not strictly limited, a smaller
+    default", which is exactly right: the ceiling is on the list inside, not
+    on the dialog, so dragging it taller still works."""
+    import gamut_app
+    dialog = gamut_app.WebPageDialog(None)
+    dialog.show()
+    app.processEvents()
+    screen = app.primaryScreen().availableGeometry().height()
+    assert dialog.height() < 0.8 * screen, (
+        f"the dialog opens {dialog.height()} tall on a {screen} screen")
+    area = dialog.findChild(gamut_app.FadingScrollArea)
+    assert area is not None, "the list of switches no longer scrolls"
+    dialog.close()
+
+
+def test_the_scrolling_list_fades_at_the_edge_that_has_more_past_it(app):
+    """A list clipped by a hard line reads as a list that has ended -- which
+    is how a whole group of switches goes unnoticed. The fade is on whichever
+    end still has something beyond it, and on neither when it all fits."""
+    import gamut_app
+    dialog = gamut_app.WebPageDialog(None)
+    dialog.show()
+    app.processEvents()
+    area = dialog.findChild(gamut_app.FadingScrollArea)
+    bar = area.verticalScrollBar()
+    if bar.maximum() <= 0:
+        dialog.close()
+        return                      # a very tall screen: nothing to scroll
+    bar.setValue(0)
+    app.processEvents()
+    top, bottom = area.fades()
+    assert top == 0 and bottom > 0, "at the start only the bottom may fade"
+    bar.setValue(bar.maximum())
+    app.processEvents()
+    top, bottom = area.fades()
+    assert top > 0 and bottom == 0, "at the end only the top may fade"
+    dialog.close()

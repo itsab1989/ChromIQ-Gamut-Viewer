@@ -2087,6 +2087,104 @@ MOVING_KINDS = tuple((k, l) for k, l, _t, _e, _c in picture.MOVING_FORMATS)
 
 
 
+class FadingScrollArea(QScrollArea):
+    """A scrolling list that says so, by fading out at the edge there is more.
+
+    A list clipped by a hard line reads as a list that has ended. That is the
+    whole fault: somebody looks at five groups of tick boxes, sees the last
+    one cut off square at the bottom of the box, and has no reason to think a
+    sixth exists. A scrollbar answers it only once they have gone looking for
+    one, and on a trackpad the bar is not even drawn until they scroll.
+
+    So the last few points of the list are faded towards the colour behind it,
+    at whichever end still has something past it -- both ends when the list is
+    in the middle, neither when it all fits. It follows the palette rather
+    than painting a fixed dark, so it is right in light mode too.
+    """
+
+    #: How deep the fade is, in points. Enough that a row of tick boxes is
+    #: visibly dissolving rather than merely dimmed, and not so much that it
+    #: hides a row somebody is trying to read.
+    DEPTH = 26
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        # AN OVERLAY, NOT A PAINT ON THE VIEWPORT.
+        #
+        # The obvious two ways both put the gradient UNDERNEATH the rows it is
+        # meant to fade, and the first attempt here did exactly that: this
+        # widget's own paintEvent runs before its child viewport draws, and an
+        # event filter on the viewport runs before the viewport's own handler
+        # too. Either way the tick boxes land on top of the fade and nothing
+        # shows. A child widget raised above the viewport paints last, which
+        # is the only ordering that works.
+        self._veil = _ScrollVeil(self)
+        bar = self.verticalScrollBar()
+        bar.valueChanged.connect(self._veil.update)
+        bar.rangeChanged.connect(lambda *_: self._veil.update())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        view = self.viewport()
+        self._veil.setGeometry(view.x(), view.y(), view.width(), view.height())
+        self._veil.raise_()
+
+    def fades(self) -> tuple:
+        """(top, bottom) depth of the fade right now, in points.
+
+        Returned rather than only drawn so a test can ask whether the edge
+        with something past it is the edge being faded, without reading
+        pixels.
+        """
+        bar = self.verticalScrollBar()
+        if bar.maximum() <= bar.minimum():
+            return (0, 0)                                  # it all fits
+        tall = self.viewport().height()
+        return tuple(
+            min(self.DEPTH, tall // 3, room) if room > 0 else 0
+            for room in (bar.value() - bar.minimum(),
+                         bar.maximum() - bar.value()))
+
+
+class _ScrollVeil(QWidget):
+    """The gradient itself, sitting over a `FadingScrollArea`'s viewport."""
+
+    def __init__(self, area) -> None:
+        super().__init__(area)
+        self._area = area
+        # IT MUST NOT EAT THE SCROLL. A plain child widget over the viewport
+        # swallows the wheel and every click that lands on it, so the list
+        # would go dead under the very edge this is drawing attention to.
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+    def paintEvent(self, event):
+        from PyQt6.QtGui import QLinearGradient, QPainter
+
+        top_deep, bottom_deep = self._area.fades()
+        if not (top_deep or bottom_deep):
+            return
+        # THE COLOUR BEHIND THE LIST, so this is right in light mode too --
+        # a fade to a fixed dark would draw a grey smear on a white dialog.
+        behind = self._area.palette().color(
+            self._area.viewport().backgroundRole())
+        paint = QPainter(self)
+        paint.setPen(Qt.PenStyle.NoPen)
+        for at_top, deep in ((True, top_deep), (False, bottom_deep)):
+            if deep <= 0:
+                continue
+            edge = 0 if at_top else self.height() - deep
+            fade = QLinearGradient(0, edge, 0, edge + deep)
+            solid, clear = QColor(behind), QColor(behind)
+            solid.setAlpha(255)
+            clear.setAlpha(0)
+            fade.setColorAt(0.0, solid if at_top else clear)
+            fade.setColorAt(1.0, clear if at_top else solid)
+            paint.fillRect(0, edge, self.width(), deep, fade)
+        paint.end()
+
+
 class WebPageDialog(QDialog):
     """Choosing what the saved web page carries.
 
@@ -2579,7 +2677,7 @@ class WebPageDialog(QDialog):
             strip.toggled.connect(box.setEnabled)
         stack.addStretch(1)
 
-        area = QScrollArea(self)
+        area = FadingScrollArea(self)
         area.setWidget(held)
         area.setWidgetResizable(True)
         area.setFrameShape(QFrame.Shape.NoFrame)
@@ -2587,7 +2685,20 @@ class WebPageDialog(QDialog):
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         screen = self.screen() or (parent.screen() if parent else None)
         room = screen.availableGeometry().height() if screen else 900
-        area.setMaximumHeight(max(300, int(room * 0.52)))
+        # A SMALLER DEFAULT, AND STILL NO CEILING ON WHAT THE USER WANTS.
+        #
+        # This list has grown to twenty-one switches in five groups, and at
+        # 52% of the screen the dialog opened taller than most windows anybody
+        # keeps open -- 1,138 points on a 1440-point screen, which is a wall of
+        # tick boxes before you have decided anything. Reported as "pretty
+        # high ... maybe not strictly limited, a smaller default".
+        #
+        # So it OPENS at a comfortable size and the dialog stays resizable:
+        # this is a maximum for the scrolling area, not for the window, and
+        # dragging the dialog taller still gives the list every pixel of it.
+        # The fade along the bottom edge is what says there is more below --
+        # a list that simply stops at a hard line reads as a list that ends.
+        area.setMaximumHeight(max(260, int(room * 0.38)))
         outer.addWidget(area, 1)
         strip.toggled.connect(area.setEnabled)
         note = WrappedLabel(
