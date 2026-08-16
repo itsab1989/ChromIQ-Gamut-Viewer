@@ -245,6 +245,48 @@ disagreements.** A test also pins that answering 1, 2, 7, 999 or 100,000 at a
 time gives the same answer, because blocking is the one way a change made
 purely for speed could quietly change what the picture says.
 
+### 📱 Two thirds of an iPad screen was black, and the controls were scattered
+
+Reported from an iPad, and then found on a Mac in Safari too. Two faults, both
+only visible in WebKit or only on a wide screen -- which is to say, never in
+the engine every picture in this project had been rendered in.
+
+**The picture was drawn at 450px on a 1366px screen.** The box holding it keeps
+`height:auto` on purpose, so a page can grow past the window. But the drawing
+library gives its own div `height:100%`, and a percentage height only resolves
+against a parent whose height is DEFINITE. Chromium resolves it anyway against
+what flex worked out; WebKit follows the stricter reading, finds nothing to
+take a percentage of, and falls back to the library's built-in 450. Measured on
+the same page in a 1024x1366 window: the box 1128px tall in **both** engines,
+the picture inside it 1128 in Chromium and **450 in WebKit**.
+
+The box is a flex column now and the picture a flex item, which takes the
+percentage out of it. It is also **capped at 80vh** -- the first attempt let it
+grow and it filled the screen edge to edge in WebKit at every size tried,
+pushing the control strip below the fold, which is the very thing the 62vh
+floor exists to prevent. Checked across ten window sizes from 320x700 to
+2560x1440 in both engines: 62-80% of the first screen everywhere, never a black
+third and never a picture with nothing under it.
+
+**And a control sat a long way from the name it belonged to.** The rows were
+`justify-content:space-between`, which pins the name left and the buttons
+right. In one column that reads well; the lists flow into as many columns as
+the width allows, and on an iPad held sideways that is four columns of about
+257px, with the buttons some 150px from the word they act on. Worse, a shape's
+name was set to grow and took every spare pixel, so its four controls wrapped
+onto a second line -- under a name, beside a different shape's name. Reported
+as "I had issues finding the glossy paper controls".
+
+The name now takes what it needs up to a ceiling and the buttons follow
+straight after it, with a real gap kept so the two do not read as one object.
+Measured on the same ten sizes in both engines: every gap **12-14px**, down
+from about 150, and no shape row wraps at any width from 844px up. Below that
+-- a phone held upright -- a name and four buttons genuinely do not fit on one
+line, and it still wraps, which is right.
+
+Found with Playwright's WebKit. Every render in this project had been Chromium,
+and Chromium is the engine that is lenient about all of this.
+
 ### 📉 Five figures the README states as fact were wrong
 
 Found by checking them rather than by reading them. Every percentage the front

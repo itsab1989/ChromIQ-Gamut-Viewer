@@ -177,7 +177,15 @@ jobs:
           # pyyaml is for the tests alone -- two of them read the workflow
           # itself to check the changelog guard is still wired in. The
           # application needs neither, so neither is in requirements.txt.
-          pip install pytest pyyaml
+          # PYTEST IS PINNED BELOW 9. The Windows runner picked up
+          # pytest 9.1.1 the day it appeared and the step exited 1
+          # while reporting "537 passed, 7 skipped" -- a non-zero
+          # exit with nothing failing. It is reproducible only
+          # there, and a release must not turn on which pytest a
+          # runner happened to install that morning. Pinned so the
+          # gate means what it says; the exit code itself is worth
+          # running down separately.
+          pip install "pytest<9" pyyaml
           python -m pytest . -q
 
       - name: Build
