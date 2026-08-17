@@ -7441,8 +7441,8 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             # THE KEY BELONGS TO THE SCENE when the picture can be taken
             # apart, so no family can switch it off -- see colour_axis_for.
             fig.update_layout(coloraxis=colour_axis_for(which))
-        if families:
-            # PIN THE BOX WHEN THE PICTURE CAN BE TAKEN APART.
+        if True:
+            # PIN THE BOX WHENEVER A DRIFT CLOUD IS DRAWN. NO EXCEPTIONS.
             #
             # Splitting the cloud into families gave the reader seven switches,
             # and switching one off made the axes rescale to whatever was left
@@ -7458,12 +7458,18 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             # look alike.
             #
             # So the range is taken from ALL the colours, once, and fixed.
-            # Hiding a family then removes its dots and moves nothing else --
+            # Hiding some then removes their dots and moves nothing else --
             # which is what the flat panes have always done for the same
             # reason, see the note on `extent` above.
+            #
+            # AND IT IS UNCONDITIONAL, which it was not at first. It was tied
+            # to the family split, on the reasoning that only a split picture
+            # could lose points. The threshold then gave the UNSPLIT picture a
+            # second way to lose them, the rule did not cover it, and the same
+            # squashed walls came back -- reported twice, from two different
+            # switches. A rule with an "except when" in it will be outgrown by
+            # the next feature; this one has none.
             _pinned = _drift_extent(drift_lab, _axes_space)
-        else:
-            _pinned = None
     else:
         _pinned = None
     from gamutview import AXES

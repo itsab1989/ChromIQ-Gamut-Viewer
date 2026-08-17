@@ -1133,3 +1133,35 @@ def test_nothing_is_hidden_at_zero():
     assert sum(len(t.x) for t in got) == n
     _keep, said = ti3gamut.hidden_below(de, 0.0)
     assert said == ""
+
+
+def test_the_threshold_cannot_squash_the_room_either():
+    """REPORTED TWICE, FROM TWO DIFFERENT SWITCHES. Pinning the box was tied
+    to the family split, because only a split picture could lose points. The
+    threshold then gave the unsplit picture a second way to lose them: raise
+    it from 600 dots to 51 and the room refitted around those 51.
+
+    Crossed here rather than tried one at a time — split and unsplit, four
+    thresholds each — because that is exactly the pair that was missed.
+    """
+    import ti3gamut
+
+    rng = np.random.default_rng(51)
+    n = 600
+    lab = np.column_stack([rng.uniform(20, 95, n), rng.uniform(-80, 85, n),
+                           rng.uniform(-75, 125, n)])
+    de = rng.uniform(0.6, 3.0, n)
+
+    seen = set()
+    for split in (False, True):
+        for cut in (0.0, 1.0, 2.0, 2.8):
+            fig = ti3gamut.build_figure([], "T", mode="dark", space="lab",
+                                        grid=True,
+                                        drift=(lab, de, "d", None, split, cut))
+            scene = fig.layout.scene
+            seen.add((tuple(scene.xaxis.range), tuple(scene.yaxis.range),
+                      tuple(scene.zaxis.range),
+                      round(scene.aspectratio.y, 6),
+                      round(scene.aspectratio.z, 6)))
+    assert len(seen) == 1, (
+        f"the room changed shape across split/threshold combinations: {seen}")

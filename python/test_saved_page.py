@@ -1890,9 +1890,13 @@ def test_the_room_keeps_its_shape_when_only_the_greys_are_left(tmp_path):
     assert fig.layout.scene.aspectratio.z > 0
 
 
-def test_an_unsplit_cloud_is_left_exactly_as_it_was(tmp_path):
-    """Nothing can be hidden when the cloud is one trace, so nothing changes
-    -- and every page published before this keeps its framing."""
+def test_every_drift_cloud_has_its_box_pinned(tmp_path):
+    """PINNED WHETHER OR NOT IT IS SPLIT, and that "whether or not" is the
+    point. It was tied to the family split at first, on the reasoning that
+    only a split picture could lose points. The ΔE threshold then gave the
+    UNSPLIT picture a second way to lose them, the rule did not cover it, and
+    the squashed walls came back — reported twice, from two different
+    switches. A rule with an "except when" in it gets outgrown."""
     import numpy as np
 
     import ti3gamut
@@ -1901,7 +1905,13 @@ def test_an_unsplit_cloud_is_left_exactly_as_it_was(tmp_path):
     n = 200
     lab = np.column_stack([rng.uniform(20, 92, n), rng.uniform(-60, 60, n),
                            rng.uniform(-60, 60, n)])
-    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
-                                drift=(lab, rng.uniform(0, 6, n), "d"))
-    assert fig.layout.scene.aspectmode == "data"
-    assert fig.layout.scene.xaxis.range is None
+    for split in (False, True):
+        fig = ti3gamut.build_figure([], "x", mode="dark", space="lab",
+                                    grid=True,
+                                    drift=(lab, rng.uniform(0, 6, n), "d",
+                                           None, split))
+        scene = fig.layout.scene
+        assert scene.aspectmode == "manual", "the room can still be reshaped"
+        for axis in (scene.xaxis, scene.yaxis, scene.zaxis):
+            assert axis.autorange is False
+            assert axis.range is not None

@@ -3343,6 +3343,75 @@ class TimelineDialog(QDialog):
         self._by_family.stateChanged.connect(lambda _s: self._draw())
         said.addWidget(self._by_family)
 
+        # --- hide the colours that barely moved -------------------------------
+        #
+        # WHY THIS EARNS ITS PLACE. The sentences under the picture give a
+        # MEAN, and a mean hides the shape: "blues: ΔE 1.7 toward the
+        # magentas (132 patches)" is equally true when all 132 moved 1.7 and
+        # when 120 did not move at all and 12 moved 15. Pull this up to 2 and
+        # only the colours anybody could see are left on screen.
+        #
+        # A SLIDER RATHER THAN A BOX TO TYPE IN, because the useful thing is
+        # to drag it and watch the cloud thin out; the number beside it says
+        # exactly where you are.
+        cut_row = QHBoxLayout()
+        cut_row.setContentsMargins(0, 0, 0, 0)
+        cut_row.setSpacing(8)
+        self._cut_label = QLabel("Hide anything under", self)
+        cut_row.addWidget(self._cut_label, 0)
+        self._cut = QSlider(Qt.Orientation.Horizontal, self)
+        # TENTHS, because that is as fine as the data supports and as fine as
+        # the instrument does. An i1Pro repeats to about ΔE 0.1 on white and
+        # two different instruments agree to about 0.4, so a hundredth would
+        # be reading the instrument talking to itself -- and measured on a
+        # real run, 62% of hundredth-steps change no dot at all.
+        self._cut.setMinimum(0)
+        self._cut.setSingleStep(1)
+        self._cut.setPageStep(5)
+        self._cut.setValue(0)
+        self._cut.setToolTip(
+            "Leaves out every colour that moved less than this, so what is "
+            "left on screen is only the movement worth looking at.\n\n"
+            "WHY YOU WANT IT: the lines underneath give an AVERAGE for each "
+            "family, and an average hides the shape. \"Blues: ΔE 1.7\" reads "
+            "the same whether all of them moved 1.7, or nearly all of them "
+            "sat still and a handful moved a great deal — and those are very "
+            "different problems. Drag this up to 2 and only the colours "
+            "anybody could actually see are left.\n\n"
+            "WHERE IT STOPS: at the biggest difference in THIS pair, because "
+            "beyond that there would be nothing left to hide and the rest of "
+            "the slider would do nothing. If the two files are identical the "
+            "slider is switched off altogether.\n\n"
+            "IN STEPS OF ΔE 0.1, which is as fine as the numbers support: a "
+            "hand-held spectrophotometer repeats to about ΔE 0.1 on white, "
+            "and two different instruments agree to about 0.4, so anything "
+            "finer would be reading the instrument rather than your "
+            "printing.\n\n"
+            "IT CHANGES THE PICTURE ONLY. The sentences underneath always "
+            "describe every colour, so two people with the slider in "
+            "different places still quote the same numbers to each other. "
+            "The picture says how many it left out, and a saved web page says "
+            "so too.")
+        self._cut.valueChanged.connect(self._cut_changed)
+        cut_row.addWidget(self._cut, 1)
+        self._cut_says = QLabel("everything", self)
+        self._cut_says.setMinimumWidth(96)
+        cut_row.addWidget(self._cut_says, 0)
+        cut_hint = Hint(
+            "The picture keeps every colour by default. Sliding this to the "
+            "right takes out the ones that moved least, one tenth of a ΔE at "
+            "a time, until only the biggest movements are left.\n\n"
+            "It is the quickest way to answer \"where is the real problem\" "
+            "on a chart where most patches are fine: raise it until only a "
+            "handful of dots remain, and those are the colours to go and look "
+            "at on the print.\n\n"
+            "Nothing is thrown away — put it back to the left and every "
+            "colour returns.", self)
+        cut_hint.setObjectName("hint_cut")
+        cut_row.addWidget(cut_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._cut_row = cut_row
+        said.addLayout(cut_row)
+
         # --- which colour families moved --------------------------------------
         #
         # THE SAME ANSWER AS THE PICTURE, IN A FORM SOMEBODY CAN SEND. Asked
@@ -3545,6 +3614,10 @@ class TimelineDialog(QDialog):
         # answer a click with nothing, which this window holds is worse than a
         # control that is not there at all.
         self._by_family.setVisible(pair is not None)
+        # The threshold is a thing you do to a CLOUD; the graph has no
+        # colours to hide. Same rule as the split above it.
+        for part in (self._cut, self._cut_label, self._cut_says):
+            part.setVisible(pair is not None)
         if pair is None or self._run is None:
             self._verdict.setText(
                 drift_series.verdict(self._run) if self._run else "")
@@ -3841,6 +3914,61 @@ class TimelineDialog(QDialog):
             _log().warning("could not draw the timeline: %s", exc)
             self._blank()
 
+    def _cut_changed(self, _value=None) -> None:
+        """Say where the slider is, in words, and redraw."""
+        self._cut_says.setText(self._cut_reads())
+        self._draw()
+
+    def _cut_reads(self) -> str:
+        """What the slider is doing, in words that are true at both ends."""
+        if not self._hiding_anything():
+            return "everything"
+        return f"under ΔE {self._cut.value() / 10:.1f}"
+
+    def _fit_cut_to(self, worst: float, smallest: float = 0.0) -> None:
+        """Let the slider run across THIS pair, and no further at either end.
+
+        A FIXED 0..5 WOULD BE MOSTLY INERT. Measured on one step of the demo
+        run, whose biggest difference is ΔE 1.07: 82% of a 0..5 slider's
+        travel would hide nothing further, so a reader dragging it would watch
+        nothing happen for more than half its length and reasonably conclude
+        the control was broken.
+
+        AND THE BOTTOM END MATTERS TOO, which only showed up on screen. Every
+        colour in a pair may have moved at least a little -- the smallest
+        difference across the whole demo run is ΔE 0.65 -- so a slider
+        starting at zero spends its first fifth hiding nothing while the
+        label beside it reads "under ΔE 0.5". That is a control announcing an
+        action it is not performing. Starting at the smallest difference makes
+        the left-hand end mean "everything", truthfully, and every step from
+        there take something out.
+
+        Switched off entirely when the two are identical, because then there
+        is nothing to hide at any setting.
+        """
+        top = int(max(worst, 0.0) * 10)
+        floor = int(max(smallest, 0.0) * 10)
+        usable = top > floor
+        self._cut.setEnabled(usable)
+        self._cut_label.setEnabled(usable)
+        self._cut_says.setEnabled(usable)
+        self._cut.blockSignals(True)
+        self._cut.setMinimum(floor)
+        self._cut.setMaximum(max(top, floor + 1))
+        if self._cut.value() < self._cut.minimum():
+            self._cut.setValue(self._cut.minimum())
+        self._cut.blockSignals(False)
+        self._cut_says.setText(
+            self._cut_reads() if usable else "nothing to hide")
+
+    def _hiding_anything(self) -> bool:
+        """Whether the slider is actually leaving anything out."""
+        return self._cut.isEnabled() and self._cut.value() > self._cut.minimum()
+
+    def _cut_off(self) -> float:
+        """The threshold in ΔE, or 0 when nothing is being left out."""
+        return self._cut.value() / 10.0 if self._hiding_anything() else 0.0
+
     def _cloud_figure(self):
         """The chosen step as a heat-map, or None while the graph is showing.
 
@@ -3883,17 +4011,24 @@ class TimelineDialog(QDialog):
             if moved is None:          # a comparison from before lab_b was kept
                 axis = None
         split = self._by_family.isChecked()
+        # THE SLIDER FOLLOWS THIS PAIR. Set before the picture is built, so a
+        # reader who chose a step with a small worst difference is not handed
+        # a control whose right-hand half does nothing.
+        import numpy as _np
+        self._fit_cut_to(d.worst, float(_np.min(d.deltas)))
+        cut = self._cut_off()
         if axis:
             return build_figure(
                 [], f"Which way {spans} moved — {asks}, in Lab units",
                 mode=self._appearance, space="lab", grid=True,
-                drift=(d.lab_a, moved, f"{asks}: {spans}", axis, split))
+                drift=(d.lab_a, moved, f"{asks}: {spans}", axis, split, cut,
+                       d.deltas))
         return build_figure(
             [], f"Where {spans} disagree — ΔE2000, biggest {d.worst:.2f}, "
                 f"average {d.average:.2f}",
             mode=self._appearance, space="lab", grid=True,
             drift=(d.lab_a, d.deltas, f"how far it moved: {spans}", None,
-                   split))
+                   split, cut))
 
     def _trouble(self, said: str) -> None:
         """Say why a cloud could not be drawn, under the ones already there.
