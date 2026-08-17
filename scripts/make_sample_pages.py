@@ -102,6 +102,66 @@ def scenes(body: str) -> dict:
     return out
 
 
+def traces_drawn(body: str) -> int:
+    """How many separate things the browser is asked to draw, in total.
+
+    NOT the file size, which is dominated by the bundled viewer and barely
+    moves. This is what a phone feels: every trace is its own WebGL object
+    with its own draw call. Counted across every room, because the
+    side-by-side arrangements write more than one.
+    """
+    import json
+
+    total = 0
+    for m in re.finditer(r'Plotly\.newPlot\(\s*"(scene\d)",\s*(\[.*?\]),'
+                         r'\s*\{"template"', body, re.S):
+        total += len(json.loads(m.group(2)))
+    return total
+
+
+def drawn_names(body: str) -> set:
+    """The names of everything actually drawn, across every room.
+
+    The page's own text is not evidence of what is in the picture: the
+    bundled viewer's source comments name colour spaces, so grepping the file
+    reports shapes that are not there.
+    """
+    import json
+
+    out = set()
+    for m in re.finditer(r'Plotly\.newPlot\(\s*"(scene\d)",\s*(\[.*?\]),'
+                         r'\s*\{"template"', body, re.S):
+        for trace in json.loads(m.group(2)):
+            name = trace.get("name")
+            if name:
+                out.add(re.sub(r" \((outline|rings inside)\)$", "", name))
+    return out
+
+
+def cage_colours(body: str) -> set:
+    """Every colour the outlines on this page are drawn in.
+
+    A cage is one trace whose ``line.color`` is a list, one entry per point.
+    A plain grey cage is one trace whose ``line.color`` is a single string.
+    Both are read here, so the question "is it drawn in its own colours"
+    survives a change in how the cage is put together.
+    """
+    import json
+
+    out = set()
+    for m in re.finditer(r'Plotly\.newPlot\(\s*"(scene\d)",\s*(\[.*?\]),'
+                         r'\s*\{"template"', body, re.S):
+        for trace in json.loads(m.group(2)):
+            if trace.get("mode") != "lines":
+                continue
+            colour = (trace.get("line") or {}).get("color")
+            if isinstance(colour, list):
+                out.update(colour)
+            elif colour:
+                out.add(colour)
+    return out
+
+
 def patch_counts(body: str) -> tuple[int, int]:
     """(within reach, beyond it) for the chart drawn on this page.
 
@@ -228,11 +288,34 @@ def main() -> int:
         pump(0.2)
 
     def fresh() -> None:
-        """Back to nothing open, so one scene cannot leak into the next."""
+        """Back to nothing open, so one scene cannot leak into the next.
+
+        THE COMPARISON HAS TO BE PUT BACK BY HAND, and finding that out cost a
+        published page. `GamutApp._on_clear` says it "closes everything on
+        screen" and clears the measurements, the chart and its placement -- but
+        not the shape chosen under "Compare with". So Adobe RGB (1998), picked
+        for page 14, was still selected when page 18 was written several pages
+        later, and went into it: 365 of that page's 642 traces were a colour
+        space that has nothing to do with two profiles of one printer.
+
+        Whether Clear SHOULD forget the comparison is a real question and not
+        obviously a bug -- somebody working through one paper after another
+        against sRGB would not thank us for dropping it every time. That is
+        Basti's call. What is not in question is that a generator writing
+        eighteen unrelated scenes must not rely on the answer, so it is set
+        back explicitly here.
+        """
         w._on_clear()
-        pump(0.4)
+        w._compare.setCurrentIndex(0)          # "Nothing — this one on its own"
+        w._on_compare_changed()
+        pump(0.6)
+        assert w._reference is None, (
+            "the comparison shape survived a fresh(); every page after this "
+            "one would carry it")
 
     made: list[tuple[str, pathlib.Path]] = []
+    #: Temporary folders this run makes, cleared at the end when it passes.
+    leftovers: list[pathlib.Path] = []
 
     def page(name: str) -> pathlib.Path:
         target = out_dir / name
@@ -703,12 +786,16 @@ def main() -> int:
                    "sweep", "agree", "opacity", "wires", "grey"):
         check("14", f"the page was given the {wanted} control",
               f'"{wanted}": true' in body)
-    # A COLOURED CAGE IS MANY TRACES, one per band of colour, because a line
-    # takes one colour for the whole of it. One trace would mean it came out
-    # grey after all.
-    bands = len(re.findall(r'"mode":"lines"', body))
-    check("14", "the cage really is drawn in its own colours", bands > 20,
-          f"{bands} line traces; a plain grey cage is one")
+    # A COLOURED CAGE CARRIES MANY COLOURS. It used to be many TRACES, one
+    # per band of colour, on the belief that a line takes one colour for the
+    # whole of it -- and this check counted the traces. It is one trace now,
+    # carrying a colour per point, which is the same picture drawn 296 times
+    # more cheaply; counting traces would call that a regression. So the
+    # question is asked of the colours, which is what the claim is about.
+    colours = cage_colours(body)
+    check("14", "the cage really is drawn in its own colours",
+          len(colours) > 20,
+          f"{len(colours)} colours along the cage; a plain grey one has 1")
     check("14", "and it is named once in the key",
           body.count("(outline)") >= 1)
     # AND IT REALLY IS THE PAPER, not the red-and-grey comparison painting
@@ -730,6 +817,7 @@ def main() -> int:
     print("\n15-17 — one printer, four profiles, five years")
     import tempfile as _tempfile
     profiles_dir = pathlib.Path(_tempfile.mkdtemp(prefix="timeline-demo-"))
+    leftovers.append(profiles_dir)
     sys.path.insert(0, str(HERE))
     import importlib.util as _iu
     _spec = _iu.spec_from_file_location("mkprof", HERE / "make_demo_profiles.py")
@@ -823,6 +911,7 @@ def main() -> int:
 
     print("\n17 — a run that moved all at once rather than steadily")
     jumpy = pathlib.Path(_tempfile.mkdtemp(prefix="timeline-jump-"))
+    leftovers.append(jumpy)
     _mk.RUN = [("step-2019", (2019, 1, 5, 9, 0, 0), 0.0000),
                ("step-2020", (2020, 1, 5, 9, 0, 0), 0.0002),
                ("step-2021", (2021, 1, 5, 9, 0, 0), 0.0004),
@@ -902,8 +991,27 @@ def main() -> int:
     check("18", "the colour scale is clamped rather than stretched to fit",
           '"cmax": 5' in body or '"cmax":5' in body)
 
+    # ASKED OF THE SCENE, NOT OF THE PAGE TEXT. Searching the whole file for
+    # "Adobe RGB" reports a leak on a clean page: the bundled viewer's own
+    # source comments mention it twice, and they travel with every export.
+    drawn_here = drawn_names(body)
+    check("18", "and nothing else crept into the picture",
+          all("printer-" in n or "how far" in n for n in drawn_here),
+          ", ".join(sorted(drawn_here)))
+
     # ------------------------------------------------------------ all of them
     print("\nevery page")
+    for name, path in made:
+        body = path.read_text(encoding="utf-8")
+        # HOW MANY SEPARATE THINGS THE BROWSER IS ASKED TO DRAW, which is what
+        # a phone feels rather than the file size. A cage used to be cut into
+        # one trace per band of colour, so page 14 shipped with 357 of them
+        # and page 18 with 642; a colour per point does the same picture in
+        # one. This ceiling is here so that never quietly comes back: no
+        # arrangement in this application needs more than a handful.
+        drawn = traces_drawn(body)
+        check(name, "the browser is not handed hundreds of separate traces",
+              drawn <= 12, f"{drawn} traces across every room on the page")
     for name, path in made:
         body = path.read_text(encoding="utf-8")
         title = re.search(r"<title>(.*?)</title>", body)
@@ -967,12 +1075,38 @@ def main() -> int:
               and ".cq-spin-panel{display" not in
               body[body.index(".cq-spin-panel[hidden]{display:none}"):])
 
+    # THE DEMO PROFILES GO AWAY AGAIN, and this is not tidiness for its own
+    # sake. Each run made three folders of generated profiles -- about 12 MB
+    # -- and left every one of them behind; four runs in an afternoon had put
+    # 88 MB in the temporary folder, on top of the scenes the window itself
+    # writes. This project has already had one 27 GB version of that fault
+    # (#100), and the lesson from it was that a thing which writes megabytes
+    # per run has to remove them itself rather than hope somebody notices.
+    #
+    # Removed here rather than in a finally, deliberately: when the run FAILS
+    # the profiles are the evidence, and deleting them takes away the only
+    # copy of what the failing page was built from.
+    import shutil as _shutil
+
     print("\n" + "=" * 68)
     if failures:
         print(f"{len(failures)} claim(s) not met:")
         for f in failures:
             print(f"  - {f}")
+        print(f"\nthe generated profiles are kept for you to look at:")
+        for folder in leftovers:
+            print(f"  {folder}")
         return 1
+    for folder in leftovers:
+        _shutil.rmtree(folder, ignore_errors=True)
+    # AND THE WINDOW IS CLOSED PROPERLY, so it clears its own scene folder.
+    # The window removes its ``gamutview-*`` folder in closeEvent (#100);
+    # walking out of main() never fires that, so each run of this script left
+    # one behind. They are swept by the next run of the real application, but
+    # a generator anybody may run twenty times before a release should not
+    # rely on that.
+    w.close()
+    pump(0.4)
     print(f"{len(made)} pages written to {out_dir}, every claim met.")
     return 0
 

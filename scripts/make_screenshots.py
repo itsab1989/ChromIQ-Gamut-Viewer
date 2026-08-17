@@ -334,12 +334,69 @@ def ink_amounts(w):
 def ink_amounts_outside(w):
     """19 — and which of those patches the paper cannot reach.
 
-    THE SECOND ONE THE DUPLICATE CHECK CAUGHT. Written like 03 was -- set the
-    switch, wait three seconds, assert the switch is set -- and it published a
-    picture identical to 18, because three seconds is a guess about how long a
-    redraw takes and the assert asks the widget rather than the picture.
+    THE SECOND ONE THE DUPLICATE CHECK CAUGHT, and the fault was here rather
+    than in the window. Written like 03 was -- set the switch, wait three
+    seconds, assert the switch is set -- it published a picture identical to
+    18, and the obvious reading was that the marking is simply not drawn in
+    ink amounts.
+
+    MEASURED, and that reading was wrong. In the state 18 leaves behind there
+    is no profile placing the chart, so there is no colour to judge and the
+    marking is never worked out at all -- and the window is right about that:
+    it HIDES the out-of-reach row, and the panel says "Choose a profile under
+    Placed through and they can be counted against whatever else you have
+    open." This function then reached past the hidden row and ticked its box
+    anyway, which changes nothing and cannot: a switch the reader could not
+    have found was never the thing under test.
+
+    Choose the profile, as the window asks and as the README describes, and
+    the marking works here exactly as it does in CIELAB: 151 of the 480
+    patches come out beyond what that paper can reach.
     """
     ink_amounts(w)
+    w._chart_profile = PROFILE
+    w._fill_chart_profiles()
+    w._place_chart()
+    pump(3.0)
+    assert w._chart_placed is not None, "the chart was not placed by the profile"
+    assert w._chart_outside_row.isVisible(), (
+        "the out-of-reach row is still hidden, so its switch is not something "
+        "a reader could reach in this state -- setting it by hand would prove "
+        "nothing")
+
+    marked = w._chart_cloud()[2]
+    assert marked is not None and marked.any(), (
+        "nothing came out beyond this paper, so this shot would show the same "
+        "thing as 18 however long we waited")
+
+    # THE CLAIM THE README MAKES ABOUT THIS PICTURE, checked rather than
+    # trusted: "the losses are the whole outer shell of the ink range, while
+    # the interior survives". A shape thrown round the survivors must be
+    # clearly smaller than one round the whole chart, and a shape thrown round
+    # the lost ones must be nearly the whole thing -- because they wrap it.
+    import numpy as _np
+    from scipy.spatial import ConvexHull
+    import chart as _chart_mod
+
+    def _volume(points):
+        points = _np.unique(_np.asarray(points).round(6), axis=0)
+        return float(ConvexHull(points).volume)
+
+    ink = _chart_mod.device_positions(w._chart[1])
+    whole = _volume(ink)
+    survivors = _volume(ink[~marked])
+    lost = _volume(ink[marked])
+    assert survivors < whole * 0.95, (
+        f"the survivors fill {survivors / whole:.0%} of the chart's range, so "
+        f"the losses are not the outer shell the README says they are")
+    assert lost > whole * 0.75, (
+        f"a shape round the lost patches is only {lost / whole:.0%} of the "
+        f"whole chart, so they do not wrap the interior")
+
+    # THE SWITCH OFF FIRST, because it starts on: capturing "before" with the
+    # marking already drawn would compare the picture against itself.
+    w._chart_show_outside.setChecked(False)
+    pump(2.5)
     before = whole_window(w).toImage()
     w._chart_show_outside.setChecked(True)
     assert w._chart_show_outside.isChecked(), "the switch did not take"

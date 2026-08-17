@@ -1550,25 +1550,64 @@ def test_a_painting_nobody_handles_is_refused_rather_than_drawn_as_chroma():
             ti3gamut.build_figure(papers[:1], "", paint=wrong)
 
 
+def _cage_colours(fig) -> set:
+    """Every colour a cage is drawn in, however the cage is put together.
+
+    ASKED OF THE PICTURE, NOT OF THE MECHANISM, and that distinction is the
+    whole point of this helper. This test used to count the traces, because a
+    coloured cage was once one trace per band of colour; when the cage became
+    a single trace carrying a colour per point, the test failed while the
+    picture got BETTER -- more colours, not fewer. A check that fails when an
+    implementation improves is testing the implementation.
+    """
+    out = set()
+    for t in fig.data:
+        if not (t.name and "(outline)" in t.name and t.mode == "lines"
+                and len(t.x or ()) > 3):
+            continue
+        colour = t.line.color
+        if isinstance(colour, (list, tuple)):
+            out.update(colour)
+        else:
+            out.add(colour)
+    return out
+
+
 def test_a_grey_shape_can_carry_an_outline_in_the_real_colours():
     import ti3gamut
     papers = _two_papers()
     fig = ti3gamut.build_figure(papers, "", styles=["solid", "solid+mesh"],
                                 paint="lightness", mesh_paint="true")
-    cage = [t for t in fig.data
-            if t.name and "(outline)" in t.name and t.mode == "lines"
-            and len(t.x or ()) > 3]
-    colours = {t.line.color for t in cage}
+    colours = _cage_colours(fig)
     assert len(colours) > 20, (
         f"a cage in true colours came out in {len(colours)} colours")
     # And the same page with the cage left plain is one grey, so the setting
     # is what changed it rather than the painting of the shape.
     plain = ti3gamut.build_figure(papers, "", styles=["solid", "solid+mesh"],
                                   paint="lightness", mesh_paint="plain")
-    grey = {t.line.color for t in plain.data
-            if t.name and "(outline)" in t.name and t.mode == "lines"
-            and len(t.x or ()) > 3}
-    assert len(grey) == 1
+    assert len(_cage_colours(plain)) == 1
+
+
+def test_a_coloured_cage_is_one_trace_however_many_colours_it_has():
+    """The saving behind that: 296 WebGL objects became one.
+
+    An Adobe RGB cage has 6726 edges. Grouped into traces by coarsened colour
+    it came out as 296 of them, each with its own draw call -- 357 traces on
+    the published page 14 and 642 on page 18, which is what Basti met as
+    "performance is bad" on a phone. A colour per point does the same picture
+    in one.
+    """
+    import ti3gamut
+    papers = _two_papers()
+    for painting in ("true", "lightness", "chroma", "plain"):
+        fig = ti3gamut.build_figure(papers, "", styles=["solid", "solid+mesh"],
+                                    paint="lightness", mesh_paint=painting)
+        cages = [t for t in fig.data
+                 if t.name and "(outline)" in t.name and t.mode == "lines"
+                 and len(t.x or ()) > 3]
+        assert len(cages) == 1, (
+            f"a cage painted {painting!r} came out as {len(cages)} traces; "
+            f"one trace can carry a colour per point")
 
 
 def test_a_cage_is_named_once_even_when_its_shape_agrees_entirely():

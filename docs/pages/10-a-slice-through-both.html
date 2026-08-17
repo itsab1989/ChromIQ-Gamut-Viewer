@@ -7287,6 +7287,50 @@ window.cqSpinControls = function (settings) {
     var note = panel.querySelector('[data-cq="facets"]');
     if (note) note.hidden = !thin;
   }
+  // BRING THE CONTROLS TO THE READER, BECAUSE ON A PHONE THEY CANNOT COME TO
+  // THEM.
+  //
+  // The picture carries `touch-action: none`. It has to: without it the
+  // browser reads a drag as a page scroll and stops delivering the moves a
+  // pinch is made of. But `touch-action: none` also means the browser will
+  // never scroll the page from a touch that STARTS on the picture -- and by
+  // this project's own layout rule the picture is 55% to 85% of the first
+  // screen. So the bigger and better the picture, the less of the screen is
+  // left that a scroll can begin from.
+  //
+  // MEASURED, WebKit, walking down the middle of the screen a row at a time:
+  // 74-80% of the first screen cannot start a scroll, on every 3D page this
+  // application has ever written, while the panel ran 411px (page 01) to
+  // 1005px (page 14) past the bottom of the window.
+  //
+  // Basti found the one way round it that a reader can find by accident:
+  // "when i slightly zoom in the controls area on my phone i can then
+  // scroll, but when the page fits the screen i can't". Zooming makes the
+  // visual viewport smaller than the page, and panning THAT is always
+  // allowed, whatever touch-action says.
+  //
+  // So the page scrolls itself. Nothing about the gestures changes -- one
+  // finger still turns the shape, which is the whole reason touch-action is
+  // there -- and pressing "more…" now puts the controls where the reader can
+  // see them, on a phone and on anything else too small to hold both.
+  function reachPanel() {
+    if (!panel.scrollIntoView) return;             // very old browser
+    if (panel.hidden) {
+      // CLOSING PUTS THE PICTURE BACK. Having scrolled somebody down to the
+      // controls, leaving them looking at empty page when they press "less…"
+      // would be the same fault in the other direction.
+      window.scrollTo({top: 0, behavior: "smooth"});
+      return;
+    }
+    var box = panel.getBoundingClientRect();
+    // Already all on screen: scrolling would only move the picture for
+    // nothing. The 4px is for the rounding two engines disagree about.
+    if (box.bottom <= window.innerHeight + 4) return;
+    // "nearest" rather than "start": where the panel does fit once scrolled
+    // to, this stops as soon as it is all visible instead of pushing the
+    // picture off the top regardless.
+    panel.scrollIntoView({block: "nearest", behavior: "smooth"});
+  }
   function shapePress(what) {
     var bits = what.split("-");            // shape-fainter-2
     var n = parseInt(bits[2], 10);
@@ -7382,6 +7426,7 @@ window.cqSpinControls = function (settings) {
       panel.hidden = !panel.hidden;
       tellMore();
       fit();
+      reachPanel();
       return;
     }
     if (what === "home") {

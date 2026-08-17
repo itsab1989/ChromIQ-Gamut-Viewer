@@ -412,16 +412,6 @@ def _rings(gamut, name: str, count: int, colour: str, width: float = 1.5,
                                 f"{name}-rings")]
 
 
-def _band(colour: str, steps: int = 32) -> str:
-    """A colour rounded to a coarse band, so a cage needs few traces."""
-    try:
-        r, g, b = (int(v) for v in colour[4:-1].split(","))
-    except (ValueError, IndexError):
-        return colour
-    q = [min(255, (v // steps) * steps + steps // 2) for v in (r, g, b)]
-    return f"rgb({q[0]},{q[1]},{q[2]})"
-
-
 def _wire_segments(points, faces):
     """Every edge of a triangle mesh, once, as a single broken line.
 
@@ -465,12 +455,32 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
     each edge between two triangles, and drawing both doubles the work for an
     identical picture.
 
-    The cage can be painted the same ways the solid can. Plotly gives a line
-    one colour per trace rather than per point, so a coloured cage is drawn as
-    several traces -- one per band of colour. Plain grey stays the default: it
-    is a single trace, by far the cheapest, and on top of a solid shape a grey
-    cage reads more clearly than a coloured one competing with the colours
-    underneath it.
+    The cage can be painted the same ways the solid can, and it is ONE TRACE
+    however it is painted.
+
+    THAT IS A CORRECTION, and an expensive one to have got wrong. This used to
+    read "Plotly gives a line one colour per trace rather than per point", and
+    on that belief a coloured cage was cut into one trace per band of
+    coarsened colour. The belief was wrong: ``scatter3d.line.color`` is
+    ``array_ok`` -- checked against the library's own validator, and then
+    rendered, because a validator accepting an array is not proof the WebGL
+    renderer honours it.
+
+    WHAT IT COST, measured on the shipped pages: an Adobe RGB cage has 6726
+    edges and came out as 296 separate traces, each its own WebGL object with
+    its own draw call. Page 14 shipped with 357 traces and page 18 with 642.
+    Basti reported the consequence from an iPhone as "performance is bad".
+    Rendered side by side at 900x700, the one-trace cage differs from the
+    banded one over 2.25% of the picture by at most 29/255 -- and that
+    difference is the banding disappearing, so the cheap version is also the
+    accurate one.
+
+    Each segment now carries its two real end colours rather than its first
+    vertex's rounded one, which the banding could never do.
+
+    Plain grey stays the default: it is cheaper still (one colour, no array),
+    and on top of a solid shape a grey cage reads more clearly than a coloured
+    one competing with the colours underneath it.
     """
     import plotly.graph_objects as go
     v = _plot_points(gamut)
@@ -494,7 +504,7 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
     if per_vertex is None:                       # "true": each point's colour
         per_vertex = [f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
                       for r, g, b in gamut.colors]
-    bands: dict = {}
+    xs, ys, zs, colours = [], [], [], []
     seen_again = set()
     for tri in f:
         for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
@@ -504,23 +514,18 @@ def _edges(gamut, name: str, colour: str = "#9aa3b2", width: float = 1.0,
             if edge in seen_again:
                 continue
             seen_again.add(edge)
-            # Group by a COARSENED colour: one trace per distinct colour gave
-            # 491 traces for a single cage, which the browser draws slowly for
-            # a picture the eye reads as a smooth gradient anyway. Rounding
-            # each channel to the nearest 32 leaves a few dozen bands.
-            bands.setdefault(_band(per_vertex[a]), []).append((a, b))
-    traces = []
-    for i, (edge_colour, edges) in enumerate(sorted(bands.items())):
-        bx, by, bz = [], [], []
-        for a, b in edges:
-            bx += [v[a, 0], v[b, 0], None]
-            by += [v[a, 1], v[b, 1], None]
-            bz += [v[a, 2], v[b, 2], None]
-        traces.append(go.Scatter3d(
-            x=bx, y=by, z=bz, mode="lines",
-            line=dict(color=edge_colour, width=width),
-            name=f"{name} (outline)", legendgroup=f"{name}-outline",
-            showlegend=False, hoverinfo="name"))
+            xs += [v[a, 0], v[b, 0], None]
+            ys += [v[a, 1], v[b, 1], None]
+            zs += [v[a, 2], v[b, 2], None]
+            # THE THIRD ENTRY IS THE LIFTED PEN, and it still needs a colour:
+            # the array is read alongside x, y and z and has to be the same
+            # length as them. Its value is never drawn.
+            colours += [per_vertex[a], per_vertex[b], per_vertex[a]]
+    traces = [go.Scatter3d(
+        x=xs, y=ys, z=zs, mode="lines",
+        line=dict(color=colours, width=width),
+        name=f"{name} (outline)", legendgroup=f"{name}-outline",
+        showlegend=False, hoverinfo="name")]
     # A KEY OF ITS OWN, RATHER THAN THE FIRST BAND'S COLOUR. The bands are
     # sorted by their colour and "rgb(0,0,0)" sorts first, so a coloured cage
     # keyed on band zero took pure black every time -- 1.11:1 against the dark
@@ -5706,6 +5711,50 @@ window.cqSpinControls = function (settings) {
     var note = panel.querySelector('[data-cq="facets"]');
     if (note) note.hidden = !thin;
   }
+  // BRING THE CONTROLS TO THE READER, BECAUSE ON A PHONE THEY CANNOT COME TO
+  // THEM.
+  //
+  // The picture carries `touch-action: none`. It has to: without it the
+  // browser reads a drag as a page scroll and stops delivering the moves a
+  // pinch is made of. But `touch-action: none` also means the browser will
+  // never scroll the page from a touch that STARTS on the picture -- and by
+  // this project's own layout rule the picture is 55% to 85% of the first
+  // screen. So the bigger and better the picture, the less of the screen is
+  // left that a scroll can begin from.
+  //
+  // MEASURED, WebKit, walking down the middle of the screen a row at a time:
+  // 74-80% of the first screen cannot start a scroll, on every 3D page this
+  // application has ever written, while the panel ran 411px (page 01) to
+  // 1005px (page 14) past the bottom of the window.
+  //
+  // Basti found the one way round it that a reader can find by accident:
+  // "when i slightly zoom in the controls area on my phone i can then
+  // scroll, but when the page fits the screen i can't". Zooming makes the
+  // visual viewport smaller than the page, and panning THAT is always
+  // allowed, whatever touch-action says.
+  //
+  // So the page scrolls itself. Nothing about the gestures changes -- one
+  // finger still turns the shape, which is the whole reason touch-action is
+  // there -- and pressing "more…" now puts the controls where the reader can
+  // see them, on a phone and on anything else too small to hold both.
+  function reachPanel() {
+    if (!panel.scrollIntoView) return;             // very old browser
+    if (panel.hidden) {
+      // CLOSING PUTS THE PICTURE BACK. Having scrolled somebody down to the
+      // controls, leaving them looking at empty page when they press "less…"
+      // would be the same fault in the other direction.
+      window.scrollTo({top: 0, behavior: "smooth"});
+      return;
+    }
+    var box = panel.getBoundingClientRect();
+    // Already all on screen: scrolling would only move the picture for
+    // nothing. The 4px is for the rounding two engines disagree about.
+    if (box.bottom <= window.innerHeight + 4) return;
+    // "nearest" rather than "start": where the panel does fit once scrolled
+    // to, this stops as soon as it is all visible instead of pushing the
+    // picture off the top regardless.
+    panel.scrollIntoView({block: "nearest", behavior: "smooth"});
+  }
   function shapePress(what) {
     var bits = what.split("-");            // shape-fainter-2
     var n = parseInt(bits[2], 10);
@@ -5801,6 +5850,7 @@ window.cqSpinControls = function (settings) {
       panel.hidden = !panel.hidden;
       tellMore();
       fit();
+      reachPanel();
       return;
     }
     if (what === "home") {
