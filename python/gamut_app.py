@@ -3215,30 +3215,7 @@ class TimelineDialog(QDialog):
             self._run, mode=self._appearance,
             title=f"How far {first} has moved")
         try:
-            # THE WORDS TRAVEL WITH THE PICTURE. A graph on its own outlives
-            # the window that explained it, and the caveat is the part most
-            # worth keeping: somebody opening this next year must not read a
-            # rising line as proof their scanner is failing.
-            figure.write_html(
-                str(target), include_plotlyjs=True,
-                config={"displayModeBar": False},
-                post_script=None,
-                full_html=True,
-                div_id="timeline")
-            with open(target, "a", encoding="utf-8") as handle:
-                handle.write(
-                    "<div style=\"font:13px/1.6 -apple-system,system-ui,"
-                    "sans-serif;max-width:44em;margin:0 auto 3em;padding:0 "
-                    "1.5em;opacity:.85\">"
-                    f"<p><b>{_escape(drift_series.verdict(self._run))}</b></p>"
-                    "<p>This is how far apart the <b>profiles</b> are, not how "
-                    "far the device drifted. Each profile records one day's "
-                    "measurements of one chart, so if the charts faded between "
-                    "them, or they were built differently, that is inside "
-                    "these numbers too. A line that climbs steadily is just as "
-                    "consistent with charts ageing as with a device drifting."
-                    "</p><p>The numbers are ΔE2000: below 1 nobody can see the "
-                    "difference, above 3 anybody can.</p></div>")
+            target.write_text(self.page_html(figure), encoding="utf-8")
         except OSError as exc:
             Notice.warn(self, "That could not be saved", str(exc))
             return
@@ -3265,6 +3242,64 @@ class TimelineDialog(QDialog):
             Notice.warn(self, "That could not be saved", str(exc))
             return
         Notice.say(self, "Saved", f"Written to\n{target}")
+
+    def page_html(self, figure) -> str:
+        """The saved page: the graph, then the words, both on the first screen.
+
+        WRITTEN HERE RATHER THAN LEFT TO THE DRAWING LIBRARY, and the reason is
+        a measured one. Its own full-page output fills the viewport — measured
+        at 96% to 99% of the first screen across ten window sizes in both
+        engines — which puts everything underneath below the fold. The graph
+        would have arrived without the sentence that says what it does not
+        mean, on every screen, which is precisely the failure this feature is
+        most exposed to: a rising line read as proof a device is failing.
+
+        So the graph is given a bounded share of the screen and the words go
+        under it. `check_layout.py` holds the picture between 55% and 85% of
+        the first screen for every page in this project, and this is now one
+        of them rather than an exception to them.
+        """
+        import drift_series
+
+        from ti3gamut import SCENE_COLOURS
+        c = SCENE_COLOURS["light" if self._appearance == "light" else "dark"]
+        body = figure.to_html(full_html=False, include_plotlyjs=True,
+                              config={"displayModeBar": False},
+                              default_height="100%", div_id="timeline")
+        first = self._run.usable[0].name if self._run.usable else "this device"
+        return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How far {_escape(first)} has moved — {APP_NAME}</title>
+<style>
+ html {{ height:100%; }}
+ body {{ margin:0; padding:0; min-height:100%; background:{c['page']};
+         color:{c['text']}; display:flex; flex-direction:column;
+         font:14px/1.65 -apple-system, system-ui, "Segoe UI", Roboto,
+              Helvetica, Arial, sans-serif; }}
+ /* THE GRAPH TAKES MOST OF THE SCREEN AND NOT ALL OF IT. 68vh leaves the
+    verdict and the caveat visible without scrolling on every size checked,
+    and the floor stops it collapsing on a window dragged very short. */
+ .picture {{ flex:0 0 auto; height:68vh; min-height:260px; width:100%; }}
+ .words {{ flex:1 1 auto; max-width:46em; margin:0 auto; padding:1.2em 1.5em 3em; }}
+ .words p {{ margin:0 0 .9em; }}
+ .verdict {{ font-size:15px; font-weight:600; }}
+ .caveat {{ opacity:.82; }}
+ @media (max-width:520px) {{ .picture {{ height:60vh; }} }}
+</style></head><body>
+<div class="picture">{body}</div>
+<div class="words">
+<p class="verdict">{_escape(drift_series.verdict(self._run))}</p>
+<p class="caveat"><b>What this does not tell you.</b> These lines show how far
+apart the <b>profiles</b> are, not how far the device drifted. Each profile
+records one day's measurements of one chart, so if the charts faded between
+them, or they were built differently, that is inside these numbers too. A line
+that climbs steadily is just as consistent with charts ageing as with a device
+drifting, and no arithmetic can separate the two.</p>
+<p class="caveat">The numbers are ΔE2000. Below 1 nobody can see the
+difference; above 3 anybody can.</p>
+</div></body></html>
+"""
 
     def rows(self) -> list:
         """The run as table rows, caveat included.

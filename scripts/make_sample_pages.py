@@ -720,6 +720,131 @@ def main() -> int:
     said = w._readout_text().replace("\n", " ")
     print("           " + said[:190])
 
+    # ---------------------------------------------------------- 15, 16, 17
+    #
+    # ONE DEVICE THROUGH TIME, which is the other question this application
+    # answers and the one no gamut can. The profiles are generated rather than
+    # committed: each is a 1257 kB copy of a 1257 kB profile differing in about
+    # six thousand bytes, so four of them would be five megabytes of
+    # near-duplicate binary for something that takes a second to make.
+    print("\n15-17 — one printer, four profiles, five years")
+    import tempfile as _tempfile
+    profiles_dir = pathlib.Path(_tempfile.mkdtemp(prefix="timeline-demo-"))
+    sys.path.insert(0, str(HERE))
+    import importlib.util as _iu
+    _spec = _iu.spec_from_file_location("mkprof", HERE / "make_demo_profiles.py")
+    _mk = _iu.module_from_spec(_spec)
+    _spec.loader.exec_module(_mk)
+    made_ok = _mk.main(profiles_dir) == 0
+    check("15", "the demo run still makes its own point", made_ok,
+          "the generator checks it is small by volume and large inside")
+    run_files = sorted(profiles_dir.glob("printer-*.icc"))
+    check("15", "four profiles were written", len(run_files) == 4)
+
+    fresh()
+    timeline = gamut_app.TimelineDialog(w, appearance=w._appearance)
+    timeline.show()
+    timeline.add(run_files)
+    pump(3.0)
+
+    import drift_series as _ds
+    the_run = timeline._run
+    check("15", "they were put in date order by themselves",
+          the_run.ordered_by == "date", the_run.ordered_by)
+    check("15", "and the run is clean enough to show somebody",
+          not the_run.complaints, "; ".join(the_run.complaints) or "no complaints")
+    # THE POINT, AS A NUMBER. A shape that barely changes and an inside that
+    # plainly does is the whole reason this feature exists, so it is asserted
+    # rather than left to the reader of the page.
+    import icc_read as _icc
+    sizes = [_icc.profile_gamut(p).volume for p in run_files]
+    spread = (max(sizes) - min(sizes)) / max(sizes)
+    check("15", "the gamut hardly changes across the whole run",
+          spread < 0.03, f"{100 * spread:.2f}% by volume")
+    check("15", "while the colours inside move plainly",
+          the_run.total > 1.0, f"dE {the_run.total:.2f} altogether")
+
+    def save_timeline(target: pathlib.Path) -> None:
+        class Files:
+            def __init__(self, *a, **k):
+                pass
+
+            def setAcceptMode(self, *a):
+                pass
+
+            def setDefaultSuffix(self, *a):
+                pass
+
+            def exec(self):
+                return 1
+
+            def selectedFiles(self):
+                return [str(target)]
+
+        was = w._file_dialog
+        w._file_dialog = lambda *a, **k: Files()
+        try:
+            timeline._on_save()
+            pump(1.0)
+        finally:
+            w._file_dialog = was
+
+    p = page("15-one-printer-over-five-years.html")
+    save_timeline(p)
+    made.append(("15", p))
+    body = p.read_text(encoding="utf-8")
+    check("15", "both lines are in the page",
+          "how far altogether" in body and "how far each time" in body)
+    check("15", "the axis is spaced by real dates",
+          '"type":"date"' in body or '"type": "date"' in body)
+    # THE WORDS TRAVEL WITH THE PICTURE. A graph outlives the window that
+    # explained it, and somebody opening this next year must not read a rising
+    # line as proof their printer is failing.
+    check("15", "the verdict is saved with the graph",
+          "drifted steadily" in body or "Nothing has moved" in body)
+    check("15", "and so is the caveat that stops it being over-read",
+          "not how far the device drifted" in body)
+    check("15", "the key explains what the numbers mean",
+          "nobody can see" in body and "anybody can see" in body)
+
+    print("\n16 — the same run with one profile taken out")
+    timeline._list.setCurrentRow(2)
+    timeline._on_remove()
+    pump(2.0)
+    check("16", "the run shrank to three", len(timeline._run.usable) == 3)
+    p = page("16-the-same-run-with-a-gap.html")
+    save_timeline(p)
+    made.append(("16", p))
+    body = p.read_text(encoding="utf-8")
+    check("16", "it still draws both lines",
+          "how far altogether" in body and "how far each time" in body)
+    check("16", "and still carries the caveat",
+          "not how far the device drifted" in body)
+
+    print("\n17 — a run that moved all at once rather than steadily")
+    jumpy = pathlib.Path(_tempfile.mkdtemp(prefix="timeline-jump-"))
+    _mk.RUN = [("step-2019", (2019, 1, 5, 9, 0, 0), 0.0000),
+               ("step-2020", (2020, 1, 5, 9, 0, 0), 0.0002),
+               ("step-2021", (2021, 1, 5, 9, 0, 0), 0.0004),
+               ("step-2022", (2022, 1, 5, 9, 0, 0), 0.0060),
+               ("step-2023", (2023, 1, 5, 9, 0, 0), 0.0062)]
+    _mk.main(jumpy)
+    timeline._on_clear()
+    timeline.add(sorted(jumpy.glob("step-*.icc")))
+    pump(3.0)
+    check("17", "this one is NOT called steady", not timeline._run.steady)
+    p = page("17-a-printer-that-moved-all-at-once.html")
+    save_timeline(p)
+    made.append(("17", p))
+    body = p.read_text(encoding="utf-8")
+    # THE DIFFERENCE THAT MATTERS. Even steps mean it will keep creeping; one
+    # big step means something HAPPENED, on a date somebody can go and look up.
+    check("17", "the page says the movement was at one point, not gradual",
+          "one point rather than gradually" in body)
+    check("17", "and names the dates it happened between",
+          "2021-01-05" in body and "2022-01-05" in body)
+    timeline.close()
+
     # ------------------------------------------------------------ all of them
     print("\nevery page")
     for name, path in made:

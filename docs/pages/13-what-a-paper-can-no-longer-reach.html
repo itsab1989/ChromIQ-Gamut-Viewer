@@ -6790,6 +6790,20 @@ window.cqSpinControls = function (settings) {
       // A phone puts the wrap back, further down, where a name and three
       // buttons genuinely cannot share a line.
       + ".cq-spin-panel .cq-shape{flex-wrap:nowrap}"
+      // AND THE BUTTONS THEMSELVES DO NOT BREAK EITHER.
+      //
+      // Stopping the ROW from wrapping was half of it: the name then shortened
+      // as intended, and the three buttons -- which are their own flex box --
+      // wrapped INSIDE it instead, so one still dropped to a second line. Same
+      // fault, one level down, and it survived the first fix.
+      //
+      // Pinned at their natural width and forbidden to break, they are the
+      // fixed part of the row and the name is the part that gives, which is
+      // the right way round: a shortened name still reads (and the whole of it
+      // is in the tooltip), where a button on its own under a name reads as
+      // belonging to something else.
+      + ".cq-spin-panel .cq-shape .cq-ctl"
+      + "{flex:0 0 auto;flex-wrap:nowrap}"
       // AND THE NAME DOES NOT PUSH THEM OFF THE LINE. Set to grow, it took
       // every spare pixel of the row and the four controls beside it wrapped
       // underneath -- so on an iPad held sideways the shape's own buttons sat

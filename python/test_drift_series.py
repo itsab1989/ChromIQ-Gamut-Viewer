@@ -502,3 +502,53 @@ def test_only_profiles_are_accepted_when_files_are_dropped(app):
     import gamut_app
     source = inspect.getsource(gamut_app.TimelineDialog.dropEvent)
     assert '".icc", ".icm"' in source
+
+
+def test_the_saved_page_leaves_room_for_the_words(app, five_years):
+    """MEASURED REGRESSION. The drawing library's own full-page output fills
+    the viewport — 96% to 99% of the first screen across ten window sizes in
+    both engines — which put the verdict and the caveat below the fold on
+    every one of them. The graph would have arrived without the sentence
+    saying what it does not mean, which is exactly the failure this feature is
+    most exposed to: a rising line read as proof a device is failing.
+
+    check_layout.py holds every page in this project between 55% and 85%. This
+    keeps the page written here inside that band by construction, so the
+    library's default cannot quietly come back.
+    """
+    import gamut_app
+    import drift_series
+    dialog = gamut_app.TimelineDialog(None)
+    dialog.add(five_years)
+    app.processEvents()
+    html = dialog.page_html(drift_series.figure(dialog._run))
+    assert "68vh" in html, "the graph is no longer given a bounded height"
+    assert "min-height:260px" in html, "it can collapse on a very short window"
+    assert "full_html" not in html
+    # And the words really are in it, not merely allowed for.
+    assert "What this does not tell you" in html
+    assert "not how far the device drifted" in html
+    assert "ΔE2000" in html
+    dialog.close()
+
+
+def test_the_saved_page_is_self_contained(app, five_years):
+    """One file that opens anywhere. A page that fetched its drawing library
+    from the internet would be a blank rectangle on a machine that is offline,
+    or in five years when the address has moved."""
+    import gamut_app
+    import drift_series
+    dialog = gamut_app.TimelineDialog(None)
+    dialog.add(five_years)
+    app.processEvents()
+    html = dialog.page_html(drift_series.figure(dialog._run))
+    # THE PROPERTY IS "NOTHING IS FETCHED", not "a string is absent". The
+    # first version of this looked for "cdn.plot.ly" anywhere in the file and
+    # failed -- because that address is a default constant INSIDE the bundled
+    # library, which being present is the very proof it was inlined.
+    import re as _re
+    fetches = _re.findall(r'<(?:script|link)[^>]*(?:src|href)="([^"]*)"', html)
+    remote = [u for u in fetches if not u.startswith(("data:", "#"))]
+    assert not remote, f"the page fetches something: {remote[:3]}"
+    assert len(html) > 500_000, "the drawing library does not look inlined"
+    dialog.close()
