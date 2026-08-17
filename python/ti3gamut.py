@@ -867,6 +867,112 @@ def compare_measurements(before, after, *, top: int = 8) -> Drift:
                  over_three=int((de > 3.0).sum()), worst_patches=worst)
 
 
+@dataclass(frozen=True)
+class ProfileDrift(Drift):
+    """How far two ICC profiles disagree, and under what conditions.
+
+    Carries everything a measurement drift does, so the window can show either
+    through the same box, plus the three things that are only true of profiles
+    and that a reader has to be told before trusting the number.
+    """
+    steps: int = 0             # per channel, so steps**channels points
+    channels: int = 0
+    table_a: str = ""          # A2B1, A2B0 or matrix -- see icc_read
+    table_b: str = ""
+    device_space: str = ""     # RGB or CMYK
+
+    @property
+    def comparable(self) -> bool:
+        """Whether the two were read through the same kind of table.
+
+        False means the figures describe two different questions rather than
+        one difference, and the window must say so rather than print them
+        plainly.
+        """
+        return self.table_a == self.table_b
+
+
+def compare_profiles(path_a, path_b, *, steps: int = 9,
+                     top: int = 8) -> ProfileDrift:
+    """Colour-by-colour difference between two ICC profiles.
+
+    THE QUESTION THIS ANSWERS, and the one it does not. Somebody with two
+    profiles of the same scanner made years apart wants to know what has
+    changed. Comparing the gamut SURFACES cannot tell them: two profiles can
+    enclose almost the same shape and map the inside of it quite differently,
+    and for an input profile the inside is nearly the whole profile. So this
+    asks the only question that does answer it — feed both the same device
+    values, and see where the two send them.
+
+    It is the same idea as ``compare_measurements`` and deliberately returns
+    the same shape, because to the reader it is the same question asked of a
+    different kind of file. What differs is that no patch matching is needed:
+    a grid is BUILT rather than found, so both profiles are asked about
+    exactly the same colours by construction.
+
+    WHAT IT DOES NOT MEASURE, and the help text has to say so: this is how far
+    two CHARACTERISATIONS disagree, not how far a device drifted. A profile is
+    a record of one day's measurements of one chart. If the chart has faded,
+    or the two were built with different settings, that is in this number too,
+    and no amount of arithmetic here can separate it out.
+
+    Needs nothing installed: the profiles are read here, so this works on a
+    machine with no ArgyllCMS at all.
+    """
+    import icc_read
+    from gamutview import delta_e_2000
+
+    head_a, head_b = icc_read.describe(path_a), icc_read.describe(path_b)
+    space_a, space_b = head_a["space"], head_b["space"]
+    if space_a != space_b:
+        # REFUSED RATHER THAN ANSWERED. The grid is in device coordinates, so
+        # "the same input" means nothing across two different device spaces --
+        # 50% grey asked of an RGB profile and of a CMYK one are not the same
+        # request, and pairing them would produce a confident figure
+        # describing nothing at all.
+        raise ValueError(
+            f"These two profiles do not describe the same kind of device — "
+            f"one is {space_a} and the other is {space_b}. The comparison "
+            f"works by asking both of them for the same ink or light amounts, "
+            f"and there is no such thing as the same amount across two "
+            f"different kinds of device, so there is nothing to compare.")
+
+    device_a, lab_a = icc_read.profile_to_lab(path_a, steps)
+    device_b, lab_b = icc_read.profile_to_lab(path_b, steps)
+    if device_a.shape != device_b.shape:
+        # Should be impossible once the spaces match, since the grid is built
+        # from the channel count -- but a silent mismatch here would pair
+        # unrelated colours, so it is checked rather than assumed.
+        raise ValueError(
+            "These two profiles could not be asked about the same set of "
+            "colours, so there is nothing to compare.")
+
+    de = delta_e_2000(lab_a, lab_b)
+    channels = device_a.shape[1]
+    order = np.argsort(de)[::-1][:top]
+    worst = [(_device_label(device_a[i], space_a), float(de[i]),
+              lab_a[i].tolist(), lab_b[i].tolist())
+             for i in (int(j) for j in order)]
+    return ProfileDrift(
+        matched=int(len(de)), total_a=int(len(de)), total_b=int(len(de)),
+        worst=float(de.max()), average=float(de.mean()),
+        rms=float(np.sqrt((de ** 2).mean())),
+        over_one=int((de > 1.0).sum()), over_three=int((de > 3.0).sum()),
+        worst_patches=worst, steps=int(steps), channels=int(channels),
+        table_a=icc_read.which_table(path_a),
+        table_b=icc_read.which_table(path_b), device_space=space_a)
+
+
+def _device_label(values, space: str) -> str:
+    """One grid point written the way the file's own units read.
+
+    Percentages rather than 0-255, because a profile is asked in fractions and
+    an ink amount is quoted in per cent everywhere else in this application.
+    """
+    names = "CMYK" if space == "CMYK" else "RGB"
+    return " ".join(f"{n}{v * 100:.0f}" for n, v in zip(names, values))
+
+
 def _as_rgb_array(colours):
     """Colours as an (N, 3) float array in 0..1, whatever form they arrive in.
 

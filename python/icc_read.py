@@ -435,6 +435,37 @@ def profile_to_lab(path, steps: int = 17):
     return device, xyz_to_lab(xyz, PCS_WHITE)
 
 
+def which_table(path) -> str:
+    """Which conversion this profile is read through: A2B1, A2B0 or matrix.
+
+    WHY THIS IS WORTH ASKING OUT LOUD. ``profile_to_lab`` prefers ``A2B1``,
+    the relative colorimetric table, and falls back to ``A2B0``, the
+    perceptual one, and finally to the primaries. That is the right order for
+    drawing one profile. It is a trap for comparing two: a profile carrying
+    only a perceptual table, held up against one carrying a colorimetric
+    table, differs by a large amount that says nothing whatever about drift —
+    perceptual rendering deliberately moves colour, and the two tables are not
+    answering the same question.
+
+    So a comparison asks each profile which table it used, and says so when
+    they disagree, rather than reporting the difference between two different
+    questions as though it were a measurement.
+    """
+    tags = read_tags(path)
+    for tag in ("A2B1", "A2B0"):
+        if tag in tags:
+            return tag
+    return "matrix"
+
+
+#: What each of those means in words a reader stands a chance with.
+TABLE_NAMES = {
+    "A2B1": "its relative colorimetric table",
+    "A2B0": "its perceptual table",
+    "matrix": "its primaries, having no lookup table at all",
+}
+
+
 def profile_gamut(path, *, white_point="D50", space: str = "lab",
                   steps: int = 17, **_ignored):
     """The gamut of an ICC profile ArgyllCMS declines to open.
