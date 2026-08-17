@@ -1,5 +1,60 @@
 # Changelog
 
+## v2.19.0
+
+### 🔎 From the graph, straight to any step of it
+
+Asked twice by Basti, the second time: *"if i selected multiple profiles, have
+them in the trend view, can i then choose two of them for the heatmap
+comparison view (i guess more at once would not be possible)?"*
+
+A line says **when** a device moved. It cannot say **where in colour** it
+moved, and those want opposite actions — a device that has drifted evenly
+everywhere is a calibration job, one that has moved only in the deep blues is
+a different problem with a different cause. Both draw the same line.
+
+**Show me** now lists the graph, then every step of the run by name — *Where it
+moved — printer-2019 → printer-2021 (ΔE 1.07)* — and last the whole run, first
+against last. Choose one and the graph is replaced by the heat-map for that
+pair.
+
+- **The picture names the pair**, so a screenshot of it is still about
+  something.
+- **The sentence underneath is about that pair too**, not about the run — and
+  that was a real fault, caught by looking at the screenshot rather than the
+  code: a cloud of one year had *"it has drifted steadily, from the first to
+  the last, ΔE 3.03"* under it. Saying the right thing is now part of drawing,
+  so nothing can redraw without it.
+- **Save this as a web page… writes whichever picture you are looking at.** A
+  Save that always wrote the graph would quietly disagree with the screen.
+- **A pair that cannot honestly be compared is not drawn.** Two profiles read
+  through different tables answer different questions, so the difference
+  between them would be mostly that rather than drift — and a picture of it
+  would look exactly like a device that had moved. The window says so instead.
+
+**Two at a time, and the window now says why** rather than leaving you to
+wonder. Every dot is painted by how far apart *two* profiles put that one
+colour; a third would need a second colour on the same dot. That is less of a
+limit than it sounds, because a run is made of steps and every step *is* a
+pair.
+
+**The trap that was designed out.** Removing a profile from the middle of a run
+changes which pairs exist. A remembered index would have gone on showing an
+entry whose words named one pair while the picture showed another — the worst
+way for this to fail, because nothing would look wrong. The chooser is rebuilt
+whenever the run changes and falls back to the graph rather than to a different
+pair.
+
+### 📸 The timeline can be photographed at all now
+
+The whole feature shipped in v2.17.0 **with no screenshot anywhere**, because
+`make_screenshots.py` could only ever grab the main window. A shot may now hand
+back the widget to photograph, so windows of their own can be pictured — and
+two are, one of the graph and one of a step. The generator also clears the demo
+profiles it makes, which were 12 MB a run.
+
+- 680 checks, up from 670.
+
 ## v2.18.0
 
 Everything here was reported by Basti from an iPhone, or found by measuring

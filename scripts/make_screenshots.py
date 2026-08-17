@@ -58,6 +58,9 @@ WIDE, TALL = 1500, 950
 INK = (1560, 940)
 
 failures: list[str] = []
+
+#: Temporary folders a shot made, removed when the run finishes.
+_MADE: list = []
 #: Every picture written this run, by what it looks like. See the check in
 #: main(): two shots that come out identical are a fault in one of them.
 seen: dict[bytes, str] = {}
@@ -413,6 +416,78 @@ def a_skin_over_the_patches(w):
     assert w._chart_skin.currentData() == "mesh"
 
 
+def _a_run_of_profiles(w):
+    """Four profiles of one printer, five years apart, in a timeline window.
+
+    GENERATED RATHER THAN COMMITTED, like the example pages do it: each is a
+    1257 kB copy of a 1257 kB profile differing in about six thousand bytes,
+    so four of them would be five megabytes of near-duplicate binary for
+    something that takes a second to make.
+    """
+    import importlib.util
+    import tempfile
+
+    import gamut_app
+
+    spec = importlib.util.spec_from_file_location(
+        "mkprof", HERE / "make_demo_profiles.py")
+    mk = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mk)
+    folder = pathlib.Path(tempfile.mkdtemp(prefix="shot-profiles-"))
+    _MADE.append(folder)
+    if mk.main(folder) != 0:
+        raise AssertionError("the demo profiles would not build")
+    dialog = gamut_app.TimelineDialog(w, appearance=w._appearance)
+    dialog.resize(1000, 760)
+    dialog.show()
+    dialog.add(sorted(folder.glob("printer-*.icc")))
+    pump(4.0)
+    assert dialog._run and len(dialog._run.usable) == 4, "the run did not build"
+    return dialog
+
+
+def over_time(w):
+    """24 — one device followed through four profiles: the graph."""
+    dialog = _a_run_of_profiles(w)
+    pump(3.0)
+    assert dialog._chosen_pair() is None, "it should open on the graph"
+    assert "drifted" in dialog._verdict.text() or \
+           "moved" in dialog._verdict.text(), dialog._verdict.text()
+    return dialog
+
+
+def one_step_of_a_run(w):
+    """25 — and the same run with one step chosen, drawn as the heat-map."""
+    dialog = _a_run_of_profiles(w)
+    before = whole_window(dialog).toImage()
+    # ONE STEP, NOT THE WHOLE RUN, and the difference matters for what this
+    # picture is meant to show. Against the whole run the sentence underneath
+    # says much the same thing either way, so a shot of it cannot show that
+    # the words follow the picture -- which is the fault this feature had.
+    # A single step is the discriminating case, and it is also the one a
+    # reader reaches for: the graph jumped here, so where did it go?
+    #
+    # Chosen by DATA rather than by index, so adding an entry later cannot
+    # silently change which picture this is.
+    for i in range(dialog._picture_of.count()):
+        if dialog._picture_of.itemData(i) == ("step", 0):
+            dialog._picture_of.setCurrentIndex(i)
+            break
+    else:
+        raise AssertionError("no step is on offer")
+    dialog._draw()
+    pair = dialog._chosen_pair()
+    assert pair is not None, "choosing a step did not give a pair"
+    assert until_it_changes(dialog, before), (
+        "the picture never changed, so this shows the same thing as 24")
+    # THE SENTENCE UNDERNEATH MUST BE ABOUT THIS PAIR, not about the run. It
+    # was not, and a published screenshot is how that was noticed.
+    said = dialog._verdict.text()
+    assert pair[2].split(" → ")[0] in said and pair[2].split(" → ")[1] in said, (
+        f"the words under the picture are not about it: {said}")
+    return dialog
+
+
 #: file name → (how to set it up, how big the window is for it)
 SHOTS = {
     "01-one-chart.webp": (one_chart, (WIDE, TALL)),
@@ -430,6 +505,8 @@ SHOTS = {
     "18-ink-amounts.webp": (ink_amounts, INK),
     "19-ink-amounts-outside.webp": (ink_amounts_outside, INK),
     "20-a-skin-over-the-patches.webp": (a_skin_over_the_patches, INK),
+    "24-one-device-over-time.webp": (over_time, (WIDE, TALL)),
+    "25-one-step-of-a-run.webp": (one_step_of_a_run, (WIDE, TALL)),
 }
 
 
@@ -473,8 +550,19 @@ def main() -> int:
         window.resize(wide, tall)
         window.show()
         pump(2.0)
+        subject = window
         try:
-            setup(window)
+            # A SETUP MAY HAND BACK SOMETHING ELSE TO PHOTOGRAPH. Most shots
+            # are of the main window, so returning nothing keeps meaning that.
+            # But two of this application's features live in windows of their
+            # own -- following a device over time is one -- and until this
+            # existed neither could be pictured at all, which is why the whole
+            # timeline feature shipped with no screenshot anywhere.
+            #
+            # `whole_window` needs no change to cope: it looks for a `_view`
+            # attribute and paints it in, and the dialog has one for the same
+            # reason the main window does.
+            subject = setup(window) or window
         except AssertionError as why:
             print(f"  [ FAIL ] {name}: {why}")
             failures.append(f"{name}: {why}")
@@ -484,7 +572,7 @@ def main() -> int:
             print(f"  [ SKIP ] {name}: {why}")
             window.close()
             continue
-        image = whole_window(window)
+        image = whole_window(subject)
         # NO TWO OF THESE MAY BE THE SAME PICTURE.
         #
         # Every shot says what must be true of it, and those claims are only
@@ -509,6 +597,12 @@ def main() -> int:
             failures.append(f"{name}: could not be written")
         window.close()
         pump(0.5)
+
+    # THE GENERATED PROFILES GO AGAIN. Twelve megabytes a run otherwise, and
+    # this project has already had one 27 GB version of exactly that fault.
+    import shutil
+    for folder in _MADE:
+        shutil.rmtree(folder, ignore_errors=True)
 
     print()
     if failures:

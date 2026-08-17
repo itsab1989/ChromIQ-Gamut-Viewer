@@ -668,3 +668,184 @@ def test_a_wobble_too_small_to_see_is_not_announced(tmp_path):
     if run.furthest.worst < drift_series.INVISIBLE:
         assert not run.came_back
         assert "went away and came back" not in drift_series.verdict(run)
+
+
+# --- from the trend, to one step's heat-map ---------------------------------
+#
+# Basti, twice, the second time: "if i selected multiple profiles, have them in
+# the trend view, can i then choose two of them for the heatmap comparison
+# view (i guess more at once would not be possible)?"
+#
+# He is right that more than two is impossible: every dot is painted by the dE
+# between exactly TWO profiles, and a third would need a second colour on the
+# same dot. A run is made of steps and each step IS a pair, so the step is the
+# unit -- which is also the unit both lines and the exported table already use.
+
+def test_the_chooser_offers_the_graph_then_every_step_then_the_whole_run(
+        app, five_years):
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(five_years)
+    app.processEvents()
+    combo = dialog._picture_of
+    said = [combo.itemText(i) for i in range(combo.count())]
+    assert len(said) == 1 + 4 + 1, said        # graph, four steps, altogether
+    assert dialog._chosen_pair() is None, "it must start on the graph"
+    assert all("→" in s and "ΔE" in s for s in said[1:]), (
+        f"a step entry must name both profiles and its own size: {said}")
+    dialog.close()
+
+
+def test_a_step_resolves_to_the_two_files_it_names(app, five_years):
+    """BY PATH, NOT BY NAME. Two profiles of one device very often share a
+    stem, and looking one up by name would compare the wrong file and print a
+    perfectly plausible number under it."""
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(five_years)
+    app.processEvents()
+    dialog._picture_of.setCurrentIndex(1)
+    a, b, spans = dialog._chosen_pair()
+    assert a == five_years[0] and b == five_years[1], (a, b)
+    assert "scan-2019" in spans and "scan-2020" in spans, spans
+    dialog.close()
+
+
+def test_the_last_entry_is_the_whole_run_first_against_last(app, five_years):
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(five_years)
+    app.processEvents()
+    dialog._picture_of.setCurrentIndex(dialog._picture_of.count() - 1)
+    a, b, _spans = dialog._chosen_pair()
+    assert a == five_years[0] and b == five_years[-1], (a, b)
+    dialog.close()
+
+
+def test_two_profiles_do_not_get_the_same_picture_listed_twice(app, tmp_path):
+    """With one step, 'the whole run' IS that step -- offering both would be
+    two entries for one picture, which is how somebody comes to believe they
+    are looking at two different answers."""
+    import gamut_app
+    pair = [dated(tmp_path / f"two-{2019 + i}.icc", (2019 + i, 6, 1, 12, 0, 0),
+                  gamma=2.20 + 0.05 * i) for i in range(2)]
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(pair)
+    app.processEvents()
+    assert dialog._picture_of.count() == 2, [
+        dialog._picture_of.itemText(i)
+        for i in range(dialog._picture_of.count())]
+    dialog.close()
+
+
+def test_one_profile_alone_offers_no_comparison(app, tmp_path):
+    import gamut_app
+    only = [dated(tmp_path / "alone.icc", (2021, 6, 1, 12, 0, 0))]
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(only)
+    app.processEvents()
+    assert not dialog._picture_of.isEnabled()
+    assert dialog._chosen_pair() is None
+    dialog.close()
+
+
+def test_removing_a_profile_never_leaves_a_different_pair_under_one_label(
+        app, five_years):
+    """THE TRAP THIS WHOLE REBUILD EXISTS FOR, and the worst way it could
+    fail: taking a profile out of the middle changes which pairs there ARE, so
+    a remembered index would go on showing an entry whose words name one pair
+    while the picture shows another. Nothing would look wrong."""
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(five_years)
+    app.processEvents()
+    dialog._picture_of.setCurrentIndex(2)
+    before = dialog._chosen_pair()
+    assert before is not None
+    dialog._list.setCurrentRow(1)
+    dialog._on_remove()
+    app.processEvents()
+    after = dialog._chosen_pair()
+    label = dialog._picture_of.currentText()
+    assert after is None or after[2] in label, (
+        f"showing {after[2]!r} under the label {label!r}")
+    dialog.close()
+
+
+def test_the_file_name_offered_for_a_saved_cloud_is_writable(app):
+    """An arrow is a fine thing to read and a poor thing to put in a name."""
+    import gamut_app
+    stem = gamut_app._clean_stem("printer-2019 → printer-2021")
+    assert "→" not in stem and " " not in stem, stem
+    assert stem.strip("-") == stem and stem, stem
+    assert len(gamut_app._clean_stem("x" * 400)) <= 120
+    assert gamut_app._clean_stem("→ →") == "comparison"
+
+
+def test_the_words_under_the_picture_are_about_that_picture(app, five_years):
+    """FOUND BY LOOKING AT THE SCREENSHOT, not at the code.
+
+    The verdict was written once from the whole run and left there whichever
+    picture was showing, so choosing a single step put "it has drifted
+    steadily, from the first to the last" under a cloud of one year. The
+    caveat had the same fault in the other direction.
+    """
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(five_years)
+    app.processEvents()
+
+    graph = dialog._verdict.text()
+    assert "scan-2019" in graph and "scan-2023" in graph, graph
+
+    dialog._picture_of.setCurrentIndex(1)
+    dialog._draw()
+    step = dialog._verdict.text()
+    assert step != graph, "the sentence did not follow the picture"
+    assert "scan-2019" in step and "scan-2020" in step, step
+    assert "scan-2023" not in step, (
+        f"a picture of one step is described in terms of the whole run: {step}")
+    assert "these two PROFILES" in dialog._caution.text(), (
+        dialog._caution.text())
+
+    # And back again, because a one-way change is half a fix.
+    dialog._picture_of.setCurrentIndex(0)
+    dialog._draw()
+    assert dialog._verdict.text() == graph
+    dialog.close()
+
+
+def test_a_step_nobody_could_see_says_so_and_counts_nothing(app, five_years):
+    """Every step of this run is dE 0.73 -- below the point at which a
+    difference is visible at all. Reciting "412 colours moved by more than 1"
+    of a step where none did would be noise dressed as detail."""
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(five_years)
+    app.processEvents()
+    dialog._picture_of.setCurrentIndex(1)
+    dialog._draw()
+    said = dialog._verdict.text()
+    assert "nothing here that anybody could see" in said, said
+    assert "more than 1" not in said, said
+    dialog.close()
+
+
+def test_a_step_anybody_could_see_quotes_the_usual_two_thresholds(
+        app, tmp_path):
+    """A second vocabulary for the same idea is how a reader stops trusting
+    either. 1 and 3 mean the same here as in every other readout."""
+    import gamut_app
+    wide = [dated(tmp_path / f"wide-{2019 + i}.icc", (2019 + i, 6, 1, 12, 0, 0),
+                  gamma=2.20 + 0.30 * i) for i in range(3)]
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(wide)
+    app.processEvents()
+    dialog._picture_of.setCurrentIndex(1)
+    dialog._draw()
+    said = dialog._verdict.text()
+    assert "more than 1" in said and "more than 3" in said, said
+    assert "ΔE" in said and "average" in said, said
+    assert "largest and reddest" in said, (
+        f"the sentence must say where to look in the picture: {said}")
+    dialog.close()

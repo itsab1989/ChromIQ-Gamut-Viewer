@@ -607,6 +607,8 @@ apart by volume** — the same shape by any measure — while the colours inside
 move by **ΔE 3.03**. For an input profile such as a scanner's, the inside is
 nearly the whole profile, so the shape is the part that matters least.
 
+<img src="docs/screenshots/24-one-device-over-time.webp" width="620" alt="Four profiles of one printer listed with their dates, and a graph of two drift lines">
+
 Open two or more profiles of the same device and you get two lines:
 
 * **how far it has moved altogether** since the first profile, and
@@ -633,6 +635,35 @@ charts ageing as with a device drifting, and no arithmetic can separate them.
 To measure the device alone you need a chart you trust not to have changed.
 That sentence is saved into the page along with the graph, because a graph
 outlives the window that explained it.
+
+**And from the graph, straight to any step of it.** A line says *when* a device
+moved. It cannot say *where in colour* it moved — and those want opposite
+actions, because a device that has drifted evenly everywhere is a calibration
+job while one that has moved only in the deep blues is a different problem
+altogether. Both draw exactly the same line.
+
+So **Show me** offers the graph, then every step of the run by name — *Where it
+moved — printer-2019 → printer-2021 (ΔE 1.07)* — and the whole run first to
+last. Choose one and the graph is replaced by the heat-map for that pair: every
+colour drawn where the earlier profile puts it, painted by how far the later one
+sends it instead. The picture names the pair it is showing, so a screenshot of
+it is still about something. **Save this as a web page…** writes whichever of
+the two you are looking at, rather than always the graph.
+
+<img src="docs/screenshots/25-one-step-of-a-run.webp" width="620" alt="The same window with one step chosen, drawn as a cloud of colour">
+
+The sentence under the picture follows the picture: it is about **that pair**,
+not about the run. Here the step from 2019 to 2021 is ΔE 1.07 at its worst and
+0.48 on average — 14 of 729 colours moved by more than 1, none by more than 3 —
+so the cloud is honestly pale. A small drift *looks* small, because the colour
+scale is fixed rather than stretched to fit.
+
+**Two at a time, and only two.** Every dot is painted by how far apart *two*
+profiles put that one colour; a third would need a second colour on the same
+dot, and there is nowhere to put it — so a cloud of three would have to hide
+something or invent something. That is less of a limitation than it sounds,
+because a run is made of steps and every step *is* a pair: pick the step and you
+are asking exactly the question the graph raised.
 
 It needs nothing installed — profiles are read directly.
 

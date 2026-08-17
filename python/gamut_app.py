@@ -3022,6 +3022,61 @@ class TimelineDialog(QDialog):
         buttons.addWidget(self._save_btn)
         outer.addLayout(buttons)
 
+        # --- which picture, and of which pair ---------------------------------
+        #
+        # WHY THIS IS A CHOOSER AND NOT A SECOND WINDOW. The line answers WHEN
+        # a device moved and how fast; the cloud answers WHERE in colour it
+        # moved. They are two views of one run, and a reader who has to open a
+        # second window to get from one to the other reads them as two
+        # results. Asked for twice by Basti, the second time: "if i selected
+        # multiple profiles, have them in the trend view, can i then choose
+        # two of them for the heatmap comparison view?"
+        #
+        # ONE ENTRY PER STEP, PLUS THE WHOLE RUN, because a step is the unit
+        # the rest of this window already works in -- it is what both lines
+        # are drawn from and what the table has a row for. Naming the pair in
+        # the entry is what stops the picture being anonymous once it is on
+        # screen or saved.
+        picture_row = QHBoxLayout()
+        picture_row.setSpacing(8)
+        picture_label = QLabel("Show me", self)
+        self._picture_of = NoScrollComboBox(self)
+        self._picture_of.setToolTip(
+            "Which of the two pictures to show.\n\n"
+            "WHEN it moved is the graph: two lines against the dates, which "
+            "says how fast the device is drifting and whether it is creeping "
+            "steadily or moved all at once.\n\n"
+            "WHERE it moved is a cloud of colour: every colour drawn where "
+            "the earlier profile puts it and painted by how far the later one "
+            "sends it instead. That is the question the graph cannot answer, "
+            "and the two want opposite actions — a device that has drifted "
+            "evenly everywhere is a calibration job, one that has moved only "
+            "in the deep blues is a different problem.")
+        self._picture_of.activated.connect(lambda _i: self._draw())
+        picture_row.addWidget(picture_label, 0)
+        picture_row.addWidget(self._picture_of, 1)
+        picture_row.addWidget(Hint(
+            "TWO AT A TIME, AND ONLY TWO, and it is worth saying why rather "
+            "than leaving you to wonder.\n\n"
+            "Every dot in the cloud is painted by how far apart two profiles "
+            "put that one colour. A third profile would need a second colour "
+            "on the same dot, and there is nowhere to put it — so a cloud of "
+            "three would have to either hide something or invent something.\n\n"
+            "That is not really a limitation, because a run is made of steps "
+            "and each step IS a pair. Pick the step you want to look at and "
+            "you are asking exactly the question the graph raised: it went up "
+            "sharply between these two, so where did it go?\n\n"
+            "THE WHOLE RUN, first to last, is offered as well. It answers a "
+            "different question — not what happened in any one year, but "
+            "where the device has ended up compared with where it began.\n\n"
+            "The numbers are ΔE2000. Below 1 nobody can see the difference; "
+            "above 3 anybody can. The colours are fixed to that scale rather "
+            "than stretched to fit, so two of these pictures can be held "
+            "against each other.",
+            self, title="Why only two profiles at a time"), 0,
+            Qt.AlignmentFlag.AlignVCenter)
+        outer.addLayout(picture_row)
+
         self._view = QWebEngineView(self) if preview else None
         if self._view is not None:
             self._view.setMinimumHeight(240)
@@ -3164,14 +3219,141 @@ class TimelineDialog(QDialog):
             self._blank()
             return
 
-        self._verdict.setText(drift_series.verdict(self._run))
+        self._fill_pictures()
         said = list(self._run.complaints)
         if drawable and self._run.ordered_by != "date":
             said.append(
                 "These are in the order you added them, because not every "
                 "profile carries a usable date. Drag a row to move it.")
-        self._complaints.setText("\n\n".join(said))
+        self._grumbles = said
         self._draw()
+
+    def _say(self) -> None:
+        """Put the words that belong to whichever picture is about to be drawn.
+
+        THE WORDS UNDER A PICTURE HAVE TO BE ABOUT THAT PICTURE. The verdict
+        was written once, from the whole run, and left there whichever picture
+        was showing -- so choosing a single step put "it has drifted steadily,
+        from the first to the last, ΔE 3.03" under a cloud of one year.
+
+        CALLED FROM `_draw` RATHER THAN FROM THE CHOOSER, and that is the
+        second half of the fix. The first attempt updated the words where the
+        combo box is handled, which is right for a person clicking it and
+        wrong for everything else -- the screenshot generator set the box and
+        called `_draw`, and published a picture of one comparison with the
+        sentence for another underneath it. Anything that redraws now says the
+        right thing by construction, because saying it is part of drawing.
+        """
+        import drift_series
+
+        self._complaints.setText("\n\n".join(getattr(self, "_grumbles", [])))
+        pair = self._chosen_pair()
+        if pair is None or self._run is None:
+            self._verdict.setText(
+                drift_series.verdict(self._run) if self._run else "")
+            self._caution.setText(
+                "Remember: this is how far apart the PROFILES are, not how "
+                "far the device drifted. Chart fade and any change in how you "
+                "built them are inside these numbers too.")
+        else:
+            self._verdict.setText(self._pair_verdict(pair))
+            self._caution.setText(
+                "Remember: this is how far apart these two PROFILES are, not "
+                "how far the device drifted between them. Each is one day's "
+                "measurements of one chart, so chart fade and any change in "
+                "how you built them are inside these numbers too.")
+
+    def _pair_verdict(self, pair) -> str:
+        """What one step amounts to, in the same voice the run's verdict uses.
+
+        Deliberately says the SAME two thresholds -- 1 and 3 -- as everything
+        else in this application, so a reader who has learned them once does
+        not meet a second vocabulary in the second picture.
+        """
+        import drift_series
+        from ti3gamut import compare_profiles
+
+        path_a, path_b, spans = pair
+        try:
+            d = compare_profiles(path_a, path_b, steps=self.GRID)
+        except Exception:              # noqa: BLE001 — the panel must still say something
+            return f"{spans} could not be compared."
+        if not d.comparable:
+            return (f"{spans} were not read the same way, so there is no "
+                    f"honest number to give you for them.")
+        if d.worst < drift_series.INVISIBLE:
+            return (f"{spans}: nothing here that anybody could see. The "
+                    f"biggest difference anywhere in the cube is ΔE "
+                    f"{d.worst:.2f}, below the point at which a difference "
+                    f"becomes visible at all.")
+        scale = ("visible on a careful look" if d.worst < drift_series.OBVIOUS
+                 else "plainly visible")
+        share = 100.0 * d.over_one / max(d.matched, 1)
+        return (f"{spans}: the biggest difference is ΔE {d.worst:.2f}, which "
+                f"is {scale}, and the average is {d.average:.2f}. "
+                f"{d.over_one} of {d.matched} colours moved by more than 1 "
+                f"({share:.0f}%), and {d.over_three} by more than 3. The ones "
+                f"that moved most are the largest and reddest dots — that is "
+                f"where to look, and it is what the graph cannot tell you.")
+
+    def _fill_pictures(self) -> None:
+        """The trend, then one entry per step, then the whole run.
+
+        REBUILT WHENEVER THE RUN CHANGES, and what the reader had chosen is
+        kept when it still exists. Removing a profile from the middle of a run
+        changes which pairs there ARE, so a remembered index would quietly
+        start showing a different pair than the one on the label -- which is
+        the worst way for this to fail, because nothing looks wrong.
+        """
+        was = self._picture_of.currentData()
+        self._picture_of.blockSignals(True)
+        self._picture_of.clear()
+        self._picture_of.addItem("When it moved — the graph", None)
+        run = self._run
+        steps = list(run.since_previous) if run else []
+        for i, step in enumerate(steps):
+            self._picture_of.addItem(
+                f"Where it moved — {step.before} → {step.after} "
+                f"(ΔE {step.worst:.2f})", ("step", i))
+        # THE WHOLE RUN IS A PAIR TOO, and the one people ask for first: not
+        # what happened in any single year but where it has ended up against
+        # where it began. Offered only when there is more than one step, since
+        # with two profiles it would be the same picture listed twice.
+        if len(steps) > 1 and run is not None:
+            self._picture_of.addItem(
+                f"Where it moved — {run.usable[0].name} → "
+                f"{run.usable[-1].name}, altogether (ΔE {run.total:.2f})",
+                ("whole", 0))
+        self._picture_of.blockSignals(False)
+        if was is not None:
+            found = self._picture_of.findData(was)
+            self._picture_of.setCurrentIndex(max(found, 0))
+        self._picture_of.setEnabled(bool(steps))
+
+    def _chosen_pair(self):
+        """(path A, path B, what to call it), or None while showing the graph."""
+        choice = self._picture_of.currentData()
+        run = self._run
+        if choice is None or run is None or not run.usable:
+            return None
+        kind, index = choice
+        if kind == "whole":
+            first, last = run.usable[0], run.usable[-1]
+            return first.path, last.path, (f"{first.name} → {last.name}, "
+                                           f"altogether")
+        steps = list(run.since_previous)
+        if not 0 <= index < len(steps):
+            return None
+        # THE PATHS COME FROM THE ENTRIES, NOT FROM THE STEP. A step carries
+        # the two NAMES, and two profiles of one device very often share a
+        # stem -- printer-2019.icc beside printer-2019.icm is the ordinary
+        # case. Looking a path up by name would compare the wrong file and
+        # print a perfectly plausible wrong number under it.
+        usable = run.usable
+        if index + 1 >= len(usable):
+            return None
+        before, after = usable[index], usable[index + 1]
+        return before.path, after.path, f"{before.name} → {after.name}"
 
     def _draw(self) -> None:
         """Put the graph in the view, writing into the window's own folder.
@@ -3184,12 +3366,14 @@ class TimelineDialog(QDialog):
         """
         import drift_series
 
+        self._say()
         if self._view is None:
             return
         if not (self._run and self._run.since_first):
             self._blank()
             return
-        figure = drift_series.figure(self._run, mode=self._appearance)
+        figure = self._cloud_figure() or drift_series.figure(
+            self._run, mode=self._appearance)
         parent = self.parent()
         folder = getattr(parent, "_tmp", None) or Path(tempfile.gettempdir())
         target = Path(folder) / "timeline.html"
@@ -3200,6 +3384,61 @@ class TimelineDialog(QDialog):
         except OSError as exc:
             _log().warning("could not draw the timeline: %s", exc)
             self._blank()
+
+    def _cloud_figure(self):
+        """The chosen step as a heat-map, or None while the graph is showing.
+
+        NEVER RAISES, because it is on the redraw path: an unreadable pair
+        must leave the reader looking at the graph and a sentence, not at a
+        window that has fallen over. The one thing it will not do is draw a
+        picture of a comparison that does not mean anything -- two profiles
+        read through different tables answer different questions, and a cloud
+        of that difference would look exactly like drift.
+        """
+        pair = self._chosen_pair()
+        if pair is None:
+            return None
+        from ti3gamut import build_figure, compare_profiles
+
+        path_a, path_b, spans = pair
+        try:
+            d = compare_profiles(path_a, path_b, steps=self.GRID)
+        except Exception as exc:      # noqa: BLE001 — a view must not crash
+            _log().warning("could not compare %s with %s: %s",
+                           path_a, path_b, exc)
+            self._trouble(f"These two could not be compared: {exc}")
+            return None
+        if not d.comparable:
+            self._trouble(
+                f"{spans} were not read the same way — one through "
+                f"{d.table_a}, the other through {d.table_b}. Those answer "
+                f"different questions, so the difference between them would "
+                f"be mostly that rather than drift, and a picture of it would "
+                f"look exactly like a device that had moved.")
+            return None
+        self._trouble("")
+        # THE PICTURE SAYS WHICH PAIR IT IS. A cloud that names neither
+        # profile is a picture of nothing in particular the moment it is saved
+        # or screenshotted, and this window can show several of them.
+        return build_figure(
+            [], f"Where {spans} disagree — ΔE2000, biggest {d.worst:.2f}, "
+                f"average {d.average:.2f}",
+            mode=self._appearance, space="lab", grid=True,
+            drift=(d.lab_a, d.deltas, f"how far it moved: {spans}"))
+
+    def _trouble(self, said: str) -> None:
+        """Say why a cloud could not be drawn, under the ones already there.
+
+        ADDED TO THE RUN'S OWN COMPLAINTS rather than replacing them: "one of
+        these could not be read" and "this pair cannot be compared" are two
+        different things to know, and the second arriving must not take the
+        first off the screen.
+        """
+        if not said:
+            return
+        already = list(getattr(self, "_grumbles", []))
+        if said not in already:
+            self._complaints.setText("\n\n".join(already + [said]))
 
     def _paint_view(self) -> None:
         """Give the view the page's own colour, so it never flashes white."""
@@ -3226,30 +3465,77 @@ class TimelineDialog(QDialog):
     # --- taking it away ----------------------------------------------------
 
     def _on_save(self) -> None:
+        """Save WHATEVER IS SHOWING, which is the only honest thing it can do.
+
+        A Save button that always wrote the graph would quietly disagree with
+        the screen the moment somebody chose a step -- they would press it
+        looking at a cloud and get a line chart, and only find out later.
+        """
         import drift_series
 
         parent = self.parent()
         first = self._run.usable[0].name if self._run.usable else "device"
+        pair = self._chosen_pair()
+        stem = (f"{first}-over-time" if pair is None
+                else f"{_clean_stem(pair[2])}-where-it-moved")
         chooser = parent._file_dialog(
             "Where should the page go?", QFileDialog.FileMode.AnyFile,
-            "Web page (*.html)", f"{first}-over-time.html", profiles=False)
+            "Web page (*.html)", f"{stem}.html", profiles=False)
         chooser.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         chooser.setDefaultSuffix("html")
         if not chooser.exec():
             return
         target = Path(chooser.selectedFiles()[0])
-        figure = drift_series.figure(
-            self._run, mode=self._appearance,
-            title=f"How far {first} has moved")
         try:
-            target.write_text(self.page_html(figure), encoding="utf-8")
+            if pair is None:
+                figure = drift_series.figure(
+                    self._run, mode=self._appearance,
+                    title=f"How far {first} has moved")
+                target.write_text(self.page_html(figure), encoding="utf-8")
+                said = ("the sentence explaining what the lines do and do not "
+                        "mean is saved with it")
+            else:
+                from ti3gamut import _write_dark_html
+                figure = self._cloud_figure()
+                if figure is None:
+                    Notice.warn(self, "There is nothing to save",
+                                "That pair could not be compared, so there is "
+                                "no picture to write.")
+                    return
+                # THE SAME WRITER THE MAIN WINDOW USES, so a cloud saved from
+                # here turns, zooms and carries its controls exactly like one
+                # saved from there. Two writers for one kind of page is how
+                # the two come to behave differently.
+                _write_dark_html(figure, target, self._appearance,
+                                 notes=self._cloud_notes(pair))
+                said = ("what the colours mean, and what the numbers do not "
+                        "tell you, are saved with it")
         except OSError as exc:
             Notice.warn(self, "That could not be saved", str(exc))
             return
         Notice.say(self, "Saved",
-                   f"Written to\n{target}\n\nIt opens in any browser, and the "
-                   f"sentence explaining what the lines do and do not mean is "
-                   f"saved with it.")
+                   f"Written to\n{target}\n\nIt opens in any browser, and "
+                   f"{said}.")
+
+    def _cloud_notes(self, pair) -> str:
+        """The words that travel with a saved cloud.
+
+        THE CAVEAT GOES IN THE FILE, not just on the screen it came from. A
+        picture outlives the window that explained it, and this one is the
+        kind people trust more than they should.
+        """
+        _a, _b, spans = pair
+        return (f"Where {spans} disagree.\n\n"
+                f"Every colour is drawn where the earlier profile puts it, "
+                f"painted by how far the later one sends it instead, in "
+                f"ΔE2000. Below 1 nobody can see the difference; above 3 "
+                f"anybody can. The scale is fixed rather than stretched to "
+                f"fit, so this can be held against another one of these.\n\n"
+                f"What it does not tell you: this is how far apart the two "
+                f"PROFILES are, not how far the device drifted. Each profile "
+                f"is one day's measurements of one chart, so chart fade and "
+                f"any change in how they were built are inside these numbers "
+                f"too.")
 
     def _on_table(self) -> None:
         parent = self.parent()
@@ -3366,6 +3652,23 @@ def _escape(text: str) -> str:
     """The few characters that would otherwise end a tag early."""
     return (text.replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;"))
+
+
+def _clean_stem(said: str) -> str:
+    """A suggested file name, from a sentence naming what is in the picture.
+
+    "printer-2019 → printer-2021" is a good thing to call a file and a bad
+    thing to put in one: an arrow is not a character every file system and
+    every mail client agrees about, and a leading or trailing separator makes
+    a name that looks broken. So the parts are kept and everything between
+    them becomes a single hyphen.
+
+    Capped, because a run of profiles with long descriptive names produces a
+    long sentence, and some file systems still stop at 255 bytes -- a name
+    that cannot be written is a save that fails at the last step.
+    """
+    kept = "".join(ch if (ch.isalnum() or ch in "-_.") else " " for ch in said)
+    return "-".join(kept.split())[:120] or "comparison"
 
 
 class Notice(QDialog):

@@ -634,8 +634,41 @@ applies to you.
 | **Add profiles…** | Choose ICC profiles of the same device. Files can also be dropped on the window; anything that is not `.icc` or `.icm` is ignored. |
 | **Remove the selected one** / **Remove them all** | Takes them out of the run. **Never off the disk** — nothing in this window owns your files. |
 | Dragging a row | Puts the run in your order, and it stays in your order afterwards. |
-| **Save this as a web page…** | One self-contained file: the graph, the verdict and the caveat. Nothing is fetched when it is opened. |
+| **Show me** | Which of the two pictures to draw: the graph, or the heat-map for one step of the run. |
+| **Save this as a web page…** | One self-contained file holding **whichever picture you are looking at** — the graph with its verdict and caveat, or the cloud with what its colours mean. Nothing is fetched when it is opened. |
 | **Save the numbers as a table…** | Every step as a row, with what the numbers do and do not mean written beside them. |
+
+**Show me: when it moved, or where.** A line says *when* a device moved and how
+fast. It cannot say *where in colour* it moved, and the two want opposite
+actions — a device that has drifted evenly everywhere is a calibration job, one
+that has moved only in the deep blues is a different problem with a different
+cause, and both draw the same line.
+
+So the chooser lists the graph first, then every step of the run by name —
+*Where it moved — printer-2019 → printer-2021 (ΔE 1.07)* — and last the whole
+run, first profile against last. Choosing one replaces the graph with the
+heat-map for that pair: every colour drawn where the earlier profile puts it,
+painted by how far the later one sends it instead. The caption names the pair,
+so a screenshot of it is still about something.
+
+**Why only two profiles at a time.** Every dot is painted by how far apart
+*two* profiles put that one colour. A third would need a second colour on the
+same dot and there is nowhere to put it, so a cloud of three would have to hide
+something or invent something. It is less of a limit than it sounds: a run is
+made of steps, every step *is* a pair, and picking the step is how you ask the
+question the graph just raised — it went up sharply between these two, so where
+did it go?
+
+**When a pair cannot be compared** — one profile read through its perceptual
+table and the other through its colorimetric one — no picture is drawn and the
+window says why. Those two answer different questions, so the difference
+between them would be mostly that rather than drift, and a picture of it would
+look exactly like a device that had moved.
+
+**The colour scale is fixed**, not stretched to whatever is in front of it, so
+two of these pictures can be held against each other: below ΔE 1 nobody can see
+the difference, above 3 anybody can, and red means the same amount in every one
+of them.
 
 **The two lines.** One is how far the device has moved altogether since the
 first profile; the other how far it moved since the one before. They disagree
