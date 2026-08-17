@@ -308,6 +308,89 @@ line, and it still wraps, which is right.
 Found with Playwright's WebKit. Every render in this project had been Chromium,
 and Chromium is the engine that is lenient about all of this.
 
+**And a row of controls still wrapped, by seven pixels.** The fix above was
+checked at ten sizes and passed; then the check was pointed at more of them and
+two failed -- a phone held sideways (844x390) and a window dragged down to a
+strip (1000x360), in both engines. The columns these lists flow into have a
+minimum width of 230px, which is right for a group of switches and too narrow
+for a group whose rows carry five controls. Measured rather than reasoned
+about: **"left & right" needs 452px and was given 445**, and where a row does
+not fit, its controls wrap under the name -- which in two columns puts one
+row's buttons level with the next column's name, the very confusion this was
+rearranged to answer.
+
+The two groups that hold wide rows now ask for a column wide enough for the
+widest row they actually contain, clamped to the width available so a phone
+still gets one column rather than a page that scrolls sideways. All ten sizes
+pass in both engines.
+
+### 🪟 The save dialog opened off the bottom of a Windows screen
+
+The ceiling added to this dialog earlier in this release was put in the wrong
+place, and only Windows could show it. It capped the height of the scrolling
+LIST -- and capping the part that scrolls does not cap the window, because
+everything else in the dialog is fixed and how tall that comes out depends on
+the platform's fonts and margins. Measured on the CI runner: the same dialog
+that fits comfortably on macOS opened **874 points tall on an 800-point
+screen**, with the list already at its cap and the Save button below the bottom
+edge. Exactly the fault the cap was added to prevent.
+
+The ceiling is now on how tall the window OPENS, which is the thing that
+actually has to fit, and the list keeps only a floor so it can give up height
+on a short screen. There is no maximum on the list at all any more, so dragging
+the dialog taller still hands it every pixel -- which is what was promised and
+was not true.
+
+Two smaller faults fell out of measuring it. The resize was being done inside
+`showEvent`, before the layout had run, so the layout put the height straight
+back -- 676 points from a call that had asked for 600. And the note along the
+bottom was set to expand: **252 points for two lines of text needing 79**,
+taken from the list directly above it. Both fixed; the list now gets 323 points
+where it got 150.
+
+It was found because the release build's Windows leg had been failing and the
+failure had been pinned around rather than read. The pin is gone.
+
+### 🎈 A saved page can carry on turning when the reader lets go
+
+Asked for after using a page on an iPad: a shape that stops dead the instant a
+finger lifts does not feel like an object -- "not like crazy after letting go,
+just a bit to make it feel natural".
+
+Two new controls when you save a page. **Whether the page has it** decides how
+the page behaves when it opens; **whether the reader may switch it** decides
+whether they get a button for it. Off, a page behaves exactly as every page
+saved before this one did.
+
+WHAT IS MEASURED IS THE CAMERA, NOT THE FINGER. Turning a drag in pixels into
+degrees needs a constant this page does not own -- the drawing library decides
+for itself how far a drag turns a scene -- and guessing it makes the throw
+leave at a different speed from the drag that caused it. So the camera is
+sampled several times a second during the drag instead, which is right by
+construction on any device at any speed. It also excludes panning and zooming
+for free: sampling the eye's DIRECTION means a pan (eye and centre move
+together) and a zoom (only the distance changes) both come out as no movement,
+with no special case to write.
+
+HOW FAR IT CARRIES. The speed dies away with a half-life of 0.22s -- the same
+feel as the convention nearly every 3D viewer on the web follows, taken from
+the three.js source rather than from memory. Said as a half-life on purpose:
+three.js applies its damping per FRAME, so the same page dies twice as fast on
+a 120Hz iPad as on a 60Hz laptop, and an iPad is where this was asked for. The
+speed is capped so that no flick, however hard, carries more than about 48
+degrees -- an eighth of a turn, plainly a follow-through. The first cap tried
+was three times that and measured **102 degrees** past the drag, which reads as
+the shape having been let go of rather than carried.
+
+Touching the shape stops it, and so do Pause, "look from" and "reset view". It
+is never offered on a saved cross-section, which is drawn flat and cannot be
+turned at all.
+
+Proved in a browser rather than argued for: `scripts/check_momentum.py` drags
+the shape in WebKit and Chromium and checks that it carries on, that it stops
+on its own, that it can be caught mid-throw, that a drag which pauses before
+letting go throws nothing, and that with the option off nothing moves at all.
+
 ### 📉 Five figures the README states as fact were wrong
 
 Found by checking them rather than by reading them. Every percentage the front

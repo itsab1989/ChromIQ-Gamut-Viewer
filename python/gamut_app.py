@@ -639,12 +639,26 @@ class WrappedLabel(QLabel):
     """
 
     def __init__(self, text: str = "", parent=None, *,
-                 hide_when_empty: bool = False) -> None:
+                 hide_when_empty: bool = False, hug: bool = False) -> None:
         super().__init__(text, parent)
         self._hide_when_empty = hide_when_empty
+        # TAKE EXACTLY THE TEXT'S HEIGHT AND NO SPARE.
+        #
+        # The default here is MinimumExpanding, which is right for a readout
+        # that shares a column with nothing else and wrong for a note at the
+        # bottom of a dialog: it swallows every point the window has going
+        # spare. Measured on the save dialog -- two lines of text holding
+        # **252 points** against a 79-point need, taken from the list of
+        # switches directly above it, on a screen that had none to spare.
+        #
+        # A weaker policy is not enough. `Minimum` still carries the grow
+        # flag, and the note went on taking the same 252 points; the height
+        # has to be capped outright, which is what this does.
+        self._hug = hug
         self.setWordWrap(True)
         self.setSizePolicy(QSizePolicy.Policy.Preferred,
-                           QSizePolicy.Policy.MinimumExpanding)
+                           QSizePolicy.Policy.Fixed if hug
+                           else QSizePolicy.Policy.MinimumExpanding)
         self._refit()
 
     def _refit(self) -> None:
@@ -669,6 +683,8 @@ class WrappedLabel(QLabel):
         if needed != self.minimumHeight():
             self.setMinimumHeight(needed)
             self.updateGeometry()
+        if self._hug and needed != self.maximumHeight():
+            self.setMaximumHeight(needed)
 
     def resizeEvent(self, event) -> None:      # noqa: N802 (Qt naming)
         super().resizeEvent(event)
@@ -2285,6 +2301,37 @@ class WebPageDialog(QDialog):
         rows.addWidget(numbers_hint, 1, 2, Qt.AlignmentFlag.AlignVCenter)
         numbers_hint.follow(self._numbers)
 
+        # HOW THE PAGE BEHAVES, not which buttons it carries -- which is why
+        # this sits up here with the other two questions about the page itself
+        # rather than down in the list of controls to hand over. A page saved
+        # with no controls at all still has this, or does not.
+        self._glide = QCheckBox(
+            "Let the shape carry on turning when they let go", self)
+        self._glide.setChecked(True)
+        rows.addWidget(self._glide, 2, 0, 1, 2)
+        glide_hint = Hint(
+            "Whether a drag ends the way a real object would. With this on, "
+            "letting go of the shape leaves it turning for about a second, "
+            "slowing to a stop on its own; with it off it stops the instant "
+            "the finger or the mouse button lifts, which is how saved pages "
+            "have always behaved.\n\n"
+            "It is worth having on for a page somebody will read on a phone "
+            "or a tablet. A shape that stops dead under a finger does not "
+            "feel like a thing you are holding, and turning a gamut right "
+            "round to look at the back of it then takes four or five separate "
+            "drags instead of one flick.\n\n"
+            "IT IS ONLY EVER A GENTLE ONE. A hard flick does not send it "
+            "spinning: how fast it leaves is capped, and it always slows to a "
+            "stop in about a second. Touching the shape stops it at once, so "
+            "nobody has to wait for it.\n\n"
+            "It does nothing on a saved cross-section, which is drawn flat "
+            "and cannot be turned at all — so on those it is simply not "
+            "there. Turn it off and the page behaves exactly as pages saved "
+            "before this option existed.", self)
+        glide_hint.setObjectName("hint_glide_hint")
+        rows.addWidget(glide_hint, 2, 2, Qt.AlignmentFlag.AlignVCenter)
+        glide_hint.follow(self._glide)
+
         outer.addLayout(rows)
 
         # WHAT THE PERSON OPENING IT CAN CHANGE.
@@ -2425,6 +2472,22 @@ class WebPageDialog(QDialog):
              "Most useful together with the zoom above: get close first, "
              "then move to the part you actually wanted. “Put the view back” "
              "returns the whole shape whenever it goes wrong."),
+            ("glide", "Switch the carry-on-turning off and on", False,
+             "Hands the reader a switch for the setting above — whether the "
+             "shape carries on turning for a moment after they let go of it, "
+             "or stops the instant they do.\n\n"
+             "TWO SEPARATE QUESTIONS, and this is the second one. The tick "
+             "box higher up decides how the page BEHAVES when it opens. This "
+             "one decides whether the person reading it can change their "
+             "mind. Leave this off and the page simply behaves the way you "
+             "chose, with nothing to press.\n\n"
+             "Worth handing over when you do not know what the page is being "
+             "read on. It is a pleasure to use on a tablet and some people "
+             "dislike it with a mouse, and there is no way to know from here "
+             "which of those you are sending it to.\n\n"
+             "It costs one button, and it is not built at all on a saved "
+             "cross-section — a flat cut cannot be turned, so there would be "
+             "nothing for the switch to do."),
             ("views", "Four fixed places to look from", True,
              "Four buttons — above, front, side and angle — that put the eye "
              "exactly square to the shape instead of wherever a drag "
@@ -2660,7 +2723,7 @@ class WebPageDialog(QDialog):
         strip = QCheckBox("Give them controls at all", self)
         strip.setChecked(True)
         self._strip = strip
-        rows.addWidget(strip, 2, 0, 1, 2)
+        rows.addWidget(strip, 3, 0, 1, 2)
         strip_hint = Hint(
             "Whether the page carries the row of controls along the bottom "
             "at all.\n\n"
@@ -2670,7 +2733,7 @@ class WebPageDialog(QDialog):
             "out of place — the shape can still be dragged, zoomed and its "
             "names clicked, exactly as before. Only the buttons go.", self)
         strip_hint.setObjectName("hint_strip_hint")
-        rows.addWidget(strip_hint, 2, 2, Qt.AlignmentFlag.AlignVCenter)
+        rows.addWidget(strip_hint, 3, 2, Qt.AlignmentFlag.AlignVCenter)
         strip_hint.follow(strip)
 
         # ONE BOX PER GROUP, ALL OF THEM INSIDE A SCROLL AREA.
@@ -2717,22 +2780,35 @@ class WebPageDialog(QDialog):
         area.setFrameShape(QFrame.Shape.NoFrame)
         area.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        screen = self.screen() or (parent.screen() if parent else None)
-        room = screen.availableGeometry().height() if screen else 900
         # A SMALLER DEFAULT, AND STILL NO CEILING ON WHAT THE USER WANTS.
         #
-        # This list has grown to twenty-one switches in five groups, and at
-        # 52% of the screen the dialog opened taller than most windows anybody
+        # This list has grown to twenty-two switches in five groups, and at
+        # its natural size the dialog opened taller than most windows anybody
         # keeps open -- 1,138 points on a 1440-point screen, which is a wall of
         # tick boxes before you have decided anything. Reported as "pretty
         # high ... maybe not strictly limited, a smaller default".
         #
-        # So it OPENS at a comfortable size and the dialog stays resizable:
-        # this is a maximum for the scrolling area, not for the window, and
-        # dragging the dialog taller still gives the list every pixel of it.
+        # THE CEILING IS ON THE WINDOW'S OPENING SIZE, NOT ON THE LIST. It was
+        # written the other way round first -- a maximum height on the
+        # scrolling area alone -- and that is wrong for a reason that only
+        # showed up on Windows: capping the one part that scrolls does not cap
+        # the window, because everything ELSE in the dialog (two questions,
+        # three tick boxes, five hint buttons, the note and the buttons) is
+        # fixed, and how tall that comes out depends on the platform's fonts
+        # and margins. Measured: the same dialog that fits comfortably on
+        # macOS opened **874 points tall on an 800-point screen** on Windows,
+        # with the list already at its cap. The Save button was off the bottom
+        # of the screen -- the exact fault the cap was added to prevent.
+        #
+        # Bounding the window instead is right on every platform because it
+        # measures the thing that actually has to fit. The list keeps only a
+        # floor, so it can give up height when the window is short, and there
+        # is NO maximum on it at all -- so dragging the dialog taller still
+        # hands the list every pixel of it, which is what was promised.
         # The fade along the bottom edge is what says there is more below --
         # a list that simply stops at a hard line reads as a list that ends.
-        area.setMaximumHeight(max(260, int(room * 0.38)))
+        area.setMinimumHeight(150)
+        self._area = area
         outer.addWidget(area, 1)
         strip.toggled.connect(area.setEnabled)
         # WHAT IT IS, AND HOW TO GET IT TO SOMEBODY. The second half was
@@ -2746,9 +2822,10 @@ class WebPageDialog(QDialog):
             "a shape.\n"
             "It is one file, so you can email it, put it on a memory stick, "
             "or upload it and send the link. For a forum post, send a link "
-            "and put a picture in the post itself — see the ⓘ above.", self)
+            "and put a picture in the post itself — see the ⓘ above.", self,
+            hug=True)
         note.setObjectName("hint")
-        outer.addWidget(note)
+        outer.addWidget(note, 0)
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
@@ -2762,10 +2839,54 @@ class WebPageDialog(QDialog):
         buttons.addWidget(save)
         outer.addLayout(buttons)
 
+    #: The most of the screen's usable height this dialog may open at. Not the
+    #: most it may BE -- the user can drag it as tall as they like. Three
+    #: quarters leaves room for the window behind it to still be recognisable
+    #: as a window, and it is comfortably under the point where a title bar
+    #: and a dock start eating the buttons.
+    OPENS_AT_MOST = 0.75
+
+    def fit_within(self, room: int) -> None:
+        """Open no taller than *room* allows, whatever the platform's metrics.
+
+        Separate from showEvent so that it can be handed a screen height and
+        checked, rather than only ever being exercised against whatever screen
+        the machine running the tests happens to have. The Windows runner
+        reports 800 and this machine reports 1440; the fault that made this
+        necessary was visible only on the first.
+        """
+        ceiling = max(360, int(room * self.OPENS_AT_MOST))
+        if self.height() > ceiling:
+            self.resize(self.width(), ceiling)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # ONCE, ON THE WAY UP. Doing it on every show would undo a size the
+        # user had chosen by dragging, which is the opposite of the point.
+        if getattr(self, "_fitted", False):
+            return
+        self._fitted = True
+        # AND ON THE NEXT TURN OF THE LOOP, NOT NOW. Resizing inside showEvent
+        # happens before the layout has been activated, so the layout runs
+        # afterwards and puts the height straight back: measured at 676 points
+        # on the 800-point screen this was meant to fit, from a call that had
+        # already asked for 600. One turn later the dialog is laid out, its
+        # height is real, and a resize sticks.
+        QTimer.singleShot(0, self._fit_to_this_screen)
+
+    def _fit_to_this_screen(self) -> None:
+        screen = self.screen() or QApplication.primaryScreen()
+        self.fit_within(screen.availableGeometry().height() if screen else 900)
+
     def choices(self) -> dict:
         return {"carry_viewer": bool(self._carry.currentData()),
                 "numbers": self._numbers.isChecked(),
                 "controls": self._strip.isChecked(),
+                # NOT INSIDE "offer", THOUGH IT SITS BESIDE ONE. The offers say
+                # which CONTROLS the reader is handed; this says how the page
+                # BEHAVES before they touch anything, and it applies just as
+                # much to a page saved with no controls at all.
+                "glide": self._glide.isChecked(),
                 "offer": {name: box.isChecked()
                           for name, box in self._offer.items()}}
 
@@ -7678,6 +7799,7 @@ class GamutApp(QMainWindow):
             self._write_scene(gamuts, clouds, styles, lost, target,
                               controls=chosen.get("controls", True),
                               offer=chosen.get("offer"),
+                              glide=chosen.get("glide", False),
                               carry_viewer=chosen["carry_viewer"],
                               notes=(self._readout_text()
                                      if chosen["numbers"] else ""))
@@ -8342,10 +8464,18 @@ class GamutApp(QMainWindow):
         self._name_extras.append(mode_name)
         return mode, speed, sweep
 
-    def _spin_options(self) -> dict:
-        """What the page's turning engine should be doing, right now."""
+    def _spin_options(self, glide: bool = False) -> dict:
+        """What the page's turning engine should be doing, right now.
+
+        *glide* is the one setting here that is NOT a reading of this window:
+        this window has no momentum, because a shape dragged with a mouse on a
+        desktop is not what it is for. It is a choice made when a page is
+        saved, and it defaults to off so that every path that does not ask for
+        it -- the live view above all -- behaves exactly as it always has.
+        """
         return dict(
             on=self._spin_on.isChecked(),
+            glide=bool(glide),
             turn=dict(mode=self._turn_mode.currentData(),
                       speed=float(self._turn_speed.value()),
                       range=float(self._turn_sweep.value())),
@@ -8805,7 +8935,7 @@ class GamutApp(QMainWindow):
 
     def _write_scene(self, gamuts, clouds, styles, lost, out, *,
                      controls: bool = False, carry_viewer: bool = True,
-                     notes: str = "", offer=None) -> bool:
+                     notes: str = "", offer=None, glide: bool = False) -> bool:
         """Write whatever is on screen, whichever of the four it is.
 
         ONE PLACE, BECAUSE THERE WERE TWO AND THEY DISAGREED. This window can
@@ -8840,7 +8970,7 @@ class GamutApp(QMainWindow):
             return True
         if self._side_by_side.isChecked() and len(gamuts) >= 2:
             self._write_two_rooms(gamuts, out, clouds, lost,
-                                  controls=controls, offer=offer)
+                                  controls=controls, offer=offer, glide=glide)
         else:
             write_html(gamuts, out, self._scene_title(),
                        # SPLIT WHETHER OR NOT IT IS FADED RIGHT NOW. The
@@ -8852,7 +8982,7 @@ class GamutApp(QMainWindow):
                        split=bool(controls and len(gamuts) > 1
                                   and (offer is None
                                        or offer.get("agree", True))),
-                       spin=self._spin_options(),
+                       spin=self._spin_options(glide),
                        # NO FLOATING STRIP IN THIS WINDOW. It has its own
                        # movement controls, and a second set over the picture
                        # is two controls for one thing that can disagree.
@@ -8902,7 +9032,8 @@ class GamutApp(QMainWindow):
                                 controls=controls, offer=offer)
 
     def _write_two_rooms(self, gamuts, out, clouds, lost,
-                         controls: bool = False, offer=None) -> None:
+                         controls: bool = False, offer=None,
+                         glide: bool = False) -> None:
         """One page, two scenes, each holding a single shape.
 
         Each is built by the same code that builds the single view, so the two
@@ -8943,7 +9074,7 @@ class GamutApp(QMainWindow):
                 **options)))
         write_side_by_side_html(figures, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked(),
-                                spin=self._spin_options(),
+                                spin=self._spin_options(glide),
                                 controls=controls, offer=offer)
 
     #: The controls that can belong to one shape rather than all of them, as

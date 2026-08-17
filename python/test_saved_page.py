@@ -9,6 +9,7 @@ with, and the figures written under the picture could not be scrolled to.
 from __future__ import annotations
 
 import inspect
+import math
 import re
 
 import pytest
@@ -1653,3 +1654,84 @@ def test_the_slider_draws_the_cut_the_same_way_the_page_does():
         f"the slider carries outlines at {ti3gamut._CUT_POINTS} points while "
         f"the page is drawn at {drawn}, so touching the cut changes the "
         f"picture and moving it back does not change it back")
+
+
+# --------------------------------------------------------- carrying on turning
+
+def test_momentum_is_off_unless_a_page_asks_for_it():
+    """A page saved before this existed carries no `glide` at all, and reading
+    a missing setting must leave those pages behaving exactly as they did."""
+    src = ti3gamut._SPIN_CONTROLS_JS
+    assert "var carries = !!settings.glide;" in src, (
+        "the page must read its own setting, and read a missing one as off")
+
+
+def test_a_throw_is_measured_from_the_live_camera_not_the_layout():
+    """THE FAULT THIS AVOIDS, measured: during a drag the camera in the layout
+    does not move — 0.000 across a 180px drag — because the drawing library
+    keeps the real one inside the built scene until the gesture ends. Reading
+    the layout would make every throw come out as no throw at all."""
+    src = ti3gamut._SPIN_JS
+    body = src[src.index("function angles(gd)"):]
+    body = body[:body.index("function shortest")]
+    assert "liveCam(gd)" in body, "the speed must come from the live camera"
+    assert "gd.layout" not in body, (
+        "reading gd.layout here gives a stale camera and no throw")
+
+
+def test_a_throw_dies_by_the_clock_not_by_the_frame():
+    """three.js's own damping is applied per FRAME, so the same page dies
+    twice as fast on a 120Hz iPad as on a 60Hz laptop. An iPad is where this
+    was asked for, so the decay is per elapsed second instead."""
+    src = ti3gamut._SPIN_JS
+    assert "Math.pow(0.5, dt / HALF_LIFE)" in src, (
+        "the decay must be taken over elapsed time, not per frame")
+
+
+def test_a_hard_flick_cannot_send_it_spinning():
+    """"Not like crazy after letting go, just a bit." How far a throw carries
+    is speed x HALF_LIFE / ln2, so the cap on the speed is the cap on the
+    travel: 150 degrees a second over a 0.22s half-life is about 48 degrees,
+    whatever the flick."""
+    src = ti3gamut._SPIN_JS
+    assert "var FASTEST = 150 * Math.PI / 180;" in src
+    assert "var HALF_LIFE = 0.22;" in src
+    carries = 150 * 0.22 / math.log(2)
+    assert 30 < carries < 60, (
+        f"the hardest possible throw carries {carries:.0f} degrees, which is "
+        f"not 'just a bit'")
+
+
+def test_every_way_of_stopping_it_stops_it():
+    """A moving thing you cannot stop is worse than one that never moved.
+    Touching it, pausing, asking for a fixed view and putting the view back
+    must each end a throw — and the first is what anybody tries first."""
+    src = ti3gamut._SPIN_JS
+    for where, why in [
+            ("function hold()", "touching the shape, or a wheel, or a pinch"),
+            ("function reset()", "putting the view back"),
+            ("function look(name)", "asking for a fixed view"),
+    ]:
+        body = src[src.index(where):]
+        body = body[:body.index("\n  function ", 10)]
+        assert "stopGlide()" in body, f"a throw survives {why}"
+    assert "if (o.on === false) stopGlide();" in src, "Pause must stop a throw"
+
+
+def test_a_flat_cut_is_never_given_momentum():
+    """A cross-section is drawn looking straight down and cannot be turned at
+    all, so there is nothing for a throw to carry — and a control that is
+    present and does nothing is worse than a missing one."""
+    src = ti3gamut._SPIN_CONTROLS_JS
+    assert "glide: carries && !flat" in src
+    assert 'if (!flat && on("glide", false))' in src
+
+
+def test_the_page_is_told_whether_it_may_carry_on(tmp_path):
+    """The window's own view never has momentum; a saved page has it when the
+    person saving it asked for that, and not otherwise."""
+    import gamut_app
+    src = inspect.getsource(gamut_app.GamutApp._spin_options)
+    assert "glide: bool = False" in src or "glide=bool(glide)" in src
+    assert "glide=bool(glide)" in src, (
+        "the setting must reach the page's engine")

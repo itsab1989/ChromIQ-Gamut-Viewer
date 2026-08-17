@@ -4769,6 +4769,7 @@ window.cqSpin = (function () {
   }
   function reset() {
     rest();
+    stopGlide();          // or the view would drift straight back off again
     for (var i = 0; i < ids.length; i++) {
       var gd = scene(ids[i]), was = home[ids[i]];
       if (!gd || !was) continue;
@@ -4776,13 +4777,21 @@ window.cqSpin = (function () {
       else setRanges(gd, was);
     }
   }
-  function hold() { held = Date.now(); rest(); }
+  // ANY GESTURE AT ALL ENDS A THROW. Touching the shape to stop it is what
+  // anybody would try first, and a scroll wheel or a pinch arriving mid-throw
+  // means they have moved on to doing something else with it.
+  function hold() { held = Date.now(); rest(); stopGlide(); }
   function watch(gd) {
     if (gd._cqSpinWatched) return;
     gd._cqSpinWatched = true;
     ["mousedown", "wheel", "touchstart", "touchmove"].forEach(function (ev) {
       gd.addEventListener(ev, hold, true);
     });
+    // AFTER hold, so that clearing the old throw cannot clear the new grab.
+    ["mousedown", "touchstart"].forEach(function (ev) {
+      gd.addEventListener(ev, grab, true);
+    });
+    armReleases();
   }
   // HOW FAR TO MOVE THIS FRAME -- an increment, never an absolute angle. It is
   // what makes a drag or a zoom survive: nothing is ever forced back to a
@@ -5012,9 +5021,11 @@ window.cqSpin = (function () {
     // STANDING STILL TO DO IT. Left turning, the shape would be carried on
     // round from the position just set and the reader would see it swing
     // away from the very view they asked for -- so the movement stops, which
-    // is also what somebody pressing "from above" plainly means.
+    // is also what somebody pressing "from above" plainly means. A throw still
+    // in the air is the same argument twice over.
     on = false;
     rest();
+    stopGlide();
     each(function (one) { lookOne(one, where); });
   }
 
@@ -5084,13 +5095,189 @@ window.cqSpin = (function () {
     gd.addEventListener("touchcancel", ended, {capture: true, passive: false});
   }
 
+  // CARRYING ON A LITTLE WHEN THEY LET GO.
+  //
+  // Asked for because a shape that stops dead the instant a finger lifts does
+  // not feel like an object: "it should not move like crazy after letting go,
+  // just a bit to make it feel natural".
+  //
+  // WHAT IS MEASURED, AND WHY IT IS NOT THE FINGER. The obvious way is to
+  // watch the pointer and turn pixels into degrees -- and it needs a constant
+  // this file does not own, because the drawing library decides for itself how
+  // far a drag turns a scene. Guess that constant and the throw leaves at a
+  // different speed from the drag that caused it, which is precisely the thing
+  // that reads as broken. So what is sampled is the CAMERA: where the eye
+  // actually is, several times a second, while the drag is happening. The
+  // speed that comes out is in the same units the movement already uses, and
+  // it is right by construction on any device, at any drag speed, whatever the
+  // library does internally.
+  //
+  // liveCam() is what makes that possible. During a drag the camera in the
+  // layout is stale -- measured: 0.000 of movement over a 180px drag -- and
+  // the real one is inside the built scene, which liveCam already reaches for
+  // because the turning needed exactly the same thing.
+  //
+  // AND IT COSTS NOTHING TO EXCLUDE PANNING AND ZOOMING. Sampling the eye's
+  // DIRECTION rather than its position means a pan (which moves eye and centre
+  // by the same vector) and a zoom (which only changes the distance between
+  // them) both come out as no movement at all, with no special case to write
+  // and none to get wrong. Momentum is for turning, and turning is the only
+  // thing this can see.
+  var glide = {turn: 0, tilt: 0};      // radians a second, dying away
+  var glideOn = false;                 // whether this page carries it at all
+  var marks = [], grabbing = false, sampler = null;
+
+  //: HOW THE THROW DIES AWAY, as the time it takes to halve.
+  //:
+  //: three.js's OrbitControls -- the convention nearly every 3D viewer on the
+  //: web follows -- keeps 95% of the speed EVERY FRAME (dampingFactor 0.05,
+  //: applied as `sphericalDelta *= 1 - dampingFactor`). Checked in its source
+  //: rather than remembered. At 60fps that is a half-life of 0.22s.
+  //:
+  //: SAID AS A HALF-LIFE ON PURPOSE, because three.js's own form is per FRAME
+  //: and so it dies twice as fast on a 120Hz iPad as on a 60Hz laptop -- the
+  //: same page, two different feels, and the iPad is where this was asked for.
+  //: A half-life in seconds is the same movement on any screen.
+  var HALF_LIFE = 0.22;
+  //: Below this it has stopped. Going on would cost a wakeup every frame to
+  //: move the shape by less than the width of a line.
+  var STILL = 1.5 * Math.PI / 180;
+  //: THE FASTEST THROW THAT WILL BE HONOURED, and the number that decides
+  //: whether this feels right or silly. A flick can produce an arbitrarily
+  //: large speed over one short interval, and what was asked for is "not like
+  //: crazy after letting go, just a bit to make it feel natural".
+  //:
+  //: How far a throw carries after release is speed x HALF_LIFE / ln2, so
+  //: this cap IS the answer to "how much further can it possibly go": at
+  //: 150 degrees a second, no flick however hard carries more than about 48
+  //: degrees. An eighth of a turn is plainly a follow-through and is nowhere
+  //: near a spin.
+  //:
+  //: Measured before it was chosen: at 300 the hardest flick this can be
+  //: given carried **102 degrees** past the drag, which is a third of the way
+  //: round and reads as the shape having been let go of, not carried.
+  var FASTEST = 150 * Math.PI / 180;
+  //: HOW FAR BACK TO LOOK FOR THE SPEED. A finger SLOWS as it lifts, so the
+  //: last step before release is close to no movement and taking it alone
+  //: reads every throw as a stop. Averaging over the last eighth of a second
+  //: is what makes a throw a throw.
+  var LOOK_BACK = 0.12;
+  //: ... and how long ago is too long ago. Somebody who dragged the shape,
+  //: held it still and then lifted has plainly parked it, and parking it must
+  //: park it.
+  var STALE = 0.09;
+
+  function nowSeconds() {
+    return ((window.performance && window.performance.now)
+            ? window.performance.now() : Date.now()) / 1000;
+  }
+  function firstScene() {
+    for (var i = 0; i < ids.length; i++) {
+      var gd = scene(ids[i]);
+      if (gd && !isFlat(gd)) return gd;
+    }
+    return null;                 // every picture here is a flat cut
+  }
+  // WHERE THE EYE IS POINTING, as a pair of angles that step() can be handed
+  // straight back: turning is the angle round the L* axis, tipping is the
+  // angle above the plane. Straight down the pole has no round-the-axis angle
+  // at all, and reading one there would be reading noise.
+  function angles(gd) {
+    var cam = liveCam(gd);
+    if (!cam || !cam.eye) return null;
+    var c = cam.center || {x: 0, y: 0, z: 0};
+    var x = cam.eye.x - c.x, y = cam.eye.y - c.y, z = cam.eye.z - c.z;
+    var flatR = Math.sqrt(x * x + y * y);
+    if (!(flatR > 1e-9)) return null;
+    return {az: Math.atan2(y, x), el: Math.atan2(z, flatR)};
+  }
+  function shortest(d) {         // -PI..PI: crossing behind must not read as a
+    while (d > Math.PI) d -= 2 * Math.PI;              // whole turn the other
+    while (d < -Math.PI) d += 2 * Math.PI;             // way round
+    return d;
+  }
+  function sample() {
+    if (!grabbing) { sampler = null; return; }
+    sampler = window.requestAnimationFrame(sample);
+    var gd = firstScene(); if (!gd) return;
+    var a = angles(gd); if (!a) return;
+    marks.push({t: nowSeconds(), az: a.az, el: a.el});
+    if (marks.length > 30) marks.shift();
+  }
+  function grab() {
+    glide.turn = 0; glide.tilt = 0;
+    marks = [];
+    if (grabbing) return;
+    grabbing = true;
+    if (sampler === null) sampler = window.requestAnimationFrame(sample);
+  }
+  function letGo() {
+    if (!grabbing) return;
+    grabbing = false;
+    if (sampler !== null) {
+      window.cancelAnimationFrame(sampler); sampler = null;
+    }
+    var taken = marks; marks = [];
+    if (!glideOn || taken.length < 2) return;
+    var last2 = taken[taken.length - 1];
+    if (nowSeconds() - last2.t > STALE) return;      // held still, then lifted
+    var first = last2;
+    for (var i = taken.length - 1; i >= 0; i--) {
+      if (last2.t - taken[i].t > LOOK_BACK) break;
+      first = taken[i];
+    }
+    var span = last2.t - first.t;
+    if (!(span > 0.008)) return;             // too short an interval to divide
+    var turn = shortest(last2.az - first.az) / span;
+    var tilt = (last2.el - first.el) / span;
+    if (!isFinite(turn) || !isFinite(tilt)) return;
+    turn = Math.max(-FASTEST, Math.min(FASTEST, turn));
+    tilt = Math.max(-FASTEST, Math.min(FASTEST, tilt));
+    if (Math.abs(turn) < STILL && Math.abs(tilt) < STILL) return;
+    glide.turn = turn; glide.tilt = tilt;
+    if (raf === null) {
+      last = (window.performance || Date).now();
+      raf = window.requestAnimationFrame(frame);
+    }
+  }
+  function gliding() {
+    return Math.abs(glide.turn) > STILL || Math.abs(glide.tilt) > STILL;
+  }
+  function stopGlide() { glide.turn = 0; glide.tilt = 0; }
+  // ON THE WINDOW, NOT ON THE PICTURE. A drag that ends with the pointer off
+  // the edge of the picture -- which is most of the fast ones, because a throw
+  // travels -- never delivers a mouseup to the element it started on.
+  function armReleases() {
+    if (window._cqLetGo) return;
+    window._cqLetGo = true;
+    ["mouseup", "touchend", "touchcancel", "pointercancel", "blur"]
+      .forEach(function (ev) {
+        window.addEventListener(ev, letGo, true);
+      });
+  }
+
   function frame(now) {
-    if (!on) { raf = null; return; }
+    if (!on && !gliding()) { raf = null; return; }
     raf = window.requestAnimationFrame(frame);
     var dt = (now - last) / 1000; last = now;
     if (document.hidden) return;
     if (!isFinite(dt) || dt <= 0) return;
     if (dt > 0.1) dt = 0.1;       // back from a hidden tab: step, do not jump
+    // THE THROW FIRST, AND THE MOVEMENT WAITS BEHIND IT. Two things turning
+    // the same shape at once is the one way this could feel worse than not
+    // having it: the swing would fight the throw and neither would read as
+    // deliberate. So while a throw is alive it is the only thing moving, the
+    // swing's phase is held at its centre, and when the throw dies away the
+    // swing takes over from wherever it left the shape.
+    if (gliding()) {
+      var gt = glide.turn * dt, gl = glide.tilt * dt;
+      var keeps = Math.pow(0.5, dt / HALF_LIFE);
+      glide.turn *= keeps; glide.tilt *= keeps;
+      if (!gliding()) stopGlide();
+      for (var j = 0; j < ids.length; j++) step(ids[j], gt, gl);
+      rest();
+      return;
+    }
     if (Date.now() - held < 400) return;          // their gesture, not ours
     // ONE set of increments for the whole frame, so two rooms that are meant
     // to point the same way stay together to the last decimal.
@@ -5118,13 +5305,22 @@ window.cqSpin = (function () {
       if (got.speed !== undefined) a.speed = got.speed;
     });
     if (o.on !== undefined) { if (o.on && !on) rest(); on = !!o.on; }
-    if (on && raf === null) {
+    // PAUSE STOPS EVERYTHING THAT IS MOVING. Somebody pressing pause while a
+    // throw is still running and watching the shape carry on turning would
+    // reasonably conclude the button is broken.
+    if (o.on === false) stopGlide();
+    if (o.glide !== undefined) {
+      glideOn = !!o.glide;
+      if (!glideOn) stopGlide();
+    }
+    if ((on || gliding()) && raf === null) {
       last = (window.performance || Date).now();
       raf = window.requestAnimationFrame(frame);
     }
   }
   return {set: set, nudge: nudge, reset: reset, zoom: zoom, slide: slide,
-          look: look, moving: function () { return on; }};
+          look: look, moving: function () { return on; },
+          glides: function () { return glideOn; }};
 })();
 
 
@@ -5197,6 +5393,12 @@ window.cqSpinControls = function (settings) {
     return Math.max(0.5, saved[which].speed * both / start);
   }
   var running = !!settings.on;
+  // WHETHER A DRAG CARRIES ON AFTER THE FINGER LIFTS. Set when the page was
+  // saved; the reader may be given a switch for it, or may not. A page saved
+  // before this existed has no such setting, and `undefined` reads as off --
+  // which is exactly right, because off is how those pages have always
+  // behaved and reopening one must not change it under the reader.
+  var carries = !!settings.glide;
   var ink = settings.ink || "#e6e6e6";
   var paper = settings.paper || "#111111";
   // BOTH PALETTES TRAVEL when the page offers a light/dark switch, because
@@ -5786,7 +5988,7 @@ window.cqSpinControls = function (settings) {
       localStorage.setItem(STORE, JSON.stringify(
         {running: running, both: both, speeds: speeds, picture: picture,
          shapes: dressed, cutAt: cutAt, agreeAt: agreeAt, ranges: ranges,
-         chosen: chosen,
+         chosen: chosen, carries: carries,
          differAt: differAt,
          mode: mode, turn: turn.mode, tilt: tilt.mode}));
     } catch (e) {}
@@ -5872,6 +6074,12 @@ window.cqSpinControls = function (settings) {
         cutAt = Math.max(0, Math.min(cuts.levels.length - 1, was.cutAt | 0));
       if (was.turn !== undefined) turn.mode = was.turn;
       if (was.tilt !== undefined) tilt.mode = was.tilt;
+      // ONLY IF THIS PAGE GAVE THEM THE SWITCH. Restoring a choice made on
+      // some other page at the same address, onto a page whose sender did not
+      // hand the switch over, would leave the reader with behaviour they can
+      // see and cannot change.
+      if (typeof was.carries === "boolean" && on("glide", false))
+        carries = was.carries;
       if (was.mode) mode = was.mode;
     } catch (e) {}
   }
@@ -5925,7 +6133,11 @@ window.cqSpinControls = function (settings) {
     // reaching for is the very fault it was added to explain, and it is the
     // second time in this file that something has moved under a finger.
     // Below the grid it can only ever add height beneath everything.
-    body += '<div class="cq-sect' + (wide ? " cq-wide" : "") + '">'
+    // `wide` may name a class of its own. Three groups need a wider column
+    // than the rest and they need three different widths, because what sets
+    // the width is the widest ROW the group actually holds -- see the CSS.
+    var extra = wide === true ? " cq-wide" : (wide ? " " + wide : "");
+    body += '<div class="cq-sect' + extra + '">'
       + '<h4>' + heading + '</h4><div class="cq-rows">' + rows + '</div>'
       + (aside || "") + '</div>';
   }
@@ -6193,7 +6405,7 @@ window.cqSpinControls = function (settings) {
              + "is not restful to leave running."))
          : "")
       + '</span></div>';
-  section("how it moves", moves);
+  section("how it moves", moves, "cq-turns");
 
   var looking = "";
   if (on("move", true))
@@ -6215,7 +6427,15 @@ window.cqSpinControls = function (settings) {
     looking += '<div class="cq-row"><span>look from</span>'
       + '<span class="cq-ctl">' + stand + '</span></div>';
   }
-  section("where you look from", looking);
+  // NOT ON A FLAT CUT. A cross-section is drawn looking straight down and
+  // cannot be turned at all, so there is nothing for a throw to carry.
+  if (!flat && on("glide", false))
+    looking += row("glide", "when you let go",
+      "Whether the shape carries on turning for a moment after you let go of "
+      + "it, instead of stopping the instant your finger or the mouse button "
+      + "lifts. It slows to a stop on its own in about a second. Switch it "
+      + "off to have the shape stay exactly where you left it.");
+  section("where you look from", looking, "cq-looks");
 
   var each = "";
   // WHERE THEY AGREE, ABOVE THE SHAPES IT ACTS ON. It belongs in this group
@@ -6514,6 +6734,33 @@ window.cqSpinControls = function (settings) {
       // own, still allowed to sit two abreast once there is room for two.
       + ".cq-spin-panel .cq-wide .cq-rows{"
       + "grid-template-columns:repeat(auto-fit,minmax(430px,1fr))}"
+      // A COLUMN WIDE ENOUGH FOR THE WIDEST ROW IN *THIS* GROUP.
+      //
+      // 230px is right for a group of switches and much too narrow for a
+      // group whose rows carry five controls. Where a row does not fit, its
+      // controls wrap to a second line UNDER the name -- and in a grid of two
+      // columns that puts one row's buttons level with the next column's
+      // name, which is the very "which buttons belong to which option"
+      // complaint these columns were rearranged to answer.
+      //
+      // MEASURED ON A REAL PAGE at three window widths, rather than chosen:
+      //
+      //   group                 widest row needs   plain 230px column gives
+      //   how it moves               452px            445px at 1000px wide
+      //   where you look from        384px            372px at  844px wide
+      //
+      // Both missed, and "left & right" missed by SEVEN PIXELS -- which is
+      // why this was invisible on every desktop and showed up on a phone held
+      // sideways. The numbers below are those two, rounded up.
+      //
+      // min(100%,...) IS THE PART THAT MATTERS ON A PHONE. A bare 470px
+      // minimum on a 320px screen asks for a track wider than the panel, and
+      // the row overflows sideways instead of stacking. Clamped to the width
+      // available it simply becomes one column, which is what a phone wants.
+      + ".cq-spin-panel .cq-turns .cq-rows{"
+      + "grid-template-columns:repeat(auto-fit,minmax(min(100%,470px),1fr))}"
+      + ".cq-spin-panel .cq-looks .cq-rows{"
+      + "grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))}"
       + ".cq-spin-panel .cq-shape{flex-wrap:wrap}"
       // AND THE NAME DOES NOT PUSH THEM OFF THE LINE. Set to grow, it took
       // every spare pixel of the row and the four controls beside it wrapped
@@ -6614,7 +6861,11 @@ window.cqSpinControls = function (settings) {
       // gap between rows is counted, and these sit in pairs where hitting
       // the minus instead of the plus is an actual mistake.
       + "@media (max-width:520px){"
-      + ".cq-spin-panel .cq-rows,.cq-spin-panel .cq-wide .cq-rows"
+      // EVERY GROUP NAMED, because the three above are more specific than
+      // the plain `.cq-rows` and would otherwise keep their own columns here
+      // and ignore the tighter gap a phone is given.
+      + ".cq-spin-panel .cq-rows,.cq-spin-panel .cq-wide .cq-rows,"
+      + ".cq-spin-panel .cq-turns .cq-rows,.cq-spin-panel .cq-looks .cq-rows"
       + "{grid-template-columns:1fr;gap:9px 0}"
       + ".cq-spin-panel .cq-row{flex-wrap:wrap}"
       + ".cq-spin-panel .cq-ctl{justify-content:flex-start}"
@@ -6850,7 +7101,7 @@ window.cqSpinControls = function (settings) {
     // page or an older version of this one might say.
     if (flat) running = false;
     window.cqSpin.set(
-      {on: running,
+      {on: running, glide: carries && !flat,
        turn: {mode: turn.mode, range: ranges.turn, speed: speedFor("turn")},
        tilt: {mode: tilt.mode, range: ranges.tilt, speed: speedFor("tilt")}});
     say("speed", "speed " + both);
@@ -6861,6 +7112,7 @@ window.cqSpinControls = function (settings) {
     say("play", running ? "Pause" : "Play");
     press("lr", turn.mode && turn.mode !== "off");
     press("ud", tilt.mode && tilt.mode !== "off");
+    press("glide", carries);
     // FROM THE ONE PLACE EVERY HANDLER ALREADY PASSES THROUGH. Hung off the
     // plural tellShapes() instead, it was missed by every per-shape press --
     // which calls the singular one -- so fading a shape to nothing left the
@@ -7139,6 +7391,7 @@ window.cqSpinControls = function (settings) {
       ? "off" : chosen.turn;
     if (what === "ud") tilt.mode = (tilt.mode && tilt.mode !== "off")
       ? "off" : chosen.tilt;
+    if (what === "glide") carries = !carries;
     if (what === "grid") { picture.grid = !picture.grid; applyPicture(); }
     if (what === "labels") { picture.labels = !picture.labels; applyPicture(); }
     if (what === "key") { picture.key = !picture.key; applyPicture(); }
@@ -7186,5 +7439,5 @@ window.cqSpinControls = function (settings) {
   settled();
 };
 
-window.addEventListener('load', function () {var s = {"on": true, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "swing", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#22211f", "paper": "#efebe6", "mode": "light", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true, "opacity": true, "wires": true, "grey": true, "views": true, "fullscreen": true, "picture": true, "cut": true, "agree": true, "sweep": false}};window.cqSpin.set(s);window.cqSpinControls(s);});</script></body>
+window.addEventListener('load', function () {var s = {"on": true, "glide": false, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "swing", "speed": 5.0, "range": 20.0}, "ids": ["scene0"], "ink": "#22211f", "paper": "#efebe6", "mode": "light", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true, "opacity": true, "wires": true, "grey": true, "views": true, "fullscreen": true, "picture": true, "cut": true, "agree": true, "sweep": false}};window.cqSpin.set(s);window.cqSpinControls(s);});</script></body>
 </html>

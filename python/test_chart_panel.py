@@ -453,11 +453,11 @@ def test_a_legend_key_is_lifted_until_it_can_be_seen(app):
 
 
 def test_the_save_dialog_opens_at_a_size_that_fits_a_screen(app):
-    """It had grown to twenty-one switches in five groups and opened taller
+    """It had grown to twenty-two switches in five groups and opened taller
     than most windows anybody keeps open -- 1,138 points on a 1440-point
     screen. Reported as "pretty high ... maybe not strictly limited, a smaller
-    default", which is exactly right: the ceiling is on the list inside, not
-    on the dialog, so dragging it taller still works."""
+    default", which is exactly right: the ceiling is on how tall it OPENS, so
+    dragging it taller still works."""
     import gamut_app
     dialog = gamut_app.WebPageDialog(None)
     dialog.show()
@@ -467,6 +467,47 @@ def test_the_save_dialog_opens_at_a_size_that_fits_a_screen(app):
         f"the dialog opens {dialog.height()} tall on a {screen} screen")
     area = dialog.findChild(gamut_app.FadingScrollArea)
     assert area is not None, "the list of switches no longer scrolls"
+    dialog.close()
+
+
+#: Screen heights worth proving this on. 800 is what the Windows CI runner
+#: reports and is where this last broke; 720 and 640 are a small laptop and a
+#: half-height window, both of which a printer plausibly works on.
+@pytest.mark.parametrize("room", [1440, 1080, 900, 800, 720, 640])
+def test_the_save_dialog_fits_a_small_screen_too(app, room):
+    """THE ONE THAT WOULD HAVE CAUGHT IT. The first version of this ceiling
+    capped the scrolling LIST rather than the window, and capping the part
+    that scrolls does not cap the window: everything else in the dialog is
+    fixed, and how tall that comes out depends on the platform's fonts and
+    margins. Measured on Windows, where it slipped through: **874 points tall
+    on an 800-point screen**, with the list already at its cap and the Save
+    button below the bottom of the screen.
+
+    The test that was there could not see it, because it asked about the
+    screen the test was running on -- and on the machine this is developed on
+    there is 1440 points of it, where even the broken version fitted. So this
+    one hands the dialog a height instead of asking for one.
+    """
+    import gamut_app
+    from PyQt6.QtWidgets import QPushButton
+    dialog = gamut_app.WebPageDialog(None)
+    dialog.show()
+    app.processEvents()
+    dialog.fit_within(room)
+    app.processEvents()
+    assert dialog.height() <= room, (
+        f"on a {room}-point screen the dialog is {dialog.height()} tall, "
+        f"so {dialog.height() - room} points of it are off the bottom")
+    # AND THE SAVE BUTTON IS STILL REACHABLE, which is the thing that actually
+    # matters -- a dialog can be the right height and still have its buttons
+    # clipped if the list refuses to give up any room.
+    buttons = [b for b in dialog.findChildren(QPushButton)
+               if "save" in b.text().lower()]
+    assert buttons, "the Save button has gone"
+    bottom = buttons[0].mapTo(dialog, buttons[0].rect().bottomLeft()).y()
+    assert bottom <= dialog.height(), (
+        f"the Save button ends {bottom - dialog.height()} points below the "
+        f"bottom of a dialog {dialog.height()} tall")
     dialog.close()
 
 
