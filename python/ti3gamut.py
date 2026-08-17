@@ -1851,6 +1851,35 @@ def _drift_extent(lab, space: str):
     return out
 
 
+def colour_axis_for(which=None, ceiling: float = DRIFT_CEILING,
+                    limit: float = DIRECTION_LIMIT) -> dict:
+    """The colour key as a property of the SCENE rather than of any trace.
+
+    WHY THIS IS NOT ON THE TRACES. Split into families, the key used to hang
+    on whichever family happened to be drawn first -- which is what "draw the
+    bar once" naturally means, and is wrong. Switching that one family off
+    took the whole ΔE scale off the page and left the rest of the dots painted
+    in colours with nothing to read them against. Hiding any OTHER family
+    looked perfectly fine, so a check that tried one would have passed.
+
+    Owned by the layout, the key cannot be switched off by anything, and every
+    family is guaranteed to share one scale rather than merely being handed
+    matching limits.
+    """
+    if which:
+        asks, less, more, _column = DIRECTIONS[which]
+        return dict(
+            colorscale=DIRECTION_SCALE, cmin=-limit, cmax=limit,
+            colorbar=dict(
+                title=dict(text=asks, side="right"),
+                thickness=12, len=0.78, x=1.02,
+                tickvals=[-limit, -1.0, 0.0, 1.0, limit],
+                ticktext=[f"{limit:.0f} {less}", f"1 {less}", "no change",
+                          f"1 {more}", f"{limit:.0f} {more}"]))
+    return dict(colorscale=DRIFT_SCALE, cmin=0.0, cmax=ceiling,
+                colorbar=_drift_key(ceiling))
+
+
 def _drift_key(ceiling):
     """The colour key the distance view uses, in one place."""
     return dict(title=dict(text="ΔE2000", side="right"),
@@ -1904,10 +1933,19 @@ def _split_by_family(lab, x, y, z, values, sizes, ceiling, hover, scale,
             customdata=values[pick],
             hovertemplate=hover + f"<extra>{family}</extra>",
             marker=dict(
-                size=sizes[pick], color=values[pick], colorscale=scale,
-                cmin=cmin, cmax=cmax, opacity=0.85,
-                showscale=not drawn_key,
-                colorbar=key if not drawn_key else None)))
+                # THE KEY BELONGS TO THE PICTURE, NOT TO ANY ONE FAMILY.
+                # Hung on the first trace -- which is what "draw the bar once"
+                # naturally means -- it is switched off with that family, so
+                # hiding the reds took the ΔE scale off the page and left the
+                # remaining dots painted in colours with nothing to read them
+                # against. Basti hit it on the published page.
+                #
+                # A layout colour axis is owned by the scene instead, so every
+                # family points at the same one and none of them can take it
+                # away. It also guarantees they share a scale rather than
+                # merely being given equal limits.
+                size=sizes[pick], color=values[pick],
+                coloraxis="coloraxis", opacity=0.85)))
         drawn_key = True
     return out
 
@@ -7326,14 +7364,18 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # the cloud is one trace as it has always been.
         families = bool(drift[4]) if len(drift) > 4 else False
         if which:
-            for trace in drift_direction(drift_lab, drift_de, drift_name,
-                                         axis=which, space=_axes_space,
-                                         by_family=families):
-                fig.add_trace(trace)
+            drawn = drift_direction(drift_lab, drift_de, drift_name,
+                                    axis=which, space=_axes_space,
+                                    by_family=families)
         else:
-            for trace in drift_cloud(drift_lab, drift_de, drift_name,
-                                     space=_axes_space, by_family=families):
-                fig.add_trace(trace)
+            drawn = drift_cloud(drift_lab, drift_de, drift_name,
+                                space=_axes_space, by_family=families)
+        for trace in drawn:
+            fig.add_trace(trace)
+        if families:
+            # THE KEY BELONGS TO THE SCENE when the picture can be taken
+            # apart, so no family can switch it off -- see colour_axis_for.
+            fig.update_layout(coloraxis=colour_axis_for(which))
         if families:
             # PIN THE BOX WHEN THE PICTURE CAN BE TAKEN APART.
             #

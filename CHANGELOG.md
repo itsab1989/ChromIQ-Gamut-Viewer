@@ -1,5 +1,35 @@
 # Changelog
 
+## v2.28.0
+
+### 🔑 Switching off the reds no longer takes the colour key with them
+
+Reported on the published page: hiding one family removed the ΔE scale from
+the right-hand side, leaving the remaining dots painted in colours with
+nothing to read them against.
+
+**It was the reds specifically, and that is the whole shape of the bug.** The
+key was drawn once, on the first group — which is what "draw the bar once"
+naturally means, and is wrong, because that bar is then a property of that one
+group and is switched off with it. Hiding any *other* family looked perfectly
+fine, so trying one family would have found nothing.
+
+The key now belongs to the **scene** rather than to any group, so nothing can
+switch it off — and every family is guaranteed to be reading one scale rather
+than merely being handed matching limits. Checked in both browser engines by
+hiding all seven families in turn: the key survives every one.
+
+**The test that was watching this had to change too.** It asked *how many
+traces carry their own scale* and wanted the answer 1 — which is exactly what
+the broken version had. A test phrased that way could never have caught it. It
+now asks that **no** group owns a scale and that they all read the scene's.
+
+### Also
+
+- A cloud that has not been split is one trace with nothing to hide, so it
+  keeps its own key and no page published before this changes.
+- 779 tests (776 + 3 skipped without ArgyllCMS).
+
 ## v2.27.0
 
 ### 📱 Two faults found on a phone

@@ -760,20 +760,33 @@ def test_the_picture_counts_and_the_written_counts_are_the_same_numbers():
 
 
 def test_the_split_picture_carries_exactly_one_colour_key():
-    """Seven traces sharing one fixed scale, not seven bars down the side."""
+    """Seven groups sharing one fixed scale, not seven bars down the side.
+
+    THE TEST USED TO ASK WHICH TRACE CARRIED THE BAR, and passed while the
+    real fault was live: the bar was on the first trace, so switching the reds
+    off took it away. Asking "how many traces have their own scale" cannot
+    catch that -- one is exactly what the broken version had.
+
+    So it asks the thing that actually matters instead: no trace owns a scale
+    at all, and they all read the same one, which lives on the scene where
+    nothing can switch it off.
+    """
     import ti3gamut
 
     rng = np.random.default_rng(14)
     n = 300
     lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
                            rng.uniform(-60, 60, n)])
-    for traces in (ti3gamut.drift_cloud(lab, rng.uniform(0, 6, n), "x",
-                                        by_family=True),
-                   ti3gamut.drift_direction(lab, rng.normal(0, 3, (n, 3)),
-                                            "x", axis="b", by_family=True)):
-        assert sum(1 for t in traces if t.marker.showscale) == 1
-        # and the scale really is the shared, fixed one
-        assert len({(t.marker.cmin, t.marker.cmax) for t in traces}) == 1
+    for values, axis in ((rng.uniform(0, 6, n), None),
+                         (rng.normal(0, 3, (n, 3)), "b")):
+        fig = ti3gamut.build_figure([], "x", mode="dark", space="lab",
+                                    grid=True,
+                                    drift=(lab, values, "d", axis, True))
+        assert not any(t.marker.showscale for t in fig.data), (
+            "a family owns the key and can take it away")
+        assert all(t.marker.coloraxis == "coloraxis" for t in fig.data)
+        assert fig.layout.coloraxis.colorbar.title.text
+        assert fig.layout.coloraxis.cmin is not None
 
 
 def test_an_empty_family_gets_no_legend_entry():
@@ -797,3 +810,63 @@ def test_which_family_refuses_something_that_is_not_lab():
 
     with pytest.raises(ValueError, match=r"\(N, 3\)"):
         which_family(np.zeros(9))
+
+
+def test_no_single_family_owns_the_colour_key():
+    """"turning off the reds turns off the heat map on the right."
+
+    THE KEY BELONGED TO WHICHEVER FAMILY WAS DRAWN FIRST, which is what
+    "draw the bar once" naturally means and is wrong: switching that family
+    off took the ΔE scale off the page and left the remaining dots painted in
+    colours with nothing to read them against. Hiding any OTHER family looked
+    fine, which is why it survived a check that tried one.
+
+    A layout colour axis is owned by the scene, so no trace can take it away.
+    """
+    import ti3gamut
+
+    rng = np.random.default_rng(21)
+    n = 500
+    lab = np.column_stack([rng.uniform(20, 92, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, rng.uniform(0, 6, n), "d", None,
+                                       True))
+    # not one trace carries a scale of its own …
+    assert not any(t.marker.showscale for t in fig.data)
+    # … they all point at the scene's, which is where the key lives
+    assert all(t.marker.coloraxis == "coloraxis" for t in fig.data)
+    assert fig.layout.coloraxis.colorbar.title.text == "ΔE2000"
+    assert (fig.layout.coloraxis.cmin, fig.layout.coloraxis.cmax) == (0.0, 5.0)
+
+
+def test_the_direction_view_keeps_its_key_the_same_way():
+    """The same trap, the other picture — and its key says something else."""
+    import ti3gamut
+
+    rng = np.random.default_rng(22)
+    n = 300
+    lab = np.column_stack([rng.uniform(20, 92, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, rng.normal(0, 3, (n, 3)), "d", "b",
+                                       True))
+    assert not any(t.marker.showscale for t in fig.data)
+    assert fig.layout.coloraxis.colorbar.title.text == "warmer or cooler"
+    # a direction runs both ways from nothing, and must still
+    assert fig.layout.coloraxis.cmin < 0 < fig.layout.coloraxis.cmax
+
+
+def test_an_unsplit_cloud_still_carries_its_own_key():
+    """One trace cannot be hidden without hiding everything, so nothing
+    changes for it — and no page published before this looks different."""
+    import ti3gamut
+
+    rng = np.random.default_rng(23)
+    n = 200
+    lab = np.column_stack([rng.uniform(20, 92, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, rng.uniform(0, 6, n), "d"))
+    assert fig.data[0].marker.colorbar.title.text == "ΔE2000"
+    assert fig.layout.coloraxis.colorbar.title.text is None
