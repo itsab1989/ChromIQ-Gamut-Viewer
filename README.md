@@ -1073,6 +1073,17 @@ file, five files kept. You can read or delete it whenever you like.
   16.5 Lab units across. Both shapes are re-cut along the true crossing curve
   first, so every triangle is wholly one side or the other. It stays a single
   closed mesh; the volume and area are unchanged to seven figures.
+- **Sending a saved page to somebody.** It is one self-contained file, so it
+  travels like any other: attach it to an email, put it on a memory stick, or
+  upload it and send the link. Whoever gets it double-clicks — there is nothing
+  to install. **A forum post is the exception**, and deliberately so: forums
+  strip web pages out of posts because a page can carry a program, and most
+  will not take one as an attachment either. For a forum, put a **picture** in
+  the post (**Save this view as a picture…**) and a **link** to the page under
+  it — people see what you mean without clicking, and anyone who wants to turn
+  the shape can. Choosing **Fetch it when opened** in the save dialog makes the
+  file about 4.7 MB smaller, which is the difference between something you can
+  upload almost anywhere and something you cannot.
 - **Coverage is measured by sampling**, 60,000 points with a fixed seed, so the
   same pair of gamuts always gives the same answer. The points are drawn
   directly from inside the shape rather than thrown at its bounding box and

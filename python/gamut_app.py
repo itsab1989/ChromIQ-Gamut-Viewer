@@ -1919,6 +1919,19 @@ class PictureDialog(QDialog):
         self._summary.setObjectName("hint")
         outer.addWidget(self._summary)
 
+        # THE OTHER EXPORT, NAMED HERE. Two ways of saving a view and nothing
+        # saying which to reach for is how somebody ends up sending a picture
+        # when they wanted the turnable page, or trying to attach the page to
+        # a forum post that will not take it. One line each way.
+        pair = WrappedLabel(
+            "A picture goes straight into a forum post, an email or a "
+            "document, and everybody can see it without clicking. If you want "
+            "the person at the other end to be able to turn the shape "
+            "themselves, use Save this view as a web page… instead — or send "
+            "both, which is what reads best in a post.", self)
+        pair.setObjectName("hint")
+        outer.addWidget(pair)
+
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         cancel = QPushButton("Cancel", self)
@@ -2228,7 +2241,28 @@ class WebPageDialog(QDialog):
             "with something to compare it against carries a good deal of its "
             "own numbers.\n\n"
             "Your measurements are inside the page either way. Nothing about "
-            "them is ever sent anywhere.", self)
+            "them is ever sent anywhere.\n\n"
+            "GETTING IT TO SOMEBODY. It is a single file, so it travels the "
+            "way any file does: attach it to an email, put it on a memory "
+            "stick, or drop it in whatever you share folders with. Whoever "
+            "receives it opens it by double-clicking — there is nothing to "
+            "install.\n\n"
+            "PUTTING IT IN A FORUM POST is the one thing you cannot do "
+            "directly, and it is worth knowing why: forums deliberately strip "
+            "web pages out of posts, because a page can carry a program and "
+            "no forum can afford to run a stranger's. So no forum will show "
+            "this inside a post, and most will not accept it as an "
+            "attachment either.\n\n"
+            "WHAT TO DO INSTEAD, and it reads better anyway: put a PICTURE in "
+            "the post and a LINK underneath it. Use Save this view as a "
+            "picture… for the picture — a still, or a few seconds of the "
+            "shape turning — so people see what you mean without clicking "
+            "anything. Then upload this page anywhere that gives you a web "
+            "address and put that address under the picture, for anyone who "
+            "wants to turn the shape themselves.\n\n"
+            "For that, choose Fetch it when opened above: it makes the file "
+            "about 4.7 MB smaller, which is the difference between something "
+            "you can upload almost anywhere and something you cannot.", self)
         carry_hint.setObjectName("hint_carry_hint")
         rows.addWidget(carry_hint, 0, 2, Qt.AlignmentFlag.AlignVCenter)
         carry_hint.follow(self._carry)
@@ -2701,10 +2735,18 @@ class WebPageDialog(QDialog):
         area.setMaximumHeight(max(260, int(room * 0.38)))
         outer.addWidget(area, 1)
         strip.toggled.connect(area.setEnabled)
+        # WHAT IT IS, AND HOW TO GET IT TO SOMEBODY. The second half was
+        # missing, and somebody reading this dialog asked the obvious question
+        # it did not answer: how do I put this in a forum post? Kept to two
+        # short lines -- the long version is behind the ⓘ beside "The file",
+        # where it costs no room that a control could have used.
         note = WrappedLabel(
             "The page opens in any browser and keeps everything you can do "
             "here: turning it, zooming in, and reading a name by pointing at "
-            "a shape.", self)
+            "a shape.\n"
+            "It is one file, so you can email it, put it on a memory stick, "
+            "or upload it and send the link. For a forum post, send a link "
+            "and put a picture in the post itself — see the ⓘ above.", self)
         note.setObjectName("hint")
         outer.addWidget(note)
 

@@ -245,6 +245,27 @@ disagreements.** A test also pins that answering 1, 2, 7, 999 or 100,000 at a
 time gives the same answer, because blocking is the one way a change made
 purely for speed could quietly change what the picture says.
 
+### 💬 Nobody was told how to get a saved page to anybody
+
+Asked while looking at the save dialog: where does it say how to use this in a
+forum post? It did not, anywhere. The dialog said only that the page opens in
+any browser.
+
+The honest answer needed saying, including the part that is a flat no. **A
+forum will not show this inside a post**, and most will not take it as an
+attachment either -- deliberately, because a web page can carry a program and
+no forum can afford to run a stranger's. What works instead is a picture in
+the post and a link underneath it: people see what you mean without clicking,
+and anyone who wants to turn the shape themselves can. For that, *Fetch it
+when opened* makes the file about 4.7 MB smaller, which is the difference
+between something you can upload almost anywhere and something you cannot.
+
+Two short lines under the switches, and the long version behind the ⓘ beside
+**The file** -- where it costs no room that a control could have used. The
+picture dialog now names the page export too, so each says when to reach for
+the other rather than leaving somebody to guess which of two exports they
+wanted.
+
 ### 📱 Two thirds of an iPad screen was black, and the controls were scattered
 
 Reported from an iPad, and then found on a Mac in Safari too. Two faults, both
