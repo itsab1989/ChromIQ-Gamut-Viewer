@@ -3185,6 +3185,45 @@ class TimelineDialog(QDialog):
         self._caution.setObjectName("hint")
         outer.addWidget(self._caution)
 
+        # --- which colour families moved --------------------------------------
+        #
+        # THE SAME ANSWER AS THE PICTURE, IN A FORM SOMEBODY CAN SEND. Asked
+        # for by a paper manufacturer who wanted "reds: stayed the same, blues:
+        # drifted toward green" to paste into an email. The direction view
+        # above already knows this and shows it as a cloud; a cloud cannot be
+        # pasted anywhere and has to be interpreted by whoever is looking.
+        #
+        # UNDER the picture and the verdict rather than beside them, because it
+        # is a summary of what is already on screen and not a third thing to
+        # choose between.
+        self._families = WrappedLabel("", self, hide_when_empty=True)
+        self._families.setObjectName("families")
+        self._families.setToolTip(
+            "Which colour families moved between these two profiles, and "
+            "which way — the same answer the picture above is showing, "
+            "written out so you can paste it into an email or a report.\n\n"
+            "EVERY LINE SAYS HOW MANY PATCHES IT STANDS ON. A family with "
+            "four colours in it and one with four hundred produce the same "
+            "kind of sentence, and only that number tells you how much to "
+            "trust it.\n\n"
+            "\"STAYED THE SAME\" MEANS UNDER ΔE 1, the same figure this "
+            "application uses everywhere else for a difference a careful eye "
+            "would begin to notice.\n\n"
+            "\"MIXED\" MEANS THE COLOURS IN THAT FAMILY MOVED, BUT NOT "
+            "TOGETHER. There is no single direction that would be true of "
+            "them, so none is given rather than inventing one from the "
+            "average.\n\n"
+            "\"BUT NOT CERTAINLY\" MEANS THE MOVEMENT IS NO BIGGER THAN ITS "
+            "OWN SCATTER — take it as a hint to look, not as a finding.\n\n"
+            "THE GREYS are colours too close to neutral to have a hue worth "
+            "naming, so they are never said to have drifted toward a colour. "
+            "They are reported as warmer, cooler, redder, greener, lighter or "
+            "darker instead.")
+        outer.addWidget(self._families)
+        self._families_note = WrappedLabel("", self, hide_when_empty=True)
+        self._families_note.setObjectName("hint")
+        outer.addWidget(self._families_note)
+
         self._refresh()
 
     # --- the list ----------------------------------------------------------
@@ -3343,6 +3382,74 @@ class TimelineDialog(QDialog):
                 "how far the device drifted between them. Each is one day's "
                 "measurements of one chart, so chart fade and any change in "
                 "how you built them are inside these numbers too.")
+        self._say_the_families(pair)
+
+    def _say_the_families(self, pair) -> None:
+        """The family-by-family report for whatever is on screen.
+
+        FOR THE PAIR WHEN THERE IS ONE, AND FOR THE WHOLE RUN OTHERWISE, so
+        the words are always about the picture above them. The run's version
+        is first against last, which is the comparison the graph's own verdict
+        is about.
+
+        THE FOOTNOTE IS NOT OPTIONAL. The line between one colour family and
+        the next is drawn by this application and exists nowhere in nature --
+        the person who asked for this feature said so herself before anybody
+        had written a line of it. So the report says where the line is, and
+        how many colours sat close enough to it to have gone either way.
+        """
+        import gamutview
+
+        self._families.setText("")
+        self._families_note.setText("")
+        if self._run is None:
+            return
+        try:
+            if pair is not None:
+                path_a, path_b, spans = pair
+            else:
+                # THE USABLE ENTRIES, not the paths that were added. A profile
+                # that could not be read is still in _paths, and taking the
+                # first and last of THAT list means comparing files the rest
+                # of this window has already refused. Run.usable is what every
+                # other reading here is drawn from.
+                usable = self._run.usable
+                if len(usable) < 2:
+                    return
+                path_a, path_b = usable[0].path, usable[-1].path
+                spans = f"{usable[0].name} to {usable[-1].name}"
+            from ti3gamut import compare_profiles
+            d = compare_profiles(path_a, path_b, steps=self.GRID)
+            if not d.comparable or d.lab_a is None:
+                return
+            rows = gamutview.family_drift(d.lab_a, d.lab_b)
+        except Exception:              # noqa: BLE001 — a missing report is
+            return                     # not worth losing the picture over
+
+        lines = [r.sentence for r in rows if r.patches]
+        if not lines:
+            return
+        self._families.setText(
+            f"{spans} — which colour families moved:\n" + "\n".join(lines))
+        borderline = sum(r.near_boundary for r in rows)
+        total = sum(r.patches for r in rows)
+        where = ", ".join(
+            f"{name} around {centre:.0f}°"
+            for name, centre in gamutview.HUE_FAMILIES)
+        note = (
+            f"Where one family stops and the next begins is a line this "
+            f"window draws, not one that exists in nature. The families are "
+            f"centred on {where} of hue, and each one reaches half way to its "
+            f"neighbours. Anything less colourful than chroma "
+            f"{gamutview.NEUTRAL_CHROMA:.0f} is called a grey instead, "
+            f"because below that a colour's hue is mostly noise and would put "
+            f"it in a family at random.")
+        if borderline:
+            note += (
+                f" Of these {total} colours, {borderline} sit within "
+                f"{gamutview.BOUNDARY_DEGREES:.0f}° of one of those lines and "
+                f"could honestly have been counted either side of it.")
+        self._families_note.setText(note)
 
     def _pair_verdict(self, pair) -> str:
         """What one step amounts to, in the same voice the run's verdict uses.
@@ -3653,9 +3760,19 @@ class TimelineDialog(QDialog):
         self._view.page().setBackgroundColor(QColor(page))
 
     def _blank(self) -> None:
-        """Empty the graph, when there is one to empty."""
+        """Empty the graph AND everything said about it.
+
+        WORDS OUTLIVE THE PICTURE UNLESS SOMETHING TAKES THEM AWAY. Removing
+        every profile emptied the graph and left the family report sitting
+        underneath it, naming two files that were no longer open and reporting
+        how their reds had moved. It looked like a result. Found by clearing
+        the window in a driver and reading what was still on it, which is not
+        something a test that never empties anything can notice.
+        """
         if self._view is not None:
             self._view.setHtml("")
+        self._families.setText("")
+        self._families_note.setText("")
 
     def look(self, appearance: str) -> None:
         """Follow the window's light/dark setting."""
@@ -4984,6 +5101,73 @@ class GamutApp(QMainWindow):
         _r.addWidget(chart_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         chv.addLayout(_r)
         v.addWidget(g_chart)
+
+        # --- one device, followed through time --------------------------------
+        # UP HERE WITH THE OTHER WAYS IN, AND IN THE ACCENT, because that is
+        # what it is: a button that opens files. It spent its first releases at
+        # the bottom of this column in the quiet style, among "start again",
+        # "what do these words mean" and the ArgyllCMS paths -- the things you
+        # go looking for once. Nobody looking for a way to open profiles reads
+        # that far down, and the two buttons that do the same job are both up
+        # here and both in the accent. A third one dressed differently and
+        # filed elsewhere reads as a different kind of thing.
+        #
+        # ITS OWN GROUP rather than a third button in "What you are looking
+        # at", because the question is genuinely different. Everything above
+        # compares what is open right now -- at most two shapes, side by side.
+        # This follows ONE device through as many profiles as somebody has of
+        # it, which is a question about time rather than about shape, and it
+        # answers with a list and a graph rather than a gamut.
+        g_time = QGroupBox("One device over time", col)
+        tv = QVBoxLayout(g_time)
+        self._timeline_btn = QPushButton("Follow one device over time…", g_time)
+        self._timeline_btn.setToolTip(
+            "Opens several ICC profiles of the SAME printer, scanner or "
+            "screen, made on different days, and shows how far it has moved "
+            "between them.\n\n"
+            "WHAT YOU NEED FIRST: at least two profiles of one device. Two is "
+            "enough to see a change; more of them, spread over months or "
+            "years, is what shows whether it is drifting steadily or wandering "
+            "and coming back.\n\n"
+            "WHAT YOU GET: a graph of how far each profile sits from the "
+            "first one, a list you can pick any two entries from to compare "
+            "them directly, and a short report naming which colour families "
+            "moved and which way.\n\n"
+            "This is a different question from the one this window answers. "
+            "Everything else here compares what is open right now; this "
+            "follows one device through time.")
+        self._timeline_btn.clicked.connect(self._on_timeline)
+        tv.addWidget(self._timeline_btn)
+        time_hint = Hint(
+            "Two profiles of one printer, made a year apart, tell you whether "
+            "anything has changed. Several of them tell you the shape of the "
+            "change — and that matters, because a device that has drifted the "
+            "same way for three years and one that wanders back and forth "
+            "need quite different answers.\n\n"
+            "The profiles are read here, so this needs nothing installed. "
+            "They must all be of the same kind of device: RGB profiles "
+            "together, or CMYK profiles together, because the comparison "
+            "works by asking every profile for the same ink or light amounts "
+            "and there is no such thing as the same amount across two "
+            "different kinds of device.", g_time)
+        time_hint.setObjectName("hint_timeline")
+        # THE SAME SHAPE AS THE GROUP ABOVE IT: a line of plain text saying
+        # what this is for, with the ⓘ beside it for the longer answer. A
+        # group that carried only an ⓘ would be the odd one out in a column
+        # where every other one explains itself in a sentence first.
+        time_note = WrappedLabel(
+            "Several profiles of one printer, scanner or screen, made on "
+            "different days: how far it has moved, and which colours moved "
+            "most.", g_time)
+        time_note.setObjectName("hint")
+        _wrapped(time_note)
+        _t = QHBoxLayout()
+        _t.setContentsMargins(0, 0, 0, 0)
+        _t.setSpacing(6)
+        _t.addWidget(time_note, 1)
+        _t.addWidget(time_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        tv.addLayout(_t)
+        v.addWidget(g_time)
 
         # --- how the chart's patches are drawn --------------------------------
         # A whole group that only exists while there is a chart to apply it to.
@@ -6369,20 +6553,6 @@ class GamutApp(QMainWindow):
         self._export_btn.clicked.connect(self._on_export)
         self._export_btn.setEnabled(False)
         v.addWidget(self._export_btn)
-        # A SEPARATE QUESTION, SO A SEPARATE WINDOW. Everything above compares
-        # what is open right now -- at most two shapes, held side by side. This
-        # follows ONE device through as many profiles as somebody has of it,
-        # which is a question about time rather than about shape, and it wants
-        # a list and a graph rather than a gamut. Putting it in this column
-        # beside the other "do something with all this" buttons keeps it
-        # findable without pretending it is one more way of drawing a shape.
-        self._timeline_btn = QPushButton("Follow one device over time…", col)
-        self._timeline_btn.setObjectName("secondary")
-        self._timeline_btn.setToolTip(
-            "Open several profiles of the SAME device, made on different "
-            "days, and see how far it has moved between them.")
-        self._timeline_btn.clicked.connect(self._on_timeline)
-        v.addWidget(self._timeline_btn)
         self._glossary_btn = QPushButton("What do these words mean?", col)
         self._glossary_btn.setObjectName("secondary")
         self._glossary_btn.clicked.connect(self._on_glossary)

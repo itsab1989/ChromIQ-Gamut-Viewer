@@ -17,6 +17,8 @@ of them looked wrong on screen:
   * one unreadable patch producing "nan ΔE" beside a confidently named
     direction.
 """
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -336,3 +338,113 @@ def test_the_thresholds_are_the_ones_the_rest_of_the_module_uses():
     assert NEUTRAL_CHROMA == 5.0
     assert 0.0 < AGREEMENT < 1.0
     assert BOUNDARY_DEGREES > 0.0
+
+
+# --------------------------------------------------------------------------
+# In the window
+# --------------------------------------------------------------------------
+#
+# THROUGH A STAND-IN, NOT A REAL WINDOW, and that is not laziness. A real
+# TimelineDialog builds a QWebEngineView, and building one inside pytest takes
+# the whole process down with it -- which is why every other window test in
+# this suite is written the same way. The methods under test are the REAL
+# ones, called against an object carrying only what they touch, so they cannot
+# quietly grow a dependency this misses.
+
+class Label:
+    """Enough of a WrappedLabel for the methods that write to one."""
+
+    def __init__(self, text=""):
+        self._text = text
+
+    def setText(self, text):                              # noqa: N802 (Qt)
+        self._text = text
+
+    def text(self):
+        return self._text
+
+
+def a_window(paths, chosen=None):
+    import drift_series
+    import gamut_app
+
+    win = SimpleNamespace(
+        _paths=list(paths),
+        _run=drift_series.build(list(paths), steps=5),
+        _families=Label(), _families_note=Label(), _view=None,
+        GRID=5)
+    win._chosen_pair = lambda: chosen
+    win._say_the_families = (
+        lambda pair: gamut_app.TimelineDialog._say_the_families(win, pair))
+    win._blank = lambda: gamut_app.TimelineDialog._blank(win)
+    return win
+
+
+def test_the_whole_run_is_reported_first_against_last(tmp_path):
+    from test_chart import write_matrix_profile
+
+    win = a_window([write_matrix_profile(tmp_path / "a.icc"),
+                    write_matrix_profile(tmp_path / "b.icc", gamma=2.6)])
+    win._say_the_families(None)
+    said = win._families.text()
+    assert said.startswith("a to b"), said
+    assert "patches)" in said
+
+
+def test_removing_every_profile_takes_the_report_away_with_them(tmp_path):
+    """A REPORT THAT OUTLIVES ITS FILES IS A FALSE ONE. Emptying the window
+    cleared the graph and left the family lines under it, naming two profiles
+    that were no longer open. Found by clearing the window in a driver and
+    reading what was still on it -- not something a test that never empties
+    anything can notice."""
+    from test_chart import write_matrix_profile
+
+    win = a_window([write_matrix_profile(tmp_path / "a.icc"),
+                    write_matrix_profile(tmp_path / "b.icc", gamma=2.6)])
+    win._say_the_families(None)
+    assert win._families.text(), "there should be a report to lose"
+
+    win._blank()
+    assert win._families.text() == ""
+    assert win._families_note.text() == ""
+
+
+def test_the_report_follows_the_pair_that_is_showing(tmp_path):
+    """The verdict above it had this exact fault once and it was fixed by
+    saying the words from _draw. This is filled the same way, or it drifts out
+    of step with the picture in the same manner."""
+    from test_chart import write_matrix_profile
+
+    a = write_matrix_profile(tmp_path / "a.icc")
+    b = write_matrix_profile(tmp_path / "b.icc", gamma=2.6)
+    win = a_window([a, b])
+    win._say_the_families(None)
+    whole = win._families.text()
+
+    win._chosen_pair = lambda: (a, b, "a → b")
+    win._say_the_families((a, b, "a → b"))
+    assert win._families.text().startswith("a → b")
+    assert win._families.text() != whole
+
+
+def test_a_run_with_nothing_usable_says_nothing_rather_than_guessing(tmp_path):
+    from test_chart import write_matrix_profile
+
+    win = a_window([write_matrix_profile(tmp_path / "only.icc")])
+    win._say_the_families(None)
+    assert win._families.text() == ""
+
+
+def test_the_footnote_says_where_the_arbitrary_line_is(tmp_path):
+    """The objection this feature was asked with, answered on screen rather
+    than in a docstring nobody reads."""
+    from test_chart import write_matrix_profile
+
+    win = a_window([write_matrix_profile(tmp_path / "a.icc"),
+                    write_matrix_profile(tmp_path / "b.icc", gamma=2.6)])
+    win._say_the_families(None)
+    note = win._families_note.text()
+    assert "not one that exists in nature" in note
+    assert "grey" in note
+    for name, _c in HUE_FAMILIES:
+        assert name in note
