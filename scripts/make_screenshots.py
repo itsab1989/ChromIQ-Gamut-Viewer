@@ -71,6 +71,38 @@ def pump(seconds: float) -> None:
         time.sleep(0.005)
 
 
+class ChoosesForYou:
+    """Stands in for the "choose a file" dialog, and answers with *path*.
+
+    WHY THIS IS HERE AND NOT A LONGER PAUSE. Comparing against a profile is
+    the one entry in Compare with that has to ASK which file, so
+    `_on_compare_changed` opens a file dialog and calls `.exec()` on it. Run
+    with no display that returns immediately and the shot is simply skipped;
+    run on a REAL display -- which is the only way these pictures can be taken
+    at all, because an offscreen platform cannot capture the web view -- it is
+    a modal window sitting on the desktop waiting for somebody to click it.
+    The generator stopped dead there for eight minutes at 2.8% of one core,
+    with a file picker open over whatever else was on screen.
+
+    The same trap CLAUDE.md warns about for the test suite, arriving by the
+    one route the suite never takes.
+    """
+
+    def __init__(self, path) -> None:
+        self._path = str(path)
+
+    def exec(self):
+        return 1                      # as if the user pressed Open
+
+    def selectedFiles(self):
+        return [self._path]
+
+
+def answer_file_dialogs_with(window, path) -> None:
+    """Every file dialog this window opens from now on picks *path*."""
+    window._file_dialog = lambda *a, **k: ChoosesForYou(path)
+
+
 def compare_with(window, kind: str, name=None) -> None:
     """Set Compare with, the way the combo box actually stores its entries.
 
@@ -219,6 +251,11 @@ def drift(w):
 
 def profile_vs_measured(w):
     """06 — the measurement against the profile built from it."""
+    if not PROFILE.exists():
+        raise SystemExit(f"{PROFILE} is missing")
+    # THE ONE SHOT THAT IS ASKED A QUESTION. See ChoosesForYou: this entry
+    # opens a file dialog, and on a real display nobody is there to answer it.
+    answer_file_dialogs_with(w, PROFILE)
     w._load(GLOSSY)
     pump(3.5)
     compare_with(w, "icc", None)
@@ -295,11 +332,20 @@ def ink_amounts(w):
 
 
 def ink_amounts_outside(w):
-    """19 — and which of those patches the paper cannot reach."""
+    """19 — and which of those patches the paper cannot reach.
+
+    THE SECOND ONE THE DUPLICATE CHECK CAUGHT. Written like 03 was -- set the
+    switch, wait three seconds, assert the switch is set -- and it published a
+    picture identical to 18, because three seconds is a guess about how long a
+    redraw takes and the assert asks the widget rather than the picture.
+    """
     ink_amounts(w)
+    before = whole_window(w).toImage()
     w._chart_show_outside.setChecked(True)
-    pump(3.0)
-    assert w._chart_show_outside.isChecked()
+    assert w._chart_show_outside.isChecked(), "the switch did not take"
+    assert until_it_changes(w, before), (
+        "the switch is on and the picture never changed -- no patch came out "
+        "marked as unreachable, so this shows the same thing as 18")
 
 
 def a_skin_over_the_patches(w):
