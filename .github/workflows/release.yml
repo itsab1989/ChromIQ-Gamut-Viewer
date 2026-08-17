@@ -59,6 +59,7 @@ jobs:
           - label: macOS arm64
             runner: macos-14
             asset: GamutViewer-macOS-arm64
+            expect: arm64
           # macos-15-intel, NOT macos-13. The macos-13 image is the retired
           # Intel one: jobs asking for it are accepted and then sit in the
           # queue for hours without ever being allocated a runner, which
@@ -68,12 +69,32 @@ jobs:
           - label: macOS x86_64
             runner: macos-15-intel
             asset: GamutViewer-macOS-x86_64
+            expect: x86_64
           - label: Windows x64
             runner: windows-latest
             asset: GamutViewer-Windows-x64
+            expect: x86_64
+          # WINDOWS ON ARM, which was the one platform covered on a single
+          # architecture -- macOS and Linux each had both, and an ARM Windows
+          # machine (a Surface, a Snapdragon X laptop) was running the x64
+          # build under emulation. That works and is slowest exactly where
+          # this application spends its time, in NumPy and SciPy.
+          #
+          # CHECKED BEFORE IT WAS ADDED, because the thing this turns on is
+          # whether the wheels exist: pip with no wheel falls back to building
+          # from source, and Qt does not build inside a CI job. Asked of PyPI
+          # rather than assumed -- PyQt6, PyQt6-Qt6, PyQt6-sip, the two
+          # WebEngine packages, NumPy, SciPy, Pillow and PyInstaller all
+          # publish a win_arm64 wheel, and plotly is pure Python so its one
+          # wheel serves every platform.
+          - label: Windows arm64
+            runner: windows-11-arm
+            asset: GamutViewer-Windows-arm64
+            expect: arm64
           - label: Linux x86_64
             runner: ubuntu-22.04
             asset: GamutViewer-Linux-x86_64
+            expect: x86_64
           # 24.04, NOT 22.04: PyQt6 and PyQt6-WebEngine publish their arm64
           # wheels as manylinux_2_39, which needs glibc 2.39. Ubuntu 22.04 has
           # 2.35, so pip finds nothing installable, falls back to building Qt
@@ -82,6 +103,7 @@ jobs:
           - label: Linux aarch64
             runner: ubuntu-24.04-arm
             asset: GamutViewer-Linux-aarch64
+            expect: arm64
     steps:
       # v5 THROUGHOUT. v4 targets Node 20, which GitHub has deprecated and is
       # already force-running on Node 24 -- a warning on every job of every
@@ -256,6 +278,30 @@ jobs:
 
       - name: Build
         run: pyinstaller --noconfirm GamutViewer.spec
+
+      # AND IS IT REALLY THE ARCHITECTURE WE ARE ABOUT TO CALL IT?
+      #
+      # Nothing else in this build can tell. On a machine with an emulation
+      # layer a toolchain for the other architecture runs quite happily and
+      # emits a working binary of the wrong kind: the tests pass, because they
+      # run under emulation too; the packaging succeeds; the upload succeeds;
+      # and the artefact goes out under a name that is not true. The only
+      # symptom is that it is slow on precisely the machines it was built for,
+      # or will not start on one without emulation.
+      #
+      # So the file is opened and the machine field the linker wrote is read.
+      # Every platform, not only the new one -- the same mistake is possible
+      # on any of them, and a check that only guards the case somebody
+      # happened to think of is half a check.
+      - name: The binary must be the architecture we say it is
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Windows) built="dist/GamutViewer/GamutViewer.exe" ;;
+            macOS)   built="dist/ChromIQ Gamut Viewer.app/Contents/MacOS/GamutViewer" ;;
+            *)       built="dist/GamutViewer/GamutViewer" ;;
+          esac
+          python scripts/check_binary_arch.py "$built" "${{ matrix.expect }}"
 
       # A .app is a directory; zip it so the bundle survives the download with
       # its executable bit intact.

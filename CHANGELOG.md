@@ -1,5 +1,50 @@
 # Changelog
 
+## v2.24.0
+
+### 🪟 A Windows build for ARM, and a check that every build is what it claims
+
+Basti asked whether there were Windows-on-ARM releases. There were not, and
+Windows was the **only platform covered on a single architecture** — macOS and
+Linux each had both. An ARM Windows machine was running the x64 build under
+emulation, which works and is slowest exactly where this application spends its
+time: NumPy and SciPy.
+
+**The wheels were the question, so they were asked about rather than assumed.**
+`pip` with no wheel falls back to building from source, and Qt does not build
+inside a CI job. From PyPI:
+
+| | win_arm64 wheel |
+|---|---|
+| PyQt6, PyQt6-Qt6, PyQt6-sip, both WebEngine packages | ✅ |
+| NumPy, SciPy, Pillow, PyInstaller | ✅ |
+| plotly | pure Python — one wheel serves every platform |
+
+Nothing was missing, so there is now a sixth build:
+**`GamutViewer-Windows-arm64.zip`**.
+
+### 🔍 And the guard that had to come with it
+
+A build machine can produce a binary for the wrong architecture and say
+nothing. On a machine with an emulation layer, a toolchain for the other
+architecture runs quite happily and emits a working binary of the wrong kind:
+**the tests pass — they run under emulation too — the packaging succeeds, the
+upload succeeds**, and the artefact goes out under a name that is not true. The
+only symptom is that it is slow on precisely the machines it was built for.
+
+So every build now opens its own binary and reads the machine field the linker
+wrote — PE, ELF and Mach-O, including universal binaries. **Every platform, not
+just the new one**: the same mistake is possible on any of them, and a check
+that only guards the case somebody happened to think of is half a check.
+
+Verified against real binaries before being trusted: this machine's Python
+(arm64, agreeing with `file`), `/bin/ls` and `/usr/bin/ssh` (universal, both
+architectures reported), and hand-built PE headers for ARM64 and x64 — each
+accepted for its own architecture and refused for the other. `x64`, `amd64` and
+`x86_64` are one answer, not three.
+
+- 723 checks, up from 713.
+
 ## v2.23.0
 
 ### ⚡ A redraw is two to three times faster, and the reason was not what the note said

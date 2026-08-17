@@ -67,7 +67,8 @@ inside the download.
 |---|---|
 | Mac with Apple silicon (M1 and later) | `GamutViewer-macOS-arm64.zip` |
 | Mac with an Intel processor | `GamutViewer-macOS-x86_64.zip` |
-| Windows 10 or 11, 64-bit | `GamutViewer-Windows-x64.zip` |
+| Windows 10 or 11 on an Intel or AMD processor | `GamutViewer-Windows-x64.zip` |
+| Windows 11 on ARM (Snapdragon X, and Windows in a virtual machine on an Apple-silicon Mac) | `GamutViewer-Windows-arm64.zip` |
 | Linux, 64-bit Intel or AMD | `GamutViewer-Linux-x86_64.tar.gz` |
 | Linux on ARM (including a Raspberry Pi 5) | `GamutViewer-Linux-aarch64.tar.gz` |
 
