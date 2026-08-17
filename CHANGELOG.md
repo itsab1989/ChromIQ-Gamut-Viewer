@@ -2,6 +2,58 @@
 
 ## v2.17.0
 
+### 🔬 Compare two ICC profiles, which a gamut cannot do
+
+From a request Basti forwarded: somebody has two profiles of one scanner made
+years apart and wants to know what has changed.
+
+**A gamut comparison cannot answer that, and it is worth being precise about
+why.** Two profiles can enclose almost exactly the same shape and send the
+colours inside it to quite different places. Measured on a pair differing only
+in tone curve: **0.011% apart by volume** — the same shape for any purpose a
+volume is put to — and up to **ΔE 4.2 apart inside**. For an input profile
+such as a scanner's, the inside is nearly the whole profile, so the shape is
+the part that matters least.
+
+Open two profiles and the **Has anything changed?** box now answers for them,
+the same box that already answers for two measurements — because to the reader
+it is one question. Both profiles are asked for the same 729 colours and the
+answers held side by side.
+
+**It needs nothing installed.** The profiles are read here, so this works on a
+machine with no ArgyllCMS at all.
+
+**Show me where, in the picture** draws every colour at the place the first
+profile puts it, painted by how far the second sends it instead. The numbers
+say how much; this says where, which is usually the more useful half — "average
+ΔE 2" reads the same whether a device drifted a little everywhere, which points
+at calibration, or hardly at all except in the deep blues, which is a different
+problem entirely. The scale is fixed rather than stretched to the data, so the
+same colour means the same amount in every picture, and the key is labelled in
+words because ΔE is not a unit anybody has intuitions about.
+
+**The honest caveat, and it is in the help text as well as here:** this is how
+far apart the two PROFILES are, not how far the device drifted. A profile
+records one day's measurements of one chart. If that chart faded between the
+two, or they were built with different settings, that is inside the number too,
+and no arithmetic can separate it out.
+
+Things it refuses rather than answering, each with a reason worth reading:
+
+* **An RGB profile against a CMYK one.** 50% grey asked of one is not the same
+  request as asked of the other, so pairing them would give a confident figure
+  describing nothing.
+* **Two profiles read through different tables.** A colorimetric table against
+  a perceptual one differs by a large amount that has nothing to do with drift,
+  because perceptual rendering moves colour on purpose. Measured on real files:
+  ΔE 45 worst, 12.7 average, and meaningless. The window says so in front of
+  the numbers, and the picture stays away — a picture of a meaningless number
+  is worse than no picture, because it looks like evidence.
+* A file that is not a profile, and a truncated one.
+
+A profile compared with itself comes out 0.00 everywhere, which is the check
+that proves the two sides are being asked the same question at all.
+
 ### 🔎 ArgyllCMS was not looked for where people actually put it
 
 Prompted by Basti: *"we have to make sure the app can reliably detect argyll
