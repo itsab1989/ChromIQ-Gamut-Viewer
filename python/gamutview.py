@@ -1559,6 +1559,41 @@ AGREEMENT = 0.5
 LEAST_LINEAR = "blues"
 
 
+def _assign(lab, families=HUE_FAMILIES):
+    """The raw filing of colours into families: (chroma, nearest, gaps).
+
+    ONE RULE, USED BY THE SENTENCES AND BY THE PICTURE. The report says "the
+    blues moved toward the magentas" and the cloud can be split into the same
+    families and filtered to one of them. If those were two pieces of
+    arithmetic they would agree today and disagree after the first change to
+    either, and a reader would have a picture contradicting the words under it.
+    """
+    lab = np.asarray(lab, float)
+    chroma = np.hypot(lab[:, 1], lab[:, 2])
+    hue = np.degrees(np.arctan2(lab[:, 2], lab[:, 1])) % 360.0
+    centres = np.array([c for _n, c in families])
+    gap = np.abs(((hue[:, None] - centres[None, :]) + 180.0) % 360.0 - 180.0)
+    return chroma, gap.argmin(axis=1), gap
+
+
+def which_family(lab, *, families=HUE_FAMILIES, neutral: float = None):
+    """Which family each colour belongs to, as names, greys included.
+
+    The picture's half of :func:`family_drift`: given the colours a cloud is
+    drawn at, say which family each dot is in, so the cloud can be split up
+    and filtered exactly the way the sentences describe it.
+    """
+    if neutral is None:
+        neutral = NEUTRAL_CHROMA
+    lab = np.asarray(lab, float)
+    if lab.ndim != 2 or lab.shape[1] != 3:
+        raise ValueError("this needs (N, 3) L*a*b* values")
+    chroma, nearest, _gap = _assign(lab, families)
+    names = np.array([n for n, _c in families] + ["greys"], dtype=object)
+    picked = np.where(chroma < neutral, len(families), nearest)
+    return names[picked]
+
+
 @dataclass(frozen=True)
 class FamilyDrift:
     """How one colour family moved between two sets of the same colours."""
@@ -1670,12 +1705,7 @@ def family_drift(lab_a, lab_b, *, families=HUE_FAMILIES,
 
     moved = lab_b - lab_a
     de = delta_e_2000(lab_a, lab_b)
-    chroma = np.hypot(lab_a[:, 1], lab_a[:, 2])
-    hue = np.degrees(np.arctan2(lab_a[:, 2], lab_a[:, 1])) % 360.0
-
-    centres = np.array([c for _n, c in families])
-    gap = np.abs(((hue[:, None] - centres[None, :]) + 180.0) % 360.0 - 180.0)
-    nearest = gap.argmin(axis=1)
+    chroma, nearest, gap = _assign(lab_a, families)
     # HOW CLOSE TO A LINE. The nearest centre and the next nearest are the two
     # families a colour could belong to; halfway between them is the line, so
     # the distance to it is half the difference of those two gaps.

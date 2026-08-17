@@ -1746,7 +1746,8 @@ DIRECTION_LIMIT = 5.0
 
 
 def drift_direction(lab, moved, name: str, axis: str = "L",
-                    space: str = "lab", limit: float = DIRECTION_LIMIT):
+                    space: str = "lab", limit: float = DIRECTION_LIMIT,
+                    by_family: bool = False):
     """Which WAY each colour moved, along one axis of Lab, with its sign.
 
     THE NUMBER THE MAGNITUDE VIEW THROWS AWAY. ΔE2000 is a distance, so a
@@ -1790,6 +1791,18 @@ def drift_direction(lab, moved, name: str, axis: str = "L",
     quiet = size < 1.0
     sizes = _np.where(quiet, 2.0, 4.0 + 3.0 * _np.clip(
         (size - 1.0) / max(limit - 1.0, 1e-9), 0.0, 1.0))
+
+    if by_family:
+        return _split_by_family(
+            lab, x, y, z, values, sizes, limit,
+            "%{customdata:+.2f} " + axis + "*", DIRECTION_SCALE,
+            -limit, limit,
+            dict(title=dict(text=asks, side="right"),
+                 thickness=12, len=0.78, x=1.02,
+                 tickvals=[-limit, -1.0, 0.0, 1.0, limit],
+                 ticktext=[f"{limit:.0f} {less}", f"1 {less}",
+                           "no change", f"1 {more}", f"{limit:.0f} {more}"]))
+
     return [go.Scatter3d(
         x=x, y=y, z=z, mode="markers", name=name,
         customdata=values,
@@ -1810,8 +1823,70 @@ def drift_direction(lab, moved, name: str, axis: str = "L",
                           "no change", f"1 {more}", f"{limit:.0f} {more}"])))]
 
 
+def _drift_key(ceiling):
+    """The colour key the distance view uses, in one place."""
+    return dict(title=dict(text="ΔE2000", side="right"),
+                thickness=12, len=0.55, x=1.02,
+                tickvals=[0, 1, 3, 5],
+                ticktext=["0 — same", "1 — invisible", "3 — plain",
+                          "5+ — obvious"])
+
+
+def _split_by_family(lab, x, y, z, values, sizes, ceiling, hover, scale,
+                     cmin, cmax, key):
+    """One trace per colour family instead of one for the lot.
+
+    WHY THIS IS WORTH SEVEN TRACES WHERE THE REST OF THIS FILE FOUGHT TO GET
+    DOWN TO ONE. The cage went from 296 traces to one because 296 named groups
+    are not information -- nobody wants to switch off "the 141st edge". Seven
+    families ARE the information: they are the same seven the written report
+    is about, so splitting on them turns the legend into a filter that costs
+    no new code at all. Click "blues" and the blues go; click again and they
+    come back. That works in the window, in a saved page, offline, on a phone,
+    because it is the drawing library's own behaviour rather than anything of
+    ours.
+
+    THE COUNT IS IN THE NAME for the same reason it is in every sentence: a
+    family of eleven and a family of a hundred and thirty-seven look identical
+    once they are dots, and the number is the only thing that says how much
+    of the picture you are looking at.
+
+    ONE KEY, NOT SEVEN. Every trace shares the fixed scale, and only the first
+    draws the colour bar -- otherwise the page would carry seven identical
+    bars stacked down the side.
+    """
+    import plotly.graph_objects as go
+
+    from gamutview import HUE_FAMILIES, which_family
+
+    mine = which_family(lab)
+    order = [n for n, _c in HUE_FAMILIES] + ["greys"]
+    out, drawn_key = [], False
+    for family in order:
+        pick = mine == family
+        if not pick.any():
+            # NOT AN EMPTY TRACE. A legend entry that switches nothing on or
+            # off is a control that does nothing, and this file already holds
+            # that a button which cannot act is worse than a missing one.
+            continue
+        count = int(pick.sum())
+        out.append(go.Scatter3d(
+            x=x[pick], y=y[pick], z=z[pick], mode="markers",
+            name=f"{family} — {count}",
+            customdata=values[pick],
+            hovertemplate=hover + f"<extra>{family}</extra>",
+            marker=dict(
+                size=sizes[pick], color=values[pick], colorscale=scale,
+                cmin=cmin, cmax=cmax, opacity=0.85,
+                showscale=not drawn_key,
+                colorbar=key if not drawn_key else None)))
+        drawn_key = True
+    return out
+
+
 def drift_cloud(lab, deltas, name: str, space: str = "lab",
-                floor: float = DRIFT_FLOOR, ceiling: float = DRIFT_CEILING):
+                floor: float = DRIFT_FLOOR, ceiling: float = DRIFT_CEILING,
+                by_family: bool = False):
     """Where two profiles disagree, drawn where the disagreement happens.
 
     THE NUMBERS ALONE DO NOT SAY WHERE. "Biggest difference ΔE 10.2, average
@@ -1850,6 +1925,12 @@ def drift_cloud(lab, deltas, name: str, space: str = "lab",
     quiet = deltas < floor
     sizes = _np.where(quiet, 2.0, 4.0 + 3.0 * _np.clip(
         (deltas - floor) / max(ceiling - floor, 1e-9), 0.0, 1.0))
+
+    if by_family:
+        return _split_by_family(lab, x, y, z, deltas, sizes, ceiling,
+                                "ΔE %{customdata:.2f}", DRIFT_SCALE,
+                                0.0, ceiling, _drift_key(ceiling))
+
     return [go.Scatter3d(
         x=x, y=y, z=z, mode="markers", name=name,
         customdata=deltas,
@@ -7126,13 +7207,18 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # second. When it is present, the second value is the (N, 3) movement
         # in Lab rather than the (N,) distance.
         which = drift[3] if len(drift) > 3 else None
+        # A FIFTH ITEM SPLITS THE CLOUD INTO ITS COLOUR FAMILIES, which turns
+        # the legend into a filter: click "blues" and the blues go. Absent,
+        # the cloud is one trace as it has always been.
+        families = bool(drift[4]) if len(drift) > 4 else False
         if which:
             for trace in drift_direction(drift_lab, drift_de, drift_name,
-                                         axis=which, space=_axes_space):
+                                         axis=which, space=_axes_space,
+                                         by_family=families):
                 fig.add_trace(trace)
         else:
             for trace in drift_cloud(drift_lab, drift_de, drift_name,
-                                     space=_axes_space):
+                                     space=_axes_space, by_family=families):
                 fig.add_trace(trace)
     from gamutview import AXES
     # The axes are named for the space the gamuts were built in, so a

@@ -1,5 +1,55 @@
 # Changelog
 
+## v2.26.0
+
+### 🔬 The heat-map, split into the colour families the report talks about
+
+The report says *"the blues drifted toward the magentas"*. Now you can go and
+look at those very colours: tick **Split it into colour families** under the
+picture and the cloud is drawn as seven groups instead of one — reds, yellows,
+greens, cyans, blues, magentas and greys — each named in the key with **how
+many colours are in it**.
+
+**The key is the filter.** Click a family to hide it, click again to bring it
+back. Hide everything but the blues and you see exactly where in the blues your
+printer moved, which a single cloud cannot show you because the interesting
+part is buried under everything else.
+
+**It keeps working in a saved page.** Save the view as a web page and whoever
+opens it can hide and show the families too — offline, on a phone, with nothing
+installed. This is the drawing library's own behaviour rather than any code of
+ours, which is exactly why it survives being saved.
+
+**The picture and the sentences are filed by one function.** `which_family` and
+`family_drift` share the same rule, so the number beside "blues" in the key is
+the same number in the sentence underneath, always. Two pieces of arithmetic
+would agree today and disagree after the first change to either, and a reader
+would be left with a picture contradicting the words below it.
+
+**One key, not seven.** All seven groups share the same fixed ΔE scale, so a
+colour means the same amount here as in every other picture this draws — and
+only one colour bar is drawn.
+
+**A family with nothing in it gets no entry**, because a switch that turns
+nothing on or off is a control that answers a click with nothing. The tick box
+itself is hidden while the graph is showing, for the same reason: a line chart
+has no colours to split.
+
+### 📄 A new example page
+
+**Which colours moved, in sentences** — the same first-to-last comparison as
+the cloud, said in seven lines, with the families switchable in the page
+itself. It is also the only example that exercises the timeline's own cloud
+export, caveat and all.
+
+### Also
+
+- 770 tests (767 + 3 skipped without ArgyllCMS).
+- Known cosmetic point for Basti to judge: the swatch beside each family in the
+  key takes its colour from the ΔE scale, not from the family, so the dots are
+  not "what a red looks like". The names carry the meaning and the key at the
+  side says what the colour means, but it is worth an opinion.
+
 ## v2.25.0
 
 ### 🎨 Which colour families moved, and which way — in sentences you can send

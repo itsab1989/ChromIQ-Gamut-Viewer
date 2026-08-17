@@ -703,3 +703,97 @@ def test_every_combination_keeps_the_promises_the_report_makes():
     assert seen >= 1400, f"only {seen} combinations were crossed"
     assert not broken, (f"{len(broken)} of {seen} combinations broke a "
                         f"promise:\n" + "\n".join(broken[:20]))
+
+
+# --------------------------------------------------------------------------
+# The picture, split into the same families as the sentences
+# --------------------------------------------------------------------------
+
+def test_the_cloud_can_be_split_into_the_families_the_report_names():
+    """One trace per family turns the drawing library's own legend into a
+    filter — in the window and in a saved page alike, offline, with no code
+    of ours involved."""
+    import ti3gamut
+
+    rng = np.random.default_rng(11)
+    n = 400
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    de = rng.uniform(0, 6, n)
+
+    assert len(ti3gamut.drift_cloud(lab, de, "x")) == 1
+    split = ti3gamut.drift_cloud(lab, de, "x", by_family=True)
+    assert 2 <= len(split) <= len(HUE_FAMILIES) + 1
+
+
+def test_splitting_keeps_every_colour_exactly_once():
+    import ti3gamut
+
+    rng = np.random.default_rng(12)
+    n = 500
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    split = ti3gamut.drift_cloud(lab, rng.uniform(0, 6, n), "x",
+                                 by_family=True)
+    assert sum(len(t.x) for t in split) == n
+
+
+def test_the_picture_counts_and_the_written_counts_are_the_same_numbers():
+    """THE FAULT THIS EXISTS TO PREVENT. Two pieces of arithmetic filing
+    colours into families would agree today and disagree after the first
+    change to either, and the reader would have a picture contradicting the
+    words underneath it. Both go through one function."""
+    import ti3gamut
+
+    rng = np.random.default_rng(13)
+    n = 600
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    after = lab + rng.normal(0, 2.0, lab.shape)
+    de = np.linalg.norm(after - lab, axis=1)
+
+    in_words = {r.name: r.patches for r in family_drift(lab, after)
+                if r.patches}
+    in_picture = {t.name.split(" — ")[0]: int(t.name.split(" — ")[1])
+                  for t in ti3gamut.drift_cloud(lab, de, "x", by_family=True)}
+    assert in_words == in_picture
+
+
+def test_the_split_picture_carries_exactly_one_colour_key():
+    """Seven traces sharing one fixed scale, not seven bars down the side."""
+    import ti3gamut
+
+    rng = np.random.default_rng(14)
+    n = 300
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    for traces in (ti3gamut.drift_cloud(lab, rng.uniform(0, 6, n), "x",
+                                        by_family=True),
+                   ti3gamut.drift_direction(lab, rng.normal(0, 3, (n, 3)),
+                                            "x", axis="b", by_family=True)):
+        assert sum(1 for t in traces if t.marker.showscale) == 1
+        # and the scale really is the shared, fixed one
+        assert len({(t.marker.cmin, t.marker.cmax) for t in traces}) == 1
+
+
+def test_an_empty_family_gets_no_legend_entry():
+    """A legend row that switches nothing on or off is a control that does
+    nothing, which this project holds is worse than a missing one."""
+    import ti3gamut
+
+    rng = np.random.default_rng(15)
+    n = 80
+    ang = np.radians(rng.uniform(-6, 6, n))          # reds only
+    lab = np.column_stack([np.full(n, 55.0), 40 * np.cos(ang),
+                           40 * np.sin(ang)])
+    names = {t.name.split(" — ")[0]
+             for t in ti3gamut.drift_cloud(lab, rng.uniform(0, 6, n), "x",
+                                           by_family=True)}
+    assert names == {"reds"}
+
+
+def test_which_family_refuses_something_that_is_not_lab():
+    from gamutview import which_family
+
+    with pytest.raises(ValueError, match=r"\(N, 3\)"):
+        which_family(np.zeros(9))

@@ -3185,6 +3185,41 @@ class TimelineDialog(QDialog):
         self._caution.setObjectName("hint")
         outer.addWidget(self._caution)
 
+        # --- the picture, split into the families the report talks about -----
+        #
+        # THE SAME SEVEN GROUPS AS THE SENTENCES BELOW, so the two halves of
+        # the answer can be read against each other: the line says the blues
+        # went toward the magentas, and switching every other family off shows
+        # WHERE in the blues it happened. Filed by the same rule, from the
+        # same function, so the picture cannot disagree with the words.
+        #
+        # THE LEGEND IS THE FILTER, and that is why this is one checkbox
+        # rather than seven. Splitting the cloud into a trace per family gives
+        # the drawing library's own click-to-hide behaviour for nothing, in
+        # the window and in a saved page alike, offline and on a phone.
+        self._by_family = QCheckBox("Split it into colour families", self)
+        self._by_family.setToolTip(
+            "Draws the picture as seven groups — reds, yellows, greens, "
+            "cyans, blues, magentas and greys — instead of one cloud, and "
+            "puts them in the key at the side with the number of colours in "
+            "each.\n\n"
+            "WHAT IT IS FOR: click a family in the key to hide it, and click "
+            "it again to bring it back. With everything but the blues hidden "
+            "you can see exactly where in the blues your printer moved, which "
+            "a single cloud cannot show you — the interesting part is usually "
+            "buried under everything else.\n\n"
+            "THE GROUPS ARE THE ONES THE LIST UNDERNEATH DESCRIBES. If the "
+            "text says the blues drifted toward the magentas, this is the way "
+            "to go and look at those very colours.\n\n"
+            "IT KEEPS WORKING IN A SAVED PAGE. Save the view as a web page "
+            "and whoever opens it can hide and show the families too, with "
+            "nothing installed and no internet needed.\n\n"
+            "GREYS ARE COLOURS TOO CLOSE TO NEUTRAL to have a hue worth "
+            "naming. They are their own group rather than being scattered "
+            "among the six.")
+        self._by_family.stateChanged.connect(lambda _s: self._draw())
+        outer.addWidget(self._by_family)
+
         # --- which colour families moved --------------------------------------
         #
         # THE SAME ANSWER AS THE PICTURE, IN A FORM SOMEBODY CAN SEND. Asked
@@ -3368,6 +3403,12 @@ class TimelineDialog(QDialog):
 
         self._complaints.setText("\n\n".join(getattr(self, "_grumbles", [])))
         pair = self._chosen_pair()
+        # THE FAMILY SPLIT ONLY WHERE IT CAN DO SOMETHING. Splitting into
+        # families is a thing you do to the CLOUD; the graph has no colours in
+        # it to split. A checkbox sitting there while the graph shows would
+        # answer a click with nothing, which this window holds is worse than a
+        # control that is not there at all.
+        self._by_family.setVisible(pair is not None)
         if pair is None or self._run is None:
             self._verdict.setText(
                 drift_series.verdict(self._run) if self._run else "")
@@ -3734,16 +3775,18 @@ class TimelineDialog(QDialog):
             moved = d.moved
             if moved is None:          # a comparison from before lab_b was kept
                 axis = None
+        split = self._by_family.isChecked()
         if axis:
             return build_figure(
                 [], f"Which way {spans} moved — {asks}, in Lab units",
                 mode=self._appearance, space="lab", grid=True,
-                drift=(d.lab_a, moved, f"{asks}: {spans}", axis))
+                drift=(d.lab_a, moved, f"{asks}: {spans}", axis, split))
         return build_figure(
             [], f"Where {spans} disagree — ΔE2000, biggest {d.worst:.2f}, "
                 f"average {d.average:.2f}",
             mode=self._appearance, space="lab", grid=True,
-            drift=(d.lab_a, d.deltas, f"how far it moved: {spans}"))
+            drift=(d.lab_a, d.deltas, f"how far it moved: {spans}", None,
+                   split))
 
     def _trouble(self, said: str) -> None:
         """Say why a cloud could not be drawn, under the ones already there.

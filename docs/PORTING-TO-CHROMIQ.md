@@ -324,3 +324,41 @@ plausible.
 go to §M-PROPOSED of `unified_measurement_management.md` before they are
 written into any tab. The count-bearing ones already have explicit singular and
 plural forms ("1 patch" / "N patches") rather than "(s)".
+
+## The same report, drawn — and what makes it cheap
+
+The written report has a picture half: `drift_cloud(..., by_family=True)` and
+`drift_direction(..., by_family=True)` draw the cloud as **one trace per
+family** instead of one for the lot, each named `"blues — 132"`.
+
+**That single change buys the whole filter for nothing.** Plotly's legend
+already hides and shows traces on a click, so splitting on the families turns
+the key into seven switches — in the window, in a saved page, offline, on a
+phone — with no JavaScript, no new control and nothing to test in a browser.
+Anything ChromIQ draws through Plotly gets the same deal.
+
+Three things to keep if this is ported:
+
+1. **One rule for the picture and the words.** `which_family` and
+   `family_drift` both go through `gamutview._assign`. Two implementations
+   would agree today and disagree after the first edit to either, and the
+   reader would be left with a legend contradicting the sentence under it.
+   There is a test that compares the two counts directly.
+2. **One colour key, not seven.** Every trace carries the same fixed `cmin`
+   and `cmax`, and only the first sets `showscale`. Without that the page
+   grows seven identical bars down its side, and the scale stops being
+   comparable between pictures.
+3. **No entry for an empty family.** A legend row that switches nothing is a
+   control that answers a click with nothing — the same rule this project
+   applies to buttons.
+
+**Where the count goes.** In the legend name, for the same reason it is in
+every sentence: once they are dots, a family of eleven and a family of a
+hundred and thirty-seven look identical, and the number is the only thing that
+says how much of the picture you are looking at.
+
+**Do not read the legend swatch as the family's colour.** It takes its colour
+from the ΔE scale, because that is what the dots are painted by. The name
+carries the meaning. This project deliberately refuses to paint a
+colour-about-colour picture in the colours it describes — see `DIRECTION_SCALE`
+— and the same caution applies here.

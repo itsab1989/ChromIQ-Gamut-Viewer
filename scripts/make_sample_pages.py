@@ -912,6 +912,84 @@ def main() -> int:
     check("15", "and the page says how many colours sat on that line",
           "could honestly have been counted either side" in body)
 
+    # ---------------------------------------------------------------- 20
+    # THE SAME RUN, SAID IN SENTENCES. Pages 15 and 18 draw a line and a
+    # cloud; both need a reader to interpret them. This is the form somebody
+    # can paste into an email, which is what a paper manufacturer asked for
+    # -- and it is the only page that exercises the timeline's OWN cloud
+    # save, notes and all, rather than the main window's.
+    print("\n20 — which colours moved, in sentences")
+    for i in range(timeline._picture_of.count()):
+        if timeline._picture_of.itemData(i) == ("whole", 0):
+            timeline._picture_of.setCurrentIndex(i)
+            break
+    else:
+        raise AssertionError("the whole-run comparison is not on offer")
+    timeline._draw()
+    pump(3.0)
+    pair = timeline._chosen_pair()
+    check("20", "a pair is chosen, so this saves the cloud and not the graph",
+          pair is not None)
+    # SPLIT INTO FAMILIES, so the saved page carries the filter as well as the
+    # sentences. The legend becomes seven switches: hide everything but the
+    # blues and the page shows where in the blues the printer moved. It is the
+    # drawing library's own behaviour, so it works offline, on a phone, with
+    # nothing installed.
+    timeline._by_family.setChecked(True)
+    timeline._draw()
+    pump(3.0)
+    figure = timeline._cloud_figure()
+    check("20", "the cloud really is split into its colour families",
+          figure is not None and len(figure.data) >= 6,
+          f"{0 if figure is None else len(figure.data)} groups")
+    check("20", "and every group is named with the number of colours in it",
+          all(" — " in t.name for t in figure.data),
+          ", ".join(t.name for t in figure.data))
+    p = page("20-which-colours-moved.html")
+    save_timeline(p)
+    made.append(("20", p))
+    body = p.read_text(encoding="utf-8")
+    check("20", "the report travels with the picture",
+          "which colour families moved" in body)
+    # ONE LINE PER FAMILY, EACH CARRYING ITS COUNT. A family of eleven and a
+    # family of a hundred and thirty-seven read alike without that number,
+    # and this page is the one people will quote from.
+    counted = body.count("patches)") + body.count("patch)")
+    check("20", "every family line carries the number it stands on",
+          counted >= 6, f"{counted} lines carry a count")
+    check("20", "the greys are reported as greys and given no hue",
+          "greys:" in body)
+    check("20", "the arbitrary line is admitted on the page itself",
+          "not one that exists in nature" in body)
+    check("20", "and it says how many colours sat close enough to go either way",
+          "could honestly have been counted either side" in body)
+    # WHAT IT DOES NOT CLAIM, which matters more here than on the other pages:
+    # sentences are quoted, and a quoted sentence loses its caveat unless the
+    # caveat is in the file with it.
+    check("20", "the caveat that stops it being over-read is saved too",
+          "not how far the device drifted" in body)
+
+    check("20", "the families are switchable in the saved page too",
+          '"name":"reds' in body or '"name": "reds' in body)
+
+    timeline._by_family.setChecked(False)
+    # PUT THE WINDOW BACK, and this is not tidiness. The pages after this one
+    # share this timeline, and they save WHATEVER IS SHOWING -- deliberately,
+    # so a saved file can never disagree with the screen it came from. Leaving
+    # the chooser on a cloud made 16, 17 and 19 quietly save clouds too, and
+    # five of their claims failed at once. The page that changes shared state
+    # is the page that has to hand it back.
+    for i in range(timeline._picture_of.count()):
+        if timeline._picture_of.itemData(i) is None:
+            timeline._picture_of.setCurrentIndex(i)
+            break
+    else:
+        raise AssertionError("the graph is no longer on offer")
+    timeline._draw()
+    pump(2.0)
+    check("20", "and the window is handed back showing the graph",
+          timeline._chosen_pair() is None)
+
     print("\n16 — the same run with one profile taken out")
     timeline._list.setCurrentRow(2)
     timeline._on_remove()
