@@ -173,6 +173,18 @@ jobs:
         working-directory: python
         env:
           QT_QPA_PLATFORM: offscreen
+          # WINDOWS WRITES ITS CONSOLE IN cp1252 UNLESS TOLD OTHERWISE, and
+          # this suite talks about ΔE and uses em-dashes in the sentences it
+          # asserts on. The mangling was visible in the log for two builds --
+          # "�Open the download page� runs 134 points past" -- and printing a
+          # character cp1252 has no room for ends the run with a non-zero exit
+          # while every check has passed. 650 passed, 8 skipped, exit 1.
+          #
+          # This is what the pytest-9 probe was chasing. It is not pytest and
+          # it is not our code: it is the encoding of the pipe the summary is
+          # written to.
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: |
           # pyyaml is for the tests alone -- two of them read the workflow
           # itself to check the changelog guard is still wired in. The
@@ -183,11 +195,7 @@ jobs:
           # which checks broke -- which cost two round trips to a build
           # machine that is not this one. The summary is cheap and it is the
           # only thing anybody reads when a build goes red.
-          # -W error::pytest.PytestUnraisableExceptionWarning would hide the
-          # answer; -rA shows the warnings summary, which is where pytest 9
-          # reports an exception raised during finalisation -- the one thing
-          # that can give a non-zero exit with nothing failing.
-          python -m pytest . -q -rA --tb=line
+          python -m pytest . -q -rf --tb=line
 
       - name: Build
         run: pyinstaller --noconfirm GamutViewer.spec
