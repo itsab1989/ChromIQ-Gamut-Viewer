@@ -1996,6 +1996,15 @@ def _split_by_family(lab, x, y, z, values, sizes, ceiling, hover, scale,
         out.append(go.Scatter3d(
             x=x[pick], y=y[pick], z=z[pick], mode="markers",
             name=f"{family} — {count}",
+            # UNDER A HEADING OF THEIR OWN, because on a picture that
+            # also holds the two SHAPES the key would otherwise read
+            # "printer-2019, printer-2024, reds — 137, yellows — 134"
+            # as one flat list, inviting the reader to take them for the
+            # same kind of switch. They are not: one hides a whole
+            # gamut, the other a seventh of the dots inside it.
+            legendgroup="cq-families",
+            legendgrouptitle=(None if drawn_key else
+                              dict(text="Where they disagree, by colour family")),
             # THE PAINTED VALUE AND THE ΔE, side by side. The saved page's
             # threshold has to know how far each dot moved, and in the
             # direction views the painted value is one axis of the movement

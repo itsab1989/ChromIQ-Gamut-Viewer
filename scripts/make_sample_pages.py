@@ -1071,6 +1071,78 @@ def main() -> int:
           "furthest from the first" in body)
     timeline.close()
 
+    # ---------------------------------------------------------------- 21
+    # THE ONE THAT GETS SENT TO SOMEBODY, and the argument for the whole
+    # feature. Two profiles of one printer five years apart enclose almost
+    # exactly the same amount of colour -- 0.4% by volume, which is to say the
+    # same size by any measure anybody would use. Judged on volume alone, and
+    # that is how most tools judge, this printer has not changed.
+    #
+    # Inside those two identical shells the colours have plainly moved. That
+    # is the whole point, and the page has to land it before a reader has
+    # scrolled: the SHAPE says almost nothing and the INSIDE says plenty.
+    print("\n21 — the shape says nothing, the inside says plenty")
+    fresh()
+    first_profile = profiles_dir / "printer-2019.icc"
+    last_profile = profiles_dir / "printer-2024.icc"
+    check("21", "both profiles of the run are there",
+          first_profile.is_file() and last_profile.is_file())
+    w._load(first_profile)
+    pump(5.0)
+    w._load(last_profile)
+    pump(7.0)
+    check("21", "both are open as shapes", len(w._slots) == 2,
+          f"{len(w._slots)} open")
+
+    # THE CLAIM THE PAGE IS BUILT ON, checked rather than asserted: the two
+    # shells really are the same size. If a future demo generator changed that
+    # this page would be making an argument its own data does not support.
+    sizes = [g.volume for _p, g, _m in w._slots if g is not None]
+    check("21", "the two shapes really are all but identical in size",
+          len(sizes) == 2 and abs(sizes[0] - sizes[1]) / max(sizes) < 0.02,
+          f"{sizes[0]:,.0f} against {sizes[1]:,.0f} — "
+          f"{100 * abs(sizes[0] - sizes[1]) / max(sizes):.2f}% apart")
+
+    w._drift_draw.setChecked(True)
+    pump(4.0)
+    w._drift_split.setChecked(True)
+    pump(4.0)
+    got = w._drift_for_figure()
+    check("21", "the cloud is drawn inside the shapes", got is not None)
+    check("21", "and it is split into its colour families", bool(got[4]))
+    # AND THE INSIDE REALLY HAS MOVED, which is the other half of the claim.
+    import numpy as _np
+    worst = float(_np.max(got[1]))
+    check("21", "the colours inside have plainly moved", worst > 3.0,
+          f"worst ΔE {worst:.2f} — plainly visible, in shapes the same size")
+
+    p = page("21-the-shape-says-nothing.html")
+    # WITH THE NUMBERS, which is not the default. The picture alone makes half
+    # the argument; the sentences under it are the half somebody can quote.
+    save_to(p, numbers=True)
+    made.append(("21", p))
+    body = p.read_text(encoding="utf-8")
+    check("21", "the two shapes are in the saved page",
+          "printer-2019" in body and "printer-2024" in body)
+    check("21", "so are the seven colour families",
+          all(f'"{name} \\u2014 ' in body or f'"{name} — ' in body
+              for name in ("reds", "yellows", "greens", "cyans", "blues",
+                           "magentas")))
+    check("21", "the families sit under a heading of their own, "
+                "not mixed in with the shapes",
+          "by colour family" in body)
+    check("21", "the reader gets a threshold of their own",
+          'data-cq="cut"' in body)
+    check("21", "the sentences travel with the picture",
+          "which colour families moved" in body)
+    check("21", "including the arbitrary line they rest on",
+          "not one that exists in nature" in body)
+    check("21", "and what the numbers do NOT mean",
+          "not how far the printer moved" in body
+          or "not how far the device drifted" in body)
+    w._drift_split.setChecked(False)
+    w._drift_draw.setChecked(False)
+
     # ---------------------------------------------------------------- 18
     # THE OTHER PICTURE OF THE SAME FACT, and the reason it needs a page of
     # its own. Pages 15-17 answer WHEN a device moved and how fast. They
@@ -1147,8 +1219,16 @@ def main() -> int:
         # one. This ceiling is here so that never quietly comes back: no
         # arrangement in this application needs more than a handful.
         drawn = traces_drawn(body)
+        # SIXTEEN, NOT TWELVE, and the reason is not that a page grew. The
+        # ceiling exists to catch a cage being cut into one trace per band of
+        # colour -- 357 and 642 traces on two pages once. Splitting a drift
+        # cloud into its seven colour families is a deliberate seven, and a
+        # page that also holds two shapes and their outlines lands at
+        # thirteen. Raising a guard to admit a real feature is right;
+        # raising it to admit a regression would not be, so the number stays
+        # far below anything that could hide one.
         check(name, "the browser is not handed hundreds of separate traces",
-              drawn <= 12, f"{drawn} traces across every room on the page")
+              drawn <= 16, f"{drawn} traces across every room on the page")
     for name, path in made:
         body = path.read_text(encoding="utf-8")
         title = re.search(r"<title>(.*?)</title>", body)
