@@ -551,8 +551,14 @@ def split_into_families(w):
     assert len(figure.data) >= 6, f"only {len(figure.data)} groups"
     assert all(" — " in t.name for t in figure.data), (
         [t.name for t in figure.data])
-    # ONE KEY, not one per group.
-    assert sum(1 for t in figure.data if t.marker.showscale) == 1
+    # ONE KEY, AND NO GROUP OWNS IT. Asking "which trace carries the bar"
+    # is the question that passed while the fault was live: the bar was on
+    # the FIRST group, so switching the reds off took the whole scale off
+    # the page. Owned by the scene, no group can take it away.
+    assert not any(t.marker.showscale for t in figure.data), (
+        "a family owns the colour key and can switch it off")
+    assert all(t.marker.coloraxis == "coloraxis" for t in figure.data)
+    assert figure.layout.coloraxis.colorbar.title.text == "ΔE2000"
     # THE BOX MUST BE PINNED, or switching a family off moves the picture.
     assert figure.layout.scene.xaxis.autorange is False
     # and the words underneath have to be there too

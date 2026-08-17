@@ -1165,3 +1165,46 @@ def test_the_threshold_cannot_squash_the_room_either():
                       round(scene.aspectratio.z, 6)))
     assert len(seen) == 1, (
         f"the room changed shape across split/threshold combinations: {seen}")
+
+
+def test_one_family_toggles_one_family():
+    """CLICKING "blues" HID ALL SEVEN. Putting the families in a legend group
+    -- to stop the key reading as one flat list beside the shape names --
+    made the drawing library toggle them as a GROUP, which is its default.
+    The filter is the whole reason for splitting the cloud, and it stopped
+    working; it was reported from the published page.
+
+    Checked as a property of the traces rather than through a browser, so it
+    holds without a rendering engine: no legend group means no group toggle.
+    """
+    import ti3gamut
+
+    rng = np.random.default_rng(61)
+    n = 400
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    for values, axis in ((rng.uniform(0, 5, n), None),
+                         (rng.normal(0, 3, (n, 3)), "b")):
+        fig = ti3gamut.build_figure([], "T", mode="dark", space="lab",
+                                    grid=True,
+                                    drift=(lab, values, "d", axis, True))
+        for trace in fig.data:
+            assert not trace.legendgroup, (
+                f"{trace.name} is in a legend group, so clicking it toggles "
+                f"every other family with it")
+
+
+def test_the_key_flows_across_rather_than_down():
+    """A grouped key stacks in a column and grew to 564x163px, eating the
+    picture's room. Horizontal is what the layout asks for and what a flat
+    legend obeys."""
+    import ti3gamut
+
+    rng = np.random.default_rng(62)
+    n = 200
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    fig = ti3gamut.build_figure([], "T", mode="dark", space="lab", grid=True,
+                                drift=(lab, rng.uniform(0, 5, n), "d", None,
+                                       True))
+    assert fig.layout.legend.orientation == "h"

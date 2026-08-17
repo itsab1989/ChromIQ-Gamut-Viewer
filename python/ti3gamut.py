@@ -1996,15 +1996,23 @@ def _split_by_family(lab, x, y, z, values, sizes, ceiling, hover, scale,
         out.append(go.Scatter3d(
             x=x[pick], y=y[pick], z=z[pick], mode="markers",
             name=f"{family} — {count}",
-            # UNDER A HEADING OF THEIR OWN, because on a picture that
-            # also holds the two SHAPES the key would otherwise read
-            # "printer-2019, printer-2024, reds — 137, yellows — 134"
-            # as one flat list, inviting the reader to take them for the
-            # same kind of switch. They are not: one hides a whole
-            # gamut, the other a seventh of the dots inside it.
-            legendgroup="cq-families",
-            legendgrouptitle=(None if drawn_key else
-                              dict(text="Where they disagree, by colour family")),
+            # NO LEGEND GROUP, AND THAT IS A CORRECTION OF MY OWN MISTAKE.
+            #
+            # I put these under a heading -- "Where they disagree, by colour
+            # family" -- so the key would not read as one flat list mixing
+            # two kinds of switch. It cost two real faults to fix a worry
+            # nobody had reported:
+            #
+            #   * a grouped legend toggles as a GROUP by default, so clicking
+            #     "blues" hid all seven families at once. The filter, which is
+            #     the entire reason for splitting the cloud, stopped working.
+            #   * grouped entries stack in a column instead of flowing across,
+            #     so the key grew to 564x163px and ate the picture's room.
+            #
+            # Both were reported from the published page. The names carry the
+            # distinction on their own -- "reds — 137" does not read like
+            # "printer-2019" -- and a flat legend flows horizontally and
+            # toggles one entry at a time, which is what it is for.
             # THE PAINTED VALUE AND THE ΔE, side by side. The saved page's
             # threshold has to know how far each dot moved, and in the
             # direction views the painted value is one axis of the movement
@@ -7728,6 +7736,23 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             xaxis_range=_pinned[0], xaxis_autorange=False,
             yaxis_range=_pinned[1], yaxis_autorange=False,
             zaxis_range=_pinned[2], zaxis_autorange=False)
+
+    # NO HOVER SPIKES, AND THAT IS A TRADE MADE DELIBERATELY.
+    #
+    # The drawing library turns them on for every 3D scene: point at the shape
+    # and three lines run out to the walls to show where you are. They are
+    # genuinely useful, and they leave black streaks across the picture that
+    # stay until the camera moves -- the scene is redrawn without clearing
+    # what they wrote. Reported from the published page: "the lines leave
+    # black residual lines as long as the shape does not move."
+    #
+    # A picture with streaks scribbled on it is worse than one without a
+    # pointing aid, particularly on a page somebody forwards to somebody else,
+    # and the hover label already names the value under the cursor. So they
+    # are off, on purpose, everywhere -- rather than off on the one page that
+    # was complained about.
+    fig.update_scenes(xaxis_showspikes=False, yaxis_showspikes=False,
+                      zaxis_showspikes=False)
     return fig
 
 

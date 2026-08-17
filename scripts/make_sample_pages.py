@@ -1128,9 +1128,11 @@ def main() -> int:
           all(f'"{name} \\u2014 ' in body or f'"{name} — ' in body
               for name in ("reds", "yellows", "greens", "cyans", "blues",
                            "magentas")))
-    check("21", "the families sit under a heading of their own, "
-                "not mixed in with the shapes",
-          "by colour family" in body)
+    # NOT IN A LEGEND GROUP. A grouped key toggles as a group, so clicking
+    # one family hid all seven -- the filter, which is the entire reason for
+    # splitting the cloud, stopped working. Reported from the published page.
+    check("21", "each family can be switched off on its own",
+          '"legendgroup":"cq-families"' not in body)
     check("21", "the reader gets a threshold of their own",
           'data-cq="cut"' in body)
     check("21", "the sentences travel with the picture",

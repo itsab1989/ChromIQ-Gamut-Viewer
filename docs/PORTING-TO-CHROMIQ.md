@@ -398,3 +398,44 @@ another quiet inconsistency.
 
 Sources: X-Rite i1Pro and i1Pro 3 published specifications (short-term
 repeatability and inter-instrument agreement).
+
+## One thing at two times, or two different things?
+
+The comparison answers "how do these two sets of the same colours differ".
+The window offers it only as "has this one device drifted over time" — and
+three of its most valuable uses are not about time at all:
+
+* **two papers**, same printer, same chart — which holds the blues, which
+  holds the skin tones. A buying decision.
+* **two printers**, same paper, same chart — do the machines agree, and where
+  do they not.
+* **before and after** a nozzle clean, an ink batch, a head alignment.
+
+All three already compute correctly. Only the wording is wrong: for two papers
+nothing has "drifted", and saying so would be false.
+
+**In the viewer this has to be asked.** Two `.ti3` files of one chart could be
+one printer months apart or two papers on one afternoon, and the file names are
+not evidence. Guessing from a name is exactly the kind of confident wrong
+answer this project keeps having to remove.
+
+**In ChromIQ it would not have to be asked**, and this is the part worth
+carrying over. ChromIQ already knows, from the folder model in
+`core/file_manager.py`:
+
+| where the two files are | what that means |
+|---|---|
+| two runs of the SAME target (`<target>/runs/run1`, `run2`) | one thing at two times — the same paper and printer, measured again |
+| two DIFFERENT targets | two different things — different paper, printer or settings |
+| `reads/readN.ti3` inside one run | the same sheet read more than once — instrument repeatability, not drift |
+| a run's `.ti3` against its `preconditioning.ti3` | before and after a refinement |
+
+So the port should take the answer as an argument, the way the viewer's
+`family_report(..., over_time=...)` does, and let ChromIQ supply it from the
+project structure rather than from a question. The viewer asks because it has
+nothing but two loose files; ChromIQ has a project, and a project knows.
+
+**`meta.json` carries the dates**, so ChromIQ can also say *how far apart* the
+two are — which the viewer can only do when the profiles happen to carry a
+creation date. "Printed again 7 months later" is a better sentence than
+"printed again", and it is already in the folder.

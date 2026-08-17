@@ -1065,3 +1065,27 @@ def test_the_axis_makes_room_for_the_first_profile(app, five_years):
     low = str(fig.layout.xaxis.range[0])
     assert low < "{:04d}-{:02d}-{:02d}".format(*run.usable[0].when[:3]), (
         f"the first profile is at or outside the edge of the axis: {low}")
+
+
+def test_the_axis_title_is_short_enough_for_a_short_window(five_years):
+    """IT WAS MEASURED AGAINST THE WRONG THING. "ΔE2000 / the biggest
+    difference" on two lines was checked at ten window sizes in two engines --
+    all of them the SAVED PAGE, where the graph gets 68% of the screen. The
+    application's own pane is about 200px tall, and there the second line, 153
+    pixels when stood on end, runs through the caption; at 200px it starts
+    outside the plot altogether.
+
+    A title that cannot grow taller than the pane cannot collide with
+    anything, so this pins the shape rather than re-measuring the pixels: one
+    line, no break in it, and the meaning carried by the caption instead.
+    """
+    import drift_series
+
+    fig = drift_series.figure(drift_series.build(five_years), mode="dark")
+    axis_title = fig.layout.yaxis.title.text
+    assert "<br>" not in axis_title, (
+        "a two-line axis title is 153px stood on end and does not fit a 200px "
+        "pane")
+    assert axis_title == "ΔE2000"
+    # and what it MEANS has not simply been dropped
+    assert "biggest difference" in fig.layout.title.text

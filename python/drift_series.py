@@ -526,14 +526,30 @@ def figure(run: Run, *, mode: str = "dark", title: str = ""):
             font=dict(size=10, color=c["caption"]))
 
     fig.update_layout(
-        title=dict(text=title or "How far this device has moved",
+        title=dict(text=(title or "How far this device has moved")
+                   + " — the biggest difference at each step",
                    font=dict(size=13, color=c["caption"]), x=0.01,
                    yref="container", y=1.0, yanchor="top",
                    pad=dict(t=8), automargin=True),
         paper_bgcolor=c["page"], plot_bgcolor=c["plot"],
         font=dict(color=c["text"], size=12),
         xaxis=dict(title="", gridcolor=c["grid"], color=c["text"], **axis),
-        yaxis=dict(title="ΔE2000<br>the biggest difference",
+        # THE AXIS SAYS ITS UNIT, AND ONLY ITS UNIT.
+        #
+        # It used to read "ΔE2000 / the biggest difference" on two lines, and
+        # that was measured -- at ten window sizes, in two engines -- against
+        # the SAVED PAGE, where the graph is given 68% of the screen. Nobody
+        # measured the application's own pane, which is about 200px tall. At
+        # that height the second line, 153px when it is stood on end, runs
+        # straight through the caption; at 200px it starts at y = -5, which is
+        # to say outside the plot altogether. Basti photographed it.
+        #
+        # A one-line title is 54px and fits at every height measured, down to
+        # 170. What the number MEANS moves into the caption, where it reads as
+        # a sentence rather than as a label stood on its end -- and where it
+        # cannot collide with anything, because it is the thing everything
+        # else is laid out around.
+        yaxis=dict(title="ΔE2000",
                    gridcolor=c["grid"], color=c["text"], rangemode="tozero"),
         legend=dict(orientation="h", yanchor="top", y=-0.16, x=0,
                     xanchor="left", font=dict(color=c["text"])),
