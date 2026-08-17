@@ -97,6 +97,37 @@ def pick(combo, data) -> None:
     combo.setCurrentIndex(at)
 
 
+def whole_window(window):
+    """The window WITH the picture in it, which one grab does not give you.
+
+    THE FAULT THIS EXISTS FOR. `window.grab()` walks the widget tree and paints
+    each child — and the web view that draws the gamut is not painted by Qt at
+    all. It has its own render path, so it comes back as a blank rectangle, and
+    every picture this script wrote had the controls down the left and an empty
+    grey box where the shape belongs: 27 kB files against the 126-202 kB of the
+    ones already committed.
+
+    It went unnoticed because nothing looked wrong in a terminal. What gave it
+    away was two shots coming out BYTE-FOR-BYTE IDENTICAL — 02 and 03 differ
+    only inside the picture, so identical files meant the picture was not in
+    them.
+
+    Grabbing the view ON ITS OWN does work, which is what `make_doc_shots.py`
+    has always done. So both are taken and the second is painted into the
+    first, at the place the view actually sits.
+    """
+    from PyQt6.QtGui import QPainter
+    shot = window.grab()
+    view = getattr(window, "_view", None)
+    if view is not None and view.width() > 1 and view.height() > 1:
+        picture = view.grab()
+        where = view.mapTo(window, view.rect().topLeft())
+        painter = QPainter(shot)
+        painter.drawPixmap(where, picture)
+        painter.end()
+    return shot
+
+
 def until_it_changes(window, before, seconds: float = 25.0) -> bool:
     """Wait for the picture to actually change, rather than for a while.
 
@@ -113,7 +144,7 @@ def until_it_changes(window, before, seconds: float = 25.0) -> bool:
     end = time.time() + seconds
     while time.time() < end:
         pump(0.25)
-        if window.grab().toImage() != before:
+        if whole_window(window).toImage() != before:
             pump(0.6)                  # let the rest of the frame settle
             return True
     return False
@@ -165,7 +196,7 @@ def where_lost(w):
     w._load(GLOSSY)
     pump(3.5)
     compare_with(w, "space", "sRGB")
-    before = w.grab().toImage()
+    before = whole_window(w).toImage()
     w._show_lost.setChecked(True)
     assert w._show_lost.isChecked(), "the switch did not take"
     assert until_it_changes(w, before), (
@@ -350,7 +381,7 @@ def main() -> int:
             print(f"  [ SKIP ] {name}: {why}")
             window.close()
             continue
-        image = window.grab()
+        image = whole_window(window)
         # NO TWO OF THESE MAY BE THE SAME PICTURE.
         #
         # Every shot says what must be true of it, and those claims are only
