@@ -1834,6 +1834,10 @@ def drift_direction(lab, moved, name: str, axis: str = "L",
         lab = lab[keep]
         x, y, z = x[keep], y[keep], z[keep]
         values, sizes = values[keep], sizes[keep]
+        # AND THE ΔE ITSELF, which travels with every dot so a saved page can
+        # hide by it. Left unfiltered it stayed the full length while
+        # everything beside it shrank, and pairing the two raised on the spot.
+        deltas = _np.asarray(deltas, float)[keep]
 
     if by_family:
         return _split_by_family(
@@ -1844,12 +1848,14 @@ def drift_direction(lab, moved, name: str, axis: str = "L",
                  thickness=12, len=0.78, x=1.02,
                  tickvals=[-limit, -1.0, 0.0, 1.0, limit],
                  ticktext=[f"{limit:.0f} {less}", f"1 {less}",
-                           "no change", f"1 {more}", f"{limit:.0f} {more}"]))
+                           "no change", f"1 {more}", f"{limit:.0f} {more}"]),
+            deltas=deltas)
 
     return [go.Scatter3d(
         x=x, y=y, z=z, mode="markers", name=name,
-        customdata=values,
-        hovertemplate="%{customdata:+.2f} " + axis + "*<extra></extra>",
+        customdata=_pairs(values, deltas),
+        hovertemplate=("%{customdata[0]:+.2f} " if deltas is not None
+                       else "%{customdata:+.2f} ") + axis + "*<extra></extra>",
         marker=dict(
             size=sizes, color=values, colorscale=DIRECTION_SCALE,
             cmin=-limit, cmax=limit, opacity=0.85,
@@ -1932,8 +1938,25 @@ def _drift_key(ceiling):
                           "5+ — obvious"])
 
 
+def _pairs(values, deltas, pick=None):
+    """[painted value, ΔE] per point, or just the value when no ΔE is known.
+
+    Two columns rather than one so a saved page can hide dots by how far they
+    really moved, whichever way the picture happens to be painted.
+    """
+    import numpy as _np
+
+    values = _np.asarray(values, float)
+    if deltas is None:
+        return values
+    deltas = _np.asarray(deltas, float)
+    if pick is not None:
+        deltas = deltas[pick]
+    return _np.column_stack([values, deltas])
+
+
 def _split_by_family(lab, x, y, z, values, sizes, ceiling, hover, scale,
-                     cmin, cmax, key):
+                     cmin, cmax, key, deltas=None):
     """One trace per colour family instead of one for the lot.
 
     WHY THIS IS WORTH SEVEN TRACES WHERE THE REST OF THIS FILE FOUGHT TO GET
@@ -1973,8 +1996,15 @@ def _split_by_family(lab, x, y, z, values, sizes, ceiling, hover, scale,
         out.append(go.Scatter3d(
             x=x[pick], y=y[pick], z=z[pick], mode="markers",
             name=f"{family} — {count}",
-            customdata=values[pick],
-            hovertemplate=hover + f"<extra>{family}</extra>",
+            # THE PAINTED VALUE AND THE ΔE, side by side. The saved page's
+            # threshold has to know how far each dot moved, and in the
+            # direction views the painted value is one axis of the movement
+            # rather than its size -- so carrying only that would give the
+            # page a slider meaning something different in each view.
+            customdata=_pairs(values[pick], deltas, pick),
+            hovertemplate=(hover.replace("customdata:", "customdata[0]:")
+                           if deltas is not None else hover)
+            + f"<extra>{family}</extra>",
             marker=dict(
                 # THE KEY BELONGS TO THE PICTURE, NOT TO ANY ONE FAMILY.
                 # Hung on the first trace -- which is what "draw the bar once"
@@ -2044,12 +2074,13 @@ def drift_cloud(lab, deltas, name: str, space: str = "lab",
     if by_family:
         return _split_by_family(lab, x, y, z, deltas, sizes, ceiling,
                                 "ΔE %{customdata:.2f}", DRIFT_SCALE,
-                                0.0, ceiling, _drift_key(ceiling))
+                                0.0, ceiling, _drift_key(ceiling),
+                                deltas=deltas)
 
     return [go.Scatter3d(
         x=x, y=y, z=z, mode="markers", name=name,
-        customdata=deltas,
-        hovertemplate="ΔE %{customdata:.2f}<extra></extra>",
+        customdata=_pairs(deltas, deltas),
+        hovertemplate="ΔE %{customdata[0]:.2f}<extra></extra>",
         marker=dict(
             size=sizes, color=deltas, colorscale=DRIFT_SCALE,
             cmin=0.0, cmax=ceiling,
@@ -6634,6 +6665,133 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
     return html[:at] + note + html[at:] if at > 0 else html + note
 
 
+def _threshold_control(html: str, mode: str) -> str:
+    """A live "hide anything under ΔE n" slider, inside the saved page.
+
+    WHY IT IS LIVE RATHER THAN BAKED IN AT SAVE TIME. Whoever opens the page
+    is usually not whoever made it, and the interesting threshold is not known
+    in advance: on one chart the story is at ΔE 1, on another at 3. Fixing it
+    when the file is written hands the reader one frozen opinion and no way to
+    ask a second question. Everything needed is already in the file -- each
+    dot carries how far it moved -- so the slider costs no data, only the code
+    to move it.
+
+    IT BUILDS ITSELF ONLY WHERE IT APPLIES. A page with no drift cloud in it
+    has nothing to hide by, and a control that cannot act is worse than a
+    missing one, so it looks for dots carrying a ΔE and does nothing at all if
+    there are none.
+
+    NOTHING IS THROWN AWAY. The full arrays are kept aside on load and the
+    picture is redrawn from them each time, so sliding back to the left brings
+    every colour back exactly as it was.
+    """
+    c = SCENE_COLOURS["light" if mode == "light" else "dark"]
+    js = """
+<div id="cq-cut" hidden style="max-width:46em;margin:0 auto;padding:.4em 1.5em 1.2em;
+     font:14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     color:__TEXT__">
+  <label style="display:flex;align-items:center;gap:.8em;flex-wrap:wrap">
+    <span>Hide anything under</span>
+    <input type="range" data-cq="cut" min="0" max="0" step="1" value="0"
+           style="flex:1 1 12em;min-width:9em;min-height:44px">
+    <span data-cq="cutsays" style="min-width:8em;opacity:.85">everything</span>
+  </label>
+  <p data-cq="cutnote" style="margin:.4em 0 0;opacity:.75"></p>
+</div>
+<script>(function () {
+  function ready(fn) {
+    if (window.Plotly && document.querySelector(".js-plotly-plot")) return fn();
+    window.setTimeout(function () { ready(fn); }, 250);
+  }
+  ready(function () {
+    var gd = document.querySelector(".js-plotly-plot");
+    var box = document.getElementById("cq-cut");
+    if (!gd || !gd.data || !box) return;
+    // READ FROM _fullData, NOT FROM data, AND THAT IS THE WHOLE TRICK.
+    // The drawing library packs any sizeable array into base64 --
+    // {dtype, bdata, shape} -- so gd.data[i].x is an object, gd.data[i].
+    // customdata[0] is null, and every length is NaN. It has already decoded
+    // them for its own use in _fullData, where customdata comes back as an
+    // array of two-number arrays. Reading the packed form is how a first
+    // attempt at this built no control at all and reported "nan drawn".
+    var src = gd._fullData || gd.data;
+    function flat(v) {
+      if (!v) return [];
+      if (Array.isArray(v)) return v;
+      if (v.length !== undefined) return Array.prototype.slice.call(v);
+      if (v._inputArray) return Array.prototype.slice.call(v._inputArray);
+      return [];
+    }
+    var kept = [], most = 0, any = false;
+    src.forEach(function (t, i) {
+      var cd = t.customdata;
+      if (!cd || !cd.length || cd[0] == null || cd[0].length < 2) {
+        kept.push(null); return;
+      }
+      any = true;
+      var de = [];
+      for (var q = 0; q < cd.length; q += 1) { de.push(cd[q][1]); }
+      de.forEach(function (v) { if (v > most) most = v; });
+      var marker = t.marker || {};
+      kept.push({i: i, x: flat(t.x), y: flat(t.y), z: flat(t.z),
+                 cd: Array.prototype.slice.call(cd), de: de,
+                 colour: flat(marker.color), size: flat(marker.size)});
+    });
+    if (!any) return;
+    var least = Infinity;
+    kept.forEach(function (k) {
+      if (k) k.de.forEach(function (v) { if (v < least) least = v; });
+    });
+    if (!isFinite(least)) least = 0;
+    var slider = box.querySelector('[data-cq="cut"]');
+    var says = box.querySelector('[data-cq="cutsays"]');
+    var note = box.querySelector('[data-cq="cutnote"]');
+    // THE SAME RULE AS THE WINDOW: from this pair's smallest difference to
+    // its largest, in tenths. A slider whose ends do nothing teaches the
+    // reader that the control is broken.
+    var lo = Math.floor(least * 10), hi = Math.ceil(most * 10);
+    if (hi <= lo) return;
+    slider.min = lo; slider.max = hi; slider.value = lo;
+    box.hidden = false;
+    function apply() {
+      var cut = slider.value / 10, shown = 0, total = 0;
+      kept.forEach(function (k) {
+        if (!k) return;
+        var x = [], y = [], z = [], cd = [], col = [], sz = [];
+        for (var j = 0; j < k.de.length; j += 1) {
+          total += 1;
+          if (k.de[j] < cut) continue;
+          shown += 1;
+          x.push(k.x[j]); y.push(k.y[j]); z.push(k.z[j]); cd.push(k.cd[j]);
+          if (k.colour.length) col.push(k.colour[j]);
+          if (k.size.length) sz.push(k.size[j]);
+        }
+        var up = {x: [x], y: [y], z: [z], customdata: [cd]};
+        if (k.colour.length) up["marker.color"] = [col];
+        if (k.size.length) up["marker.size"] = [sz];
+        window.Plotly.restyle(gd, up, [k.i]);
+      });
+      var hidden = total - shown;
+      says.textContent = hidden ? ("under \u0394E " + (cut).toFixed(1))
+                                : "everything";
+      // THE PAGE SAYS WHAT IS MISSING FROM IT, for the same reason the
+      // window does: a picture with eleven dots in it cannot otherwise be
+      // told apart from a printer that is nearly perfect.
+      note.textContent = hidden
+        ? (hidden + " of " + total + " colours moved by less than \u0394E "
+           + cut.toFixed(1) + " and are not drawn.")
+        : "";
+    }
+    slider.addEventListener("input", apply);
+    apply();
+  });
+})();</script>
+"""
+    js = js.replace("__TEXT__", c["text"])
+    at = html.rfind("</body>")
+    return html[:at] + js + html[at:] if at > 0 else html + js
+
+
 def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
                      carry_viewer: bool = True, notes: str = "",
                      controls: bool = True, offer=None) -> Path:
@@ -6657,6 +6815,9 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     # exists for sending a measurement to another person. The caption already
     # says what the picture is, so it is what the tab says too.
     html = _titled(html, _page_title(fig))
+    # THE READER'S OWN THRESHOLD. It builds itself only on a page that has a
+    # drift cloud in it, so every other kind of page is untouched.
+    html = _threshold_control(html, mode)
     if not carry_viewer:
         html = _say_if_the_viewer_never_arrives(html, mode)
     _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]
