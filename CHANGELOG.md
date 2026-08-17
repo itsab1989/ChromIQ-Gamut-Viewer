@@ -1,5 +1,73 @@
 # Changelog
 
+## v2.21.0
+
+### 📉 The run's own starting point is on the graph
+
+Reported by Basti from a phone: *"such an overview should also show the 2019
+reference as the reference point at zero. also the 2020 value has no 2020
+label and does not seem to be on the exact line that would represent 2020. or
+is this because the profiles were not created in the same distance from a time
+point of view?"*
+
+Right about both. **His own explanation was the one thing it was not** —
+measured, all four gaps in that run are exactly 12 months.
+
+Both came from one root: **the first profile was not plotted.** The cumulative
+line is measured *from* it, so leaving it off drew a line whose origin was
+nowhere on the picture, starting at a whole year of drift (ΔE 2.60) which
+reads as where the run began. And with the run starting at 2020-03-01 the
+padded axis began 2020-01-06 — five days after the 2020 tick would have
+fallen — so the axis was labelled 2021, 2022, 2023 and the 2020 point sat in
+an unnamed gap.
+
+Now the line starts at the first profile at **ΔE 0**, and every profile gets a
+tick of its own (by year, or by year and month where two share a year). The
+"since the one before" line still starts at the second, because it has no
+previous — and that difference between the two lines is worth seeing.
+
+### 🧰 Demo profiles with every release
+
+Twenty-one made-up profiles in four runs, attached to each release as
+`ChromIQ-demo-profiles.zip`, so somebody who has just downloaded the
+application can try the timeline without owning a printer, a
+spectrophotometer and five years of patience.
+
+| Folder | What it shows |
+|---|---|
+| **1 — drifting steadily** | every step the size of the last, so it will keep going |
+| **2 — it moved all at once** | three quiet years and a jump, on a date you can look up |
+| **3 — wandered off and came back** | ends where it started, having been ΔE 5.39 away |
+| **4 — twice a year** | the axis spaced by real time, two profiles in some years |
+
+**Generated, not committed** — twenty-one 1257 kB profiles differing in about
+six thousand bytes each is 26 MB of near-duplicate binary for something that
+takes ten seconds to make. **Each set checks that it really shows the shape it
+claims** before it is written; a demo that does not demonstrate the thing
+teaches the reader that the feature does not work, so a failure there stops
+the release.
+
+### 🛠 The build workflow, hardened
+
+- **The Windows two-pass workaround is gone.** It ran the suite twice and
+  passed if either attempt exited 0 — a workaround for a real fault where
+  Windows printed "650 passed" and then exited 1. **Four consecutive releases
+  have reported `plain=0`**, so it has not happened since the tidying that
+  closed windows and removed temporary folders properly. It was never
+  harmless: a second unraisable appearing later would have been swallowed, and
+  every build paid for the suite twice. If it comes back, the build now goes
+  red — which is the point.
+- **Every job has a ceiling**: 10, 45 and 15 minutes. GitHub's default is six
+  hours, and this project has already lost two and a half of them to one
+  wedged tool.
+- **One run at a time per tag**, with the superseded one cancelled. Retagging
+  after a failed build is normal, and two runs racing to attach assets to one
+  release means whichever finishes second wins — not necessarily the newer.
+- **`actions/checkout@v5`** throughout, ending the Node 20 deprecation warning
+  on every job of every build.
+
+- 702 checks with ArgyllCMS, 699 without.
+
 ## v2.20.2
 
 **v2.20.1 was tagged and did not build.** Its change was right and its error

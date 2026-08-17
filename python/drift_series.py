@@ -401,12 +401,45 @@ def figure(run: Run, *, mode: str = "dark", title: str = ""):
         import datetime as _dt
 
         try:
-            days = [_dt.date(*e.when[:3]).toordinal() for e in run.usable[1:]]
+            days = [_dt.date(*e.when[:3]).toordinal() for e in run.usable]
             if len(days) > 1 and days[-1] > days[0]:
-                edge = max((days[-1] - days[0]) * 0.05, 1.0)
+                # A TWELFTH, NOT A TWENTIETH, and the difference is a
+                # measured one. At a twentieth the first profile's tick sat
+                # about ten pixels from the axis on a 320px screen, and its
+                # label was printed across the "0" of the side axis -- caught
+                # by the layout check at 320x700 in WebKit, 24 square pixels
+                # of one number over another. A twelfth clears it at every
+                # size checked and still reads as one run rather than a line
+                # marooned in the middle of an empty chart.
+                edge = max((days[-1] - days[0]) / 12.0, 1.0)
                 axis["range"] = [
                     _dt.date.fromordinal(int(days[0] - edge)).isoformat(),
                     _dt.date.fromordinal(int(days[-1] + edge)).isoformat()]
+            # A TICK FOR EVERY PROFILE, while there are few enough to read.
+            #
+            # Left to itself the library picks round years, and a profile made
+            # in March sits between two of them with nothing naming it --
+            # which is exactly what Basti met: "the 2020 value has no 2020
+            # label and does not seem to be on the exact line that would
+            # represent 2020". It was on no line because there was no line.
+            #
+            # Twelve is where a date every point stops fitting across a phone
+            # and the round years become the readable choice again; above it
+            # the library's own spacing is better than a crowd of overlapping
+            # labels.
+            if len(run.usable) <= 12:
+                axis["tickmode"] = "array"
+                axis["tickvals"] = [
+                    "{:04d}-{:02d}-{:02d}".format(*e.when[:3])
+                    for e in run.usable]
+                # THE YEAR ALONE WHERE THAT IS UNAMBIGUOUS. A run of yearly
+                # profiles reads as 2019, 2020, 2021; two in one year would
+                # then wear the same label, so those get the month as well.
+                years = [e.when[0] for e in run.usable]
+                same_year = len(set(years)) != len(years)
+                axis["ticktext"] = [
+                    "{:04d}-{:02d}".format(*e.when[:2]) if same_year
+                    else f"{e.when[0]}" for e in run.usable]
         except (ValueError, TypeError, OverflowError):
             pass          # an impossible date simply gets the default range
     else:
@@ -426,8 +459,31 @@ def figure(run: Run, *, mode: str = "dark", title: str = ""):
                           annotation_position="top left",
                           annotation_font=dict(size=10, color=c["caption"]))
 
+    # THE FIRST PROFILE IS ON THE CHART, AT ZERO, and it belongs there.
+    #
+    # Reported by Basti: "such an overview should also show the 2019 reference
+    # as the reference point at zero". He is right, and it was doing two
+    # separate harms. The cumulative line is measured FROM that profile, so
+    # leaving it off drew a line whose origin was nowhere on the picture --
+    # the first thing plotted was already a whole year of drift, at ΔE 2.60,
+    # which reads as where the run began.
+    #
+    # AND IT WAS WHY THE SECOND PROFILE HAD NO LABEL, which he also spotted.
+    # With the run starting at 2020-03-01 the padded axis began 2020-01-06,
+    # five days after the 2020 tick would have fallen -- so the axis was
+    # labelled 2021, 2022, 2023 and the 2020 point sat in an unnamed gap. His
+    # own guess, that the profiles were not evenly spaced, was the one thing
+    # it was not: measured, all four gaps are exactly 12 months.
+    #
+    # ONLY THE CUMULATIVE LINE GETS IT. "Since the one before" has no
+    # previous for the first profile, so it starts at the second, and that
+    # difference between the two lines is itself worth seeing.
+    first = run.usable[0]
+    start = ("{:04d}-{:02d}-{:02d}".format(*first.when[:3]) if by_date
+             else first.name)
     fig.add_trace(go.Scatter(
-        x=labels, y=[s.worst for s in run.since_first], mode="lines+markers",
+        x=[start] + labels,
+        y=[0.0] + [s.worst for s in run.since_first], mode="lines+markers",
         name=f"since {names[0]} (how far altogether)",
         line=dict(color="#ff4573", width=2.5), marker=dict(size=8),
         hovertemplate="%{x}<br>ΔE %{y:.2f} since the first<extra></extra>"))

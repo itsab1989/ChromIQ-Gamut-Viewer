@@ -340,7 +340,12 @@ def test_the_axis_is_spaced_by_real_time_when_the_dates_allow_it(tmp_path):
         for i, y in enumerate(years)])
     fig = drift_series.figure(run)
     assert fig.layout.xaxis.type == "date"
-    assert list(fig.data[0].x) == ["2020-06-01", "2021-06-01", "2024-06-01"]
+    # THE FIRST PROFILE IS ON THE LINE NOW, at zero, so the run's own start
+    # is visible rather than implied. Reported by Basti: the cumulative line
+    # began at a whole year of drift, which reads as where the run began.
+    assert list(fig.data[0].x) == ["2019-06-01", "2020-06-01", "2021-06-01",
+                                   "2024-06-01"]
+    assert fig.data[0].y[0] == 0.0
 
 
 def test_an_undated_run_falls_back_to_names_rather_than_inventing_dates(
@@ -353,7 +358,8 @@ def test_an_undated_run_falls_back_to_names_rather_than_inventing_dates(
         for i in range(3)])
     fig = drift_series.figure(run)
     assert fig.layout.xaxis.type == "category"
-    assert list(fig.data[0].x) == ["n1", "n2"]
+    assert list(fig.data[0].x) == ["n0", "n1", "n2"]   # the first, at zero
+    assert fig.data[0].y[0] == 0.0
 
 
 def test_the_bands_say_what_the_numbers_mean_in_words(five_years):
@@ -985,3 +991,77 @@ def test_the_sentence_does_not_send_you_looking_for_red_that_is_not_there(
     assert ("gone lighter" in said or "gone darker" in said), said
     assert "no change" in said, said
     dialog.close()
+
+
+# --- the reference profile is on the chart ----------------------------------
+#
+# Basti, from a phone, looking at page 19: "such an overview should also show
+# the 2019 reference as the reference point at zero. also the 2020 value has no
+# 2020 label and does not seem to be on the exact line that would represent
+# 2020. or is this because the profiles were not created in the same distance
+# from a time point of view?"
+#
+# Right about both, and his own explanation was the one thing it was not:
+# measured, all four gaps in that run are exactly 12 months. Both came from one
+# root -- the first profile was not plotted, so the cumulative line began at a
+# whole year of drift, and the padded axis began five days after the 2020 tick
+# would have fallen.
+
+def test_the_first_profile_is_drawn_at_zero(app, five_years):
+    import drift_series
+    run = drift_series.build(five_years)
+    fig = drift_series.figure(run)
+    cumulative = next(t for t in fig.data
+                      if t.name and "altogether" in t.name)
+    assert len(cumulative.x) == len(run.usable), (
+        "every profile should be on the cumulative line, the first included")
+    assert cumulative.y[0] == 0.0, (
+        f"the run starts where it starts: {cumulative.y[0]}")
+    assert "2019" in str(cumulative.x[0]), cumulative.x[0]
+
+
+def test_the_step_line_still_starts_at_the_second_profile(app, five_years):
+    """It has no previous to be measured from, and that difference between the
+    two lines is worth seeing rather than papering over with a zero."""
+    import drift_series
+    run = drift_series.build(five_years)
+    fig = drift_series.figure(run)
+    steps = next(t for t in fig.data if t.name and "each time" in t.name)
+    assert len(steps.x) == len(run.usable) - 1
+    assert steps.y[0] > 0.0
+
+
+def test_every_profile_gets_a_tick_of_its_own(app, five_years):
+    """A profile made in March sits between two round years with nothing
+    naming it, which is what Basti met."""
+    import drift_series
+    run = drift_series.build(five_years)
+    fig = drift_series.figure(run)
+    ticks = list(fig.layout.xaxis.ticktext or [])
+    assert len(ticks) == len(run.usable), ticks
+    for entry in run.usable:
+        assert any(str(entry.when[0]) in t for t in ticks), (entry.name, ticks)
+
+
+def test_two_profiles_in_one_year_are_told_apart_on_the_axis(app, tmp_path):
+    """Naming a tick by its year alone is only unambiguous while there is one
+    profile per year; two would otherwise wear the same label."""
+    import drift_series
+    twice = [dated(tmp_path / "spring.icc", (2021, 3, 1, 9, 0, 0), gamma=2.20),
+             dated(tmp_path / "autumn.icc", (2021, 9, 1, 9, 0, 0), gamma=2.26),
+             dated(tmp_path / "later.icc", (2022, 3, 1, 9, 0, 0), gamma=2.32)]
+    fig = drift_series.figure(drift_series.build(twice))
+    ticks = list(fig.layout.xaxis.ticktext or [])
+    assert len(set(ticks)) == len(ticks), f"two ticks read the same: {ticks}"
+    assert all("-" in t for t in ticks), ticks
+
+
+def test_the_axis_makes_room_for_the_first_profile(app, five_years):
+    """The padding used to be measured from the SECOND profile, which is what
+    put the axis five days the wrong side of a tick."""
+    import drift_series
+    run = drift_series.build(five_years)
+    fig = drift_series.figure(run)
+    low = str(fig.layout.xaxis.range[0])
+    assert low < "{:04d}-{:02d}-{:02d}".format(*run.usable[0].when[:3]), (
+        f"the first profile is at or outside the edge of the axis: {low}")
