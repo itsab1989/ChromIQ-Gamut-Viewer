@@ -242,8 +242,15 @@ def window_with(paths):
     win = SimpleNamespace(
         _slots=slots, _drift=FakeLabel(), _drift_worst=FakeLabel(),
         _drift_box=FakeLabel(),
+        # The family lines under the numbers. Carried by the stand-in because
+        # the real method writes to them on EVERY path, including the ones
+        # that refuse to answer -- a report left behind from the last pair
+        # names colours belonging to files the reader has closed.
+        _drift_families=FakeLabel(), _drift_families_note=FakeLabel(),
         PROFILE_SUFFIXES=gamut_app.GamutApp.PROFILE_SUFFIXES,
         PROFILE_GRID=gamut_app.GamutApp.PROFILE_GRID)
+    win._say_drift_families = (
+        lambda *a, **k: gamut_app.GamutApp._say_drift_families(win, *a, **k))
     # The real method calls self._profile_pair(), so the stand-in has to carry
     # it too -- bound to the real one rather than to a second copy of the
     # logic, which would let the two drift apart without anything noticing.

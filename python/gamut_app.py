@@ -2904,6 +2904,85 @@ class WebPageDialog(QDialog):
                           for name, box in self._offer.items()}}
 
 
+def family_report(lab_a, lab_b, spans: str, *, of: str = "profiles"):
+    """Which colour families moved, as (the lines to show, the footnote).
+
+    WINDOW-FREE AND SHARED BY EVERY PLACE THAT SHOWS IT: the timeline, the
+    main window's measurement pair, the main window's profile pair, the saved
+    web page and the exported table. It was a method on the timeline window
+    for one release, which is why the main window -- where somebody with two
+    .ti3 files of one chart actually works -- had no report at all.
+
+    *of* says what the two things ARE, because what the number MEANS is not
+    the same for both, and getting that wrong is worse than leaving it out.
+
+      "profiles"     -- two characterisations. How far apart the PROFILES are
+                        is not how far the device drifted: each is one day's
+                        measurements of one chart, so chart fade and any
+                        change in how they were built are inside the number.
+      "measurements" -- two readings of one chart, which is the verification
+                        case: print the chart again later, on the same paper
+                        and the same printer, and read it.
+
+    AND THE MEASUREMENT CASE HAS TWO QUITE DIFFERENT SHAPES, which an earlier
+    version of this ran together and got wrong. Reading the SAME SHEET twice
+    shows the sheet ageing and the instrument's own repeatability, and nothing
+    else. PRINTING IT AGAIN puts the whole process between the two readings --
+    the printer, the ink batch, the paper batch, the day's conditions -- which
+    is usually the very thing somebody wants to know, and is not "the chart
+    fading". The note says both rather than assuming which one happened,
+    because the files cannot tell us.
+
+    Returns None when there is nothing honest to say, which the caller must
+    treat as "show nothing" rather than "show an empty box".
+    """
+    import gamutview
+
+    try:
+        rows = gamutview.family_drift(lab_a, lab_b)
+    except (ValueError, TypeError):
+        return None
+
+    lines = [r.sentence for r in rows if r.patches]
+    if not lines:
+        return None
+    shown = f"{spans} — which colour families moved:\n" + "\n".join(lines)
+
+    borderline = sum(r.near_boundary for r in rows)
+    total = sum(r.patches for r in rows)
+    where = ", ".join(f"{name} around {centre:.0f}°"
+                      for name, centre in gamutview.HUE_FAMILIES)
+    thing = "colours" if of == "profiles" else "patches"
+    means = (
+        "These are two profiles, so this is how far apart the two "
+        "DESCRIPTIONS are — not how far the printer moved. Each profile is "
+        "one day's measurements of one chart, so a faded chart or a change in "
+        "how they were built is inside these numbers too."
+        if of == "profiles" else
+        "These are two readings of the same chart. If the second was PRINTED "
+        "again rather than only measured again, then everything between the "
+        "two prints is in these numbers — the printer, the ink batch, the "
+        "paper batch and the conditions on the day — which is usually exactly "
+        "what you wanted to find out. If instead it is the same sheet read "
+        "twice, what you are seeing is the sheet ageing and the instrument's "
+        "own repeatability.")
+    note = (
+        f"{means} "
+        f"Where one family stops and the next begins is a line this window "
+        f"draws, not one that exists in nature. The families are centred on "
+        f"{where} of hue, and each one reaches half way to its neighbours. "
+        f"Anything less colourful than chroma "
+        f"{gamutview.NEUTRAL_CHROMA:.0f} is called a grey instead, because "
+        f"below that a colour's hue is mostly noise and would put it in a "
+        f"family at random.")
+    if borderline:
+        note += (
+            f" Of these {total} {thing}, {borderline} sit within "
+            f"{gamutview.BOUNDARY_DEGREES:.0f}° of one of those lines and "
+            f"could honestly have been counted either side of it.")
+    return shown, note
+
+
 class TimelineDialog(QDialog):
     """One device, several profiles of it, and how far it has moved.
 
@@ -3474,16 +3553,12 @@ class TimelineDialog(QDialog):
         self._families_note.setText("" if said is None else said[1])
 
     def _family_report(self, pair):
-        """The family report as (what to show, the footnote), or None.
+        """The report for whichever pair this window is showing.
 
-        ONE PLACE THAT WORKS IT OUT, THREE THAT SHOW IT: the panel on screen,
-        the saved web page and the exported table. Written three times it
-        would be three chances for a saved file to disagree with the window it
-        was saved from -- and this project has already had a caption disagree
-        with the cloud above it once.
+        Finding the pair is this window's job; saying it is not -- the words
+        come from the shared helper, so the timeline, the main window and the
+        exports cannot drift apart in what they claim.
         """
-        import gamutview
-
         if self._run is None:
             return None
         try:
@@ -3493,8 +3568,7 @@ class TimelineDialog(QDialog):
                 # THE USABLE ENTRIES, not the paths that were added. A profile
                 # that could not be read is still in _paths, and taking the
                 # first and last of THAT list means comparing files the rest
-                # of this window has already refused. Run.usable is what every
-                # other reading here is drawn from.
+                # of this window has already refused.
                 usable = self._run.usable
                 if len(usable) < 2:
                     return None
@@ -3504,33 +3578,9 @@ class TimelineDialog(QDialog):
             d = compare_profiles(path_a, path_b, steps=self.GRID)
             if not d.comparable or d.lab_a is None:
                 return None
-            rows = gamutview.family_drift(d.lab_a, d.lab_b)
         except Exception:              # noqa: BLE001 — a missing report is
             return None                # not worth losing the picture over
-
-        lines = [r.sentence for r in rows if r.patches]
-        if not lines:
-            return None
-        shown = f"{spans} — which colour families moved:\n" + "\n".join(lines)
-        borderline = sum(r.near_boundary for r in rows)
-        total = sum(r.patches for r in rows)
-        where = ", ".join(
-            f"{name} around {centre:.0f}°"
-            for name, centre in gamutview.HUE_FAMILIES)
-        note = (
-            f"Where one family stops and the next begins is a line this "
-            f"window draws, not one that exists in nature. The families are "
-            f"centred on {where} of hue, and each one reaches half way to its "
-            f"neighbours. Anything less colourful than chroma "
-            f"{gamutview.NEUTRAL_CHROMA:.0f} is called a grey instead, "
-            f"because below that a colour's hue is mostly noise and would put "
-            f"it in a family at random.")
-        if borderline:
-            note += (
-                f" Of these {total} colours, {borderline} sit within "
-                f"{gamutview.BOUNDARY_DEGREES:.0f}° of one of those lines and "
-                f"could honestly have been counted either side of it.")
-        return shown, note
+        return family_report(d.lab_a, d.lab_b, spans, of="profiles")
 
     def _pair_verdict(self, pair) -> str:
         """What one step amounts to, in the same voice the run's verdict uses.
@@ -6485,6 +6535,64 @@ class GamutApp(QMainWindow):
         dv.addWidget(self._drift)
         self._drift_worst = WrappedLabel("", self._drift_box, hide_when_empty=True)
         self._drift_worst.setObjectName("hint")
+
+        # WHICH COLOUR FAMILIES MOVED, in the main window as well as in the
+        # timeline. For one release this existed only in "Follow one device
+        # over time", so somebody holding two readings of one chart -- the
+        # case this whole box exists for -- got a ΔE summary and nothing about
+        # WHERE the movement was.
+        self._drift_families = WrappedLabel("", self._drift_box,
+                                            hide_when_empty=True)
+        self._drift_families.setToolTip(
+            "Which colour families moved between the two files you have "
+            "open, and which way — written out so you can paste it straight "
+            "into an email or a report.\n\n"
+            "WHAT YOU NEED FIRST: two files of the same kind open together. "
+            "Either two measurements (.ti3) of the same chart, or two ICC "
+            "profiles of the same device. Open them with Open something to "
+            "look at…, at the top of this column.\n\n"
+            "TWO MEASUREMENTS IS THE VERIFICATION CASE, and the most useful "
+            "one: print your chart again weeks or months later on the same "
+            "paper and the same printer, read it, and open both readings "
+            "here. The lines then tell you which colours your printer has "
+            "actually drifted in.\n\n"
+            "WHAT IS IN THAT NUMBER, because it is more than the printer. "
+            "Reprinting puts the whole process between the two readings: the "
+            "printhead's temperature changes how much ink each nozzle puts "
+            "down, low humidity dries ink near the nozzles and darkens it, "
+            "paper takes up moisture and changes size, and no two ink or "
+            "paper batches are quite identical. That is usually exactly what "
+            "you want to know — it is what your printing really does on a "
+            "different day. If instead you measured the SAME sheet twice, "
+            "you are seeing that sheet ageing plus your instrument's own "
+            "repeatability, which for a typical hand-held spectrophotometer "
+            "is around ΔE 0.1.\n\n"
+            "TWO PROFILES IS A DIFFERENT QUESTION. That compares two "
+            "DESCRIPTIONS of a device rather than the device: each profile "
+            "is one day's measurements of one chart, so a faded chart or a "
+            "change in how you built them is inside the number too.\n\n"
+            "EVERY LINE SAYS HOW MANY IT STANDS ON. A family with four "
+            "patches in it and one with four hundred produce the same kind "
+            "of sentence, and only that number tells you how much to trust "
+            "it.\n\n"
+            "\"STAYED THE SAME\" MEANS UNDER ΔE 1 — the same figure this "
+            "window uses everywhere else for a difference a careful eye "
+            "begins to notice.\n\n"
+            "\"MIXED\" MEANS THEY MOVED BUT NOT TOGETHER. There is no one "
+            "direction that would be true of them all, so none is given "
+            "rather than inventing one out of the average.\n\n"
+            "\"BUT NOT CERTAINLY\" MEANS THE MOVEMENT IS NO BIGGER THAN ITS "
+            "OWN SCATTER — treat it as a hint to go and look, not as a "
+            "finding.\n\n"
+            "THE GREYS are patches too close to neutral to have a hue worth "
+            "naming, so they are never said to have drifted toward a colour. "
+            "They are reported as warmer, cooler, redder, greener, lighter "
+            "or darker instead. Greys drifting while the colours hold still "
+            "is a common and useful pattern: it usually points at the light "
+            "inks or the paper rather than at one colourant.")
+        self._drift_families_note = WrappedLabel("", self._drift_box,
+                                                 hide_when_empty=True)
+        self._drift_families_note.setObjectName("hint")
         drift_hint = Hint(
             "This answers one question — have these two moved apart? — and it "
             "answers it for two kinds of file.\n\n"
@@ -6521,6 +6629,11 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._drift_worst, 1)
         _r.addWidget(drift_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         dv.addLayout(_r)
+        # UNDER THE NUMBERS, because it explains them rather than competing
+        # with them: the reader has just been told how far the two moved
+        # apart, and this says which colours did the moving.
+        dv.addWidget(self._drift_families)
+        dv.addWidget(self._drift_families_note)
         # IN THIS BOX RATHER THAN AMONG THE DRAWING OPTIONS, because this is
         # where somebody is standing when the question occurs to them. They
         # have just read "biggest difference ΔE 3.30" and the next thought is
@@ -9404,7 +9517,12 @@ class GamutApp(QMainWindow):
         # back out by _readout_text() into a saved picture's caption.
         for name in ("_coverage", "_picture_loss", "_pair", "_drift",
                      "_drift_worst", "_chart_headline", "_chart_rows",
-                     "_chart_spread"):
+                     "_chart_spread",
+                     # The family lines and their footnote. Left out of this
+                     # list they survived "Close them all" and went on naming
+                     # colours in files the reader had just closed -- the same
+                     # fault the timeline window had, in a second place.
+                     "_drift_families", "_drift_families_note"):
             label = getattr(self, name, None)
             if label is not None:
                 label.setText("")
@@ -11386,6 +11504,21 @@ class GamutApp(QMainWindow):
             return None                      # .gam files have no lookup table
         return paths[0], paths[1]
 
+    def _say_drift_families(self, lab_a=None, lab_b=None, spans="",
+                            of="profiles") -> None:
+        """Fill — or clear — the family lines under the drift numbers.
+
+        CLEARED BY DEFAULT AND ON EVERY PATH THAT CANNOT FILL THEM. A report
+        left behind from the last pair is worse than none: it names colours
+        that belong to files the reader has already closed. That fault has
+        happened once in this application and is not repeated by accident.
+        """
+        said = None
+        if lab_a is not None and lab_b is not None:
+            said = family_report(lab_a, lab_b, spans, of=of)
+        self._drift_families.setText("" if said is None else said[0])
+        self._drift_families_note.setText("" if said is None else said[1])
+
     def _update_drift(self) -> None:
         """Has anything changed — asked of two readings, or of two profiles.
 
@@ -11402,6 +11535,7 @@ class GamutApp(QMainWindow):
         # pair up, so there is no drift to speak of.
         if len(self._slots) != 2 or any(x[2] is None for x in self._slots):
             self._drift_box.setVisible(False)
+            self._say_drift_families()
             return
         self._drift_box.setVisible(True)
         (_pa, _ga, before), (_pb, _gb, after) = self._slots
@@ -11410,6 +11544,7 @@ class GamutApp(QMainWindow):
         except ValueError as exc:
             self._drift.setText(str(exc))
             self._drift_worst.setText("")
+            self._say_drift_families()
             return
         matched = ("1 patch" if d.matched == 1 else f"{d.matched} patches")
         verdict = ("Nothing anybody could see." if d.worst < 1.0
@@ -11431,6 +11566,19 @@ class GamutApp(QMainWindow):
         self._drift_worst.setText(
             f"Of those, {summary}. The ones that moved most:\n"
             + "\n".join(lines))
+        # AND WHICH COLOURS DID THE MOVING. Two readings of one chart are the
+        # DEVICE, near enough -- the only thing between them is the chart
+        # itself ageing -- so this gets a different caveat from a pair of
+        # profiles, and saying which is which is the point of having one.
+        # THE STEMS, NOT THE PATHS. _clean_stem sanitises a name into
+        # something safe for a file; handed a full path it returns the whole
+        # path with the separators replaced, and the heading came out as
+        # "private-tmp-claude-502--Users-...-Glossy-pap → ...". Found by
+        # reading the window rather than the test.
+        self._say_drift_families(
+            d.lab_a, d.lab_b,
+            f"{Path(self._slots[0][0]).stem} → {Path(self._slots[1][0]).stem}",
+            of="measurements")
 
     #: How finely the two profiles are sampled, per channel. 9 gives 729
     #: colours for an RGB profile and takes well under a tenth of a second,
@@ -11460,11 +11608,13 @@ class GamutApp(QMainWindow):
             # land here, and so does a file that is not a profile.
             self._drift.setText(str(exc))
             self._drift_worst.setText("")
+            self._say_drift_families()
             return
         except Exception as exc:               # noqa: BLE001
             self._drift.setText(
                 f"These two profiles could not be compared: {exc}")
             self._drift_worst.setText("")
+            self._say_drift_families()
             return
 
         verdict = ("Nothing anybody could see." if d.worst < 1.0
@@ -11500,6 +11650,13 @@ class GamutApp(QMainWindow):
         self._drift_worst.setText(
             f"Of those, {summary}. The ones that moved most:\n"
             + "\n".join(lines) + note)
+        # AND WHICH COLOURS DID THE MOVING. Two PROFILES are two
+        # characterisations, not the device, so the footnote says so -- the
+        # opposite of what a measurement pair gets, which is why the helper
+        # is told which it is being handed rather than guessing.
+        self._say_drift_families(
+            d.lab_a, d.lab_b,
+            f"{Path(path_a).stem} → {Path(path_b).stem}", of="profiles")
 
     @staticmethod
     def _fmt_volume(value: float) -> str:

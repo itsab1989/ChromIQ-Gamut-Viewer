@@ -870,3 +870,112 @@ def test_an_unsplit_cloud_still_carries_its_own_key():
                                 drift=(lab, rng.uniform(0, 6, n), "d"))
     assert fig.data[0].marker.colorbar.title.text == "ΔE2000"
     assert fig.layout.coloraxis.colorbar.title.text is None
+
+
+# --------------------------------------------------------------------------
+# The main window: two measurements, and two profiles
+# --------------------------------------------------------------------------
+#
+# THE CASE THE DRIFT BOX EXISTS FOR HAD NOTHING. For one release the family
+# report lived only in "Follow one device over time", so somebody holding two
+# readings of one chart -- print it again months later on the same paper and
+# the same printer, which is the verification case -- got a ΔE summary and no
+# word about WHICH colours had moved.
+
+def test_the_words_differ_for_measurements_and_for_profiles():
+    """WHAT THE NUMBER MEANS IS NOT THE SAME, and an earlier version claimed
+    in its docstring to say so while changing exactly one word.
+
+    Two profiles are two DESCRIPTIONS of a device. Two measurements are the
+    printing itself -- and if the second was printed again rather than only
+    measured again, the whole process is in there: printhead temperature
+    changes drop volume, low humidity darkens ink at the nozzles, paper takes
+    up moisture. Calling that "the chart faded" is wrong.
+    """
+    from gamut_app import family_report
+
+    rng = np.random.default_rng(31)
+    n = 200
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-50, 50, n),
+                           rng.uniform(-50, 50, n)])
+    after = lab + [0, 0, 2.5]
+
+    as_profiles = family_report(lab, after, "a → b", of="profiles")[1]
+    as_measured = family_report(lab, after, "a → b", of="measurements")[1]
+    assert as_profiles != as_measured
+
+    assert "not how far the printer moved" in as_profiles
+    assert "one day's measurements" in as_profiles
+
+    assert "PRINTED" in as_measured
+    assert "ink batch" in as_measured or "paper batch" in as_measured
+    assert "same sheet read" in as_measured
+    # and it must NOT blame chart fade for a reprint
+    assert "chart faded" not in as_measured
+
+
+def test_a_measurement_pair_counts_patches_and_a_profile_pair_colours():
+    """A profile is asked about a GRID of colours nobody printed; a
+    measurement pair stands on real patches. Calling both the same thing
+    invites a reader to compare two numbers that are not alike."""
+    from gamut_app import family_report
+
+    rng = np.random.default_rng(32)
+    n = 300
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-50, 50, n),
+                           rng.uniform(-50, 50, n)])
+    after = lab + rng.normal(0, 1.5, lab.shape)
+    prof = family_report(lab, after, "a → b", of="profiles")[1]
+    meas = family_report(lab, after, "a → b", of="measurements")[1]
+    if "sit within" in prof:            # only said when some are borderline
+        assert "colours," in prof
+        assert "patches," in meas
+
+
+def test_the_report_is_cleared_on_every_path_that_cannot_fill_it():
+    """IT SURVIVED "Close them all" AND WENT ON NAMING CLOSED FILES — the same
+    fault as the timeline window's, in a second place. Found by clearing the
+    real window and reading what was left, not by a test."""
+    import gamut_app
+
+    class Label:
+        def __init__(self):
+            self._t = ""
+
+        def setText(self, text):                      # noqa: N802 (Qt)
+            self._t = text
+
+        def text(self):
+            return self._t
+
+    win = SimpleNamespace(_drift_families=Label(),
+                          _drift_families_note=Label())
+    say = lambda *a, **k: gamut_app.GamutApp._say_drift_families(win, *a, **k)
+
+    rng = np.random.default_rng(33)
+    n = 120
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-50, 50, n),
+                           rng.uniform(-50, 50, n)])
+    say(lab, lab + [0, 0, 3.0], "a → b", of="measurements")
+    assert win._drift_families.text(), "there should be a report to lose"
+
+    say()                                   # the no-pair path
+    assert win._drift_families.text() == ""
+    assert win._drift_families_note.text() == ""
+
+
+def test_the_heading_is_a_file_name_not_a_path():
+    """It came out as "private-tmp-claude-502--Users-…-Glossy-pap → …" because
+    a path was handed to a helper that sanitises names into safe file names.
+    Read off the window, not caught by anything."""
+    from gamut_app import family_report
+
+    rng = np.random.default_rng(34)
+    n = 100
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-50, 50, n),
+                           rng.uniform(-50, 50, n)])
+    said = family_report(lab, lab + [0, 0, 3.0],
+                         "Glossy-paper → Glossy-paper-months-later",
+                         of="measurements")
+    assert said[0].startswith("Glossy-paper → Glossy-paper-months-later")
+    assert "/" not in said[0].splitlines()[0]

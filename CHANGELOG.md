@@ -1,5 +1,56 @@
 # Changelog
 
+## v2.29.0
+
+### 📋 Which colour families moved — now where you actually work
+
+The colour-family report existed only inside **Follow one device over time**.
+So somebody holding two readings of one chart — print the chart again months
+later on the same paper and the same printer, read it, open both — got a ΔE
+summary and **not one word about which colours had moved**. That is the
+verification case, and it is the case the *Has anything changed?* box exists
+for.
+
+It is there now, for **two measurements and for two profiles**, in the main
+window, under the numbers it explains.
+
+### 🔬 The two cases mean different things, and now say so
+
+An earlier version claimed in its own documentation to give them different
+caveats and in fact changed a single word. Worse, the wording was wrong for
+the commonest case.
+
+**Two profiles** compares two *descriptions* of a device — not the device.
+Each is one day's measurements of one chart, so a faded chart or a change in
+how you built them is inside the number.
+
+**Two measurements** is the printing itself. And if the second was **printed
+again** rather than only measured again, everything between the two prints is
+in there: the printhead's temperature changes how much ink each nozzle puts
+down, low humidity dries ink near the nozzles and darkens it, paper takes up
+moisture and changes size, and no two ink or paper batches are identical. That
+is usually exactly what you wanted to find out — and calling it "the chart
+faded" would have been simply untrue. If instead you read the *same sheet*
+twice, you are seeing that sheet ageing plus your instrument's own
+repeatability, around ΔE 0.1 for a typical hand-held spectrophotometer.
+
+### 🐞 Two faults the tests could not see, found by driving the window
+
+- **The heading was a mangled full path** —
+  `private-tmp-claude-502--Users-…-Glossy-pap → …` — because a path was handed
+  to a helper that turns names into safe *file* names.
+- **The report survived "Close them all"** and went on naming colours in files
+  that were no longer open. The same fault as the timeline window's, in a
+  second place, three releases later.
+
+Both now have tests that fail without the fix.
+
+### Also
+
+- 783 tests (780 + 3 skipped without ArgyllCMS).
+- The report's help text names what actually varies between two prints rather
+  than gesturing at "conditions".
+
 ## v2.28.0
 
 ### 🔑 Switching off the reds no longer takes the colour key with them
