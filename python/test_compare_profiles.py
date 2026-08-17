@@ -205,3 +205,181 @@ def test_a_bigger_grid_finds_at_least_as_much(one, other_gamma):
     coarse = ti3gamut.compare_profiles(one, other_gamma, steps=5)
     fine = ti3gamut.compare_profiles(one, other_gamma, steps=9)
     assert fine.worst >= coarse.worst - 1e-9
+
+
+# --- what the window does with it -------------------------------------------
+#
+# GamutApp is not built here: constructing it brings up a QWebEngineView and
+# aborts the run (see test_chart_panel). So these call the methods a real
+# click reaches, with a stand-in for the parts of the window they read --
+# which is the same approach the chart panel's checks take.
+
+from types import SimpleNamespace
+
+
+class FakeLabel:
+    def __init__(self):
+        self._text = ""
+        self._shown = True
+
+    def setText(self, text):
+        self._text = text
+
+    def text(self):
+        return self._text
+
+    def isVisible(self):
+        return self._shown
+
+    def setVisible(self, shown):
+        self._shown = shown
+
+
+def window_with(paths):
+    """A stand-in carrying only what the drift methods actually touch."""
+    import gamut_app
+    slots = [(p, None, None) for p in paths]
+    win = SimpleNamespace(
+        _slots=slots, _drift=FakeLabel(), _drift_worst=FakeLabel(),
+        _drift_box=FakeLabel(),
+        PROFILE_SUFFIXES=gamut_app.GamutApp.PROFILE_SUFFIXES,
+        PROFILE_GRID=gamut_app.GamutApp.PROFILE_GRID)
+    # The real method calls self._profile_pair(), so the stand-in has to carry
+    # it too -- bound to the real one rather than to a second copy of the
+    # logic, which would let the two drift apart without anything noticing.
+    win._profile_pair = lambda: gamut_app.GamutApp._profile_pair(win)
+    return win
+
+
+def drift_text(paths):
+    import gamut_app
+    win = window_with(paths)
+    pair = gamut_app.GamutApp._profile_pair(win)
+    assert pair is not None, "two profiles were not recognised as a pair"
+    gamut_app.GamutApp._update_profile_drift(win, *pair)
+    return win._drift.text(), win._drift_worst.text()
+
+
+def test_two_open_profiles_are_recognised_as_something_to_compare(one,
+                                                                  other_gamma):
+    """The box used to hide itself the moment a profile was opened, because a
+    profile carries no measured patches. That is exactly the case somebody
+    comparing two profiles is in."""
+    import gamut_app
+    win = window_with([one, other_gamma])
+    assert gamut_app.GamutApp._profile_pair(win) == (one, other_gamma)
+
+
+def test_a_measurement_beside_a_profile_is_not_a_profile_pair(one, tmp_path):
+    """Half and half is neither question, and answering it as though it were
+    the profile one would compare a profile against nothing."""
+    import gamut_app
+    win = window_with([one, tmp_path / "reading.ti3"])
+    win._slots[1] = (tmp_path / "reading.ti3", None, object())   # a measurement
+    assert gamut_app.GamutApp._profile_pair(win) is None
+
+
+def test_a_gam_file_is_not_offered_as_a_profile(one, tmp_path):
+    """A .gam is a surface with no lookup table inside it, so there is nothing
+    to ask for a colour. It has no measurement either, so without the suffix
+    check it would fall through to the profile branch and raise."""
+    import gamut_app
+    win = window_with([one, tmp_path / "shape.gam"])
+    assert gamut_app.GamutApp._profile_pair(win) is None
+
+
+def test_the_window_says_the_numbers_and_what_they_mean(one, other_gamma):
+    said, worst = drift_text([one, other_gamma])
+    assert "colours asked of both profiles" in said
+    assert "ΔE" in said
+    assert "moved most" in worst
+    # The colours are named in units somebody can act on.
+    assert "R" in worst and "G" in worst and "B" in worst
+
+
+def test_two_profiles_read_differently_are_warned_about_in_the_window(
+        one, tmp_path, monkeypatch):
+    """The number is large and means nothing, so the warning has to arrive
+    with it rather than after it."""
+    import ti3gamut
+    import gamut_app
+
+    real = ti3gamut.compare_profiles
+
+    def mismatched(a, b, **kw):
+        got = real(a, b, **kw)
+        return ti3gamut.ProfileDrift(
+            **{**got.__dict__, "table_a": "A2B1", "table_b": "A2B0"})
+
+    monkeypatch.setattr(ti3gamut, "compare_profiles", mismatched)
+    _said, worst = drift_text([one, one])
+    assert "READ THIS FIRST" in worst
+    assert "not read the same way" in worst
+    assert "not drift" in worst
+
+
+def test_a_refusal_is_shown_rather_than_a_number(one, tmp_path):
+    """Mismatched device spaces must reach the reader as an explanation. A
+    silent empty box would look like the feature is broken."""
+    import gamut_app
+    cmyk = tmp_path / "cmyk.icc"
+    raw = bytearray(one.read_bytes())
+    raw[16:20] = b"CMYK"
+    cmyk.write_bytes(bytes(raw))
+    said, worst = drift_text([one, cmyk])
+    assert "RGB" in said and "CMYK" in said
+    assert worst == "", "no worst-colour list belongs under a refusal"
+
+
+def test_an_unreadable_profile_is_explained_not_crashed(one, tmp_path):
+    rubbish = tmp_path / "broken.icc"
+    rubbish.write_bytes(b"not a profile at all")
+    said, _worst = drift_text([one, rubbish])
+    assert said, "the box was left empty, which reads as a broken feature"
+
+
+def test_the_saved_page_carries_the_comparison(one, other_gamma):
+    """BOTH EXPORTS, not just the window.
+
+    The saved page's notes are read from the readout labels themselves rather
+    than worked out again, so a page cannot disagree with the window it came
+    from. That means this comparison travels into the page by construction --
+    but "by construction" is exactly the kind of claim that stops being true
+    quietly, so it is checked.
+    """
+    import gamut_app
+    win = window_with([one, other_gamma])
+    pair = gamut_app.GamutApp._profile_pair(win)
+    gamut_app.GamutApp._update_profile_drift(win, *pair)
+    win._volume = FakeLabel()
+    win._volume_units = lambda: "Lab units"
+    notes = gamut_app.GamutApp._readout_text(win)
+    assert "colours asked of both profiles" in notes
+    assert "ΔE" in notes
+    assert "moved most" in notes
+
+
+def test_the_spreadsheet_carries_the_caveat_with_the_numbers(one, other_gamma):
+    """A row of figures outlives the window that explained them. Somebody
+    opening this next year must not read "biggest difference 4.20" with
+    nothing to say what it does and does not mean."""
+    import gamut_app
+    win = window_with([one, other_gamma])
+    rows = gamut_app.GamutApp._profile_drift_rows(win)
+    assert rows, "the comparison never reached the spreadsheet"
+    flat = " | ".join(str(cell) for row in rows for cell in row)
+    assert "biggest difference" in flat
+    assert "dE2000" in flat
+    assert "NOT how far the device drifted" in flat, (
+        "the caveat did not travel with the numbers")
+    assert "colours asked of both" in flat
+
+
+def test_nothing_is_written_to_the_spreadsheet_when_it_does_not_apply(one,
+                                                                      tmp_path):
+    """Two measurements are the other question, and a stray profile block
+    under them would be a column of nothing."""
+    import gamut_app
+    win = window_with([one, tmp_path / "reading.ti3"])
+    win._slots[1] = (tmp_path / "reading.ti3", None, object())
+    assert gamut_app.GamutApp._profile_drift_rows(win) == []

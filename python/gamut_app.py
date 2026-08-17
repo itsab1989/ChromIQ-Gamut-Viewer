@@ -5088,12 +5088,31 @@ class GamutApp(QMainWindow):
         self._drift_worst = WrappedLabel("", self._drift_box, hide_when_empty=True)
         self._drift_worst.setObjectName("hint")
         drift_hint = Hint(
-            "When both charts are two readings of the SAME chart — the same "
-            "paper measured on two days, or before and after a nozzle clean — "
-            "this compares them patch by patch. The gamut above answers how "
-            "much colour there is; this answers whether anything has moved, "
-            "which a shape cannot show, because two gamuts can be the same "
-            "size and hold different colours.\n\n"
+            "This answers one question — have these two moved apart? — and it "
+            "answers it for two kinds of file.\n\n"
+            "TWO MEASUREMENTS. When both files are readings of the SAME "
+            "chart — the same paper measured on two days, or before and after "
+            "a nozzle clean — they are compared patch by patch. Patches are "
+            "paired on the ink amounts that were asked for, not on the patch "
+            "number, because charts are usually shuffled.\n\n"
+            "TWO ICC PROFILES. When both files are profiles, both are asked "
+            "for the same 729 colours and the answers are held side by side. "
+            "This is the one to use for two profiles of the same scanner or "
+            "printer made months or years apart.\n\n"
+            "WHY NOT JUST COMPARE THE SHAPES? Because a shape cannot show "
+            "this. Two profiles can enclose almost exactly the same volume "
+            "and send the colours inside it to quite different places — "
+            "measured on a real pair, 0.011% apart in size and up to ΔE 4.2 "
+            "apart inside. For a scanner profile, the inside is nearly the "
+            "whole profile, so the shape is the part that matters least.\n\n"
+            "WHAT IT DOES NOT TELL YOU, and this matters if you are chasing a "
+            "drifting device: this is how far apart the two PROFILES are, not "
+            "how far the device drifted. A profile records one day's "
+            "measurements of one chart. If that chart faded between the two, "
+            "or the two profiles were built with different settings, that is "
+            "inside this number as well, and no arithmetic here can separate "
+            "it out. To measure the device alone you need a chart you trust "
+            "not to have changed.\n\n"
             "The numbers are ΔE2000. Below 1 nobody can see it. Around 2 a "
             "careful eye finds it on a smooth gradient. Above 3 it is plain, "
             "and worth investigating before you print anything that matters.",
@@ -6819,6 +6838,7 @@ class GamutApp(QMainWindow):
                 rows.append(("patches above 1", d.over_one, "dE2000"))
             except ValueError:
                 pass               # not two readings of one chart; say nothing
+        rows.extend(self._profile_drift_rows())
         rows.extend(self._chart_rows_for_export())
         try:
             with open(target, "w", newline="", encoding="utf-8") as handle:
@@ -6830,6 +6850,54 @@ class GamutApp(QMainWindow):
             self, "Saved",
             f"Written to\n{target}\n\nIt opens in any spreadsheet, and every "
             "row says what it is and what the units are.")
+
+    def _profile_drift_rows(self) -> list:
+        """The two-profile comparison as table rows, for the spreadsheet.
+
+        THE CAVEAT TRAVELS WITH THE NUMBERS. A row of figures in a file
+        outlives the window that explained them, and somebody opening this
+        next year will read "biggest difference 4.20" with nothing to say what
+        it does and does not mean. So the qualification is a row of its own,
+        and so is the warning when the two were not read the same way.
+        """
+        import icc_read
+        from ti3gamut import compare_profiles
+
+        pair = self._profile_pair()
+        if pair is None:
+            return []
+        path_a, path_b = pair
+        try:
+            d = compare_profiles(path_a, path_b, steps=self.PROFILE_GRID)
+        except Exception:          # noqa: BLE001 — a table must still be written
+            return []
+        rows = [
+            ("", "", ""),
+            ("comparing", path_a.name, f"against {path_b.name}"),
+            ("colours asked of both", d.matched,
+             f"{d.steps} steps per channel, {d.device_space}"),
+            ("biggest difference", f"{d.worst:.2f}", "dE2000"),
+            ("average difference", f"{d.average:.2f}", "dE2000"),
+            ("difference, rms", f"{d.rms:.2f}", "dE2000"),
+            ("colours above 1", d.over_one, "dE2000"),
+            ("colours above 3", d.over_three, "dE2000"),
+            ("read through", d.table_a, f"and {d.table_b}"),
+            ("what this is", "how far apart the two PROFILES are",
+             "NOT how far the device drifted — chart fade and any change in "
+             "how each profile was built are in this number too"),
+        ]
+        if not d.comparable:
+            rows.append(
+                ("WARNING", "the two were not read the same way",
+                 f"one through {icc_read.TABLE_NAMES[d.table_a]}, the other "
+                 f"through {icc_read.TABLE_NAMES[d.table_b]} — these answer "
+                 f"different questions, so the difference above is mostly "
+                 f"that rather than drift"))
+        for label, delta, lab_a, lab_b in d.worst_patches:
+            rows.append((f"moved most: {label}", f"{delta:.2f}",
+                         "Lab {:.1f} {:.1f} {:.1f} -> {:.1f} {:.1f} {:.1f}"
+                         .format(*lab_a, *lab_b)))
+        return rows
 
     def _chart_rows_for_export(self) -> list:
         """The chart's answer as table rows — the counts, then the patches.
@@ -9583,8 +9651,38 @@ class GamutApp(QMainWindow):
         self._reach.setText("\n".join(lines))
         self._pair_box.setVisible(True)
 
+    #: Files this window will compare colour by colour rather than patch by
+    #: patch. Kept beside the check that uses it so the two cannot drift apart.
+    PROFILE_SUFFIXES = (".icc", ".icm")
+
+    def _profile_pair(self):
+        """The two open files as profiles, or None if that is not what they are.
+
+        A profile carries no measured patches — slot[2] is None — which is why
+        the drift box used to hide itself the moment one was opened. That is
+        precisely the case somebody comparing two profiles is in.
+        """
+        if len(self._slots) != 2:
+            return None
+        if any(slot[2] is not None for slot in self._slots):
+            return None                      # at least one is a measurement
+        paths = [slot[0] for slot in self._slots]
+        if not all(p.suffix.lower() in self.PROFILE_SUFFIXES for p in paths):
+            return None                      # .gam files have no lookup table
+        return paths[0], paths[1]
+
     def _update_drift(self) -> None:
-        """Compare two readings of one chart, when that is what is open."""
+        """Has anything changed — asked of two readings, or of two profiles.
+
+        ONE BOX FOR BOTH, because to the reader it is one question. "Have
+        these two moved apart" is the same thing to ask of two measurements of
+        a chart and of two profiles of a scanner; only the way of answering it
+        differs, and that is our problem rather than theirs.
+        """
+        pair = self._profile_pair()
+        if pair is not None:
+            self._update_profile_drift(*pair)
+            return
         # Two READINGS, and a profile was never read: there are no patches to
         # pair up, so there is no drift to speak of.
         if len(self._slots) != 2 or any(x[2] is None for x in self._slots):
@@ -9618,6 +9716,75 @@ class GamutApp(QMainWindow):
         self._drift_worst.setText(
             f"Of those, {summary}. The ones that moved most:\n"
             + "\n".join(lines))
+
+    #: How finely the two profiles are sampled, per channel. 9 gives 729
+    #: colours for an RGB profile and takes well under a tenth of a second,
+    #: measured -- fine enough that the figures stop moving, cheap enough to
+    #: run on every redraw without the window noticing.
+    PROFILE_GRID = 9
+
+    def _update_profile_drift(self, path_a, path_b) -> None:
+        """Two ICC profiles, compared colour by colour.
+
+        THE QUESTION A GAMUT CANNOT ANSWER, which is why this is here at all.
+        Two profiles can enclose almost exactly the same shape and send the
+        colours inside it to quite different places. Measured on a pair
+        differing only in tone curve: 0.011% apart by volume — the same shape
+        by any measure — and up to ΔE 4.2 apart inside. For an input profile,
+        such as a scanner's, the inside is nearly the whole profile.
+        """
+        import icc_read
+        from ti3gamut import compare_profiles
+
+        self._drift_box.setVisible(True)
+        try:
+            d = compare_profiles(path_a, path_b, steps=self.PROFILE_GRID)
+        except (ValueError, icc_read.UnsupportedProfile) as exc:
+            # Refused for a reason worth reading, rather than answered with a
+            # number that would describe nothing. Mismatched device spaces
+            # land here, and so does a file that is not a profile.
+            self._drift.setText(str(exc))
+            self._drift_worst.setText("")
+            return
+        except Exception as exc:               # noqa: BLE001
+            self._drift.setText(
+                f"These two profiles could not be compared: {exc}")
+            self._drift_worst.setText("")
+            return
+
+        verdict = ("Nothing anybody could see." if d.worst < 1.0
+                   else "Visible on a careful look." if d.worst < 3.0
+                   else "Plainly visible — worth looking into.")
+        self._drift.setText(
+            f"{d.matched} colours asked of both profiles.\n"
+            f"Biggest difference ΔE {d.worst:.2f}, average {d.average:.2f}.\n"
+            f"{verdict}")
+
+        lines = [f"    {label} — ΔE {de:.2f}"
+                 for label, de, _a, _b in d.worst_patches[:4]]
+        above = []
+        if d.over_three:
+            above.append(f"{d.over_three} above 3")
+        if d.over_one:
+            above.append(f"{d.over_one} above 1")
+        summary = (", ".join(above) if above
+                   else "no colour differs by more than 1")
+        note = ""
+        if not d.comparable:
+            # SAID BEFORE THE NUMBERS ARE BELIEVED. A colorimetric table held
+            # against a perceptual one differs by a large amount that has
+            # nothing to do with drift, because perceptual rendering moves
+            # colour on purpose. Measured on real files: ΔE 45 worst, 12.7
+            # average, and meaningless.
+            note = (f"\n\nBUT READ THIS FIRST: these two were not read the "
+                    f"same way — one through {icc_read.TABLE_NAMES[d.table_a]}, "
+                    f"the other through {icc_read.TABLE_NAMES[d.table_b]}. "
+                    f"Those answer different questions, so the difference "
+                    f"above is mostly that, and not drift. Compare two "
+                    f"profiles of the same kind for a figure you can trust.")
+        self._drift_worst.setText(
+            f"Of those, {summary}. The ones that moved most:\n"
+            + "\n".join(lines) + note)
 
     @staticmethod
     def _fmt_volume(value: float) -> str:
