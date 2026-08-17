@@ -491,14 +491,25 @@ def test_the_saved_graph_page_carries_the_report(tmp_path):
 
 def test_the_saved_page_escapes_what_it_writes(tmp_path):
     """The family names are ours, but the profile names in the heading are the
-    user's, and a file called <script> must not become one."""
+    user's, and they end up in HTML.
+
+    THE FIRST VERSION OF THIS TEST COULD NOT RUN ON WINDOWS. It made a file
+    literally called ``<b>a.icc``, which is legal on macOS and Linux and is
+    OSError: Invalid argument on Windows -- angle brackets are among the
+    characters Windows forbids in a filename. It passed here and took both
+    Windows jobs down in CI, which is exactly what those jobs are for.
+
+    An ampersand needs escaping just as much and is legal on every platform
+    this ships to, so the same rule is proved with a name a user could really
+    have.
+    """
     from test_chart import write_matrix_profile
 
-    win = a_window([write_matrix_profile(tmp_path / "<b>a.icc"),
+    win = a_window([write_matrix_profile(tmp_path / "R&D paper.icc"),
                     write_matrix_profile(tmp_path / "b.icc", gamma=2.6)])
     html = win._families_html()
-    assert "<b>a" not in html
-    assert "&lt;b&gt;a" in html
+    assert "R&amp;D paper" in html
+    assert "R&D paper" not in html
 
 
 def test_the_table_carries_one_row_per_family_with_its_count(tmp_path):

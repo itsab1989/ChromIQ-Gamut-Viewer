@@ -87,6 +87,18 @@ again"* and the ArgyllCMS paths — the things you go looking for once. It is a
 button that **opens files**, so it now sits with the other two, in the accent,
 under its own heading, with a sentence saying what it is for.
 
+### 🪟 And one the Windows runners caught
+
+A test in this release wrote a file called `<b>a.icc`, to prove that a profile
+name goes through HTML escaping before it reaches a saved page. Angle brackets
+are legal in a filename on macOS and Linux and are **forbidden on Windows**, so
+it passed here and took both Windows jobs down in CI — which is exactly what
+those jobs are for. The rule is now proved with an ampersand, which needs
+escaping just as much and is a name somebody could really have.
+
+Every other test filename in the project was swept for the characters Windows
+refuses. This was the only one.
+
 ### Also
 
 - `Drift` carries the Lab arrays it was already computing and dropping, so the
