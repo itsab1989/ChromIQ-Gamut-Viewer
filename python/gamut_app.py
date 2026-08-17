@@ -3169,11 +3169,28 @@ class TimelineDialog(QDialog):
             self._paint_view()
             outer.addWidget(self._view, 1)
 
+        # EVERYTHING SAID ABOUT THE PICTURE, IN ITS OWN SCROLLING PANEL.
+        #
+        # THE PICTURE IS THE POINT AND IT WAS THE SMALLEST THING ON SCREEN.
+        # Each of these readouts is worth having, and stacked in the window's
+        # own layout they compete with the graph for height -- so as the words
+        # grew, the picture shrank to its 240px floor and the key underneath
+        # it was cut off. Basti photographed exactly that: a window where the
+        # cloud is a sliver and the sentences fill the rest.
+        #
+        # Bounded and scrolling, the words can be as long as they need to be
+        # and cost the picture nothing. The reader scrolls the words; the
+        # picture stays the size it was.
+        said_panel = QWidget(self)
+        said = QVBoxLayout(said_panel)
+        said.setContentsMargins(0, 0, 0, 0)
+        said.setSpacing(6)
+
         self._verdict = WrappedLabel("", self, hide_when_empty=True)
-        outer.addWidget(self._verdict)
+        said.addWidget(self._verdict)
         self._complaints = WrappedLabel("", self, hide_when_empty=True)
         self._complaints.setObjectName("hint")
-        outer.addWidget(self._complaints)
+        said.addWidget(self._complaints)
 
         # THE CAVEAT LIVES BESIDE THE GRAPH, not only behind the ⓘ. A trend
         # line is the kind of picture people trust more than they should, and
@@ -3183,7 +3200,7 @@ class TimelineDialog(QDialog):
             "the device drifted. Chart fade and any change in how you built "
             "them are inside these numbers too.", self)
         self._caution.setObjectName("hint")
-        outer.addWidget(self._caution)
+        said.addWidget(self._caution)
 
         # --- the picture, split into the families the report talks about -----
         #
@@ -3218,7 +3235,7 @@ class TimelineDialog(QDialog):
             "naming. They are their own group rather than being scattered "
             "among the six.")
         self._by_family.stateChanged.connect(lambda _s: self._draw())
-        outer.addWidget(self._by_family)
+        said.addWidget(self._by_family)
 
         # --- which colour families moved --------------------------------------
         #
@@ -3254,10 +3271,23 @@ class TimelineDialog(QDialog):
             "naming, so they are never said to have drifted toward a colour. "
             "They are reported as warmer, cooler, redder, greener, lighter or "
             "darker instead.")
-        outer.addWidget(self._families)
+        said.addWidget(self._families)
         self._families_note = WrappedLabel("", self, hide_when_empty=True)
         self._families_note.setObjectName("hint")
-        outer.addWidget(self._families_note)
+        said.addWidget(self._families_note)
+
+
+        said_area = FadeScrollArea(self)
+        said_area.setWidget(said_panel)
+        said_area.setWidgetResizable(True)
+        said_area.setFrameShape(QFrame.Shape.NoFrame)
+        said_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # A CEILING, NOT A HEIGHT. Short readouts take the room they need and
+        # no more; long ones stop here and scroll, which is the only way the
+        # graph above keeps a usable share of a small window.
+        said_area.setMaximumHeight(300)
+        outer.addWidget(said_area, 0)
 
         self._refresh()
 
@@ -5281,7 +5311,15 @@ class GamutApp(QMainWindow):
             "Everything else here compares what is open right now; this "
             "follows one device through time.")
         self._timeline_btn.clicked.connect(self._on_timeline)
-        tv.addWidget(self._timeline_btn)
+        # THE ⓘ BESIDE THE BUTTON, like the other two ways in. It sat
+        # beside the sentence underneath instead, so the third opener
+        # was the only one whose help was not where the eye had just
+        # been. Basti spotted it: "does not have the tooltip icon
+        # right next to it like the other two loading buttons".
+        _b = QHBoxLayout()
+        _b.setContentsMargins(0, 0, 0, 0)
+        _b.setSpacing(6)
+        _b.addWidget(self._timeline_btn, 1)
         time_hint = Hint(
             "Two profiles of one printer, made a year apart, tell you whether "
             "anything has changed. Several of them tell you the shape of the "
@@ -5305,12 +5343,9 @@ class GamutApp(QMainWindow):
             "most.", g_time)
         time_note.setObjectName("hint")
         _wrapped(time_note)
-        _t = QHBoxLayout()
-        _t.setContentsMargins(0, 0, 0, 0)
-        _t.setSpacing(6)
-        _t.addWidget(time_note, 1)
-        _t.addWidget(time_hint, 0, Qt.AlignmentFlag.AlignVCenter)
-        tv.addLayout(_t)
+        _b.addWidget(time_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        tv.addLayout(_b)
+        tv.addWidget(time_note)
         v.addWidget(g_time)
 
         # --- how the chart's patches are drawn --------------------------------

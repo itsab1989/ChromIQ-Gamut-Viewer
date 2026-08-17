@@ -1,5 +1,73 @@
 # Changelog
 
+## v2.27.0
+
+### 📱 Two faults found on a phone
+
+**The box now holds still when you switch a colour family off.** Splitting the
+cloud into seven groups gave you seven switches — and the drawing library was
+refitting the whole scene to whatever was left, so the view jumped and the
+numbers down the side changed every single time. Measured on the published
+page: hiding one family moved the a\* axis from **−88…92.4 to −87.6…79**.
+
+It also destroyed the only reason to hide a family. The question is *where in
+the space does this family sit*, and an axis that resizes itself to the answer
+makes every family fill the frame and look alike.
+
+The range is now taken from **all** the colours, once, and fixed. So is the
+shape of the room: with the aspect left on "data" the library works the
+proportions out from the ranges too, so pinning the ranges alone was only half
+of it — switch everything off but the greys and what remained was a sliver of
+a\*/b\*, drawn as a tall thin slab with **the key pushed off the side of the
+picture**. Verified at 390×844 in both browser engines, switching off down to
+greys only: the box does not move and the key keeps all seven entries.
+
+A cloud that has *not* been split is a single trace with nothing to hide, so it
+is left exactly as it was and no page published before this changes framing.
+
+### 🌐 A page that cannot fetch its viewer no longer blames your connection
+
+A page saved without the 3D viewer inside it is a few dozen kilobytes instead
+of about five megabytes, and fetches the viewer when it opens. When that fetch
+failed it said *"reload the page when you have a connection"* — to somebody
+whose connection was fine.
+
+It was neither of the two obvious suspects: not the timer, and not the
+integrity hash, which was checked against the CDN byte for byte and matches.
+**The commonest way a 4.85 MB download fails on a phone is being interrupted** —
+switching to another app or locking the screen stops it, and a network that
+filters or proxies downloads can stop it too.
+
+So the page now says that, says outright that it **does not necessarily mean
+you are offline**, and offers a **Try to fetch the viewer again** button that
+works without losing the page.
+
+**And the retry actually redraws.** Without that it looked like it worked and
+was useless: the instruction that draws the picture sits after the viewer's
+own tag, so when the viewer fails that instruction still runs, fails, and is
+gone — fetching the library afterwards left it in place with nothing asking it
+to draw anything. Notice gone, page blank, reader worse off than before.
+Measured in both engines before the fix.
+
+### 🧭 Smaller things you pointed at
+
+- **"Follow one device over time" now has its ⓘ beside the button**, like the
+  other two ways in. It was beside the sentence underneath, so the third
+  opener was the only one whose help was not where the eye had just been.
+- **The timeline window's readouts scroll in their own panel.** As the words
+  grew, the picture shrank to its floor and the key underneath it was cut off.
+  The words are bounded now and the picture keeps its share. The window is due
+  to move into the main window, so this is a stop-gap rather than a design.
+
+### Also
+
+- 776 tests (773 + 3 skipped without ArgyllCMS). Both fixes driven at phone
+  size in Chromium and WebKit, with the fetch aborted outright.
+- **Known gap, stated rather than hidden:** the colour-family report works for
+  two measurements as well as two profiles — the engine carries what it needs —
+  but only the profile pair has a screen. The `.ti3`-against-`.ti3` form is not
+  yet reachable in the window.
+
 ## v2.26.0
 
 ### 🔬 The heat-map, split into the colour families the report talks about
