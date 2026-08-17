@@ -153,6 +153,31 @@ def gam_gamut(path, *, white_point: str = "D50", space: str = "lab"):
                  space=space, mode="argyll-gam")
 
 
+#: How long to let ``iccgamut`` work before reading the profile here instead.
+#:
+#: SET FROM MEASUREMENT, not from caution. Timed on this machine over seven
+#: real profiles -- the demo printer profile and six the operating system
+#: ships, covering both cLUT and matrix kinds:
+#:
+#:     Glossy-paper.icc   A2B0,A2B1   0.15s
+#:     AdobeRGB1998.icc   matrix      0.22s      <- the slowest of them
+#:     ACESCG Linear.icc  matrix      0.14s
+#:     Generic CMYK       A2B0,A2B1   0.09s
+#:     Display P3, DCI-P3, Generic Gray -- declined in 0.00s, exit 1
+#:
+#: So ordinary work costs about a fifth of a second, and this leaves more than
+#: a hundred times that. It was 180 seconds, which is not patience but a
+#: three-minute frozen window: `icc_gamut` is called on the UI thread, and a
+#: profile ArgyllCMS cannot finish reading -- they exist, measured, still
+#: running after four minutes on a 344-byte file -- took the whole application
+#: with it, with no message and no way to cancel.
+#:
+#: Not zero risk: a very large N-channel profile on a slow machine will cost
+#: more than the ones timed here. That is what the fall-back is for, and the
+#: fall-back reads the profile properly rather than failing.
+ICCGAMUT_PATIENCE = 30
+
+
 def _find_iccgamut() -> "str | None":
     """Where ArgyllCMS keeps iccgamut. See ``argyll.find_tool``."""
     from argyll import find_tool
@@ -232,10 +257,23 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
         try:
             done = subprocess.run(
                 [tool, "-i", intent, str(work)],
-                capture_output=True, text=True, timeout=180)
+                capture_output=True, text=True, timeout=ICCGAMUT_PATIENCE)
         except subprocess.TimeoutExpired as exc:
-            raise ValueError(
-                f"{path.name} took too long to read and was given up on") from exc
+            # FALL BACK RATHER THAN GIVE UP. This used to raise, which meant a
+            # profile ArgyllCMS could not finish reading did not open AT ALL --
+            # even though the reader in this very application opens it in
+            # milliseconds, and does exactly that on any machine without
+            # ArgyllCMS installed. Refusing a file we can read, because a
+            # helper we did not need got stuck, is the wrong way round.
+            from icc_read import profile_gamut
+            try:
+                return profile_gamut(path, white_point=white_point, space=space)
+            except Exception as mine:                    # noqa: BLE001
+                raise ValueError(
+                    f"{path.name} could not be read.\n\nArgyllCMS was still "
+                    f"working on it after {ICCGAMUT_PATIENCE} seconds and was "
+                    f"given up on, and reading it directly did not work "
+                    f"either: {mine}") from exc
         gam = work.with_suffix(".gam")
         if done.returncode != 0 or not gam.is_file():
             # ARGYLL COULD NOT OPEN IT. Version 4 profiles are the common

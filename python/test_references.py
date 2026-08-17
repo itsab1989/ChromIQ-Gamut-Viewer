@@ -373,3 +373,66 @@ def test_the_pcs_white_is_the_specification_constant_not_a_textbook_d50():
     assert np.allclose(icc_read.PCS_WHITE, written, atol=0)
     # and it is deliberately NOT the textbook one
     assert not np.allclose(icc_read.PCS_WHITE, WHITE_POINTS["D50"], atol=1e-5)
+
+
+# --- when ArgyllCMS gets stuck ----------------------------------------------
+
+def test_a_profile_argyll_cannot_finish_is_still_opened(tmp_path, monkeypatch):
+    """THE FAULT THIS PINS. iccgamut does not always merely decline a profile
+    -- sometimes it never returns. Measured on a hand-written 344-byte matrix
+    profile: still running after four minutes, while the reader in this very
+    application opened the same bytes in milliseconds.
+
+    Giving up there meant the file did not open AT ALL, even though a machine
+    with no ArgyllCMS installed opens it instantly by the direct route.
+    Refusing a file we can read, because a helper we did not need got stuck,
+    is the wrong way round.
+    """
+    import subprocess
+
+    import references
+    from test_chart import write_matrix_profile
+
+    profile = write_matrix_profile(tmp_path / "slow.icc")
+
+    def wedges(*_a, **_k):
+        raise subprocess.TimeoutExpired(cmd="iccgamut", timeout=1)
+
+    monkeypatch.setattr(references, "_find_iccgamut",
+                        lambda: "/nowhere/iccgamut")
+    monkeypatch.setattr(subprocess, "run", wedges)
+    got = references.icc_gamut(profile)
+    assert got.volume > 0, "the profile did not open when Argyll got stuck"
+
+
+def test_the_patience_is_measured_rather_than_generous(tmp_path, monkeypatch):
+    """180 seconds was not patience, it was a three-minute frozen window --
+    icc_gamut runs on the UI thread. Real profiles were timed at 0.09s to
+    0.22s, so this must stay far above those and nowhere near three minutes."""
+    import references
+    assert 5 <= references.ICCGAMUT_PATIENCE <= 60, (
+        f"{references.ICCGAMUT_PATIENCE}s is either too tight for a large "
+        f"profile or long enough to feel like a hang")
+
+
+def test_the_timeout_that_is_asked_for_is_the_one_that_is_used(tmp_path,
+                                                               monkeypatch):
+    """A constant nothing reads is a comment. This checks the number actually
+    reaches subprocess.run, which is the only place it does any good."""
+    import subprocess
+
+    import references
+    from test_chart import write_matrix_profile
+
+    profile = write_matrix_profile(tmp_path / "timed.icc")
+    seen = {}
+
+    def note(*args, **kw):
+        seen["timeout"] = kw.get("timeout")
+        raise subprocess.TimeoutExpired(cmd="iccgamut", timeout=1)
+
+    monkeypatch.setattr(references, "_find_iccgamut",
+                        lambda: "/nowhere/iccgamut")
+    monkeypatch.setattr(subprocess, "run", note)
+    references.icc_gamut(profile)
+    assert seen["timeout"] == references.ICCGAMUT_PATIENCE
