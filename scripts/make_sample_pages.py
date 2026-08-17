@@ -932,6 +932,48 @@ def main() -> int:
           "one point rather than gradually" in body)
     check("17", "and names the dates it happened between",
           "2021-01-05" in body and "2022-01-05" in body)
+
+    print("\n19 — a printer that wandered off and came back")
+    # BASTI'S QUESTION, AND THE CASE THIS FEATURE WAS MOST LIKELY TO LIE
+    # ABOUT: "what if a profile drifts in one direction for two years and then
+    # back to the other, matching the initial one again -- would this be
+    # visible?" The picture always showed it; the words did not, and read only
+    # the two ends. This page is the case itself, so the answer is something
+    # somebody can look at rather than take on trust.
+    wandered = pathlib.Path(_tempfile.mkdtemp(prefix="timeline-back-"))
+    leftovers.append(wandered)
+    _mk.RUN = [("year-2019", (2019, 3, 1, 9, 0, 0), 0.0000),
+               ("year-2020", (2020, 3, 1, 9, 0, 0), 0.0030),
+               ("year-2021", (2021, 3, 1, 9, 0, 0), 0.0060),
+               ("year-2022", (2022, 3, 1, 9, 0, 0), 0.0030),
+               ("year-2023", (2023, 3, 1, 9, 0, 0), 0.0006)]
+    _mk.main(wandered)
+    timeline._on_clear()
+    timeline.add(sorted(wandered.glob("year-*.icc")))
+    pump(3.0)
+    back = timeline._run
+    check("19", "the run is recognised as one that came back", back.came_back)
+    # THE TWO NUMBERS THAT MAKE THE POINT, asserted rather than described: it
+    # ended near where it began, and it was a long way from there in between.
+    check("19", "it ends near where it started",
+          back.total < 1.0, f"dE {back.total:.2f} first to last")
+    check("19", "having been plainly visible distance away in between",
+          back.furthest.worst > 3.0,
+          f"dE {back.furthest.worst:.2f} at its furthest")
+    p = page("19-it-wandered-off-and-came-back.html")
+    save_timeline(p)
+    made.append(("19", p))
+    body = p.read_text(encoding="utf-8")
+    # THE FAULT THIS PAGE EXISTS TO PROVE IS FIXED. Reading only the ends, the
+    # verdict used to call this "Nothing has moved that anybody could see".
+    check("19", "the verdict does NOT say nothing has moved",
+          "Nothing has moved" not in body)
+    check("19", "it says it went away and came back",
+          "went away and came back" in body)
+    check("19", "and names the year it was furthest",
+          "2021" in body)
+    check("19", "the picture marks the furthest point too",
+          "furthest from the first" in body)
     timeline.close()
 
     # ---------------------------------------------------------------- 18

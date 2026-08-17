@@ -290,6 +290,21 @@ def test_a_page_that_fills_the_screen_has_nothing_to_scroll_to(tmp_path):
     assert "min-height:62vh" in with_strip, (
         "a panel of twenty-one controls will squeeze an uncapped picture to "
         "nothing on a phone")
+    # THE SAME CASE, THE OTHER HALF OF IT, AND IT SHIPPED. The cap above was
+    # applied for controls-without-figures; the SCROLLING was not, so such a
+    # page said `overflow:hidden` and the document could not move at all. The
+    # panel sat below the fold with no way to reach it -- not by dragging,
+    # because the picture refuses to start a scroll, and not by pressing
+    # "more…" either, because scrollIntoView cannot scroll a page that has
+    # been told it does not scroll.
+    #
+    # Basti met it on the published page 18, which is saved without the
+    # figures: "even after pressing more i can't scroll". Page 14 carries the
+    # figures and scrolled, which is why it "used to work" on the examples he
+    # had tried before.
+    assert "overflow:auto" in with_strip, (
+        "a page with controls under the picture must be able to scroll to "
+        "them; with overflow hidden they cannot be reached at all")
 
 
 def test_the_strip_does_not_sit_on_top_of_the_numbers(tmp_path):

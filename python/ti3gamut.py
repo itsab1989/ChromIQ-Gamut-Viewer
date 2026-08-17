@@ -3277,11 +3277,39 @@ window.cqSpin = (function () {
   function gestures(gd) {
     if (gd._cqGestures) return;
     gd._cqGestures = true;
-    // THE ELEMENT HANDLES ITS OWN TOUCHES. Without this the browser is free
-    // to read a drag as a page scroll and simply stop delivering the moves --
-    // measured: a page whose touchstart nobody objects to gets touchstart and
-    // touchend and not one touchmove in between.
-    gd.style.touchAction = "none";
+    // ONE FINGER SCROLLS THE PAGE. TWO WORK THE SHAPE.
+    //
+    // This said `touchAction = "none"` and the reasoning was sound as far as
+    // it went: without it the browser reads a drag as a page scroll and stops
+    // delivering the moves -- measured, a page whose touchstart nobody
+    // objects to gets touchstart and touchend and not one touchmove between.
+    //
+    // What it missed is that "none" also forbids the browser to scroll the
+    // page from a touch STARTING on the picture, and by this project's own
+    // layout rule the picture is 55% to 85% of the first screen. Measured by
+    // walking down the middle of the screen a row at a time, 74-80% of a
+    // phone screen could not begin a scroll, on every 3D page ever written.
+    // The controls and the written-out numbers below were unreachable.
+    //
+    // Basti, twice, and the second one is what settled it: "i can't reach the
+    // control options (it does not scroll to them)", then -- after the page
+    // began scrolling itself when the panel opens -- "the scrolling still
+    // does not work". Bringing the panel to somebody who presses a button
+    // does not help somebody who wants to read the page.
+    //
+    // `pan-y` is the standard way out and not an invention here: it is what
+    // an interactive map inside a scrolling page does, and readers already
+    // meet it there. The browser takes a one-finger VERTICAL drag and scrolls
+    // the page with it; a horizontal one still reaches the picture, so
+    // turning the shape left and right goes on working exactly as it did.
+    // Two fingers are ours entirely -- pinch to zoom, drag to slide and tip.
+    //
+    // WHAT IT COSTS, said plainly rather than glossed: tipping the shape up
+    // and down with ONE finger is gone, because that gesture is now how a
+    // reader scrolls. It is still there on two fingers, and on the up and
+    // down buttons in the strip, and in the look-from presets. Being able to
+    // read the page at all is worth more than the third route to tipping.
+    gd.style.touchAction = "pan-y";
     var live = false, was = 0, mid = null;
     function span(t) {
       var dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
@@ -4772,7 +4800,28 @@ window.cqSpinControls = function (settings) {
       + "from, how solid each shape is drawn and whether it keeps its colour, "
       + "whether the box and its lettering are there, and whether the page is "
       + "light or dark.");
+  // AND ON A TOUCH SCREEN, SAY WHICH FINGERS DO WHAT.
+  //
+  // The picture takes a one-finger vertical drag as a page scroll now, so
+  // that the controls and the numbers below it can be reached at all (see
+  // gestures() for the measurement behind that). Somebody who tries to tip
+  // the shape with one finger and gets the page moving instead has met a
+  // change in behaviour, and a change nobody explains reads as a fault.
+  //
+  // ONLY WHERE IT APPLIES. `(hover: none) and (pointer: coarse)` is the pair
+  // that means "a finger, not a mouse" -- either one alone catches the wrong
+  // devices, a touch-screen laptop most obviously. A reader with a mouse
+  // never sees this, because for them nothing whatever has changed.
+  head += '<span class="cq-fingers" hidden>Two fingers turn and tip it &middot;'
+    + ' one finger scrolls the page</span>';
   bar.innerHTML = head;
+  try {
+    if (window.matchMedia
+        && window.matchMedia("(hover: none) and (pointer: coarse)").matches) {
+      var fingers = bar.querySelector(".cq-fingers");
+      if (fingers) fingers.hidden = false;
+    }
+  } catch (e) { /* an old browser simply does not get the hint */ }
 
   // ============================================================ the panel
   var moves = "";
@@ -6114,16 +6163,35 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     if not carry_viewer:
         html = _say_if_the_viewer_never_arrives(html, mode)
     _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]
-    # HIDING THE OVERFLOW HIDES THE NUMBERS. A single full-bleed scene should
-    # not scroll -- there is nothing under it and a stray scrollbar only makes
-    # the picture jump. But the written-out figures are appended AFTER the
-    # scene, which is already the full height of the window, so they land
-    # entirely below the fold; with the overflow hidden a reader could not
-    # reach them at all. Fifteen real wheel notches on the published page 03
-    # moved it not one pixel, and those figures are the whole reason that page
-    # exists. So: hidden when there is only a picture, scrollable when there
-    # is something to scroll to.
-    _overflow = "auto" if notes else "hidden"
+    # HIDING THE OVERFLOW HIDES WHATEVER IS UNDER THE PICTURE, and the first
+    # time round only half of that was noticed.
+    #
+    # This was `"auto" if notes else "hidden"`, on the reasoning that a page
+    # with only a picture has nothing to scroll to, and a stray scrollbar just
+    # makes the picture jump. The written-out figures were the exception that
+    # forced `auto`: they are appended after a scene that is already the full
+    # height of the window, so with the overflow hidden fifteen real wheel
+    # notches moved the published page 03 not one pixel.
+    #
+    # THE CONTROL PANEL IS APPENDED THE SAME WAY and was never counted. It is
+    # built by the viewer at run time, so `notes` cannot see it -- and on
+    # every page saved without the numbers the reader got `overflow:hidden`,
+    # which means the document cannot scroll AT ALL. The panel sat below the
+    # fold with no way to reach it: not by dragging, and not by pressing
+    # "more…" either, because scrollIntoView cannot scroll a page that has
+    # been told it does not scroll.
+    #
+    # Basti, on page 18 -- which is saved without the numbers -- after the
+    # gesture fix and the scroll-into-view fix had both landed: "even after
+    # pressing more i can't scroll". Page 14 carries the numbers, so it
+    # scrolled, which is why "it worked before on the examples i tried".
+    #
+    # SO THE CONDITION IS "IS ANYTHING UNDER IT", which is figures OR
+    # controls. Both, not one -- exactly the invariant the check beside this
+    # already states in words and only half enforced. A page with neither
+    # still gets `hidden`, and rightly: there is genuinely nothing to reach,
+    # and a scrollbar on a picture that fills the window only makes it jump.
+    _overflow = "auto" if (notes or controls) else "hidden"
     # A COLUMN: the picture, then the figures, then the controls. Laying the
     # page out rather than floating things over it is what makes the strip
     # unable to cover the key, at any width -- see _SPIN_CONTROLS_JS.

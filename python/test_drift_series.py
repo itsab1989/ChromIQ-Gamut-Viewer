@@ -566,3 +566,105 @@ def test_the_saved_page_is_self_contained(app, five_years):
     assert not remote, f"the page fetches something: {remote[:3]}"
     assert len(html) > 500_000, "the drawing library does not look inlined"
     dialog.close()
+
+
+# --- it went away and came back ---------------------------------------------
+#
+# Asked by Basti: "what if a profile drifts in one direction for two years and
+# then back to the other, matching the initial one again -- would this be
+# visible in the viewer somehow?"
+#
+# The picture always showed it: the cumulative line arches up and comes back
+# while the step line stays flat, and two lines disagreeing in that particular
+# way mean one thing only. The WORDS did not. Measured on five profiles built
+# to do exactly that, the verdict read only the two ends and printed "Nothing
+# has moved that anybody could see" about a device that had been dE 5.39 away
+# in the middle year -- plainly visible, and saved into the page and the table
+# where it outlives the chart that would have corrected it.
+
+def out_and_back(tmp_path, ending: float = 2.20):
+    """Five years: away for two, then back to (nearly) where it started."""
+    bends = [2.20, 2.26, 2.32, 2.26, ending]
+    return [dated(tmp_path / f"back-{2019 + i}.icc",
+                  (2019 + i, 6, 1, 12, 0, 0), gamma=g)
+            for i, g in enumerate(bends)]
+
+
+def test_the_two_series_disagree_in_the_way_that_means_it_came_back(tmp_path):
+    """The picture's half of the answer, as numbers.
+
+    Cumulative rises then FALLS; each step stays about the same size. Neither
+    on its own says "it came back" -- the pair does.
+    """
+    import drift_series
+    run = drift_series.build(out_and_back(tmp_path))
+    cumulative = [s.worst for s in run.since_first]
+    steps = [s.worst for s in run.since_previous]
+    assert cumulative[1] > cumulative[0], "it should be going away at first"
+    assert cumulative[-1] < max(cumulative), (
+        f"it never comes back: {cumulative}")
+    assert max(steps) <= 2.0 * min(steps), (
+        f"the year-on-year line should stay flat through all of it: {steps}")
+
+
+def test_a_run_that_came_back_is_recognised_as_one(tmp_path):
+    import drift_series
+    run = drift_series.build(out_and_back(tmp_path))
+    assert run.came_back
+    assert run.furthest.worst > run.total, (
+        "the furthest it ever got must be further than where it ended")
+
+
+def test_the_verdict_names_the_excursion_and_when_it_happened(tmp_path):
+    """The fault this whole block exists for: the sentence must not say
+    'nothing has moved' about a device that was visibly wrong for a year."""
+    import drift_series
+    run = drift_series.build(out_and_back(tmp_path))
+    said = drift_series.verdict(run)
+    assert "Nothing has moved" not in said, said
+    assert "went away and came back" in said, said
+    assert f"{run.furthest.worst:.2f}" in said, (
+        f"the size of the excursion is not in the sentence: {said}")
+    assert "2021" in said, f"the reader is not told WHEN: {said}"
+
+
+def test_ending_exactly_where_it_started_is_still_reported(tmp_path):
+    """The extreme of it: total dE 0.00 and a real excursion behind it."""
+    import drift_series
+    run = drift_series.build(out_and_back(tmp_path, ending=2.20))
+    assert run.total < drift_series.INVISIBLE
+    assert run.came_back
+    assert "went away and came back" in drift_series.verdict(run)
+
+
+def test_a_run_that_only_creeps_is_NOT_called_a_return(tmp_path):
+    """The false positive that would make the new sentence worthless.
+
+    A device drifting one way and never coming back must still be told it is
+    drifting one way and will keep going.
+    """
+    import drift_series
+    steady = [dated(tmp_path / f"creep-{2019 + i}.icc",
+                    (2019 + i, 6, 1, 12, 0, 0), gamma=2.20 + 0.03 * i)
+              for i in range(5)]
+    run = drift_series.build(steady)
+    assert not run.came_back, (
+        f"a straight creep was read as a return: "
+        f"{[round(s.worst, 2) for s in run.since_first]}")
+    assert "went away and came back" not in drift_series.verdict(run)
+
+
+def test_a_wobble_too_small_to_see_is_not_announced(tmp_path):
+    """A run that wanders by less than anybody can see is not a story.
+
+    Below dE 1 there is nothing to warn about, and a warning about an
+    invisible difference is how a useful sentence becomes noise.
+    """
+    import drift_series
+    tiny = [dated(tmp_path / f"tiny-{2019 + i}.icc",
+                  (2019 + i, 6, 1, 12, 0, 0), gamma=g)
+            for i, g in enumerate([2.200, 2.203, 2.206, 2.203, 2.200])]
+    run = drift_series.build(tiny)
+    if run.furthest.worst < drift_series.INVISIBLE:
+        assert not run.came_back
+        assert "went away and came back" not in drift_series.verdict(run)

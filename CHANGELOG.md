@@ -1,5 +1,119 @@
 # Changelog
 
+## v2.18.0
+
+Everything here was reported by Basti from an iPhone, or found by measuring
+what he reported. Six faults, and five of them were in every page this
+application has ever written rather than in the newest one.
+
+### 📱 A saved page you can actually read on a phone
+
+**The page could not scroll at all.** `html,body` carried
+`overflow:hidden` unless the page had the written-out figures on it — so on
+every page saved *without* the numbers, the document was frozen. The control
+panel sat below the fold with no way to reach it: not by dragging, and not by
+any button either, because a page told it does not scroll cannot be scrolled
+by anything. Page 14 carries the figures and scrolled; page 18 does not and
+did not, which is why it "used to work on the examples i tried". The rule is
+now what the check beside it always claimed: scrollable when anything at all
+sits under the picture, which is figures **or** controls.
+
+**And the picture refused to start a scroll.** `touch-action: none` on the
+picture is what makes a pinch possible — without it the browser eats the moves
+— but it also forbids scrolling from any touch that begins there, and this
+project's own layout rule holds the picture at 55–85% of the first screen.
+Measured by walking down the middle of the screen a row at a time: **74–80% of
+a phone screen could not begin a scroll**, while the panel ran 411px to 1005px
+past the bottom.
+
+One finger now scrolls the page; **two fingers turn, tip and zoom the shape** —
+the convention an interactive map inside a scrolling page already uses, and the
+strip says so on touch screens. One-finger *tipping* is the price, and it is
+still on two fingers, on the up/down buttons and in the look-from presets.
+
+Pressing **more…** also brings the controls to you now, and **less…** puts the
+picture back. Measured after: 90–97% of the controls on screen at every phone
+size in both engines, against 20–53% before.
+
+### ⚡ The picture was hundreds of separate drawings
+
+A coloured wireframe was cut into **one trace per band of colour**, on the
+belief that a 3D line takes a single colour for the whole of it. It does not —
+`scatter3d.line.color` accepts an array. Checked against the library's own
+validator, then **rendered**, because a validator accepting an array is no
+proof the renderer honours it.
+
+An Adobe RGB cage has 6726 edges and came out as **296 traces**, each its own
+WebGL object with its own draw call.
+
+| page | traces before | after | first draw in WebKit |
+|---|---|---|---|
+| a paper against Adobe RGB | 357 | **2** | 2.3s → **0.8s** |
+| where the drift happened | 642 | **7** | 3.9s → **0.9s** |
+
+The single trace differs from the banded one over 2.25% of the picture by at
+most 29/255 — and that difference is the **banding disappearing**, so the cheap
+version is also the accurate one. Each segment now carries its two real end
+colours.
+
+### ↩️ A printer that wanders off and comes back
+
+Basti's question: *"what if a profile drifts in one direction for two years and
+then back, matching the initial one again — would this be visible?"*
+
+The picture always showed it. The **words** did not. Measured on five profiles
+built to do exactly that:
+
+| | 2020 | 2021 | 2022 | 2023 |
+|---|---|---|---|---|
+| since the first | 2.60 | **5.39** | 2.60 | **0.54** |
+| since the one before | 2.60 | 2.67 | 2.67 | 2.08 |
+
+Reading only the two ends, the verdict printed *"Nothing has moved that anybody
+could see"* — of a printer that had been ΔE 5.39 away in 2021, which anybody
+can see, and that sentence is saved into the page and the exported table where
+it outlives the chart that would have corrected it.
+
+It now says it went away and came back, how far it went, **and the year**, and
+the graph marks the furthest point. A run that only creeps is still told it is
+creeping — checked, because a warning that fires on everything is worthless.
+
+### 🧹 Closing everything now closes everything
+
+**Close them all** left the shape chosen under **Compare with** on screen, and
+left the figures describing files that had just been closed. Measured: two
+papers closed, and the window still drew Adobe RGB and still said *"90.7% of
+the colour Glossy-paper can print also fits inside Adobe RGB (1998)"*.
+
+One button rather than two: the **×** beside a file is the "next paper, same
+comparison" gesture, and this is the "start again" one. The tooltip says both,
+and says that nothing is ever deleted.
+
+### 🔤 Two labels printed on top of each other
+
+The timeline graph's key was drawn across its own headline — reported from a
+phone, then measured in both engines at **14 of 20 window sizes**, a large
+desktop among them. A second collision underneath it: on a short window the
+title also crossed the side-axis name, which stood on end is taller than the
+plot area. Four candidate layouts were rendered and measured rather than
+nudged.
+
+**`check_layout.py` could not have caught either.** It measured the page's
+frame and never looked inside the drawing. It now checks that no two labels
+round a picture are printed on top of each other — which immediately found a
+third, a date label across the axis zero on the new page.
+
+### 🧾 Also
+
+- A **new example page** for the wander-off-and-come-back run, and one for the
+  drift heat-map, so both can be looked at rather than taken on trust.
+- The page generator left three folders of demo profiles behind on every run —
+  88 MB after an afternoon. It clears them when it passes and **keeps them when
+  it fails**, because then they are the evidence.
+- Every page now carries a ceiling of 12 traces, so hundreds cannot come back
+  quietly.
+- 670 checks, up from 658.
+
 ## v2.17.0
 
 ### ⏱ Follow one device through many profiles, not just two

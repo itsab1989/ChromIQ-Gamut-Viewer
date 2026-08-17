@@ -4161,12 +4161,20 @@ class GamutApp(QMainWindow):
         self._clear_btn = QPushButton("Close them all", g_files)
         self._clear_btn.setObjectName("secondary")
         self._clear_btn.setToolTip(
-            "Closes everything open at once — both of the shapes, whatever "
-            "kind of file they came from, and the chart with them if one is "
-            "open.\n\n"
-            "To close just one, use the × beside its name. Nothing is deleted "
-            "either way: closing only takes it off the screen, and the files "
-            "on your drive are untouched.")
+            "Starts you again with an empty window.\n\n"
+            "It closes everything at once: both shapes, whatever kind of file "
+            "they came from, the chart if one is open, and the comparison you "
+            "picked under Compare with. The figures go with them, because "
+            "every one of those sentences is about a file you have just "
+            "closed.\n\n"
+            "TO CLOSE JUST ONE, use the × beside its name instead. That is "
+            "the one to reach for when you are working through several papers "
+            "against the same comparison — close the paper, open the next, "
+            "and your sRGB or Adobe RGB stays exactly where it was. Use this "
+            "button when you want a clean start rather than the next paper.\n\n"
+            "NOTHING IS EVER DELETED, either way. Closing only takes a file "
+            "off the screen. Every file on your drive is untouched, and you "
+            "can open the same one again straight afterwards.")
         self._clear_btn.clicked.connect(self._on_clear)
         self._clear_btn.setVisible(False)
         hint = Hint(
@@ -8467,16 +8475,59 @@ class GamutApp(QMainWindow):
             self._on_clear()
 
     def _on_clear(self) -> None:
-        """Close everything on screen — which now includes the chart."""
+        """Close everything on screen: the files, the chart AND the comparison.
+
+        THE COMPARISON USED TO SURVIVE THIS, and what that left behind was not
+        a harmless setting. Measured, with two papers open and Adobe RGB
+        chosen, immediately after pressing the button:
+
+            files open              []
+            shapes actually drawn   ['Adobe RGB (1998)']
+            the readout said        "90.7% of the colour Glossy-paper can
+                                     print also fits inside Adobe RGB (1998)"
+
+        So a shape stayed in the picture with nothing left to compare it to,
+        and the figures went on describing a paper that had just been closed.
+        The second of those is the worse one: a wrong sentence on screen about
+        a file the person can see is gone.
+
+        ONE BUTTON RATHER THAN TWO, and that is a decision rather than the
+        lazy option. Basti asked whether there should be a second Clear for
+        the comparison, or a tick-box beside this one. There is already a
+        second way to drop it -- "Nothing — this one on its own", the first
+        entry in Compare with -- sitting inside the group it belongs to, so
+        another control would be a third route to something two already cover.
+
+        And the two gestures already mean different things. The × beside a
+        file closes that one and keeps everything else, which is how somebody
+        works through one paper after another against a fixed comparison.
+        "Close them all" is the start-again gesture, and starting again with
+        a comparison still loaded is not starting again.
+        """
         self._slots.clear()
         self._chart = None
         self._chart_placed = None
+        # Through the combo box and its own handler rather than by assigning
+        # to _reference: the handler is what also clears the note under it and
+        # keeps the box showing what is really loaded. Index 0 is "Nothing",
+        # which opens no dialog.
+        self._compare.setCurrentIndex(0)
+        self._on_compare_changed()
         self._refresh_slot_labels()
         self._refresh_chart_panel()
         self._fill_chart_profiles()
         self._show_placeholder()
         self._volume.setText("—")
         self._volume_hint.setText(self._volume_units())
+        # THE FIGURES GO WITH THE FILES THEY DESCRIBED. Every one of these is
+        # a sentence about something now closed, and they are read straight
+        # back out by _readout_text() into a saved picture's caption.
+        for name in ("_coverage", "_picture_loss", "_pair", "_drift",
+                     "_drift_worst", "_chart_headline", "_chart_rows",
+                     "_chart_spread"):
+            label = getattr(self, name, None)
+            if label is not None:
+                label.setText("")
         self._clear_btn.setVisible(False)
         self._save.setEnabled(False)
 

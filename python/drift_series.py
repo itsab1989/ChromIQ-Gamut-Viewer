@@ -148,6 +148,50 @@ class Run:
         return max(self.since_previous, key=lambda s: s.worst,
                    default=None)
 
+    @property
+    def furthest(self) -> "Step | None":
+        """The point at which it was FURTHEST from where it started.
+
+        Not the same as where it ended, and the difference is the whole
+        reason this exists.
+        """
+        return max(self.since_first, key=lambda s: s.worst, default=None)
+
+    @property
+    def came_back(self) -> bool:
+        """True when it wandered off and returned close to where it began.
+
+        ASKED BY BASTI, and it turned out to be the case this whole feature
+        was most likely to lie about: "what if a profile drifts in one
+        direction for two years and then back the other, matching the initial
+        one again -- would this be visible?"
+
+        MEASURED, on five profiles built to do exactly that:
+
+            since the FIRST    2.60, 5.39, 2.60, 0.54
+            since the ONE BEFORE   2.60, 2.67, 2.67, 2.08
+
+        The PICTURE shows it plainly -- the cumulative line arches up and
+        comes back while the step line stays flat, and two lines disagreeing
+        in that particular way mean one thing only. The WORDS did not: the
+        verdict read the ends and printed "Nothing has moved that anybody
+        could see", of a device that had been ΔE 5.39 away in 2021 and has
+        since returned. Anything printed that year was visibly wrong, and
+        that sentence is saved into the page and the table, where it outlives
+        the chart that would have corrected it.
+
+        THE TEST IS AGAINST THE THRESHOLD OF VISIBILITY, not a ratio. What
+        makes this worth saying is not that the excursion was some multiple
+        of the ending -- it is that somebody could SEE the difference while it
+        lasted and cannot see one now. So: it went at least as far as the
+        point where a difference becomes visible, and it came back by at
+        least that much again.
+        """
+        peak = self.furthest
+        if peak is None or len(self.since_first) < 2:
+            return False
+        return peak.worst >= INVISIBLE and (peak.worst - self.total) >= INVISIBLE
+
 
 def read_created(path) -> "tuple | None":
     """When the profile says it was made, from the ICC header.
@@ -343,6 +387,28 @@ def figure(run: Run, *, mode: str = "dark", title: str = ""):
         labels = ["{:04d}-{:02d}-{:02d}".format(*e.when[:3])
                   for e in run.usable[1:]]
         axis = dict(type="date")
+        # ROOM AT BOTH ENDS, or the first date label lands in the corner and
+        # is printed across the "0" of the side axis. Found by the layout
+        # check at four window sizes in both engines -- 44 to 47 square pixels
+        # of one number over another, which is small and unreadable rather
+        # than obviously broken, so it is exactly the sort of thing a person
+        # skims past and a measurement does not.
+        #
+        # A category axis already pads itself by half a slot; a date axis
+        # fits the data exactly, so it has to be asked. A twentieth of the
+        # span at each end is enough to clear the corner and too little to
+        # look like missing data.
+        import datetime as _dt
+
+        try:
+            days = [_dt.date(*e.when[:3]).toordinal() for e in run.usable[1:]]
+            if len(days) > 1 and days[-1] > days[0]:
+                edge = max((days[-1] - days[0]) * 0.05, 1.0)
+                axis["range"] = [
+                    _dt.date.fromordinal(int(days[0] - edge)).isoformat(),
+                    _dt.date.fromordinal(int(days[-1] + edge)).isoformat()]
+        except (ValueError, TypeError, OverflowError):
+            pass          # an impossible date simply gets the default range
     else:
         labels = names[1:]
         axis = dict(type="category")
@@ -387,6 +453,22 @@ def figure(run: Run, *, mode: str = "dark", title: str = ""):
     # lines are half as tall and fit. Both layouts were then checked at ten
     # window sizes in two engines, with a short device name and with a very
     # long one: nothing overlaps anywhere.
+    # AND WHERE IT WAS FURTHEST, marked, when the run came back from it.
+    #
+    # The arch in the cumulative line already says so to anybody who reads
+    # both lines together. This is for the reader who glances at the last
+    # point, sees it near the floor, and closes the page -- which is the
+    # reading this shape of run invites and the one that is wrong. Only drawn
+    # when there IS an excursion to point at, so it never becomes furniture.
+    if run.came_back and run.furthest is not None:
+        peak = run.furthest
+        at = peak.after_on if by_date else peak.after
+        fig.add_annotation(
+            x=at, y=peak.worst, text="furthest from the first",
+            showarrow=True, arrowhead=0, arrowwidth=1, ax=0, ay=-26,
+            arrowcolor=c["caption"],
+            font=dict(size=10, color=c["caption"]))
+
     fig.update_layout(
         title=dict(text=title or "How far this device has moved",
                    font=dict(size=13, color=c["caption"]), x=0.01,
@@ -409,6 +491,26 @@ def verdict(run: Run) -> str:
         return ""
     total = run.total
     span = f"{run.usable[0].name} to {run.usable[-1].name}"
+    # WENT AWAY AND CAME BACK, ASKED FIRST because every branch below reads
+    # only where the run STARTED and where it ENDED, and for this shape of
+    # run those two are nearly the same while the middle is not. Reaching
+    # "nothing has moved" first is exactly how this came to print that of a
+    # printer that had been visibly wrong for a year. See Run.came_back.
+    if run.came_back:
+        peak = run.furthest
+        scale = ("visible on a careful look" if peak.worst < OBVIOUS
+                 else "plainly visible")
+        ended = ("almost exactly where it started" if total < INVISIBLE
+                 else f"ΔE {total:.2f} from where it started")
+        return (f"It went away and came back. Where it ended is {ended}, so "
+                f"comparing only the first and last profile would have shown "
+                f"you almost nothing. It did not stay there: by "
+                f"{peak.after_on or peak.after} it had drifted ΔE "
+                f"{peak.worst:.2f} from {run.usable[0].name}, which is "
+                f"{scale}. Anything you printed around then will not match "
+                f"what you print now, and this is the one shape of run where "
+                f"the first and last profile on their own would have misled "
+                f"you.")
     if total < INVISIBLE:
         return (f"Nothing has moved that anybody could see. From {span} the "
                 f"biggest difference is ΔE {total:.2f}, which is below the "
