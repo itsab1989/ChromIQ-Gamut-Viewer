@@ -1745,9 +1745,37 @@ DIRECTIONS = {
 DIRECTION_LIMIT = 5.0
 
 
+def hidden_below(deltas, hide_below: float):
+    """Which colours to leave out, and the note that must travel with them.
+
+    ONE NUMBER MEANING ONE THING. The threshold is always ΔE2000 between the
+    two, in every view -- not the axis value the direction view happens to be
+    painted by. A reader who sets "hide anything under 2" and then switches
+    from how-far to which-way must not find a different set of dots left.
+
+    A PICTURE WITH THINGS TAKEN OUT OF IT HAS TO SAY SO. Somebody sent a saved
+    page showing eleven dots cannot tell whether the printer is nearly perfect
+    or whether seven hundred were hidden. So this returns the sentence as well
+    as the mask, and the callers put it where it cannot be missed.
+    """
+    import numpy as _np
+
+    deltas = _np.asarray(deltas, dtype=float)
+    if not hide_below:
+        return _np.ones(deltas.shape, bool), ""
+    keep = deltas >= hide_below
+    gone = int((~keep).sum())
+    if not gone:
+        return keep, ""
+    total = int(deltas.size)
+    return keep, (f"{gone} of {total} colours moved by less than ΔE "
+                  f"{hide_below:.1f} and are not drawn.")
+
+
 def drift_direction(lab, moved, name: str, axis: str = "L",
                     space: str = "lab", limit: float = DIRECTION_LIMIT,
-                    by_family: bool = False):
+                    by_family: bool = False, deltas=None,
+                    hide_below: float = 0.0):
     """Which WAY each colour moved, along one axis of Lab, with its sign.
 
     THE NUMBER THE MAGNITUDE VIEW THROWS AWAY. ΔE2000 is a distance, so a
@@ -1791,6 +1819,21 @@ def drift_direction(lab, moved, name: str, axis: str = "L",
     quiet = size < 1.0
     sizes = _np.where(quiet, 2.0, 4.0 + 3.0 * _np.clip(
         (size - 1.0) / max(limit - 1.0, 1e-9), 0.0, 1.0))
+
+    # HIDDEN BY dE2000, NOT BY THIS AXIS. A colour can move a long way and
+    # barely change in b*, so thresholding on the painted value would leave a
+    # different set of dots in each of the three direction views -- and the
+    # reader would reasonably read that as the data changing.
+    if hide_below:
+        if deltas is None:
+            raise ValueError(
+                "hiding by ΔE needs the ΔE values; this was given only the "
+                "movement, and thresholding on one axis would mean something "
+                "different in each view")
+        keep, _said = hidden_below(deltas, hide_below)
+        lab = lab[keep]
+        x, y, z = x[keep], y[keep], z[keep]
+        values, sizes = values[keep], sizes[keep]
 
     if by_family:
         return _split_by_family(
@@ -1952,7 +1995,7 @@ def _split_by_family(lab, x, y, z, values, sizes, ceiling, hover, scale,
 
 def drift_cloud(lab, deltas, name: str, space: str = "lab",
                 floor: float = DRIFT_FLOOR, ceiling: float = DRIFT_CEILING,
-                by_family: bool = False):
+                by_family: bool = False, hide_below: float = 0.0):
     """Where two profiles disagree, drawn where the disagreement happens.
 
     THE NUMBERS ALONE DO NOT SAY WHERE. "Biggest difference ΔE 10.2, average
@@ -1991,6 +2034,12 @@ def drift_cloud(lab, deltas, name: str, space: str = "lab",
     quiet = deltas < floor
     sizes = _np.where(quiet, 2.0, 4.0 + 3.0 * _np.clip(
         (deltas - floor) / max(ceiling - floor, 1e-9), 0.0, 1.0))
+
+    if hide_below:
+        keep, _said = hidden_below(deltas, hide_below)
+        lab = lab[keep]
+        x, y, z = x[keep], y[keep], z[keep]
+        deltas, sizes = deltas[keep], sizes[keep]
 
     if by_family:
         return _split_by_family(lab, x, y, z, deltas, sizes, ceiling,
@@ -7348,6 +7397,10 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                 fig.add_trace(trace)
         for trace in traces:
             fig.add_trace(trace)
+    # DEFINED FOR EVERY FIGURE, not only the ones with a drift cloud in
+    # them. Set inside the branch alone, these were undefined for every
+    # other picture this function draws -- which is most of them.
+    _hidden_note = ""
     if drift is not None:
         # LAST, so it reads over the shapes rather than through them. This is
         # the subject of the picture whenever it is present -- nobody asks for
@@ -7363,13 +7416,25 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # the legend into a filter: click "blues" and the blues go. Absent,
         # the cloud is one trace as it has always been.
         families = bool(drift[4]) if len(drift) > 4 else False
+        # A SIXTH ITEM HIDES THE COLOURS THAT BARELY MOVED, in ΔE2000.
+        floor_de = float(drift[5]) if len(drift) > 5 else 0.0
+        # WHAT WAS TAKEN OUT, WORKED OUT BEFORE ANYTHING IS DRAWN, so the
+        # sentence exists even when the answer is "all of it" and there is no
+        # trace left to hang it on.
+        _de_for_gate = (drift[6] if len(drift) > 6 else
+                        (None if which else drift_de))
+        _left, _hidden_note = (hidden_below(_de_for_gate, floor_de)
+                               if floor_de and _de_for_gate is not None
+                               else (None, ""))
         if which:
             drawn = drift_direction(drift_lab, drift_de, drift_name,
                                     axis=which, space=_axes_space,
-                                    by_family=families)
+                                    by_family=families, deltas=_de_for_gate,
+                                    hide_below=floor_de)
         else:
             drawn = drift_cloud(drift_lab, drift_de, drift_name,
-                                space=_axes_space, by_family=families)
+                                space=_axes_space, by_family=families,
+                                hide_below=floor_de)
         for trace in drawn:
             fig.add_trace(trace)
         if families:
@@ -7411,7 +7476,12 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # the page -- louder than the shape it describes. Small, dimmed, set
         # in the same monospace the figures below use, and moved to the left
         # so it reads as a label on the picture rather than a banner over it.
-        title=_caption(title, c),
+        title=_caption(
+            # THE PICTURE SAYS WHAT IS MISSING FROM IT. A saved page showing
+            # eleven dots cannot otherwise be told apart from a printer that
+            # is nearly perfect, and this is the kind of picture people
+            # forward to somebody else.
+            f"{title} — {_hidden_note}" if _hidden_note else title, c),
         scene=dict(
             xaxis_title=_axes["x"], yaxis_title=_axes["y"],
             zaxis_title=_axes["z"],

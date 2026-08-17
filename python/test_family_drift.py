@@ -1009,3 +1009,127 @@ def test_every_readout_the_window_has_is_in_the_one_list():
         f"these readouts are not in GamutApp.READOUTS and will be left "
         f"behind when the files are closed, and left out of saved pages: "
         f"{sorted(missing)}")
+
+
+# --------------------------------------------------------------------------
+# Hiding the colours that barely moved
+# --------------------------------------------------------------------------
+
+def test_the_threshold_means_dE_in_every_view():
+    """ONE NUMBER MEANING ONE THING. A colour can move a long way and barely
+    change in b*, so thresholding on the painted value would leave a different
+    set of dots in each of the three direction views — and a reader switching
+    between them would reasonably read that as the data changing."""
+    import ti3gamut
+
+    rng = np.random.default_rng(41)
+    n = 400
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    de = rng.uniform(0, 6, n)
+    moved = rng.normal(0, 3, (n, 3))
+
+    far = ti3gamut.drift_cloud(lab, de, "x", hide_below=3.0)
+    kept_distance = sum(len(t.x) for t in far)
+    for axis in ("L", "a", "b"):
+        way = ti3gamut.drift_direction(lab, moved, "x", axis=axis, deltas=de,
+                                       hide_below=3.0)
+        assert sum(len(t.x) for t in way) == kept_distance, (
+            f"the {axis} view kept a different set of colours")
+
+
+def test_hiding_by_dE_without_the_dE_values_is_refused():
+    """Rather than quietly thresholding on one axis, which would mean
+    something different in each view."""
+    import ti3gamut
+
+    rng = np.random.default_rng(42)
+    n = 50
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    with pytest.raises(ValueError, match="needs the ΔE values"):
+        ti3gamut.drift_direction(lab, rng.normal(0, 3, (n, 3)), "x",
+                                 axis="b", hide_below=2.0)
+
+
+def test_a_picture_with_things_taken_out_of_it_says_so():
+    """Somebody sent a saved page showing eleven dots cannot tell whether the
+    printer is nearly perfect or whether seven hundred colours were hidden.
+    This is exactly the kind of picture people forward to other people."""
+    import re
+
+    import ti3gamut
+
+    rng = np.random.default_rng(43)
+    n = 300
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    de = rng.uniform(0, 4, n)
+
+    plain = ti3gamut.build_figure([], "T", mode="dark", space="lab", grid=True,
+                                  drift=(lab, de, "d", None, True, 0.0))
+    assert "not drawn" not in re.sub(r"<[^>]+>", "", plain.layout.title.text)
+
+    cut = ti3gamut.build_figure([], "T", mode="dark", space="lab", grid=True,
+                                drift=(lab, de, "d", None, True, 2.0))
+    said = re.sub(r"<[^>]+>", "", cut.layout.title.text)
+    assert "are not drawn" in said
+    assert "ΔE 2.0" in said
+
+
+def test_a_threshold_above_everything_still_explains_itself():
+    """THE EDGE CASE THAT MUST NOT BE AN EMPTY BOX. With every colour hidden
+    there is no trace left to hang an explanation on, so the sentence is
+    worked out before anything is drawn."""
+    import re
+
+    import ti3gamut
+
+    rng = np.random.default_rng(44)
+    n = 200
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    de = rng.uniform(0, 3, n)
+    fig = ti3gamut.build_figure([], "T", mode="dark", space="lab", grid=True,
+                                drift=(lab, de, "d", None, True, 99.0))
+    assert sum(len(t.x) for t in fig.data) == 0, "nothing should be drawn"
+    said = re.sub(r"<[^>]+>", "", fig.layout.title.text)
+    assert f"{n} of {n} colours" in said
+    # and the box is still the box, so the reader is not looking at a
+    # collapsed room either
+    assert fig.layout.scene.xaxis.range is not None
+
+
+def test_the_box_does_not_move_when_the_threshold_does():
+    """Same rule as hiding a family: the range comes from ALL the colours, so
+    raising the threshold removes dots and moves nothing else."""
+    import ti3gamut
+
+    rng = np.random.default_rng(45)
+    n = 400
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    de = rng.uniform(0, 6, n)
+    boxes = []
+    for t in (0.0, 1.0, 3.0, 5.0):
+        fig = ti3gamut.build_figure([], "T", mode="dark", space="lab",
+                                    grid=True, drift=(lab, de, "d", None,
+                                                      True, t))
+        sc = fig.layout.scene
+        boxes.append((tuple(sc.xaxis.range), tuple(sc.yaxis.range),
+                      tuple(sc.zaxis.range)))
+    assert len(set(boxes)) == 1, f"the box moved with the threshold: {boxes}"
+
+
+def test_nothing_is_hidden_at_zero():
+    import ti3gamut
+
+    rng = np.random.default_rng(46)
+    n = 150
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    de = rng.uniform(0, 5, n)
+    got = ti3gamut.drift_cloud(lab, de, "x", hide_below=0.0)
+    assert sum(len(t.x) for t in got) == n
+    _keep, said = ti3gamut.hidden_below(de, 0.0)
+    assert said == ""
