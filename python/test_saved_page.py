@@ -340,15 +340,29 @@ def test_a_saved_page_gets_both():
 # --------------------------------------------------------------------------
 
 def _cage(paint="plain", key="#9aa3b2"):
-    """A tiny gamut's outline traces, as build_figure would ask for them."""
+    """A tiny gamut's outline traces, as the FIGURE ends up holding them.
+
+    PUT THROUGH A FIGURE FIRST, rather than read straight off the list
+    `_edges` returns. The cage itself is now handed over as a plain dict --
+    building it as a go.Scatter3d ran plotly's validator over every one of
+    twenty thousand colour entries, and a redraw of the Adobe RGB comparison
+    went from 453 ms to 246 ms by skipping that. The figure converts it, so
+    everything downstream still sees a real trace with real attributes; only
+    a check reading the intermediate list saw the difference, which is a
+    check looking at the plumbing rather than at the picture.
+    """
     import numpy as np
     import gamutview
+    import plotly.graph_objects as go
 
     pts = np.array([[50.0, 0, 0], [60, 20, 0], [40, 0, 20], [50, 10, 30],
                     [45, -20, 5], [55, 5, -20]])
     g = gamutview.build_gamut(pts, space="lab", input_space="lab")
-    return ti3gamut._edges(g, "A paper", paint=paint, key=key,
-                           page="#111111")
+    figure = go.Figure()
+    for trace in ti3gamut._edges(g, "A paper", paint=paint, key=key,
+                                 page="#111111"):
+        figure.add_trace(trace)
+    return list(figure.data)
 
 
 def test_the_outline_key_is_drawn_in_the_colour_it_was_given():

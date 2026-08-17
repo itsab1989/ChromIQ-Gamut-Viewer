@@ -1,5 +1,59 @@
 # Changelog
 
+## v2.23.0
+
+### ⚡ A redraw is two to three times faster, and the reason was not what the note said
+
+The task this came from said the re-cut for the agreement fade cost **81 ms +
+105 ms per redraw**, and that it was the one thing that had got slower.
+Measured before changing anything: **two papers 189 ms, the same two with the
+fade on 193 ms.** Four milliseconds. That cost had already gone with the
+re-cut work; optimising against it would have been effort spent in the wrong
+place, which is why the first job was to measure rather than to fix.
+
+What the profile actually found, on two papers against Adobe RGB:
+
+| | ms | share |
+|---|---|---|
+| `coverage` | 177 | **49%** |
+| build and write the page | 173 | 48% |
+| everything else | 8 | 2% |
+
+**Both halves were doing work nothing had asked for.**
+
+**The readouts were recomputed on every redraw.** `coverage`, `shared_volume`
+and `hue_reach` read the two SHAPES — and a shape is rebuilt only when a file
+is opened or closed, or the colour space or white point changes. Every *other*
+redraw asked the same question of the same two objects and paid for the answer
+again — and those are exactly the redraws that have to feel smooth, because
+they are what moving a slider does. They are remembered per pair now.
+
+**And the cage was being validated a point at a time.** Building it as a
+`go.Scatter3d` ran plotly's validator over every entry of the colour list:
+**151,758 calls** to one function in a single profiled redraw. The figure takes
+a plain dict and converts it by a faster route, and the trace JSON that comes
+out is byte-for-byte identical. Colours are spelt `#rrggbb` rather than
+`rgb(r,g,b)` for the same reason — seven characters against eleven, across
+20,178 of them, checked on all 2,400 vertex colours to decode identically.
+
+| scene | before | after | |
+|---|---|---|---|
+| one paper | 30 ms | 31 ms | already fast |
+| two papers | 189 ms | **62 ms** | 3.0× |
+| two papers, fade on | 193 ms | **65 ms** | 3.0× |
+| two papers vs Adobe RGB | 358 ms | **176 ms** | 2.0× |
+| a coloured cage, whole path | 453 ms | **172 ms** | 2.6× |
+
+**The remembering is keyed on the shapes themselves, and holds them.** `id()`
+is unique only among objects that are *alive*, so a cache keyed on ids alone
+would cheerfully answer for a gamut that had been collected and a new one built
+at the same address — a wrong number that looks entirely plausible. Checked in
+the real window on all three ways it must forget: five more redraws give
+identical text, a different file gives new numbers, and switching CIELAB to
+CIELUV moved the shared volume from 78% to 81%.
+
+- 713 checks, up from 708.
+
 ## v2.22.0
 
 ### ❄️ Opening a profile no longer freezes the window
