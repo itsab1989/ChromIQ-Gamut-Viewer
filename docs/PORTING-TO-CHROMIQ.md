@@ -362,3 +362,39 @@ from the ΔE scale, because that is what the dots are painted by. The name
 carries the meaning. This project deliberately refuses to paint a
 colour-about-colour picture in the colours it describes — see `DIRECTION_SCALE`
 — and the same caution applies here.
+
+## How fine a ΔE threshold is worth offering
+
+Settled by measurement rather than preference, because a slider finer than the
+data is a promise the picture cannot keep — the reader drags it and nothing
+happens.
+
+**The step is 0.1 ΔE**, and three independent things agree on that:
+
+1. **The instrument cannot do better.** An i1Pro's short-term repeatability is
+   **0.1 ΔE94** on white, and inter-instrument agreement is **0.4 ΔE94**
+   average, 1.0 max. The i1Pro 3 improves that to **0.05 dE00** repeatability
+   and 0.3 average agreement. Below about a tenth, a difference between two
+   measurements is the instrument talking to itself — and if the two readings
+   came from *different* instruments, the floor is nearer 0.3–0.4.
+2. **Every 0.1 notch does something.** On a real four-profile run (729 grid
+   colours, ΔE 0.65–3.03), each 0.1 step between 0.5 and 2.5 removes between 7
+   and 89 colours from the picture.
+3. **Finer notches mostly do nothing.** At 0.01 steps, **62%** of the notches
+   change no dot at all; at 0.1 it is 50%, and those dead notches are entirely
+   above where the data stops.
+
+**The range must follow the data, not be fixed.** That third figure is the
+trap: the dead notches are dead because there is nothing out there. On a small
+drift — one step of the same run, worst ΔE 1.07 — a fixed 0…5 slider has
+**82% of its travel doing nothing**. So the control runs from 0 to *this
+pair's own worst ΔE*, rounded up to the next 0.1, and is disabled outright
+when nothing moved at all. A slider whose right-hand half is inert teaches the
+reader that the control is broken.
+
+**Show one decimal.** The sentences already read "ΔE 1.1"; a 0.1 step matches
+what is written, and a control offering precision the text does not show is
+another quiet inconsistency.
+
+Sources: X-Rite i1Pro and i1Pro 3 published specifications (short-term
+repeatability and inter-instrument agreement).

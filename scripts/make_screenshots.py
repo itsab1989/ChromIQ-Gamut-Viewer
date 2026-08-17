@@ -519,6 +519,49 @@ def which_way_it_moved(w):
     return dialog
 
 
+def split_into_families(w):
+    """27 — the same pair split into the colour families the report names.
+
+    THE PICTURE AND THE WORDS IN ONE FRAME, which is the whole point of the
+    feature: the sentences underneath say the blues went toward the magentas,
+    and the key above turns every other family off so you can go and look at
+    them. A shot of either half alone would not show that they are one answer.
+    """
+    dialog = _a_run_of_profiles(w)
+    for i in range(dialog._picture_of.count()):
+        if dialog._picture_of.itemData(i) == ("whole", 0):
+            dialog._picture_of.setCurrentIndex(i)
+            break
+    else:
+        raise AssertionError("the whole-run comparison is not on offer")
+    dialog._draw()
+    pump(3.0)
+    before = whole_window(dialog).toImage()
+
+    assert dialog._by_family.isVisible(), (
+        "the split box must be offered while a cloud is showing")
+    dialog._by_family.setChecked(True)
+    dialog._draw()
+    pump(3.0)
+
+    figure = dialog._cloud_figure()
+    assert figure is not None, "no picture was built"
+    # SEVEN GROUPS, EACH NAMED WITH ITS COUNT -- the thing the shot exists to
+    # show, checked rather than hoped for.
+    assert len(figure.data) >= 6, f"only {len(figure.data)} groups"
+    assert all(" — " in t.name for t in figure.data), (
+        [t.name for t in figure.data])
+    # ONE KEY, not one per group.
+    assert sum(1 for t in figure.data if t.marker.showscale) == 1
+    # THE BOX MUST BE PINNED, or switching a family off moves the picture.
+    assert figure.layout.scene.xaxis.autorange is False
+    # and the words underneath have to be there too
+    assert "which colour families moved" in dialog._families.text()
+    assert until_it_changes(dialog, before), (
+        "the picture never changed, so this shows the same thing as 26")
+    return dialog
+
+
 #: file name → (how to set it up, how big the window is for it)
 SHOTS = {
     "01-one-chart.webp": (one_chart, (WIDE, TALL)),
@@ -539,6 +582,7 @@ SHOTS = {
     "24-one-device-over-time.webp": (over_time, (WIDE, TALL)),
     "25-one-step-of-a-run.webp": (one_step_of_a_run, (WIDE, TALL)),
     "26-which-way-it-moved.webp": (which_way_it_moved, (WIDE, TALL)),
+    "27-split-into-families.webp": (split_into_families, (WIDE, TALL)),
 }
 
 
