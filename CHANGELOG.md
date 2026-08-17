@@ -1,5 +1,38 @@
 # Changelog
 
+## v2.20.1
+
+### 🔓 A profile opens without ArgyllCMS, which is what the README always said
+
+Basti: *"you mentioned icc profiles that argyll does not like — is there a
+fallback so those can be used anyway here?"*
+
+There was, for two of the three ways it can go wrong, and not for the third:
+
+| ArgyllCMS is… | Before | Now |
+|---|---|---|
+| present, but **stuck** on the file | reads it directly after 30 s | unchanged |
+| present, but **refuses** it (ICC v4) | reads it directly | unchanged |
+| **not installed at all** | **refused, told you to install it** | **reads it directly** |
+
+The one turned away was the simplest of the three — and the direct reader was
+already the thing being fallen back to in the other two. **The documentation
+was right and the code was wrong**: the README has said all along that
+"measurements, gamut files and ICC profiles all open without it", and the error
+message for `.cxf` files says in as many words that "ICC profiles need none of
+this and open as they are".
+
+ICC **v4** is not exotic, which is what makes this worth a release of its own:
+Display P3, Rec. 709 and Rec. 2020 all ship with macOS as v4, and paper makers
+hand out v4 output profiles.
+
+**ArgyllCMS is still asked first wherever it exists.** It returns the surface
+it computed, with the profile's real dents in it. Measured on the demo profile
+the two readings are 0.76% apart by volume — 818,514 against 824,706 — and
+that difference is checked by a test rather than assumed.
+
+- 695 checks, up from 692.
+
 ## v2.20.0
 
 ### 🧭 Which way the drift went, not only how far

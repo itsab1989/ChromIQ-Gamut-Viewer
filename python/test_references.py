@@ -436,3 +436,71 @@ def test_the_timeout_that_is_asked_for_is_the_one_that_is_used(tmp_path,
     monkeypatch.setattr(subprocess, "run", note)
     references.icc_gamut(profile)
     assert seen["timeout"] == references.ICCGAMUT_PATIENCE
+
+
+# --- a profile opens whether or not ArgyllCMS is there ----------------------
+#
+# Basti: "you mentioned icc profiles that argyll does not like. is there a
+# fallback so those can be used anyway here?"
+#
+# There was, for two of the three ways it can go wrong, and not for the third.
+# ArgyllCMS wedging fell back to the direct reader; ArgyllCMS refusing (a v4
+# profile -- Display P3, Rec. 709 and Rec. 2020 all are, on macOS) fell back;
+# ArgyllCMS simply not being installed RAISED, and told the reader to install
+# it. That was the simplest case of the three and the only one turned away.
+
+def _demo_profile():
+    import pathlib
+    here = pathlib.Path(__file__).resolve().parent.parent
+    return here / "demo" / "Glossy-paper.icc"
+
+
+def test_a_profile_opens_with_no_argyllcms_at_all(monkeypatch):
+    import pytest
+    import references
+    profile = _demo_profile()
+    if not profile.is_file():
+        pytest.skip("the demo profile is not here")
+    monkeypatch.setattr(references, "_find_iccgamut", lambda *a, **k: None)
+    got = references.icc_gamut(profile)
+    assert got.volume > 0, "a profile that reads fine came back empty"
+
+
+def test_and_it_agrees_with_argyllcms_where_both_can_read_it(monkeypatch):
+    """CLOSE, NOT IDENTICAL, and the difference is worth knowing rather than
+    hiding: ArgyllCMS returns its own surface with the profile's real dents in
+    it, and the direct reader pushes a grid through. Measured on the demo
+    profile: 818,514 against 824,706, which is 0.76% apart."""
+    import pytest
+    import references
+    profile = _demo_profile()
+    if not profile.is_file() or references._find_iccgamut() is None:
+        pytest.skip("this one needs ArgyllCMS to compare against")
+    theirs = references.icc_gamut(profile).volume
+    monkeypatch.setattr(references, "_find_iccgamut", lambda *a, **k: None)
+    ours = references.icc_gamut(profile).volume
+    apart = abs(theirs - ours) / max(theirs, 1.0)
+    assert apart < 0.05, (
+        f"the two readings are {100 * apart:.1f}% apart: {theirs:,.0f} "
+        f"against {ours:,.0f}")
+
+
+def test_argyllcms_is_still_asked_first_when_it_is_there(monkeypatch):
+    """The direct reader is the fallback, not the replacement. ArgyllCMS
+    returns the surface it computed, with the dents, which is why it is
+    preferred wherever it exists."""
+    import pytest
+    import references
+    profile = _demo_profile()
+    if not profile.is_file() or references._find_iccgamut() is None:
+        pytest.skip("this one needs ArgyllCMS")
+    asked = []
+    real = references._find_iccgamut
+
+    def watched(*a, **k):
+        asked.append(True)
+        return real(*a, **k)
+
+    monkeypatch.setattr(references, "_find_iccgamut", watched)
+    references.icc_gamut(profile)
+    assert asked, "ArgyllCMS was not even looked for"

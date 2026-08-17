@@ -723,6 +723,15 @@ them correctly, so re-implementing that would be a worse answer, not a better
 one. For ICC profiles it is *preferred* rather than required, because it works
 the surface out in full precision.
 
+**Preferred means preferred, in all three ways it can go wrong.** A profile
+opens whether ArgyllCMS is missing entirely, present but unable to read the
+file — ICC **v4** is the common case, and Display P3, Rec. 709 and Rec. 2020
+all ship with macOS as v4 — or present and stuck on it. In each case the
+profile is read directly instead, in milliseconds. Measured on the demo
+profile, the two readings are **0.76% apart** by volume (818,514 against
+824,706): ArgyllCMS returns the surface it computed, with the profile's real
+dents in it, which is why it is asked first wherever it exists.
+
 It is found automatically in all the usual places:
 
 * **Where a download lands and stays** — your Downloads, Desktop or Documents

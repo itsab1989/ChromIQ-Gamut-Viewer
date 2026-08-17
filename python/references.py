@@ -240,11 +240,29 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
 
     tool = _find_iccgamut()
     if tool is None:
-        raise ValueError(
-            "Reading an ICC profile needs ArgyllCMS, which does not appear to "
-            "be installed. It is the same free toolkit that measured your "
-            "chart in the first place — install it, or compare against one of "
-            "the built-in colour spaces instead.")
+        # NO ARGYLLCMS IS NOT A REASON TO REFUSE A FILE WE CAN READ.
+        #
+        # This used to raise, and told the reader to go and install
+        # ArgyllCMS. That was upside down in three ways at once. The direct
+        # reader below opens the same profile in milliseconds; it is ALREADY
+        # what happens when ArgyllCMS is present and wedges, and when it is
+        # present and refuses (a v4 profile, which Display P3, Rec. 709 and
+        # Rec. 2020 all are on macOS) -- so the one case that was turned away
+        # was the simplest one of the three. And the README has said all
+        # along that ArgyllCMS is usually not needed because profiles are
+        # read directly, which was true of every path except this one.
+        #
+        # Basti found it by asking the right question: "you mentioned icc
+        # profiles that argyll does not like -- is there a fallback so those
+        # can be used anyway?" There was, for the profiles Argyll dislikes,
+        # and not for the people who do not have Argyll at all.
+        #
+        # WHAT IT COSTS, measured on demo/Glossy-paper.icc: ArgyllCMS says
+        # the volume is 818,514 and the direct reader 824,706, which is 0.76%
+        # apart. ArgyllCMS is still asked first wherever it exists, because
+        # it returns its own surface with the profile's real dents in it.
+        from icc_read import profile_gamut
+        return profile_gamut(path, white_point=white_point, space=space)
 
     with tempfile.TemporaryDirectory(prefix="iccgamut-") as tmp:
         work = pathlib.Path(tmp) / path.name
