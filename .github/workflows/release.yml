@@ -183,7 +183,11 @@ jobs:
           # which checks broke -- which cost two round trips to a build
           # machine that is not this one. The summary is cheap and it is the
           # only thing anybody reads when a build goes red.
-          python -m pytest . -q -rf --tb=line
+          # -W error::pytest.PytestUnraisableExceptionWarning would hide the
+          # answer; -rA shows the warnings summary, which is where pytest 9
+          # reports an exception raised during finalisation -- the one thing
+          # that can give a non-zero exit with nothing failing.
+          python -m pytest . -q -rA --tb=line
 
       - name: Build
         run: pyinstaller --noconfirm GamutViewer.spec
