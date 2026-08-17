@@ -564,3 +564,131 @@ def test_screen_page_and_table_all_quote_the_same_numbers(tmp_path):
                f"{family}: stayed the same (ΔE {float(de):.1f}" in on_screen
         assert f"({count} patch" in on_screen
         assert f"({count} patch" in in_page
+
+
+# --------------------------------------------------------------------------
+# Every combination, rather than one option at a time
+# --------------------------------------------------------------------------
+#
+# Testing one thing at a time proves nothing about pairs, and this project has
+# already had a bug that only appeared when two settings were crossed. The
+# cases above each move ONE family ONE way at ONE size. This crosses them and
+# asks, of every result, things that must be true whatever the answer is --
+# which is worth more than an expected value, because an invariant holds for
+# the cases nobody thought to predict.
+
+def _cloud(rng, centre, n, chroma, spread):
+    ang = np.radians(centre + rng.uniform(-spread, spread, n))
+    c = chroma * (1.0 + rng.uniform(-0.08, 0.08, n))
+    return np.column_stack([np.full(n, 55.0) + rng.uniform(-6, 6, n),
+                            c * np.cos(ang), c * np.sin(ang)])
+
+
+def _moved(rng, lab, how):
+    out = lab.copy()
+    if how == "still":
+        return out
+    if how == "tiny":
+        out[:, 2] += 0.15
+    elif how in ("hue+", "hue-"):
+        th = np.radians(9.0 if how == "hue+" else -9.0)
+        rot = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]])
+        out[:, 1:] = lab[:, 1:] @ rot.T
+    elif how == "fade":
+        out[:, 1:] *= 0.80
+    elif how == "boost":
+        out[:, 1:] *= 1.20
+    elif how == "lighter":
+        out[:, 0] += 4.0
+    elif how == "darker":
+        out[:, 0] -= 4.0
+    elif how == "fade+dark":
+        out[:, 1:] *= 0.82
+        out[:, 0] -= 4.5
+    elif how == "noise":
+        out += rng.normal(0, 7.0, lab.shape)
+    return out
+
+
+#: A chroma nobody would call a colour. WRITTEN AS A NUMBER, NOT AS
+#: NEUTRAL_CHROMA, and the difference is the whole value of the check. Phrased
+#: as "if chroma < NEUTRAL_CHROMA" this tested the constant against itself:
+#: setting NEUTRAL_CHROMA to 0 -- which is precisely the bug of dropping the
+#: threshold and going back to the rule hue_reach uses -- made the condition
+#: never true, the check was skipped, and the sweep reported a clean 3300.
+#: A check phrased in terms of the thing it guards cannot catch its removal.
+CERTAINLY_NEUTRAL = 4.0
+
+
+def test_every_combination_keeps_the_promises_the_report_makes():
+    rng = np.random.default_rng(20260817)
+    names = [n for n, _c in HUE_FAMILIES]
+    broken = []
+    seen = 0
+
+    for (name, centre) in HUE_FAMILIES:
+        for how in ("still", "tiny", "hue+", "hue-", "fade", "boost",
+                    "lighter", "darker", "fade+dark", "noise"):
+            for n in (1, 3, 60):
+                for chroma in (1.5, 4.0, 25.0, 55.0):
+                    for spread in (2.0, 14.0):
+                        before = _cloud(rng, centre, n, chroma, spread)
+                        rows = family_drift(before, _moved(rng, before, how))
+                        seen += 1
+                        where = (f"{name} {how} n={n} C*={chroma} "
+                                 f"spread={spread}")
+                        by = {r.name: r for r in rows}
+
+                        if sum(r.patches for r in rows) != n:
+                            broken.append(f"{where}: colours lost or doubled")
+
+                        if chroma <= CERTAINLY_NEUTRAL:
+                            if by["greys"].patches != n:
+                                broken.append(f"{where}: neutrals not grey")
+                            if any(by[f].patches for f in names):
+                                broken.append(f"{where}: neutral given a hue")
+
+                        for r in rows:
+                            if not r.patches:
+                                if r.toward or r.mean_de or r.certain:
+                                    broken.append(
+                                        f"{where}: empty {r.name} claimed "
+                                        f"something")
+                                continue
+                            want = ("1 patch" if r.patches == 1
+                                    else f"{r.patches} patches")
+                            if want not in r.sentence:
+                                broken.append(
+                                    f"{where}: {r.name} hides its count")
+                            if (r.mean_de < QUIET_DE) != (r.toward == ""):
+                                broken.append(
+                                    f"{where}: {r.name} ΔE {r.mean_de:.2f} "
+                                    f"but toward={r.toward!r}")
+                            if r.patches == 1 and r.certain:
+                                broken.append(
+                                    f"{where}: {r.name} certain on one patch")
+                            if r.name == "greys" and any(f in r.toward
+                                                         for f in names):
+                                broken.append(
+                                    f"{where}: grey given a hue direction")
+                            if r.toward == f"toward the {r.name}":
+                                broken.append(
+                                    f"{where}: {r.name} heading for itself")
+                            if r.toward and r.name != "greys":
+                                pure = {"lighter": "lighter",
+                                        "darker": "darker",
+                                        "fade": "toward grey",
+                                        "boost": "more saturated"}.get(how)
+                                if pure and r.toward != pure:
+                                    broken.append(
+                                        f"{where}: pure {how} came out as "
+                                        f"{r.toward!r}")
+                                if how in ("hue+", "hue-") and not \
+                                        r.toward.startswith("toward the"):
+                                    broken.append(
+                                        f"{where}: rotation came out as "
+                                        f"{r.toward!r}")
+
+    assert seen >= 1400, f"only {seen} combinations were crossed"
+    assert not broken, (f"{len(broken)} of {seen} combinations broke a "
+                        f"promise:\n" + "\n".join(broken[:20]))
