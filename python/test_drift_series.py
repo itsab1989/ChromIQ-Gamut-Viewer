@@ -386,8 +386,17 @@ def test_the_picture_follows_the_light_and_dark_settings(five_years):
 
 # --- the window ------------------------------------------------------------
 #
-# The dialog is built for real here -- unlike GamutApp, it can be, because it
-# holds one QWebEngineView and does not bring up the whole application.
+# The dialog is built here WITHOUT ITS GRAPH VIEW (preview=False). I first
+# built it complete, reasoning that one QWebEngineView is not the whole
+# application -- and Windows disproved that: the suite stopped dead at 32%
+# with seven failures and no summary at all, while macOS ran it happily. The
+# project had already written this down, in test_chart_panel and
+# test_audit_script; I did not take it seriously enough until it cost a
+# release build.
+#
+# Everything below is computed without drawing: the run, the verdict, the
+# table and the saved page's HTML. The graph itself is proved by the driver
+# scripts, which run the real application.
 
 @pytest.fixture(scope="module")
 def app():
@@ -400,7 +409,7 @@ def app():
 
 def test_the_window_lists_every_profile_with_its_date(app, five_years):
     import gamut_app
-    dialog = gamut_app.TimelineDialog(None)
+    dialog = gamut_app.TimelineDialog(None, preview=False)
     dialog.add(five_years)
     app.processEvents()
     assert dialog._list.count() == 5
@@ -414,7 +423,7 @@ def test_the_same_profile_cannot_be_added_twice(app, five_years):
     """Adding a folder twice is an ordinary slip, and the duplicate would
     show as a step of exactly zero — which reads as good news."""
     import gamut_app
-    dialog = gamut_app.TimelineDialog(None)
+    dialog = gamut_app.TimelineDialog(None, preview=False)
     dialog.add(five_years)
     dialog.add(five_years)
     app.processEvents()
@@ -424,7 +433,7 @@ def test_the_same_profile_cannot_be_added_twice(app, five_years):
 
 def test_removing_one_leaves_the_rest(app, five_years):
     import gamut_app
-    dialog = gamut_app.TimelineDialog(None)
+    dialog = gamut_app.TimelineDialog(None, preview=False)
     dialog.add(five_years)
     dialog._list.setCurrentRow(2)
     dialog._on_remove()
@@ -439,7 +448,7 @@ def test_nothing_can_be_saved_until_there_is_something_to_save(app, tmp_path):
     """A save button that opens a file dialog and then writes an empty graph
     is worse than one that is plainly not available yet."""
     import gamut_app
-    dialog = gamut_app.TimelineDialog(None)
+    dialog = gamut_app.TimelineDialog(None, preview=False)
     app.processEvents()
     assert not dialog._save_btn.isEnabled()
     assert not dialog._table_btn.isEnabled()
@@ -456,7 +465,7 @@ def test_nothing_can_be_saved_until_there_is_something_to_save(app, tmp_path):
 def test_the_table_carries_the_caveat_and_the_verdict(app, five_years):
     """A row of figures outlives the window that explained it."""
     import gamut_app
-    dialog = gamut_app.TimelineDialog(None)
+    dialog = gamut_app.TimelineDialog(None, preview=False)
     dialog.add(five_years)
     app.processEvents()
     flat = " | ".join(str(c) for row in dialog.rows() for c in row)
@@ -473,7 +482,7 @@ def test_a_bad_file_is_shown_in_the_list_rather_than_silently_dropped(
     import gamut_app
     bad = tmp_path / "broken.icc"
     bad.write_bytes(b"not a profile")
-    dialog = gamut_app.TimelineDialog(None)
+    dialog = gamut_app.TimelineDialog(None, preview=False)
     dialog.add(five_years + [bad])
     app.processEvents()
     rows = [dialog._list.item(i).text() for i in range(dialog._list.count())]
@@ -483,14 +492,19 @@ def test_a_bad_file_is_shown_in_the_list_rather_than_silently_dropped(
 
 def test_the_window_follows_the_light_and_dark_setting(app, five_years):
     import gamut_app
-    dialog = gamut_app.TimelineDialog(None, appearance="dark")
+    dialog = gamut_app.TimelineDialog(None, appearance="dark", preview=False)
     dialog.add(five_years)
     app.processEvents()
-    was = dialog._view.styleSheet()
+    # ASKED OF THE FIGURE, not of the view, because these checks build the
+    # window without one -- see TimelineDialog's docstring for why.
+    import drift_series
+    dark = drift_series.figure(dialog._run, mode="dark")
     dialog.look("light")
     app.processEvents()
-    assert dialog._view.styleSheet() != was, (
-        "the view kept its dark background in a light window")
+    light = drift_series.figure(dialog._run, mode=dialog._appearance)
+    assert dialog._appearance == "light"
+    assert dark.layout.paper_bgcolor != light.layout.paper_bgcolor, (
+        "the graph kept its dark colours in a light window")
     dialog.close()
 
 
@@ -518,7 +532,7 @@ def test_the_saved_page_leaves_room_for_the_words(app, five_years):
     """
     import gamut_app
     import drift_series
-    dialog = gamut_app.TimelineDialog(None)
+    dialog = gamut_app.TimelineDialog(None, preview=False)
     dialog.add(five_years)
     app.processEvents()
     html = dialog.page_html(drift_series.figure(dialog._run))
@@ -538,7 +552,7 @@ def test_the_saved_page_is_self_contained(app, five_years):
     or in five years when the address has moved."""
     import gamut_app
     import drift_series
-    dialog = gamut_app.TimelineDialog(None)
+    dialog = gamut_app.TimelineDialog(None, preview=False)
     dialog.add(five_years)
     app.processEvents()
     html = dialog.page_html(drift_series.figure(dialog._run))

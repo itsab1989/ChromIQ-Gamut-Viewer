@@ -2911,8 +2911,24 @@ class TimelineDialog(QDialog):
     #: measured, ten comparisons take under a hundredth of a second.
     GRID = 9
 
-    def __init__(self, parent, appearance: str = "dark") -> None:
+    def __init__(self, parent, appearance: str = "dark",
+                 preview: bool = True) -> None:
+        """*preview* False builds the window without its graph view.
+
+        A REAL CAPABILITY, not a test hatch, though the tests are what needed
+        it first. Everything this window computes -- the run, the verdict, the
+        table, the saved page -- is worked out without drawing anything, so a
+        caller that only wants the file has no use for a browser engine.
+
+        And that engine is not free to make. This project already learned, and
+        wrote down, that constructing a QWebEngineView inside pytest aborts
+        the whole run; it survives on macOS and killed the Windows build here,
+        stopping the suite dead at 32% with no summary. So the checks build
+        the window without one, and the graph is proved by the driver scripts
+        that run the real application.
+        """
         super().__init__(parent)
+        self._preview = preview
         self.setWindowTitle("Follow one device over time")
         self.setModal(False)          # so files can be dragged in from Finder
         self._appearance = appearance
@@ -3006,14 +3022,16 @@ class TimelineDialog(QDialog):
         buttons.addWidget(self._save_btn)
         outer.addLayout(buttons)
 
-        self._view = QWebEngineView(self)
-        self._view.setMinimumHeight(240)
-        # THE VIEW IS WHITE UNTIL A PAGE PAINTS OVER IT, and in a dark window
-        # that is a white frame round the graph and a white flash every time
-        # it redraws. Both the widget and the page underneath have to be told,
-        # which is what the main window does for exactly the same reason.
-        self._paint_view()
-        outer.addWidget(self._view, 1)
+        self._view = QWebEngineView(self) if preview else None
+        if self._view is not None:
+            self._view.setMinimumHeight(240)
+            # THE VIEW IS WHITE UNTIL A PAGE PAINTS OVER IT, and in a dark
+            # window that is a white frame round the graph and a white flash
+            # every time it redraws. Both the widget and the page underneath
+            # have to be told, which is what the main window does for exactly
+            # the same reason.
+            self._paint_view()
+            outer.addWidget(self._view, 1)
 
         self._verdict = WrappedLabel("", self, hide_when_empty=True)
         outer.addWidget(self._verdict)
@@ -3143,7 +3161,7 @@ class TimelineDialog(QDialog):
             self._verdict.setText("")
             self._complaints.setText(
                 "Nothing open yet. Add two or more profiles of one device.")
-            self._view.setHtml("")
+            self._blank()
             return
 
         self._verdict.setText(drift_series.verdict(self._run))
@@ -3166,8 +3184,10 @@ class TimelineDialog(QDialog):
         """
         import drift_series
 
+        if self._view is None:
+            return
         if not (self._run and self._run.since_first):
-            self._view.setHtml("")
+            self._blank()
             return
         figure = drift_series.figure(self._run, mode=self._appearance)
         parent = self.parent()
@@ -3179,15 +3199,22 @@ class TimelineDialog(QDialog):
             self._view.load(QUrl.fromLocalFile(str(target)))
         except OSError as exc:
             _log().warning("could not draw the timeline: %s", exc)
-            self._view.setHtml("")
+            self._blank()
 
     def _paint_view(self) -> None:
         """Give the view the page's own colour, so it never flashes white."""
+        if self._view is None:
+            return
         from ti3gamut import SCENE_COLOURS
         page = SCENE_COLOURS["light" if self._appearance == "light"
                              else "dark"]["page"]
         self._view.setStyleSheet(f"background: {page};")
         self._view.page().setBackgroundColor(QColor(page))
+
+    def _blank(self) -> None:
+        """Empty the graph, when there is one to empty."""
+        if self._view is not None:
+            self._view.setHtml("")
 
     def look(self, appearance: str) -> None:
         """Follow the window's light/dark setting."""
