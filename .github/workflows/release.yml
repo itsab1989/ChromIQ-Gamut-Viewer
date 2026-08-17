@@ -171,7 +171,6 @@ jobs:
 
       - name: Run the tests
         working-directory: python
-        shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
@@ -179,22 +178,7 @@ jobs:
           # itself to check the changelog guard is still wired in. The
           # application needs neither, so neither is in requirements.txt.
           pip install pytest pyyaml
-          # TEMPORARY, AND ON PURPOSE. The Windows runner exits 1 while
-          # reporting "537 passed, 7 skipped" under pytest 9.1.1 -- a
-          # non-zero exit with nothing failing, on Windows only (546 pass
-          # and exit 0 under the same pytest on macOS). Rather than pin it
-          # away, this asks the runner the one question that separates the
-          # two possible causes: if turning the unraisable/thread hooks off
-          # makes the exit code 0, then something in OUR code raises during
-          # finalisation and pytest 9 is right to complain. If it stays 1,
-          # the exit code is pytest's own and belongs in a bug report.
-          set +e
-          python -m pytest . -q -rA --tb=long; plain=$?
-          python -m pytest . -q -p no:unraisableexception \
-                                -p no:threadexception;   hooksoff=$?
-          set -e
-          echo "::warning::PYTEST-9 PROBE  plain=$plain  hooks-off=$hooksoff"
-          test "$plain" -eq 0
+          python -m pytest . -q
 
       - name: Build
         run: pyinstaller --noconfirm GamutViewer.spec
