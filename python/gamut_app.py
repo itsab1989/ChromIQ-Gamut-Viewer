@@ -81,8 +81,9 @@ from gamutview import xyz_to_lab
 from references import (REFERENCE_SPACES, gam_gamut, icc_gamut,
                         reference_gamut)
 from spectral import optimal_colour_solid
-from ti3gamut import (CONVERTERS, compare_measurements, neutral_axis,
-                      read_measurement, write_html, write_slice_html)
+from ti3gamut import (CONVERTERS, DIRECTIONS, compare_measurements,
+                      neutral_axis, read_measurement, write_html,
+                      write_slice_html)
 
 # Dark, close to ChromIQ's own, so the fit is judged on layout rather than on
 # a colour scheme that would never ship.
@@ -3055,6 +3056,36 @@ class TimelineDialog(QDialog):
         self._picture_of.activated.connect(lambda _i: self._draw())
         picture_row.addWidget(picture_label, 0)
         picture_row.addWidget(self._picture_of, 1)
+        picture_row.addWidget(QLabel("coloured by", self), 0)
+        # WHICH QUESTION THE COLOURS ANSWER. "How far" is the first thing
+        # anybody wants and stays the default; the three named directions are
+        # the second thing, and they are what ΔE cannot say -- a printer going
+        # lighter and one going darker by the same amount give an identical
+        # number and an identical cloud, and want different cures.
+        self._coloured_by = NoScrollComboBox(self)
+        self._coloured_by.addItem("how far it moved", None)
+        for _key, (_asks, _less, _more, _col) in DIRECTIONS.items():
+            self._coloured_by.addItem(_asks, _key)
+        self._coloured_by.setToolTip(
+            "What the colours in the cloud stand for.\n\n"
+            "HOW FAR IT MOVED is the distance, in ΔE2000, and it is the "
+            "question to ask first. It cannot tell you which way, because a "
+            "distance has no direction: a printer that has gone lighter and "
+            "one that has gone darker by the same amount give exactly the "
+            "same number and exactly the same picture.\n\n"
+            "THE OTHER THREE ask which way, one question at a time — has it "
+            "got lighter or darker, redder or greener, warmer or cooler. The "
+            "scale runs both ways from no change in the middle, so the two "
+            "ends are opposite directions rather than more and less of one "
+            "thing.\n\n"
+            "The colours of the dots are deliberately NOT red and green or "
+            "blue and yellow: in a picture whose subject is colour, painting "
+            "\"went redder\" in red invites you to read a dot's colour as the "
+            "colour it stands for. One teal-to-orange scale for all three "
+            "means the key is learned once and cannot be mistaken for the "
+            "thing it describes.")
+        self._coloured_by.activated.connect(lambda _i: self._draw())
+        picture_row.addWidget(self._coloured_by, 0)
         picture_row.addWidget(Hint(
             "TWO AT A TIME, AND ONLY TWO, and it is worth saying why rather "
             "than leaving you to wonder.\n\n"
@@ -3076,6 +3107,45 @@ class TimelineDialog(QDialog):
             self, title="Why only two profiles at a time"), 0,
             Qt.AlignmentFlag.AlignVCenter)
         outer.addLayout(picture_row)
+
+        # --- ANY two of them, not only the ones next to each other -----------
+        #
+        # Basti: "can i choose any two profiles from the trend for the direct
+        # comparison and then go back to the full overview?"
+        #
+        # The chooser above lists the steps, which are the pairs somebody
+        # reaches for most -- the graph jumped between these two, so where did
+        # it go. But they are not the only pairs worth asking about: the
+        # profile from before a head clean against the one six months later
+        # need not be next to each other in the run at all.
+        #
+        # SHORTCUTS ABOVE, FREEDOM HERE, and the two are one thing: picking a
+        # step fills these in, and changing these turns the chooser above to
+        # "a pair you chose". Neither can disagree with what is drawn, because
+        # both read the same two boxes.
+        #
+        # WHY NOT LIST EVERY PAIR IN ONE PLACE: a run of sixty profiles has
+        # 1,770 pairs. Two lists of sixty is the same freedom in 120 lines
+        # instead of 1,770.
+        self._pair_row = QWidget(self)
+        pair_row = QHBoxLayout(self._pair_row)
+        pair_row.setContentsMargins(0, 0, 0, 0)
+        pair_row.setSpacing(8)
+        pair_row.addWidget(QLabel("from", self._pair_row), 0)
+        self._pair_from = NoScrollComboBox(self._pair_row)
+        self._pair_from.setToolTip(
+            "The EARLIER of the two profiles — the one the cloud is drawn at, "
+            "and the one the colours are measured from.")
+        self._pair_from.activated.connect(lambda _i: self._pair_picked())
+        pair_row.addWidget(self._pair_from, 1)
+        pair_row.addWidget(QLabel("to", self._pair_row), 0)
+        self._pair_to = NoScrollComboBox(self._pair_row)
+        self._pair_to.setToolTip(
+            "The LATER of the two — where those same colours have got to.")
+        self._pair_to.activated.connect(lambda _i: self._pair_picked())
+        pair_row.addWidget(self._pair_to, 1)
+        self._pair_row.setVisible(False)
+        outer.addWidget(self._pair_row)
 
         self._view = QWebEngineView(self) if preview else None
         if self._view is not None:
@@ -3289,6 +3359,27 @@ class TimelineDialog(QDialog):
         scale = ("visible on a careful look" if d.worst < drift_series.OBVIOUS
                  else "plainly visible")
         share = 100.0 * d.over_one / max(d.matched, 1)
+        # WHERE TO LOOK DEPENDS ON WHAT IS DRAWN. "The largest and reddest
+        # dots" is true of the distance view and false of the direction ones,
+        # whose dots are teal and orange and whose two ends mean opposite
+        # things rather than more and less. Sending a reader to look for red
+        # in a picture with no red in it is worse than saying nothing.
+        axis = self._coloured_by.currentData()
+        if axis:
+            asks, less, more, column = DIRECTIONS[axis]
+            moved = d.moved
+            if moved is not None:
+                import numpy as _np
+                middle = float(_np.mean(moved[:, column]))
+                went = (more if middle > 0 else less)
+                strength = ("hardly at all on average" if abs(middle) < 0.5
+                            else f"by {abs(middle):.2f} on average")
+                return (f"{spans}, {asks}: taken all together it has gone "
+                        f"{went}, {strength}. The biggest difference anywhere "
+                        f"is ΔE {d.worst:.2f}, which is {scale}. The two ends "
+                        f"of the scale are opposite directions, and the "
+                        f"middle is no change — so the pale dots are the "
+                        f"colours that stayed put.")
         return (f"{spans}: the biggest difference is ΔE {d.worst:.2f}, which "
                 f"is {scale}, and the average is {d.average:.2f}. "
                 f"{d.over_one} of {d.matched} colours moved by more than 1 "
@@ -3310,6 +3401,7 @@ class TimelineDialog(QDialog):
         self._picture_of.clear()
         self._picture_of.addItem("When it moved — the graph", None)
         run = self._run
+        usable = list(run.usable) if run else []
         steps = list(run.since_previous) if run else []
         for i, step in enumerate(steps):
             self._picture_of.addItem(
@@ -3321,38 +3413,119 @@ class TimelineDialog(QDialog):
         # with two profiles it would be the same picture listed twice.
         if len(steps) > 1 and run is not None:
             self._picture_of.addItem(
-                f"Where it moved — {run.usable[0].name} → "
-                f"{run.usable[-1].name}, altogether (ΔE {run.total:.2f})",
-                ("whole", 0))
+                f"Where it moved — {usable[0].name} → {usable[-1].name}, "
+                f"altogether (ΔE {run.total:.2f})", ("whole", 0))
+        # ONLY WHERE THERE IS A CHOICE TO MAKE. With two profiles there is
+        # exactly one possible pair and the step above already is it, so this
+        # entry would be a second name for one picture -- which is how
+        # somebody comes to believe they are looking at two different answers.
+        if len(usable) > 2:
+            self._picture_of.addItem(
+                "Where it moved — any two you choose below", ("pair", 0))
         self._picture_of.blockSignals(False)
         if was is not None:
-            found = self._picture_of.findData(was)
+            found = _entry_at(self._picture_of, was)
             self._picture_of.setCurrentIndex(max(found, 0))
         self._picture_of.setEnabled(bool(steps))
 
-    def _chosen_pair(self):
-        """(path A, path B, what to call it), or None while showing the graph."""
+        # The two boxes that hold whichever pair is being compared.
+        for box in (self._pair_from, self._pair_to):
+            keep = box.currentData()
+            box.blockSignals(True)
+            box.clear()
+            for i, entry in enumerate(usable):
+                box.addItem(f"{entry.name}    {entry.dated}", i)
+            box.blockSignals(False)
+            if keep is not None and 0 <= keep < len(usable):
+                box.setCurrentIndex(keep)
+        if usable and self._pair_from.currentIndex() < 0:
+            self._pair_from.setCurrentIndex(0)
+        if usable and self._pair_to.currentIndex() < 0:
+            self._pair_to.setCurrentIndex(len(usable) - 1)
+        self._sync_pair_boxes()
+
+    def _sync_pair_boxes(self) -> None:
+        """Make the two boxes show whichever pair the chooser above names."""
         choice = self._picture_of.currentData()
         run = self._run
         if choice is None or run is None or not run.usable:
+            self._pair_row.setVisible(False)
+            return
+        self._pair_row.setVisible(True)
+        kind, index = choice
+        usable = run.usable
+        if kind == "whole":
+            a, b = 0, len(usable) - 1
+        elif kind == "step":
+            a, b = index, index + 1
+        else:
+            return                     # "a pair you choose" -- leave them be
+        for box, at in ((self._pair_from, a), (self._pair_to, b)):
+            box.blockSignals(True)
+            box.setCurrentIndex(min(max(at, 0), box.count() - 1))
+            box.blockSignals(False)
+
+    def _pair_picked(self) -> None:
+        """The reader set the two boxes themselves, so the chooser follows.
+
+        Written this way round -- the boxes are the truth and the chooser
+        names it -- because the alternative is two controls that can each say
+        something different about one picture, and then one of them is lying.
+        """
+        at = _entry_at(self._picture_of, ("pair", 0))
+        if at >= 0:
+            self._picture_of.blockSignals(True)
+            self._picture_of.setCurrentIndex(at)
+            self._picture_of.blockSignals(False)
+        self._draw()
+
+    def _chosen_pair(self):
+        """(path A, path B, what to call it), or None while showing the graph.
+
+        WORKED OUT FROM THE CHOOSER ITSELF, not from whether something has
+        synced the two boxes yet. The first version read the boxes, which
+        meant the answer was only right AFTER a redraw -- so anything that
+        set the chooser and then asked got the previous pair. That is the
+        third time in this feature that "handle it where the click arrives"
+        has produced a control that is right for a person and wrong for
+        everything else, and it is the last: a shortcut resolves here, the
+        boxes are consulted only for the entry that means "whatever they say".
+
+        The paths come from the ENTRIES rather than from a step's names. Two
+        profiles of one device very often share a stem -- printer-2019.icc
+        beside printer-2019.icm is the ordinary case -- so looking a path up
+        by name would compare the wrong file and print a plausible number
+        under it.
+        """
+        run = self._run
+        choice = self._picture_of.currentData()
+        if choice is None or run is None or not run.usable:
             return None
+        usable = run.usable
         kind, index = choice
         if kind == "whole":
-            first, last = run.usable[0], run.usable[-1]
-            return first.path, last.path, (f"{first.name} → {last.name}, "
-                                           f"altogether")
-        steps = list(run.since_previous)
-        if not 0 <= index < len(steps):
+            a, b = 0, len(usable) - 1
+        elif kind == "step":
+            a, b = index, index + 1
+        else:
+            a = self._pair_from.currentData()
+            b = self._pair_to.currentData()
+        if a is None or b is None:
             return None
-        # THE PATHS COME FROM THE ENTRIES, NOT FROM THE STEP. A step carries
-        # the two NAMES, and two profiles of one device very often share a
-        # stem -- printer-2019.icc beside printer-2019.icm is the ordinary
-        # case. Looking a path up by name would compare the wrong file and
-        # print a perfectly plausible wrong number under it.
-        usable = run.usable
-        if index + 1 >= len(usable):
+        if not (0 <= a < len(usable) and 0 <= b < len(usable)):
             return None
-        before, after = usable[index], usable[index + 1]
+        if a == b:
+            # THE SAME PROFILE TWICE is not a comparison: every colour would
+            # be exactly where it was, and a cloud of nothing-happened reads
+            # as good news about a device nobody actually asked about. Said
+            # out loud rather than silently falling back to the graph, which
+            # would look like the control had simply not worked.
+            self._trouble(
+                f"Both boxes are set to {usable[a].name}. A profile compared "
+                f"with itself is identical everywhere, which would draw a "
+                f"picture of nothing happening — choose two different ones.")
+            return None
+        before, after = usable[a], usable[b]
         return before.path, after.path, f"{before.name} → {after.name}"
 
     def _draw(self) -> None:
@@ -3366,6 +3539,13 @@ class TimelineDialog(QDialog):
         """
         import drift_series
 
+        # THE TWO BOXES FIRST, so that however the chooser above came to be
+        # set -- clicked, restored, or set by a script -- the pair they hold
+        # is the pair it names. Doing this only where the click is handled is
+        # the same mistake twice over: it was made for the sentence under the
+        # picture, found in a screenshot, and would have been made again here.
+        # A shortcut fills them; "any two you choose" leaves them alone.
+        self._sync_pair_boxes()
         self._say()
         if self._view is None:
             return
@@ -3420,6 +3600,17 @@ class TimelineDialog(QDialog):
         # THE PICTURE SAYS WHICH PAIR IT IS. A cloud that names neither
         # profile is a picture of nothing in particular the moment it is saved
         # or screenshotted, and this window can show several of them.
+        axis = self._coloured_by.currentData()
+        if axis:
+            asks = DIRECTIONS[axis][0]
+            moved = d.moved
+            if moved is None:          # a comparison from before lab_b was kept
+                axis = None
+        if axis:
+            return build_figure(
+                [], f"Which way {spans} moved — {asks}, in Lab units",
+                mode=self._appearance, space="lab", grid=True,
+                drift=(d.lab_a, moved, f"{asks}: {spans}", axis))
         return build_figure(
             [], f"Where {spans} disagree — ΔE2000, biggest {d.worst:.2f}, "
                 f"average {d.average:.2f}",
@@ -3652,6 +3843,32 @@ def _escape(text: str) -> str:
     """The few characters that would otherwise end a tag early."""
     return (text.replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;"))
+
+
+def _entry_at(combo, wanted):
+    """Where *wanted* sits in a combo box, comparing by VALUE.
+
+    NOT `findData`, and that is a measured correction rather than a
+    preference. Qt compares the stored item data as QVariants, and for a
+    Python object it has no way to do that except by identity -- so
+    `findData(("whole", 0))` finds an item holding ("whole", 0) only when the
+    two tuples happen to be the same object. They are when both literals sit
+    in one code object, which is exactly what a small isolated check does, and
+    they are not across modules. Measured on the real window: the item was at
+    index 5 and findData returned -1.
+
+    What that cost: the timeline rebuilt its chooser whenever the run changed
+    and used findData to put the reader back on what they had been looking at.
+    It never found it, so every add or remove quietly threw them back to the
+    graph. The check that should have caught it read the fallback as the
+    correct answer to a different question.
+
+    Returns -1 when it is not there, like the method it replaces.
+    """
+    for i in range(combo.count()):
+        if combo.itemData(i) == wanted:
+            return i
+    return -1
 
 
 def _clean_stem(said: str) -> str:

@@ -658,12 +658,49 @@ not about the run. Here the step from 2019 to 2021 is ΔE 1.07 at its worst and
 so the cloud is honestly pale. A small drift *looks* small, because the colour
 scale is fixed rather than stretched to fit.
 
+**Any two, not only neighbours.** The steps are shortcuts, because they are the
+pairs people reach for most — the graph jumped between these two, so where did
+it go? Underneath them, **from** and **to** hold whichever two you like: the
+profile from before a head clean and the one six months later need not sit next
+to each other in the run. Picking a step fills those boxes in; changing them by
+hand switches the chooser to *any two you choose*. Choosing the first entry
+again puts the whole graph back.
+
 **Two at a time, and only two.** Every dot is painted by how far apart *two*
 profiles put that one colour; a third would need a second colour on the same
 dot, and there is nowhere to put it — so a cloud of three would have to hide
 something or invent something. That is less of a limitation than it sounds,
-because a run is made of steps and every step *is* a pair: pick the step and you
-are asking exactly the question the graph raised.
+because a run is made of steps and every step *is* a pair.
+
+**How many profiles can a run hold?** As many as you have. Measured on real
+LUT profiles of about 1.3 MB each: **24 of them build in 0.15 s**, six
+milliseconds apiece, and it is flat — a hundred hand-written ones take 0.10 s
+and hold 8 MB. A professional profiling monthly has twelve a year, so five
+years of them is well inside what this does without pausing.
+
+#### Which way it moved, not only how far
+
+ΔE2000 is a **distance**, and a distance has no direction. A printer that has
+drifted lighter and one that has drifted darker by the same amount give an
+identical number and an identical cloud — and they are different faults with
+different cures. Measured on two runs bent the same amount in opposite
+directions: worst ΔE **3.51 against 3.70**, average **1.61 against 1.62**, and
+mean movements of **+0.67 L\*** and **−0.67 L\***. The distance cannot tell
+them apart.
+
+**Coloured by** asks the question the distance cannot, one axis at a time:
+*lighter or darker*, *redder or greener*, *warmer or cooler*. The scale runs
+both ways from **no change** in the middle, so the two ends are opposite
+directions rather than more and less of one thing.
+
+<img src="docs/screenshots/26-which-way-it-moved.webp" width="620" alt="The same pair coloured by whether each colour went warmer or cooler">
+
+**The dots are deliberately not red and green, or blue and yellow.** In a
+picture whose whole subject is colour, painting "went redder" in red invites
+you to read a dot's colour as the colour it stands for. One teal-to-orange
+scale for all three means the key is learned once and cannot be mistaken for
+the thing it describes — and it stays readable with the commonest colour
+blindness, which red-green does not.
 
 It needs nothing installed — profiles are read directly.
 

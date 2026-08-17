@@ -889,7 +889,25 @@ class ProfileDrift(Drift):
     # set of numbers. Working them out twice is how a caption ends up
     # disagreeing with the cloud it sits under.
     lab_a: object = None       # (N, 3) where profile A puts each colour
-    deltas: object = None      # (N,) how far profile B puts it instead
+    lab_b: object = None       # (N, 3) where profile B puts the same colour
+    deltas: object = None      # (N,) how far apart those two are, in dE2000
+
+    #: WHICH WAY, not just how far. ΔE2000 is a MAGNITUDE and throws the
+    #: direction away by construction, so a printer going lighter and one
+    #: going darker by the same amount give an identical number and an
+    #: identical cloud -- and want different actions. lab_b was computed all
+    #: along and dropped on the floor; keeping it costs nothing and is the
+    #: whole difference between "how far" and "which way".
+    @property
+    def moved(self):
+        """(N, 3) how far each colour moved in L*, a* and b*, with its sign.
+
+        Positive L* is lighter, positive a* is toward red, positive b* is
+        toward yellow -- which is what the three named views below read.
+        """
+        if self.lab_a is None or self.lab_b is None:
+            return None
+        return np.asarray(self.lab_b, float) - np.asarray(self.lab_a, float)
 
     @property
     def comparable(self) -> bool:
@@ -971,7 +989,7 @@ def compare_profiles(path_a, path_b, *, steps: int = 9,
         worst_patches=worst, steps=int(steps), channels=int(channels),
         table_a=icc_read.which_table(path_a),
         table_b=icc_read.which_table(path_b), device_space=space_a,
-        lab_a=lab_a, deltas=de)
+        lab_a=lab_a, lab_b=lab_b, deltas=de)
 
 
 def _device_label(values, space: str) -> str:
@@ -1661,6 +1679,104 @@ DRIFT_CEILING = 5.0
 #: "out of reach", so "worse" reads as "hotter" without a key.
 DRIFT_SCALE = [[0.0, "#4a4f5a"], [0.25, "#6d7280"], [0.5, "#c9a227"],
                [0.75, "#e8712f"], [1.0, "#ff4573"]]
+
+#: WHICH WAY IT WENT, on a scale that runs both ways from nothing.
+#:
+#: A SECOND SCALE RATHER THAN THE SAME ONE, because these answer a different
+#: kind of question. The scale above is a magnitude: it starts at "no
+#: difference" and gets hotter. A direction has a middle -- no change -- and
+#: two opposite ends, and drawing signed data on a one-ended ramp is how a
+#: reader comes to believe that "more blue" means "worse".
+#:
+#: TEAL TO ORANGE, DELIBERATELY NOT THE AXIS'S OWN COLOURS. Painting the
+#: redder-or-greener view in red and green reads beautifully and is a trap:
+#: the dots would be red and green in a picture whose subject IS colour, and
+#: somebody would take the colour of a dot for the colour it represents. One
+#: neutral pair for all three views means the key has to be read once, and it
+#: cannot be mistaken for the thing it describes. It is also safe for the
+#: commonest colour blindness, which red-green is not.
+DIRECTION_SCALE = [[0.0, "#1b7f79"], [0.25, "#63b0aa"], [0.5, "#5a5f6b"],
+                   [0.75, "#e39b53"], [1.0, "#d1671a"]]
+
+#: The three questions a direction can answer, and the words for each end.
+#: Keyed by the Lab axis they read, in the order L*, a*, b*.
+DIRECTIONS = {
+    "L": ("lighter or darker", "darker", "lighter", 0),
+    "a": ("redder or greener", "greener", "redder", 1),
+    "b": ("warmer or cooler", "cooler (blue)", "warmer (yellow)", 2),
+}
+
+#: How far, in Lab units, the direction scale runs to at each end. Fixed for
+#: the same reason the magnitude ceiling is: two pictures of two different
+#: pairs are only worth putting side by side if the same colour means the
+#: same amount in both. Five is the round number just above the dE ceiling
+#: the magnitude view already uses.
+DIRECTION_LIMIT = 5.0
+
+
+def drift_direction(lab, moved, name: str, axis: str = "L",
+                    space: str = "lab", limit: float = DIRECTION_LIMIT):
+    """Which WAY each colour moved, along one axis of Lab, with its sign.
+
+    THE NUMBER THE MAGNITUDE VIEW THROWS AWAY. ΔE2000 is a distance, so a
+    printer drifting lighter and one drifting darker by the same amount give
+    the same figure and the same cloud -- and they are different faults with
+    different cures. This asks the question the distance cannot: not how far,
+    but which way.
+
+    ONE AXIS AT A TIME, rather than the whole vector at once. Three arrows in
+    a cube is a thicket at 729 points, and a hue wheel would mislead the
+    moment somebody read a dot's colour as the colour it stands for. Asked one
+    question at a time -- has it got lighter, has it gone warmer, has it gone
+    redder -- each picture has an answer somebody can act on.
+
+    Drawn at profile A's positions, like the magnitude view, so the two can be
+    switched between without anything moving.
+    """
+    import numpy as _np
+    import plotly.graph_objects as go
+
+    if axis not in DIRECTIONS:
+        raise ValueError(
+            f"{axis!r} is not one of the directions this can draw; "
+            f"choose from {', '.join(sorted(DIRECTIONS))}")
+    lab = _np.asarray(lab, dtype=float)
+    moved = _np.asarray(moved, dtype=float)
+    if moved.ndim != 2 or moved.shape[0] != lab.shape[0]:
+        raise ValueError("every point needs one movement, in three parts")
+    asks, less, more, column = DIRECTIONS[axis]
+    values = moved[:, column]
+
+    x, y, z = lab[:, 1], lab[:, 2], lab[:, 0]
+    if space == "rgb":
+        x, y, z = lab[:, 0], lab[:, 1], lab[:, 2]
+
+    # SIZED BY HOW FAR IT WENT, EITHER WAY, so the eye is drawn to the places
+    # that moved rather than to whichever end of the scale happens to be
+    # darker. A point that barely moved is small and grey whichever way it
+    # went, which is the truth about it.
+    size = _np.abs(values)
+    quiet = size < 1.0
+    sizes = _np.where(quiet, 2.0, 4.0 + 3.0 * _np.clip(
+        (size - 1.0) / max(limit - 1.0, 1e-9), 0.0, 1.0))
+    return [go.Scatter3d(
+        x=x, y=y, z=z, mode="markers", name=name,
+        customdata=values,
+        hovertemplate="%{customdata:+.2f} " + axis + "*<extra></extra>",
+        marker=dict(
+            size=sizes, color=values, colorscale=DIRECTION_SCALE,
+            cmin=-limit, cmax=limit, opacity=0.85,
+            colorbar=dict(
+                title=dict(text=asks, side="right"),
+                # LONGER THAN THE MAGNITUDE KEY, because this one has five
+                # marks and three of them sit within a fifth of the middle:
+                # at 0.55 of the height, "1 cooler", "no change" and "1
+                # warmer" were printed almost on top of each other. Seen in
+                # the screenshot of the feature, not reasoned about.
+                thickness=12, len=0.78, x=1.02,
+                tickvals=[-limit, -1.0, 0.0, 1.0, limit],
+                ticktext=[f"{limit:.0f} {less}", f"1 {less}",
+                          "no change", f"1 {more}", f"{limit:.0f} {more}"])))]
 
 
 def drift_cloud(lab, deltas, name: str, space: str = "lab",
@@ -6905,9 +7021,20 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # the subject of the picture whenever it is present -- nobody asks for
         # a drift cloud and then wants to look at something else.
         drift_lab, drift_de, drift_name = drift[:3]
-        for trace in drift_cloud(drift_lab, drift_de, drift_name,
-                                 space=_axes_space):
-            fig.add_trace(trace)
+        # A FOURTH ITEM ASKS WHICH WAY RATHER THAN HOW FAR, and older
+        # three-item callers go on meaning "how far" -- which is the right
+        # default, because how far is the first question and which way the
+        # second. When it is present, the second value is the (N, 3) movement
+        # in Lab rather than the (N,) distance.
+        which = drift[3] if len(drift) > 3 else None
+        if which:
+            for trace in drift_direction(drift_lab, drift_de, drift_name,
+                                         axis=which, space=_axes_space):
+                fig.add_trace(trace)
+        else:
+            for trace in drift_cloud(drift_lab, drift_de, drift_name,
+                                     space=_axes_space):
+                fig.add_trace(trace)
     from gamutview import AXES
     # The axes are named for the space the gamuts were built in, so a
     # picture can never be read against the wrong labels.

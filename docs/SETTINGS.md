@@ -670,6 +670,47 @@ two of these pictures can be held against each other: below ΔE 1 nobody can see
 the difference, above 3 anybody can, and red means the same amount in every one
 of them.
 
+**from / to: any two, not only neighbours.** The steps in the chooser are
+shortcuts for the pairs people reach for most. The two boxes under it hold
+whichever two profiles you like — the one from before a head clean and the one
+six months later need not be next to each other. Picking a step fills them in;
+changing them switches the chooser to *any two you choose*; choosing the first
+entry again puts the graph back. Setting both to the same profile is refused
+with a reason, because a profile compared with itself is identical everywhere
+and would draw a picture of nothing happening.
+
+**Coloured by: how far, or which way.** ΔE2000 is a distance, and a distance
+has no direction — a printer that has drifted lighter and one that has drifted
+darker by the same amount give an identical number and an identical cloud.
+Measured on two runs bent equally in opposite directions: worst ΔE 3.51 against
+3.70, average 1.61 against 1.62, and mean movements of +0.67 and −0.67 in L\*.
+
+So the second box asks the question the distance cannot, one axis at a time:
+
+| Coloured by | The question |
+|---|---|
+| **how far it moved** | ΔE2000, the distance. The one to ask first. |
+| **lighter or darker** | L\*, with its sign |
+| **redder or greener** | a\* |
+| **warmer or cooler** | b\* |
+
+The three directions run **both ways from no change in the middle**, so the two
+ends are opposite directions rather than more and less of one thing, and the
+pale dots are the colours that stayed put. The scale is fixed at ±5 Lab units
+for the same reason the distance ceiling is fixed.
+
+**Why the dots are not red and green.** In a picture whose subject is colour,
+painting "went redder" in red invites you to read a dot's colour as the colour
+it stands for. One teal-to-orange scale for all three means the key is learned
+once and cannot be mistaken for the thing it describes — and it stays readable
+with the commonest colour blindness, which red-green does not.
+
+**How many profiles can a run hold?** No fixed limit, and the arithmetic is not
+what would stop you. Measured on real LUT profiles of about 1.3 MB each: 24 of
+them build in 0.15 s, six milliseconds apiece, and the cost is flat — a hundred
+smaller ones take 0.10 s and hold 8 MB. Somebody profiling monthly has twelve a
+year, so five years of them is comfortably inside this.
+
 **The two lines.** One is how far the device has moved altogether since the
 first profile; the other how far it moved since the one before. They disagree
 by design and both are needed — flat steps can add up to a long way, and a run

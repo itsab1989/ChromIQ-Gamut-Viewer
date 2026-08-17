@@ -488,6 +488,37 @@ def one_step_of_a_run(w):
     return dialog
 
 
+def which_way_it_moved(w):
+    """26 — the same pair, coloured by WHICH WAY rather than how far."""
+    import gamut_app
+
+    dialog = _a_run_of_profiles(w)
+    for i in range(dialog._picture_of.count()):
+        if dialog._picture_of.itemData(i) == ("whole", 0):
+            dialog._picture_of.setCurrentIndex(i)
+            break
+    dialog._draw()
+    pump(3.0)
+    before = whole_window(dialog).toImage()
+    for i in range(dialog._coloured_by.count()):
+        if dialog._coloured_by.itemData(i) == "b":     # warmer or cooler
+            dialog._coloured_by.setCurrentIndex(i)
+            break
+    else:
+        raise AssertionError("the direction views are not on offer")
+    dialog._draw()
+    figure = dialog._cloud_figure()
+    assert figure is not None, "no picture was built"
+    # THE THING THAT MAKES IT A DIRECTION: a scale with no change in the
+    # middle and opposite ends, rather than one running up from zero.
+    assert figure.data[0].marker.cmin < 0 < figure.data[0].marker.cmax, (
+        f"this is not a two-way scale: {figure.data[0].marker.cmin} to "
+        f"{figure.data[0].marker.cmax}")
+    assert until_it_changes(dialog, before), (
+        "the picture never changed, so this shows the same thing as 25")
+    return dialog
+
+
 #: file name → (how to set it up, how big the window is for it)
 SHOTS = {
     "01-one-chart.webp": (one_chart, (WIDE, TALL)),
@@ -507,6 +538,7 @@ SHOTS = {
     "20-a-skin-over-the-patches.webp": (a_skin_over_the_patches, INK),
     "24-one-device-over-time.webp": (over_time, (WIDE, TALL)),
     "25-one-step-of-a-run.webp": (one_step_of_a_run, (WIDE, TALL)),
+    "26-which-way-it-moved.webp": (which_way_it_moved, (WIDE, TALL)),
 }
 
 

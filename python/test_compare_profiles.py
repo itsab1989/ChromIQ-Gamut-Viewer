@@ -552,3 +552,120 @@ def test_the_drift_cloud_goes_into_one_room_not_both():
     assert 'options.pop("drift"' in source, (
         "drift is still in the shared options, so both rooms draw it")
     assert "drift=drift if i == 0 else None" in source
+
+
+# --- which way it went, not only how far ------------------------------------
+#
+# Basti: "is there an option for the heat map to visualize the direction of the
+# drift?" There was not, and the information was already there and thrown away:
+# compare_profiles computed lab_b, reduced it to a distance and dropped it.
+#
+# ΔE2000 is a MAGNITUDE. A printer drifting lighter and one drifting darker by
+# the same amount give an identical number and an identical cloud, and want
+# different cures.
+
+def _bent(tmp_path, name, amount):
+    """A profile whose curve is bent by *amount*, either way."""
+    return write_matrix_profile(tmp_path / f"{name}.icc", gamma=2.2 + amount)
+
+
+def test_the_movement_is_kept_and_it_is_a_direction(tmp_path):
+    import ti3gamut
+    a = _bent(tmp_path, "a", 0.0)
+    b = _bent(tmp_path, "b", 0.2)
+    d = ti3gamut.compare_profiles(a, b)
+    assert d.lab_b is not None, "lab_b was computed and thrown away"
+    moved = d.moved
+    assert moved.shape == d.lab_a.shape
+    # The distance is the length of the movement, which is the whole point:
+    # one is the other with the direction taken off it.
+    import numpy as np
+    assert np.allclose(moved, np.asarray(d.lab_b) - np.asarray(d.lab_a))
+
+
+def test_two_opposite_drifts_are_told_apart_by_direction_and_not_by_distance(
+        tmp_path):
+    """THE CLAIM THIS FEATURE MAKES, measured.
+
+    Two runs bent the same amount in opposite directions: the distances agree
+    to within a rounding, and the movements are equal and opposite.
+    """
+    import numpy as np
+    import ti3gamut
+    base = _bent(tmp_path, "base", 0.0)
+    up = ti3gamut.compare_profiles(base, _bent(tmp_path, "up", 0.2))
+    down = ti3gamut.compare_profiles(base, _bent(tmp_path, "down", -0.2))
+
+    assert abs(up.average - down.average) < 0.35 * max(up.average, 0.01), (
+        f"the distances should be close: {up.average:.2f} vs "
+        f"{down.average:.2f}")
+    one, other = up.moved.mean(axis=0), down.moved.mean(axis=0)
+    assert np.sign(one[0]) == -np.sign(other[0]), (one, other)
+    assert abs(one[0]) > 0.1 and abs(other[0]) > 0.1, (
+        f"neither moved far enough for the test to mean anything: "
+        f"{one}, {other}")
+
+
+def test_each_direction_reads_its_own_axis_and_names_both_ends(tmp_path):
+    import numpy as np
+    import ti3gamut
+    d = ti3gamut.compare_profiles(_bent(tmp_path, "a", 0.0),
+                                  _bent(tmp_path, "b", 0.2))
+    for axis, column in (("L", 0), ("a", 1), ("b", 2)):
+        trace = ti3gamut.drift_direction(d.lab_a, d.moved, "t", axis=axis)[0]
+        assert np.allclose(np.asarray(trace.marker.color, float),
+                           d.moved[:, column]), axis
+        # BOTH ENDS NAMED, because a scale that runs both ways from nothing is
+        # only readable if the reader is told what each end means.
+        words = list(trace.marker.colorbar.ticktext)
+        less, more = ti3gamut.DIRECTIONS[axis][1], ti3gamut.DIRECTIONS[axis][2]
+        assert less in words[0] and more in words[-1], words
+        assert "no change" in words, words
+
+
+def test_the_direction_scale_is_centred_on_no_change_and_fixed(tmp_path):
+    """A signed quantity on a one-ended ramp reads as "more is worse", and a
+    scale stretched to the data makes two pictures uncomparable."""
+    import ti3gamut
+    d = ti3gamut.compare_profiles(_bent(tmp_path, "a", 0.0),
+                                  _bent(tmp_path, "b", 0.05))
+    trace = ti3gamut.drift_direction(d.lab_a, d.moved, "t", axis="L")[0]
+    assert trace.marker.cmin == -ti3gamut.DIRECTION_LIMIT
+    assert trace.marker.cmax == +ti3gamut.DIRECTION_LIMIT
+    assert trace.marker.cmin == -trace.marker.cmax
+
+
+def test_the_direction_colours_are_not_the_magnitude_colours(tmp_path):
+    """In a picture whose subject IS colour, painting "went redder" in red
+    invites the reader to take a dot's colour for the colour it stands for.
+    And carrying the magnitude view's red across would mean two different
+    things wear one colour."""
+    import ti3gamut
+    magnitude = {c for _at, c in ti3gamut.DRIFT_SCALE}
+    direction = {c for _at, c in ti3gamut.DIRECTION_SCALE}
+    assert not (magnitude & direction), magnitude & direction
+
+
+def test_a_direction_nobody_asked_for_is_refused_rather_than_guessed(tmp_path):
+    import pytest
+    import ti3gamut
+    d = ti3gamut.compare_profiles(_bent(tmp_path, "a", 0.0),
+                                  _bent(tmp_path, "b", 0.1))
+    with pytest.raises(ValueError) as complaint:
+        ti3gamut.drift_direction(d.lab_a, d.moved, "t", axis="chroma")
+    assert "chroma" in str(complaint.value)
+
+
+def test_the_figure_draws_a_direction_when_asked_and_a_distance_otherwise(
+        tmp_path):
+    """The fourth item in the drift tuple is what asks; three-item callers go
+    on meaning "how far", which is the right default."""
+    import ti3gamut
+    d = ti3gamut.compare_profiles(_bent(tmp_path, "a", 0.0),
+                                  _bent(tmp_path, "b", 0.2))
+    far = ti3gamut.build_figure([], "t", space="lab",
+                                drift=(d.lab_a, d.deltas, "how far"))
+    which = ti3gamut.build_figure([], "t", space="lab",
+                                  drift=(d.lab_a, d.moved, "which way", "L"))
+    assert far.data[0].marker.cmin == 0.0, "a distance starts at nothing"
+    assert which.data[0].marker.cmin < 0, "a direction runs both ways"

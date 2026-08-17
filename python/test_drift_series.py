@@ -689,10 +689,13 @@ def test_the_chooser_offers_the_graph_then_every_step_then_the_whole_run(
     app.processEvents()
     combo = dialog._picture_of
     said = [combo.itemText(i) for i in range(combo.count())]
-    assert len(said) == 1 + 4 + 1, said        # graph, four steps, altogether
+    # the graph, four steps, the whole run, and any-two-you-choose
+    assert len(said) == 1 + 4 + 1 + 1, said
     assert dialog._chosen_pair() is None, "it must start on the graph"
-    assert all("→" in s and "ΔE" in s for s in said[1:]), (
-        f"a step entry must name both profiles and its own size: {said}")
+    pairs = [combo.itemText(i) for i in range(combo.count())
+             if (combo.itemData(i) or (None,))[0] in ("step", "whole")]
+    assert all("→" in s and "ΔE" in s for s in pairs), (
+        f"a step entry must name both profiles and its own size: {pairs}")
     dialog.close()
 
 
@@ -716,7 +719,11 @@ def test_the_last_entry_is_the_whole_run_first_against_last(app, five_years):
     dialog = gamut_app.TimelineDialog(None, preview=False)
     dialog.add(five_years)
     app.processEvents()
-    dialog._picture_of.setCurrentIndex(dialog._picture_of.count() - 1)
+    # FOUND BY DATA, not by position: "any two you choose" now sits after it,
+    # and a test that counts from the end would quietly move to that instead.
+    at = gamut_app._entry_at(dialog._picture_of, ("whole", 0))
+    assert at >= 0, "the whole run is not on offer"
+    dialog._picture_of.setCurrentIndex(at)
     a, b, _spans = dialog._chosen_pair()
     assert a == five_years[0] and b == five_years[-1], (a, b)
     dialog.close()
@@ -848,4 +855,133 @@ def test_a_step_anybody_could_see_quotes_the_usual_two_thresholds(
     assert "ΔE" in said and "average" in said, said
     assert "largest and reddest" in said, (
         f"the sentence must say where to look in the picture: {said}")
+    dialog.close()
+
+
+def test_the_chosen_picture_survives_adding_another_profile(app, tmp_path):
+    """THE BUG THIS FOUND, and it was not the one being looked for.
+
+    The chooser is rebuilt whenever the run changes and puts the reader back
+    on what they were looking at -- through `findData`. Qt compares stored
+    item data as QVariants, and for a Python object it can only do that by
+    identity, so findData(("whole", 0)) matches an item holding ("whole", 0)
+    only when the two tuples are the same object. They are when both literals
+    sit in one code object -- which is what a small isolated check does, and
+    is why it appeared to work -- and are not across modules. Measured on the
+    real window: the item was at index 5 and findData returned -1.
+
+    So every add or remove quietly threw the reader back to the graph, and the
+    check that should have caught it read that fallback as the right answer to
+    a different question.
+    """
+    import gamut_app
+    five = [dated(tmp_path / f"keep-{2019 + i}.icc", (2019 + i, 6, 1, 12, 0, 0),
+                  gamma=2.20 + 0.03 * i) for i in range(5)]
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(five[:4])
+    app.processEvents()
+    at = gamut_app._entry_at(dialog._picture_of, ("step", 1))
+    assert at > 0
+    dialog._picture_of.setCurrentIndex(at)
+    chosen = dialog._picture_of.currentText()
+
+    dialog.add(five[4:])                      # a new profile arrives
+    app.processEvents()
+    assert dialog._picture_of.currentText() == chosen, (
+        f"choosing {chosen!r} was lost when the run changed; now on "
+        f"{dialog._picture_of.currentText()!r}")
+    assert dialog._chosen_pair() is not None
+    dialog.close()
+
+
+def test_any_two_profiles_can_be_compared_not_only_neighbours(app, five_years):
+    """Basti: "can i choose any two profiles from the trend for the direct
+    comparison and then go back to the full overview?"
+
+    The steps are shortcuts, not the whole of it: the profile from before a
+    head clean and the one six months later need not sit next to each other.
+    """
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(five_years)
+    app.processEvents()
+    at = gamut_app._entry_at(dialog._picture_of, ("pair", 0))
+    assert at > 0, "there is no way to choose a pair by hand"
+    dialog._picture_of.setCurrentIndex(at)
+    dialog._pair_from.setCurrentIndex(1)      # the second and the fifth,
+    dialog._pair_to.setCurrentIndex(4)        # which are not neighbours
+    a, b, spans = dialog._chosen_pair()
+    assert a == five_years[1] and b == five_years[4], (a, b)
+    assert "scan-2020" in spans and "scan-2023" in spans, spans
+    dialog.close()
+
+
+def test_and_back_to_the_overview_again(app, five_years):
+    """The second half of his question, which is the one that would be
+    infuriating to get wrong: having gone to a pair, can you get back?"""
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(five_years)
+    app.processEvents()
+    dialog._picture_of.setCurrentIndex(
+        gamut_app._entry_at(dialog._picture_of, ("step", 1)))
+    assert dialog._chosen_pair() is not None
+    dialog._picture_of.setCurrentIndex(0)
+    assert dialog._chosen_pair() is None, "the graph is not reachable again"
+    dialog._draw()
+    assert "scan-2019" in dialog._verdict.text(), dialog._verdict.text()
+    dialog.close()
+
+
+def test_the_same_profile_on_both_sides_is_refused_and_explained(
+        app, five_years):
+    """A profile against itself is identical everywhere, and a cloud of
+    nothing-happened reads as good news about a device nobody asked about."""
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(five_years)
+    app.processEvents()
+    dialog._picture_of.setCurrentIndex(
+        gamut_app._entry_at(dialog._picture_of, ("pair", 0)))
+    dialog._pair_from.setCurrentIndex(2)
+    dialog._pair_to.setCurrentIndex(2)
+    assert dialog._chosen_pair() is None
+    assert "same" in dialog._complaints.text().lower() or \
+           "both boxes" in dialog._complaints.text().lower(), (
+        dialog._complaints.text())
+    dialog.close()
+
+
+def test_the_sentence_does_not_send_you_looking_for_red_that_is_not_there(
+        app, tmp_path):
+    """FOUND IN THE SCREENSHOT of the direction view.
+
+    "The ones that moved most are the largest and reddest dots" is true of
+    the distance picture and false of the three direction ones, whose dots
+    are teal and orange and whose ends mean opposite things rather than more
+    and less of one thing.
+    """
+    import gamut_app
+    wide = [dated(tmp_path / f"dir-{2019 + i}.icc", (2019 + i, 6, 1, 12, 0, 0),
+                  gamma=2.20 + 0.30 * i) for i in range(3)]
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(wide)
+    app.processEvents()
+    dialog._picture_of.setCurrentIndex(
+        gamut_app._entry_at(dialog._picture_of, ("step", 0)))
+
+    dialog._draw()
+    assert "reddest" in dialog._verdict.text(), "the distance view lost its cue"
+
+    for i in range(dialog._coloured_by.count()):
+        if dialog._coloured_by.itemData(i) == "L":
+            dialog._coloured_by.setCurrentIndex(i)
+            break
+    dialog._draw()
+    said = dialog._verdict.text()
+    assert "reddest" not in said, said
+    assert "lighter or darker" in said, said
+    # AND IT SAYS WHICH WAY, which is the entire point of the view.
+    assert ("gone lighter" in said or "gone darker" in said), said
+    assert "no change" in said, said
     dialog.close()

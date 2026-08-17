@@ -1,5 +1,77 @@
 # Changelog
 
+## v2.20.0
+
+### 🧭 Which way the drift went, not only how far
+
+Asked by Basti: *"is there an option for the heat map to visualize the
+direction of the drift?"* There was not, and the information was already there
+and being thrown away — `compare_profiles` worked out where the second profile
+puts every colour, reduced it to a distance, and dropped the rest.
+
+**ΔE2000 is a distance, and a distance has no direction.** Measured on two runs
+bent the same amount in opposite directions:
+
+| | worst ΔE | average ΔE | mean move in L\* |
+|---|---|---|---|
+| bent one way | 3.51 | 1.61 | **+0.67** |
+| bent the other | 3.70 | 1.62 | **−0.67** |
+
+The distance cannot tell them apart. They are different faults with different
+cures.
+
+**Coloured by** now asks the question the distance cannot, one axis at a time —
+*lighter or darker*, *redder or greener*, *warmer or cooler*. The scale runs
+both ways from **no change** in the middle, so the two ends are opposite
+directions rather than more and less of one thing, and the pale dots are the
+colours that stayed put. Fixed at ±5 Lab units, for the same reason the
+distance ceiling is fixed: two pictures are only worth putting side by side if
+the same colour means the same amount in both.
+
+**The dots are deliberately not red and green, or blue and yellow.** In a
+picture whose subject is colour, painting "went redder" in red invites you to
+read a dot's colour as the colour it stands for. One teal-to-orange scale for
+all three is learned once, cannot be mistaken for the thing it describes, and
+stays readable with the commonest colour blindness.
+
+### 🔀 Any two profiles, not only the ones next to each other
+
+Also asked: *"can i choose any two profiles from the trend for the direct
+comparison and then go back to the full overview?"* Yes to both now. **from**
+and **to** hold whichever two you like — the profile from before a head clean
+and the one six months later need not be neighbours. Picking a step fills them
+in; changing them switches the chooser to *any two you choose*; the first entry
+puts the graph back. Both boxes on one profile is refused with a reason.
+
+**And how many profiles a run can hold**, since that was asked too: no fixed
+limit, and the arithmetic is not what would stop you. **24 real LUT profiles
+build in 0.15 s**, six milliseconds apiece, flat with the count. Somebody
+profiling monthly has twelve a year.
+
+### 🐛 A remembered choice that was silently thrown away every time
+
+Chasing the above turned up a real bug. The chooser is rebuilt whenever the run
+changes, and put the reader back on what they were looking at through Qt's
+`findData`. Qt compares stored item data as QVariants and can only do that by
+identity for a Python object — so `findData(("whole", 0))` matched an item
+holding `("whole", 0)` **only when the two tuples were the same object.** They
+are when both literals sit in one code object, which is why an isolated check
+appeared to prove it worked, and they are not across modules.
+
+Measured on the real window: the item sat at index 5 and `findData` returned
+**−1**. So every add or remove quietly threw the reader back to the graph — and
+the check that should have caught it read that fallback as the correct answer
+to a different question.
+
+### 🧾 Also
+
+- The sentence under the picture no longer sends you looking for "the largest
+  and reddest dots" in a direction view, which has no red in it. It says which
+  way the thing went instead.
+- The direction key was printing "1 cooler", "no change" and "1 warmer" almost
+  on top of each other; the bar is longer now. Found in the screenshot.
+- 692 checks, up from 680.
+
 ## v2.19.0
 
 ### 🔎 From the graph, straight to any step of it
