@@ -845,6 +845,63 @@ def main() -> int:
           "2021-01-05" in body and "2022-01-05" in body)
     timeline.close()
 
+    # ---------------------------------------------------------------- 18
+    # THE OTHER PICTURE OF THE SAME FACT, and the reason it needs a page of
+    # its own. Pages 15-17 answer WHEN a device moved and how fast. They
+    # cannot answer WHERE in colour it moved, and those want opposite
+    # actions: a device that has drifted evenly is a calibration job, one
+    # that has moved only in the deep blues is a different problem. The two
+    # profiles here are the first and last of the run on page 15, so a reader
+    # can hold the line and the cloud against each other and see that they
+    # are two views of one thing rather than two results.
+    print("\n18 — the same drift, drawn where it happens")
+    fresh()
+    first_profile = profiles_dir / "printer-2019.icc"
+    last_profile = profiles_dir / "printer-2024.icc"
+    check("18", "the run's first and last profiles are both there",
+          first_profile.is_file() and last_profile.is_file())
+    w._load(first_profile)
+    pump(4.0)
+    w._load(last_profile)
+    pump(6.0)
+    check("18", "both profiles are open as shapes", len(w._slots) == 2,
+          f"{len(w._slots)} open")
+    check("18", "the window offers the drift readout for a pair of profiles",
+          w._drift_box.isVisible())
+    w._drift_draw.setChecked(True)
+    pump(4.0)
+    drift = w._drift_for_figure()
+    check("18", "and the cloud is really built rather than skipped",
+          drift is not None and len(drift[1]) > 0,
+          "none" if drift is None else f"{len(drift[1])} colours")
+    # THE POINT OF THE PAIRING, as a number: the same 0.42%-by-volume run that
+    # page 15 draws as a rising line is drawn here as a cloud that is hot
+    # somewhere and cold elsewhere. If the drift were even, this page would be
+    # making a claim it could not support.
+    import numpy as _np
+    spread = float(_np.max(drift[1]) - _np.min(drift[1])) if drift else 0.0
+    check("18", "the movement is not the same everywhere in colour",
+          spread > 1.0, f"dE {_np.min(drift[1]):.2f} to {_np.max(drift[1]):.2f} "
+                        f"across the cube")
+    p = page("18-where-the-drift-happened.html")
+    save_to(p)
+    made.append(("18", p))
+    body = p.read_text(encoding="utf-8")
+    check("18", "the cloud reached the saved page",
+          "how far it moved" in body)
+    # LOOKED FOR AS THE PAGE REALLY SPELLS IT. The key's text goes through
+    # JSON, which writes an em-dash as —, so searching the page for the
+    # dash itself finds nothing and reports a missing key on a page that has
+    # one. That mistake has now been made twice in this project; hence the
+    # escaped form here and the note beside it.
+    check("18", "with the key that says what the colours mean",
+          "1 \\u2014 invisible" in body and "5+ \\u2014 obvious" in body)
+    # A FIXED CEILING IS WHAT MAKES TWO OF THESE COMPARABLE. A scale stretched
+    # to whatever is in front of it would make a nearly identical pair look as
+    # alarming as a badly drifted one, because the reddest point is always red.
+    check("18", "the colour scale is clamped rather than stretched to fit",
+          '"cmax": 5' in body or '"cmax":5' in body)
+
     # ------------------------------------------------------------ all of them
     print("\nevery page")
     for name, path in made:

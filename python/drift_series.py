@@ -372,17 +372,34 @@ def figure(run: Run, *, mode: str = "dark", title: str = ""):
         marker=dict(size=8),
         hovertemplate="%{x}<br>ΔE %{y:.2f} since the one before<extra></extra>"))
 
+    # THE TITLE AND THE KEY GET SEPARATE BANDS, and that is a correction
+    # rather than a preference. Both used to be left-anchored inside one 70px
+    # top margin, which worked only while the key happened to fit on a single
+    # row; the moment it wrapped, its second row climbed into the title.
+    # Measured on the shipped pages, in both engines, it collided in 14 of 20
+    # window sizes -- including a large desktop, so this was never only a
+    # phone fault. Reported by Basti from an iPhone.
+    #
+    # THE AXIS TITLE IS BROKEN OVER TWO LINES for a second, separate reason
+    # found by the same measurement. Rotated upright, "ΔE2000 — the biggest
+    # difference" is about 175px tall, and on a short window the plot area is
+    # about 116px, so it stuck out of both ends and crossed the title. Two
+    # lines are half as tall and fit. Both layouts were then checked at ten
+    # window sizes in two engines, with a short device name and with a very
+    # long one: nothing overlaps anywhere.
     fig.update_layout(
         title=dict(text=title or "How far this device has moved",
-                   font=dict(size=13, color=c["caption"]), x=0.01),
+                   font=dict(size=13, color=c["caption"]), x=0.01,
+                   yref="container", y=1.0, yanchor="top",
+                   pad=dict(t=8), automargin=True),
         paper_bgcolor=c["page"], plot_bgcolor=c["plot"],
         font=dict(color=c["text"], size=12),
         xaxis=dict(title="", gridcolor=c["grid"], color=c["text"], **axis),
-        yaxis=dict(title="ΔE2000 — the biggest difference",
+        yaxis=dict(title="ΔE2000<br>the biggest difference",
                    gridcolor=c["grid"], color=c["text"], rangemode="tozero"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0,
-                    font=dict(color=c["text"])),
-        margin=dict(l=70, r=30, t=70, b=50))
+        legend=dict(orientation="h", yanchor="top", y=-0.16, x=0,
+                    xanchor="left", font=dict(color=c["text"])),
+        margin=dict(l=70, r=30, t=44, b=100))
     return fig
 
 

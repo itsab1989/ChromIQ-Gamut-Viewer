@@ -31,6 +31,13 @@ WHAT IT ASSERTS, and each number is one that was measured rather than chosen:
     phone held upright genuinely cannot fit a name and four buttons on one
     line, so below that it may.
   * THE PAGE NEVER SCROLLS SIDEWAYS, at any size.
+  * NO TWO LABELS ROUND THE PICTURE ARE PRINTED ON TOP OF EACH OTHER -- the
+    title, the key, the axis names and the axis numbers. This one was added
+    after a key printed across a title shipped in v2.17.0 and was reported
+    from a phone: every rule above measures the page's FRAME, and none of
+    them could see inside the drawing, so a collision there was invisible to
+    the whole check. Measured in both engines it was wrong at 14 of 20 window
+    sizes, a large desktop among them.
 
 Needs Playwright and its two browsers:
 
@@ -72,6 +79,23 @@ FURTHEST = 60
 #: rather than a phone.
 WRAPS_ARE_A_FAULT_ABOVE = 800
 
+#: The labels the drawing library puts round the outside of a picture, each
+#: with the name this check calls it by. Only the ones drawn in the MARGINS
+#: are listed: everything inside the plot area (a point's hover text, a band's
+#: own caption) is allowed to sit over whatever it is describing, and reading
+#: those as faults would drown the real ones.
+LABELS = {".gtitle": "the title",
+          ".legend .legendtext": "a key entry",
+          ".xtitle": "the bottom axis name",
+          ".ytitle": "the side axis name",
+          ".xtick text": "a bottom axis number",
+          ".ytick text": "a side axis number",
+          ".colorbar .cbtitle": "the colour key's name"}
+
+#: Two labels closer than this are touching by accident rather than by design.
+#: Zero would fire on the one-pixel rounding two engines disagree about.
+TOUCHING = 8.0
+
 MEASURE = """(function(){
   var d=document.querySelector('.js-plotly-plot');
   var rows=document.querySelectorAll('.cq-spin-panel .cq-row'), pairs=[];
@@ -84,10 +108,35 @@ MEASURE = """(function(){
                 gap:Math.round(b.left-a.right),
                 wrapped:Math.abs(a.top-b.top)>12});
   }
+  // EVERY LABEL ROUND THE PICTURE, so two of them landing on top of each
+  // other is a fault this check can see. It could not before: it measured
+  // the page's frame and never looked inside the drawing, which is how a
+  // key printed over a title reached a release.
+  var LABELS = __LABELS__, marks=[];
+  Object.keys(LABELS).forEach(function(sel){
+    document.querySelectorAll(sel).forEach(function(n){
+      var r=n.getBoundingClientRect();
+      if(r.width<1||r.height<1) return;
+      marks.push({kind:LABELS[sel], text:(n.textContent||'').trim().slice(0,34),
+                  x:r.x, y:r.y, w:r.width, h:r.height});
+    });
+  });
+  var over=[];
+  for (var i=0;i<marks.length;i++) for (var j=i+1;j<marks.length;j++){
+    var a=marks[i], b=marks[j];
+    var dx=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x);
+    var dy=Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y);
+    if(dx>0&&dy>0&&dx*dy>__TOUCHING__)
+      over.push({a:a.kind, b:b.kind, at:Math.round(dx*dy),
+                 says:a.text, and:b.text});
+  }
   return JSON.stringify({
     picture: d?Math.round(d.getBoundingClientRect().height):0,
-    view: window.innerHeight, rows: pairs,
+    view: window.innerHeight, rows: pairs, over: over, labels: marks.length,
     sideways: document.documentElement.scrollWidth>window.innerWidth+1});})();"""
+
+MEASURE = (MEASURE.replace("__LABELS__", json.dumps(LABELS))
+                  .replace("__TOUCHING__", repr(TOUCHING)))
 
 OPEN = """(function(){var b=document.querySelector('[data-cq="more"]');
   if(b) b.click();})();"""
@@ -143,6 +192,10 @@ def main() -> int:
                                         "its controls")
                 if got["sideways"]:
                     said.append("the page scrolls sideways")
+                for hit in got["over"]:
+                    said.append(f"{hit['a']} is printed over {hit['b']} "
+                                f"({hit['at']}px²): {hit['says']!r} "
+                                f"across {hit['and']!r}")
                 verdict = "ok" if not said else "; ".join(said)
                 for one in said:
                     faults.append(f"{label} ({wide}x{tall}) in {name}: {one}")
