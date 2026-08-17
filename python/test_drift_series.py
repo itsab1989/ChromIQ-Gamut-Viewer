@@ -314,3 +314,71 @@ def test_undated_profiles_fall_back_to_names_rather_than_a_blank(tmp_path):
     assert step is not None
     assert step.spans == "before to after"
     assert "(" not in step.spans, "an empty bracket where a date should be"
+
+
+# --- the picture ------------------------------------------------------------
+
+def test_both_lines_are_drawn_on_one_pair_of_axes(five_years):
+    """Apart, on two charts, the eye reads each as its own story and the whole
+    point — that flat steps add up to a long way — is lost in the gap."""
+    import drift_series
+    fig = drift_series.figure(drift_series.build(five_years))
+    assert len(fig.data) == 2
+    names = " ".join(t.name for t in fig.data)
+    assert "altogether" in names and "each time" in names
+
+
+def test_the_axis_is_spaced_by_real_time_when_the_dates_allow_it(tmp_path):
+    """NOT A NICETY. The question is "how fast is it drifting", and an axis
+    that puts 2019, 2020, 2021 and 2024 at even intervals draws a steady line
+    through a device that was quiet for three years and then moved. The rate
+    would be read straight off a picture that had thrown the rate away."""
+    import drift_series
+    years = [2019, 2020, 2021, 2024]
+    run = drift_series.build([
+        dated(tmp_path / f"u{y}.icc", (y, 6, 1, 0, 0, 0), gamma=2.20 + 0.03 * i)
+        for i, y in enumerate(years)])
+    fig = drift_series.figure(run)
+    assert fig.layout.xaxis.type == "date"
+    assert list(fig.data[0].x) == ["2020-06-01", "2021-06-01", "2024-06-01"]
+
+
+def test_an_undated_run_falls_back_to_names_rather_than_inventing_dates(
+        tmp_path):
+    """A mixture of real dates and invented ones is worse than an honest
+    list: the picture would look authoritative and be partly made up."""
+    import drift_series
+    run = drift_series.build([
+        write_matrix_profile(tmp_path / f"n{i}.icc", gamma=2.2 + 0.05 * i)
+        for i in range(3)])
+    fig = drift_series.figure(run)
+    assert fig.layout.xaxis.type == "category"
+    assert list(fig.data[0].x) == ["n1", "n2"]
+
+
+def test_the_bands_say_what_the_numbers_mean_in_words(five_years):
+    """ΔE is not a unit anybody has intuitions about, and a reader who learned
+    1 and 3 from the pair comparison must not meet a second vocabulary."""
+    import drift_series
+    fig = drift_series.figure(drift_series.build(five_years))
+    said = " ".join(str(a.text or "") for a in fig.layout.annotations)
+    assert "nobody can see this" in said
+    assert "anybody can see this" in said
+
+
+def test_a_run_too_short_to_draw_gives_an_empty_picture_not_a_crash(tmp_path):
+    import drift_series
+    for paths in ([], [dated(tmp_path / "one.icc", (2020, 1, 1, 0, 0, 0))]):
+        fig = drift_series.figure(drift_series.build(paths))
+        assert len(fig.data) == 0
+
+
+def test_the_picture_follows_the_light_and_dark_settings(five_years):
+    """The rest of the application switches; a chart that did not would be the
+    one white rectangle in a dark window."""
+    import drift_series
+    run = drift_series.build(five_years)
+    dark = drift_series.figure(run, mode="dark")
+    light = drift_series.figure(run, mode="light")
+    assert dark.layout.paper_bgcolor != light.layout.paper_bgcolor
+    assert dark.layout.font.color != light.layout.font.color

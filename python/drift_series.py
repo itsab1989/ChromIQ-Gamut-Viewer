@@ -300,6 +300,92 @@ def build(paths, *, steps: int = 9) -> Run:
                complaints=complaints)
 
 
+def figure(run: Run, *, mode: str = "dark", title: str = ""):
+    """The run as a picture: both series, on one pair of axes.
+
+    A LINE CHART RATHER THAN A SHAPE, and that is the honest form for this.
+    The 3D cloud answers "where in colour", which is a question about one
+    comparison. This answers "when, and how fast", which is a question about
+    time -- and time is not a direction in Lab. Drawing it as anything else
+    would be decoration pretending to be information.
+
+    BOTH LINES ON ONE PAIR OF AXES because the reader has to see them
+    disagree. Apart, on two charts, the eye reads each as its own story and
+    the whole point -- that flat steps can add up to a long way -- is lost in
+    the gap between them.
+
+    The two bands are drawn behind the lines, not over them: below ΔE 1 nobody
+    can see a difference at all, and above ΔE 3 anybody can. Those are the
+    same two numbers the pair comparison uses, so a reader who has learned
+    them once does not meet a second vocabulary here.
+    """
+    import plotly.graph_objects as go
+
+    from ti3gamut import SCENE_COLOURS
+    c = SCENE_COLOURS["light" if mode == "light" else "dark"]
+
+    names = [e.name for e in run.usable]
+    fig = go.Figure()
+    if len(names) < 2:
+        return fig
+
+    # SPACED BY REAL TIME WHEN THE DATES ALLOW IT, and this is not a nicety.
+    # The whole question is "how fast is it drifting", and an axis that puts
+    # 2019, 2020, 2021 and 2024 at even intervals draws a steady line through
+    # a device that was quiet for three years and then moved. The rate would
+    # be read straight off a picture that had thrown the rate away.
+    #
+    # Falls back to the names when any profile is undated, because a mixture
+    # of real dates and invented ones is worse than an honest list.
+    by_date = (run.ordered_by == "date"
+               and all(e.when is not None for e in run.usable))
+    if by_date:
+        labels = ["{:04d}-{:02d}-{:02d}".format(*e.when[:3])
+                  for e in run.usable[1:]]
+        axis = dict(type="date")
+    else:
+        labels = names[1:]
+        axis = dict(type="category")
+
+    top = max([s.worst for s in run.since_first]
+              + [s.worst for s in run.since_previous] + [OBVIOUS]) * 1.15
+
+    # THE BANDS FIRST, so the lines are read over them rather than through.
+    for low, high, colour, words in (
+            (0.0, INVISIBLE, "rgba(120,200,140,0.10)", "nobody can see this"),
+            (OBVIOUS, top, "rgba(255,69,115,0.10)", "anybody can see this")):
+        if high > low:
+            fig.add_hrect(y0=low, y1=high, line_width=0, fillcolor=colour,
+                          layer="below", annotation_text=words,
+                          annotation_position="top left",
+                          annotation_font=dict(size=10, color=c["caption"]))
+
+    fig.add_trace(go.Scatter(
+        x=labels, y=[s.worst for s in run.since_first], mode="lines+markers",
+        name=f"since {names[0]} (how far altogether)",
+        line=dict(color="#ff4573", width=2.5), marker=dict(size=8),
+        hovertemplate="%{x}<br>ΔE %{y:.2f} since the first<extra></extra>"))
+    fig.add_trace(go.Scatter(
+        x=labels, y=[s.worst for s in run.since_previous],
+        mode="lines+markers", name="since the one before (how far each time)",
+        line=dict(color="#c9a227", width=2.5, dash="dot"),
+        marker=dict(size=8),
+        hovertemplate="%{x}<br>ΔE %{y:.2f} since the one before<extra></extra>"))
+
+    fig.update_layout(
+        title=dict(text=title or "How far this device has moved",
+                   font=dict(size=13, color=c["caption"]), x=0.01),
+        paper_bgcolor=c["page"], plot_bgcolor=c["plot"],
+        font=dict(color=c["text"], size=12),
+        xaxis=dict(title="", gridcolor=c["grid"], color=c["text"], **axis),
+        yaxis=dict(title="ΔE2000 — the biggest difference",
+                   gridcolor=c["grid"], color=c["text"], rangemode="tozero"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0,
+                    font=dict(color=c["text"])),
+        margin=dict(l=70, r=30, t=70, b=50))
+    return fig
+
+
 def verdict(run: Run) -> str:
     """What the run amounts to, in a sentence somebody can act on."""
     if not run.since_first:
