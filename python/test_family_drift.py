@@ -374,10 +374,17 @@ def a_window(paths, chosen=None):
         _families=Label(), _families_note=Label(), _view=None,
         GRID=5)
     win._chosen_pair = lambda: chosen
-    win._say_the_families = (
-        lambda pair: gamut_app.TimelineDialog._say_the_families(win, pair))
-    win._blank = lambda: gamut_app.TimelineDialog._blank(win)
+    # Bound to the REAL methods rather than to copies of what they do, so the
+    # stand-in cannot quietly stop testing them.
+    for name in ("_say_the_families", "_family_report", "_family_rows",
+                 "_families_html", "_cloud_notes", "_blank"):
+        setattr(win, name, _bind(gamut_app.TimelineDialog, name, win))
     return win
+
+
+def _bind(cls, name, win):
+    method = getattr(cls, name)
+    return lambda *a, **k: method(win, *a, **k)
 
 
 def test_the_whole_run_is_reported_first_against_last(tmp_path):
@@ -448,3 +455,112 @@ def test_the_footnote_says_where_the_arbitrary_line_is(tmp_path):
     assert "grey" in note
     for name, _c in HUE_FAMILIES:
         assert name in note
+
+
+# --------------------------------------------------------------------------
+# Out of the window — the page and the table people actually send
+# --------------------------------------------------------------------------
+#
+# THE SAVED FILE IS THE PRODUCT. Somebody runs this to show a colleague or a
+# paper supplier, and what gets quoted is the list of sentences rather than
+# the picture. A report that lived only on screen would send the half that
+# needs interpreting and keep back the half that does not.
+
+def test_the_saved_cloud_page_carries_the_report(tmp_path):
+    from test_chart import write_matrix_profile
+
+    a = write_matrix_profile(tmp_path / "a.icc")
+    b = write_matrix_profile(tmp_path / "b.icc", gamma=2.6)
+    win = a_window([a, b], chosen=(a, b, "a → b"))
+    notes = win._cloud_notes((a, b, "a → b"))
+    assert "which colour families moved" in notes
+    assert "patches)" in notes
+    assert "not one that exists in nature" in notes
+
+
+def test_the_saved_graph_page_carries_the_report(tmp_path):
+    from test_chart import write_matrix_profile
+
+    win = a_window([write_matrix_profile(tmp_path / "a.icc"),
+                    write_matrix_profile(tmp_path / "b.icc", gamma=2.6)])
+    html = win._families_html()
+    assert "<ul class=\"families\">" in html
+    assert html.count("<li>") >= 1
+    assert "not one that exists in nature" in html
+
+
+def test_the_saved_page_escapes_what_it_writes(tmp_path):
+    """The family names are ours, but the profile names in the heading are the
+    user's, and a file called <script> must not become one."""
+    from test_chart import write_matrix_profile
+
+    win = a_window([write_matrix_profile(tmp_path / "<b>a.icc"),
+                    write_matrix_profile(tmp_path / "b.icc", gamma=2.6)])
+    html = win._families_html()
+    assert "<b>a" not in html
+    assert "&lt;b&gt;a" in html
+
+
+def test_the_table_carries_one_row_per_family_with_its_count(tmp_path):
+    from test_chart import write_matrix_profile
+
+    win = a_window([write_matrix_profile(tmp_path / "a.icc"),
+                    write_matrix_profile(tmp_path / "b.icc", gamma=2.6)])
+    rows = win._family_rows()
+    assert rows, "there should be a family table"
+    named = {r[0] for r in rows}
+    for name, _c in HUE_FAMILIES:
+        assert name in named
+    assert "greys" in named
+    # every family row carries a count, and it is a number
+    for row_ in rows[1:-1]:
+        assert row_[2].isdigit(), row_
+
+
+def test_an_empty_family_is_said_in_the_table_rather_than_left_out(tmp_path):
+    """A family missing from a spreadsheet reads as one that was not measured.
+    It was measured, and it was empty, which is a different fact."""
+    from test_chart import write_matrix_profile
+
+    win = a_window([write_matrix_profile(tmp_path / "a.icc"),
+                    write_matrix_profile(tmp_path / "b.icc", gamma=2.6)])
+    rows = win._family_rows()
+    counted = [r for r in rows if r[2] == "0"]
+    for row_ in counted:
+        assert "nothing in this family" in row_[1]
+
+
+def test_the_table_says_where_the_arbitrary_line_is(tmp_path):
+    from test_chart import write_matrix_profile
+
+    win = a_window([write_matrix_profile(tmp_path / "a.icc"),
+                    write_matrix_profile(tmp_path / "b.icc", gamma=2.6)])
+    last = win._family_rows()[-1]
+    assert last[0] == "where the line is"
+    assert "grey" in last[1]
+    assert "either way" in last[2]
+
+
+def test_screen_page_and_table_all_quote_the_same_numbers(tmp_path):
+    """THREE PLACES, ONE CALCULATION. Written three times this would be three
+    chances for a saved file to disagree with the window it came from, and
+    this project has already had a caption disagree with the cloud above it."""
+    from test_chart import write_matrix_profile
+
+    win = a_window([write_matrix_profile(tmp_path / "a.icc"),
+                    write_matrix_profile(tmp_path / "b.icc", gamma=2.6)])
+    win._say_the_families(None)
+    on_screen = win._families.text()
+    in_page = win._families_html()
+    in_table = win._family_rows()
+
+    for row_ in in_table[1:-1]:
+        if row_[2] == "0":
+            continue
+        family, what, count = row_
+        # the ΔE each one reports, to one decimal, must be the same everywhere
+        de = what.split()[1]
+        assert f"{family}: ΔE {float(de):.1f}" in on_screen or \
+               f"{family}: stayed the same (ΔE {float(de):.1f}" in on_screen
+        assert f"({count} patch" in on_screen
+        assert f"({count} patch" in in_page

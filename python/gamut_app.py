@@ -3398,12 +3398,23 @@ class TimelineDialog(QDialog):
         had written a line of it. So the report says where the line is, and
         how many colours sat close enough to it to have gone either way.
         """
+        said = self._family_report(pair)
+        self._families.setText("" if said is None else said[0])
+        self._families_note.setText("" if said is None else said[1])
+
+    def _family_report(self, pair):
+        """The family report as (what to show, the footnote), or None.
+
+        ONE PLACE THAT WORKS IT OUT, THREE THAT SHOW IT: the panel on screen,
+        the saved web page and the exported table. Written three times it
+        would be three chances for a saved file to disagree with the window it
+        was saved from -- and this project has already had a caption disagree
+        with the cloud above it once.
+        """
         import gamutview
 
-        self._families.setText("")
-        self._families_note.setText("")
         if self._run is None:
-            return
+            return None
         try:
             if pair is not None:
                 path_a, path_b, spans = pair
@@ -3415,22 +3426,21 @@ class TimelineDialog(QDialog):
                 # other reading here is drawn from.
                 usable = self._run.usable
                 if len(usable) < 2:
-                    return
+                    return None
                 path_a, path_b = usable[0].path, usable[-1].path
                 spans = f"{usable[0].name} to {usable[-1].name}"
             from ti3gamut import compare_profiles
             d = compare_profiles(path_a, path_b, steps=self.GRID)
             if not d.comparable or d.lab_a is None:
-                return
+                return None
             rows = gamutview.family_drift(d.lab_a, d.lab_b)
         except Exception:              # noqa: BLE001 — a missing report is
-            return                     # not worth losing the picture over
+            return None                # not worth losing the picture over
 
         lines = [r.sentence for r in rows if r.patches]
         if not lines:
-            return
-        self._families.setText(
-            f"{spans} — which colour families moved:\n" + "\n".join(lines))
+            return None
+        shown = f"{spans} — which colour families moved:\n" + "\n".join(lines)
         borderline = sum(r.near_boundary for r in rows)
         total = sum(r.patches for r in rows)
         where = ", ".join(
@@ -3449,7 +3459,7 @@ class TimelineDialog(QDialog):
                 f" Of these {total} colours, {borderline} sit within "
                 f"{gamutview.BOUNDARY_DEGREES:.0f}° of one of those lines and "
                 f"could honestly have been counted either side of it.")
-        self._families_note.setText(note)
+        return shown, note
 
     def _pair_verdict(self, pair) -> str:
         """What one step amounts to, in the same voice the run's verdict uses.
@@ -3844,17 +3854,26 @@ class TimelineDialog(QDialog):
         kind people trust more than they should.
         """
         _a, _b, spans = pair
-        return (f"Where {spans} disagree.\n\n"
-                f"Every colour is drawn where the earlier profile puts it, "
-                f"painted by how far the later one sends it instead, in "
-                f"ΔE2000. Below 1 nobody can see the difference; above 3 "
-                f"anybody can. The scale is fixed rather than stretched to "
-                f"fit, so this can be held against another one of these.\n\n"
-                f"What it does not tell you: this is how far apart the two "
-                f"PROFILES are, not how far the device drifted. Each profile "
-                f"is one day's measurements of one chart, so chart fade and "
-                f"any change in how they were built are inside these numbers "
-                f"too.")
+        words = (f"Where {spans} disagree.\n\n"
+                 f"Every colour is drawn where the earlier profile puts it, "
+                 f"painted by how far the later one sends it instead, in "
+                 f"ΔE2000. Below 1 nobody can see the difference; above 3 "
+                 f"anybody can. The scale is fixed rather than stretched to "
+                 f"fit, so this can be held against another one of these.\n\n"
+                 f"What it does not tell you: this is how far apart the two "
+                 f"PROFILES are, not how far the device drifted. Each profile "
+                 f"is one day's measurements of one chart, so chart fade and "
+                 f"any change in how they were built are inside these numbers "
+                 f"too.")
+        # THE FAMILY REPORT TRAVELS WITH THE PICTURE, for the same reason the
+        # caveat above it does: the page is the thing that gets sent to
+        # somebody else, and it is the sentences rather than the cloud that
+        # they will quote. A page that showed the cloud and kept the summary
+        # back would be the least useful half of the answer.
+        said = self._family_report(pair)
+        if said is not None:
+            words += f"\n\n{said[0]}\n\n{said[1]}"
+        return words
 
     def _on_table(self) -> None:
         parent = self.parent()
@@ -3917,6 +3936,10 @@ class TimelineDialog(QDialog):
  .words p {{ margin:0 0 .9em; }}
  .verdict {{ font-size:15px; font-weight:600; }}
  .caveat {{ opacity:.82; }}
+ /* One family per line, so the list can be read down and pasted out. No
+    bullets: these are sentences, not items to choose between. */
+ .families {{ list-style:none; margin:0 0 .9em; padding:0; }}
+ .families li {{ margin:0 0 .25em; }}
  @media (max-width:520px) {{ .picture {{ height:60vh; }} }}
 </style></head><body>
 <div class="picture">{body}</div>
@@ -3930,8 +3953,75 @@ that climbs steadily is just as consistent with charts ageing as with a device
 drifting, and no arithmetic can separate the two.</p>
 <p class="caveat">The numbers are ΔE2000. Below 1 nobody can see the
 difference; above 3 anybody can.</p>
-</div></body></html>
+{self._families_html()}</div></body></html>
 """
+
+    def _family_rows(self) -> list:
+        """The family report as spreadsheet rows, first profile against last.
+
+        The same numbers the panel and the saved page show, from the same
+        call, so a table can never quote a figure the window does not.
+        """
+        import gamutview
+
+        run = self._run
+        if run is None or len(run.usable) < 2:
+            return []
+        try:
+            from ti3gamut import compare_profiles
+            d = compare_profiles(run.usable[0].path, run.usable[-1].path,
+                                 steps=self.GRID)
+            if not d.comparable or d.lab_a is None:
+                return []
+            rows = gamutview.family_drift(d.lab_a, d.lab_b)
+        except Exception:                                  # noqa: BLE001
+            return []
+
+        spans = f"{run.usable[0].name} → {run.usable[-1].name}"
+        out = [(f"colour family ({spans})", "what it did", "colours it stands on")]
+        for r in rows:
+            if not r.patches:
+                # SAID RATHER THAN OMITTED. A family missing from the table
+                # reads as one that was not measured; this one was measured
+                # and had nothing in it, which is a different fact.
+                out.append((r.name, "nothing in this family", "0"))
+                continue
+            what = "stayed the same" if not r.changed else r.toward
+            if r.changed and r.also:
+                what += f", also {r.also}"
+            if r.changed and not r.certain:
+                what += " (not certain — no bigger than its own scatter)"
+            out.append((r.name, f"ΔE {r.mean_de:.2f} {what}", str(r.patches)))
+        borderline = sum(r.near_boundary for r in rows)
+        out.append(("where the line is",
+                    f"families centred every 45–75° of hue; anything under "
+                    f"chroma {gamutview.NEUTRAL_CHROMA:.0f} is a grey",
+                    f"{borderline} sat within "
+                    f"{gamutview.BOUNDARY_DEGREES:.0f}° of a line and could "
+                    f"have gone either way"))
+        return out
+
+    def _families_html(self) -> str:
+        """The family report, for the saved graph page.
+
+        THE PAGE IS THE THING THAT GETS SENT. Somebody saves this to show a
+        colleague or a paper supplier, and what they will quote is the list of
+        sentences, not the line chart. Keeping it on screen only would send
+        the half that needs interpreting and hold back the half that does not.
+
+        It describes the FIRST profile against the LAST, which is the same
+        comparison the verdict above it is about.
+        """
+        said = self._family_report(None)
+        if said is None:
+            return ""
+        shown, note = said
+        head, _, body = shown.partition("\n")
+        lines = "".join(f"<li>{_escape(line)}</li>"
+                        for line in body.splitlines() if line.strip())
+        return (f'<p class="verdict">{_escape(head)}</p>'
+                f'<ul class="families">{lines}</ul>'
+                f'<p class="caveat">{_escape(note)}</p>')
 
     def rows(self) -> list:
         """The run as table rows, caveat included.
@@ -3954,6 +4044,17 @@ difference; above 3 anybody can.</p>
                         if i < len(run.since_previous) else "")
             out.append((step.after, f"{step.worst:.2f}",
                         f"{previous:.2f}" if previous != "" else ""))
+        # WHICH FAMILIES MOVED, AS ROWS RATHER THAN AS A PARAGRAPH, because
+        # this is the file that goes into a spreadsheet: a reader wants to
+        # sort by how far each family went, and a sentence in one cell cannot
+        # be sorted. The patch count keeps its own column for the same reason
+        # it is never left off the sentence -- a family of four and one of
+        # four hundred must not sort as equals.
+        families = self._family_rows()
+        if families:
+            out.append(("", "", ""))
+            out.extend(families)
+
         out.append(("", "", ""))
         out.append(("in short", drift_series.verdict(run), ""))
         out.append(("what this is",
