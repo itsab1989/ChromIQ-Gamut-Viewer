@@ -247,6 +247,7 @@ def window_with(paths):
         # that refuse to answer -- a report left behind from the last pair
         # names colours belonging to files the reader has closed.
         _drift_families=FakeLabel(), _drift_families_note=FakeLabel(),
+        READOUTS=gamut_app.GamutApp.READOUTS,
         PROFILE_SUFFIXES=gamut_app.GamutApp.PROFILE_SUFFIXES,
         PROFILE_GRID=gamut_app.GamutApp.PROFILE_GRID)
     win._say_drift_families = (

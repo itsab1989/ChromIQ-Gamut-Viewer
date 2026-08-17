@@ -45,6 +45,32 @@ repeatability, around ΔE 0.1 for a typical hand-held spectrophotometer.
 
 Both now have tests that fail without the fix.
 
+### 🧾 One list of readouts, not three
+
+The names of the readouts were written out in **three** places — the code that
+clears them when you close the files, the code that copies them into a saved
+page, and the stand-in the tests use. Adding the colour-family lines meant
+updating all three, and two were missed. Each showed up as its own bug: the
+report survived *Close them all*, and it was **missing from every saved web
+page**.
+
+There is one list now, and a test that walks the window for readouts and fails
+if the list does not know about them.
+
+### 🔤 "Moved" is a claim about time, and is not always true
+
+The same arithmetic answers a question nobody had asked it: two measurements
+of one chart printed on **two different papers** say which paper holds the
+blues and which holds the skin tones. Measured on the demo pair, matte against
+glossy: **ΔE 3.1 average**, everything toward grey, worst in the blues at 4.0,
+and the greys warmer and lighter.
+
+Nothing "moved" there — they are two different things. So the report can now
+be told whether it is describing *one thing at two times* or *two different
+things*, and says "how the two compare" instead. It is never guessed from the
+files, because two `.ti3` of one chart could be one printer months apart or
+two papers on one afternoon, and the file names are not evidence.
+
 ### Also
 
 - 783 tests (780 + 3 skipped without ArgyllCMS).

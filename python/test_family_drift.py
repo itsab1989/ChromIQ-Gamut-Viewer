@@ -17,6 +17,7 @@ of them looked wrong on screen:
   * one unreadable patch producing "nan ΔE" beside a confidently named
     direction.
 """
+import re
 from types import SimpleNamespace
 
 import numpy as np
@@ -979,3 +980,32 @@ def test_the_heading_is_a_file_name_not_a_path():
                          of="measurements")
     assert said[0].startswith("Glossy-paper → Glossy-paper-months-later")
     assert "/" not in said[0].splitlines()[0]
+
+
+def test_every_readout_the_window_has_is_in_the_one_list():
+    """THE LIST WAS WRITTEN OUT THREE TIMES and two copies fell behind.
+
+    Adding the colour-family lines meant updating the one that clears the
+    readouts when files are closed, the one that copies them into a saved
+    page, and the stand-in the tests use. Two were missed, and each showed up
+    as its own bug: a report that outlived its files, and a saved page that
+    silently left the report out.
+
+    This walks the class for widgets that look like readouts and insists the
+    list knows about them, so the next one cannot be forgotten quietly.
+    """
+    import inspect
+
+    import gamut_app
+
+    source = inspect.getsource(gamut_app.GamutApp._build_controls)
+    # every "self._x = WrappedLabel(...)" that lives in a readout group box
+    made = set(re.findall(r"self\.(_[a-z_]+)\s*=\s*WrappedLabel\(", source))
+    listed = set(gamut_app.GamutApp.READOUTS)
+    # the ones this test is about: anything the drift box owns
+    drift_ones = {n for n in made if n.startswith("_drift")}
+    missing = drift_ones - listed
+    assert not missing, (
+        f"these readouts are not in GamutApp.READOUTS and will be left "
+        f"behind when the files are closed, and left out of saved pages: "
+        f"{sorted(missing)}")

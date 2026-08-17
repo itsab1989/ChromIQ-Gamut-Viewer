@@ -2904,7 +2904,8 @@ class WebPageDialog(QDialog):
                           for name, box in self._offer.items()}}
 
 
-def family_report(lab_a, lab_b, spans: str, *, of: str = "profiles"):
+def family_report(lab_a, lab_b, spans: str, *, of: str = "profiles",
+                  over_time: bool = True):
     """Which colour families moved, as (the lines to show, the footnote).
 
     WINDOW-FREE AND SHARED BY EVERY PLACE THAT SHOWS IT: the timeline, the
@@ -2933,6 +2934,20 @@ def family_report(lab_a, lab_b, spans: str, *, of: str = "profiles"):
     fading". The note says both rather than assuming which one happened,
     because the files cannot tell us.
 
+    *over_time* says whether these are ONE THING AT TWO TIMES or TWO DIFFERENT
+    THINGS, and it changes the verbs, because "moved" is a claim about time.
+
+    The same arithmetic answers both, and the second is worth as much as the
+    first: two measurements of one chart printed on two DIFFERENT PAPERS on
+    the same day say which paper holds the blues and which holds the skin
+    tones -- a buying decision, not a drift report. Two printers, same paper,
+    same chart, says whether two machines agree. Nothing "moved" in either
+    case, and saying so would be false.
+
+    IT CANNOT BE INFERRED FROM THE FILES. Two .ti3 of one chart could be one
+    printer months apart or two papers on one afternoon, and the file names
+    are not evidence. So the caller says which it is; it is never guessed.
+
     Returns None when there is nothing honest to say, which the caller must
     treat as "show nothing" rather than "show an empty box".
     """
@@ -2946,26 +2961,38 @@ def family_report(lab_a, lab_b, spans: str, *, of: str = "profiles"):
     lines = [r.sentence for r in rows if r.patches]
     if not lines:
         return None
-    shown = f"{spans} — which colour families moved:\n" + "\n".join(lines)
+    heading = ("which colour families moved" if over_time
+               else "how the two compare, family by family")
+    shown = f"{spans} — {heading}:\n" + "\n".join(lines)
 
     borderline = sum(r.near_boundary for r in rows)
     total = sum(r.patches for r in rows)
     where = ", ".join(f"{name} around {centre:.0f}°"
                       for name, centre in gamutview.HUE_FAMILIES)
     thing = "colours" if of == "profiles" else "patches"
-    means = (
-        "These are two profiles, so this is how far apart the two "
-        "DESCRIPTIONS are — not how far the printer moved. Each profile is "
-        "one day's measurements of one chart, so a faded chart or a change in "
-        "how they were built is inside these numbers too."
-        if of == "profiles" else
-        "These are two readings of the same chart. If the second was PRINTED "
-        "again rather than only measured again, then everything between the "
-        "two prints is in these numbers — the printer, the ink batch, the "
-        "paper batch and the conditions on the day — which is usually exactly "
-        "what you wanted to find out. If instead it is the same sheet read "
-        "twice, what you are seeing is the sheet ageing and the instrument's "
-        "own repeatability.")
+    if not over_time:
+        means = (
+            "These are two different things measured, not one thing at two "
+            "times — so nothing here has \"drifted\". Each line says how the "
+            "second differs from the first in that family, which is what you "
+            "want when you are choosing between two papers, or asking whether "
+            "two printers agree. For that comparison to mean anything both "
+            "must be the SAME CHART, measured the same way.")
+    else:
+        means = (
+                "These are two profiles, so this is how far apart the two "
+            "DESCRIPTIONS are — not how far the printer moved. Each profile "
+            "is one day's measurements of one chart, so a faded chart or a "
+            "change in how they were built is inside these numbers too."
+            if of == "profiles" else
+            "These are two readings of the same chart. If the second was "
+            "PRINTED again rather than only measured again, then everything "
+            "between the two prints is in these numbers — the printer, the "
+            "ink batch, the paper batch and the conditions on the day — "
+            "which is usually exactly what you wanted to find out. If "
+            "instead it is the same sheet read twice, what you are seeing is "
+            "the sheet ageing and the instrument's "
+            "own repeatability.")
     note = (
         f"{means} "
         f"Where one family stops and the next begins is a line this window "
@@ -7061,6 +7088,18 @@ class GamutApp(QMainWindow):
                 return str(path) in self._image_facts
         return False
 
+    #: EVERY READOUT, IN READING ORDER, NAMED ONCE.
+    #:
+    #: This list was written out in three separate places -- the one that
+    #: clears them when the files are closed, the one that copies them into a
+    #: saved page, and the stand-in the tests use. Adding the colour-family
+    #: lines meant updating three, and two of them were found only afterwards:
+    #: the report survived "Close them all", and it was missing from every
+    #: saved page. A list that must be kept in step by hand will not be.
+    READOUTS = ("_coverage", "_picture_loss", "_pair", "_drift",
+                "_drift_worst", "_drift_families", "_drift_families_note",
+                "_chart_headline", "_chart_rows", "_chart_spread")
+
     def _readout_text(self) -> str:
         """Everything the readouts are showing, as plain text.
 
@@ -7071,8 +7110,7 @@ class GamutApp(QMainWindow):
         volume = self._volume.text().strip()
         if volume and volume != "—":
             parts.append(f"Colour held: {volume} {self._volume_units()}")
-        for name in ("_coverage", "_picture_loss", "_pair", "_drift", "_drift_worst",
-                     "_chart_headline", "_chart_rows", "_chart_spread"):
+        for name in self.READOUTS:
             label = getattr(self, name, None)
             if label is None:
                 continue
@@ -9515,14 +9553,7 @@ class GamutApp(QMainWindow):
         # THE FIGURES GO WITH THE FILES THEY DESCRIBED. Every one of these is
         # a sentence about something now closed, and they are read straight
         # back out by _readout_text() into a saved picture's caption.
-        for name in ("_coverage", "_picture_loss", "_pair", "_drift",
-                     "_drift_worst", "_chart_headline", "_chart_rows",
-                     "_chart_spread",
-                     # The family lines and their footnote. Left out of this
-                     # list they survived "Close them all" and went on naming
-                     # colours in files the reader had just closed -- the same
-                     # fault the timeline window had, in a second place.
-                     "_drift_families", "_drift_families_note"):
+        for name in self.READOUTS:
             label = getattr(self, name, None)
             if label is not None:
                 label.setText("")

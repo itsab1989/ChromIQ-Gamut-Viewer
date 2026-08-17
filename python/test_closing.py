@@ -64,11 +64,15 @@ def window():
     from PyQt6.QtWidgets import QApplication
     QApplication.instance() or QApplication([])
 
+    # EVERY READOUT THE WINDOW HAS, taken from the window's own list rather
+    # than a copy of it here. A copy is what let two of them be forgotten:
+    # the colour-family lines survived "Close them all" and were missing from
+    # every saved page, because three separate lists had to be kept in step.
+    import gamut_app as _app
     figures = {name: Label(f"a sentence about {name}")
-               for name in ("_coverage", "_picture_loss", "_pair", "_drift",
-                            "_drift_worst", "_chart_headline", "_chart_rows",
-                            "_chart_spread")}
+               for name in _app.GamutApp.READOUTS}
     w = SimpleNamespace(
+        READOUTS=_app.GamutApp.READOUTS,
         _slots=[("a", 1, None), ("b", 2, None)],
         _chart=("chart", None),
         _chart_placed=object(),
