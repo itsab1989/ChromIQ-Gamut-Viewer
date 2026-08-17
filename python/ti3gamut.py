@@ -833,6 +833,33 @@ class Drift:
     over_one: int         # patches a careful eye would notice
     over_three: int       # patches anybody would notice
     worst_patches: list   # [(label, dE, lab_before, lab_after)], worst first
+    # THE PATCHES THEMSELVES, so anything that wants to ask a further question
+    # of them can. ``worst_patches`` holds the eight biggest and nothing else,
+    # which is enough to name a culprit and not enough to say which colour
+    # families moved -- and the family report needs every patch or its
+    # averages describe the eight worst rather than the chart.
+    #
+    # These were being worked out and dropped on the floor, the same way
+    # ``lab_b`` was before the direction view needed it. Keeping them costs
+    # one reference each.
+    lab_a: object = None       # (N, 3) where the first measurement put each
+    lab_b: object = None       # (N, 3) where the second put the same patch
+    deltas: object = None      # (N,) how far apart those two are, in dE2000
+
+    #: WHICH WAY, not just how far. dE2000 is a MAGNITUDE and throws the
+    #: direction away by construction, so a printer going lighter and one
+    #: going darker by the same amount give an identical number -- and they
+    #: are different faults wanting different cures.
+    @property
+    def moved(self):
+        """(N, 3) how far each colour moved in L*, a* and b*, with its sign.
+
+        Positive L* is lighter, positive a* is toward red, positive b* is
+        toward yellow.
+        """
+        if self.lab_a is None or self.lab_b is None:
+            return None
+        return np.asarray(self.lab_b, float) - np.asarray(self.lab_a, float)
 
 
 def compare_measurements(before, after, *, top: int = 8) -> Drift:
@@ -891,7 +918,8 @@ def compare_measurements(before, after, *, top: int = 8) -> Drift:
                  average=float(de.mean()),
                  rms=float(np.sqrt((de ** 2).mean())),
                  over_one=int((de > 1.0).sum()),
-                 over_three=int((de > 3.0).sum()), worst_patches=worst)
+                 over_three=int((de > 3.0).sum()), worst_patches=worst,
+                 lab_a=lab_a, lab_b=lab_b, deltas=de)
 
 
 @dataclass(frozen=True)
@@ -907,29 +935,10 @@ class ProfileDrift(Drift):
     table_a: str = ""          # A2B1, A2B0 or matrix -- see icc_read
     table_b: str = ""
     device_space: str = ""     # RGB or CMYK
-    # THE POINTS THEMSELVES, so the picture and the table are drawn from one
-    # set of numbers. Working them out twice is how a caption ends up
-    # disagreeing with the cloud it sits under.
-    lab_a: object = None       # (N, 3) where profile A puts each colour
-    lab_b: object = None       # (N, 3) where profile B puts the same colour
-    deltas: object = None      # (N,) how far apart those two are, in dE2000
-
-    #: WHICH WAY, not just how far. ΔE2000 is a MAGNITUDE and throws the
-    #: direction away by construction, so a printer going lighter and one
-    #: going darker by the same amount give an identical number and an
-    #: identical cloud -- and want different actions. lab_b was computed all
-    #: along and dropped on the floor; keeping it costs nothing and is the
-    #: whole difference between "how far" and "which way".
-    @property
-    def moved(self):
-        """(N, 3) how far each colour moved in L*, a* and b*, with its sign.
-
-        Positive L* is lighter, positive a* is toward red, positive b* is
-        toward yellow -- which is what the three named views below read.
-        """
-        if self.lab_a is None or self.lab_b is None:
-            return None
-        return np.asarray(self.lab_b, float) - np.asarray(self.lab_a, float)
+    # The points themselves come from Drift, so the picture and the table are
+    # drawn from one set of numbers -- working them out twice is how a caption
+    # ends up disagreeing with the cloud it sits under. They live up there
+    # because a measurement pair needs them for exactly the same reasons.
 
     @property
     def comparable(self) -> bool:

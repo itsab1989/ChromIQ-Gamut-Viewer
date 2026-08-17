@@ -1508,6 +1508,347 @@ def hue_reach(gamut, families=HUE_FAMILIES) -> dict[str, float]:
             for i, (name, _c) in enumerate(families)}
 
 
+#: BELOW THIS MUCH CHROMA A COLOUR HAS NO HUE WORTH NAMING, and is reported as
+#: a grey instead of being filed under whichever family its noise points at.
+#:
+#: THIS NUMBER WAS MEASURED, NOT CHOSEN. Take one colour sitting in the middle
+#: of its own sector -- the friendliest case there is -- and nudge it by 0.3
+#: Lab units, which is less than two profiles of one printer routinely differ
+#: by in a neutral. How often does it stay in its family?
+#:
+#:     chroma  0.1  0.3  0.5  1.0  2.0  3.0  5.0
+#:     stays   25%  39%  55%  79%  97%  99%  100%
+#:
+#: At C* 1 a fifth of the answers are wrong. At C* 5 none of them are. A
+#: maximum, which is what :func:`hue_reach` takes, barely notices this -- a
+#: near-neutral point never wins a maximum chroma. A MEAN, which is what the
+#: report below takes, is made of exactly these points, so the same rule that
+#: is safe up there is not safe down here.
+#:
+#: The cost is small and was also measured: on a real 9-step profile grid only
+#: 1.5% of the points fall below it, and on a printed chart the ones that do
+#: are the grey ramp, which is precisely what a reader means by "the greys".
+NEUTRAL_CHROMA = 5.0
+
+#: Within this many degrees of the line between two families, a colour could
+#: honestly be called either. Counted and reported rather than hidden, because
+#: this is the whole of the objection the feature was asked with.
+BOUNDARY_DEGREES = 5.0
+
+#: Below this much movement, in dE2000, a family is reported as unchanged. The
+#: SAME number the rest of the application already calls "a careful eye would
+#: notice" (see ``Drift.over_one``), rather than a second private vocabulary
+#: for the same idea.
+QUIET_DE = 1.0
+
+#: How much the movements inside one family have to agree before a single
+#: direction may be named for all of them. The resultant length of the mean
+#: a*/b* movement over the mean distance moved: 1.0 is every colour going the
+#: same way, 0.0 is them cancelling out entirely. Below this, the family is
+#: reported as "mixed", which is a true statement where a named direction
+#: would be an invented one.
+AGREEMENT = 0.5
+
+#: The blues are the least trustworthy family here and the reader is told so.
+#: CIELAB is not hue-linear through the blues: at a fixed hue angle, raising
+#: chroma visibly shifts the hue. CIEDE2000 exists partly to patch this and
+#: carries a rotation term aimed squarely at it -- see the ``rt`` term in
+#: :func:`delta_e_2000`, a Gaussian centred on hue 275 deg with a 25 deg
+#: spread. The "blues" sector below runs 232.5-300 deg, so it sits on top of
+#: that correction, and it is also the second-widest of the six.
+LEAST_LINEAR = "blues"
+
+
+@dataclass(frozen=True)
+class FamilyDrift:
+    """How one colour family moved between two sets of the same colours."""
+    name: str
+    patches: int            # HOW MANY it stood on -- never omitted
+    mean_de: float          # dE2000, averaged over the family
+    max_de: float
+    moved: tuple            # mean movement, (dL*, da*, db*)
+    toward: str             # "yellows", "grey", "mixed", "" when unchanged
+    also: str               # a second movement worth mentioning, or ""
+    near_boundary: int      # of *patches*, how many could be called either
+    agreement: float        # 0..1, how much the family moved as one
+    certain: bool           # whether the direction outruns its own noise
+
+    @property
+    def changed(self) -> bool:
+        """Whether anything happened that a careful eye would notice."""
+        return self.mean_de >= QUIET_DE
+
+    @property
+    def sentence(self) -> str:
+        """The one line a reader can paste into an email.
+
+        Everything that qualifies the claim travels with it. A direction on
+        four patches and a direction on four hundred read very differently and
+        must never look the same, so the count is part of the sentence rather
+        than a column somebody may or may not have looked at.
+        """
+        if not self.patches:
+            return f"{self.name}: nothing in this family"
+        how_many = ("1 patch" if self.patches == 1
+                    else f"{self.patches} patches")
+        if not self.changed:
+            return (f"{self.name}: stayed the same "
+                    f"(ΔE {self.mean_de:.1f}, {how_many})")
+        way = self.toward
+        if self.also:
+            way += f", also {self.also}"
+        if not self.certain:
+            way += " — but not certainly"
+        return f"{self.name}: ΔE {self.mean_de:.1f} {way} ({how_many})"
+
+
+def family_drift(lab_a, lab_b, *, families=HUE_FAMILIES,
+                 neutral: float = NEUTRAL_CHROMA,
+                 boundary: float = BOUNDARY_DEGREES) -> list:
+    """Which colour families moved, how far, and which way, as sentences.
+
+    THE REQUEST THIS ANSWERS, in the words it was asked in: "Reds stayed the
+    same, blues drifted toward green, yellows drifted toward red." A paper
+    manufacturer comparing this year's profile with last year's wants a short
+    list they can paste into an email, not a cloud to interpret.
+
+    IT IS THE SAME ANSWER THE DIRECTION VIEW ALREADY DRAWS, in a different
+    form, and the two must never be allowed to compete. The picture shows
+    every colour and asks the reader to judge; this says the same thing in
+    seven lines and cannot show where inside a family the movement sat. Use
+    the picture to find out what happened, this to tell somebody else.
+
+    THE ARBITRARY LINE, WHICH IS THE HARD PART AND IS NOT HIDDEN. Any report
+    like this has to decide where a red stops and a yellow starts, and no such
+    line exists in nature. Three things are done about it rather than one:
+
+    * The line is the one this application ALREADY uses for "reaches further
+      in the cyans" (:data:`HUE_FAMILIES`), so there are not two different
+      reds in one program.
+    * Every line of the report carries the number of colours it stood on, so
+      a family of four is never read with the same confidence as one of four
+      hundred.
+    * Colours sitting within :data:`BOUNDARY_DEGREES` of a line are COUNTED,
+      and the count is reported. On a boundary the split is very close to
+      even -- measured at 51/49 -- so this number is the reader's warning
+      that a family's membership was a coin toss for that many of its
+      colours.
+
+    WHICH SET NAMES THE FAMILY. The first one. "How did the reds move" is a
+    question about colours that were red to begin with, so a colour is filed
+    by where it STARTED. Filing by where it ended would let a colour change
+    family by drifting and produce a report about families that did not exist
+    when the question was asked. This also matches the direction view, which
+    draws at A's positions for the same reason.
+
+    Returns one :class:`FamilyDrift` per family in the order given, with the
+    greys last. Families with nothing in them are returned with ``patches``
+    of 0 and are the caller's to skip -- an empty family and one that did not
+    move are different statements and this never conflates them.
+    """
+    lab_a = np.asarray(lab_a, float)
+    lab_b = np.asarray(lab_b, float)
+    if lab_a.ndim != 2 or lab_a.shape[1] != 3:
+        raise ValueError("the first set has to be (N, 3) L*a*b* values")
+    if lab_a.shape != lab_b.shape:
+        raise ValueError(
+            "the two sets have to be the same colours in the same order, and "
+            f"these are {lab_a.shape[0]} and {lab_b.shape[0]} long")
+    if len(lab_a) == 0:
+        raise ValueError("there are no colours here to compare")
+    bad = int((~np.isfinite(lab_a).all(axis=1)
+               | ~np.isfinite(lab_b).all(axis=1)).sum())
+    if bad:
+        # REFUSED RATHER THAN AVERAGED AROUND. One unreadable patch turns a
+        # family's mean into "nan" -- and the direction beside it is still
+        # named, in full confidence, from the patches that did read. A line
+        # saying "reds: nan dE, toward the yellows" is worse than no line.
+        raise ValueError(
+            f"{bad} of these {len(lab_a)} colours are not numbers, so the "
+            f"families they belong to cannot be averaged. This usually means "
+            f"a measurement file with missing or unreadable patches in it.")
+
+    moved = lab_b - lab_a
+    de = delta_e_2000(lab_a, lab_b)
+    chroma = np.hypot(lab_a[:, 1], lab_a[:, 2])
+    hue = np.degrees(np.arctan2(lab_a[:, 2], lab_a[:, 1])) % 360.0
+
+    centres = np.array([c for _n, c in families])
+    gap = np.abs(((hue[:, None] - centres[None, :]) + 180.0) % 360.0 - 180.0)
+    nearest = gap.argmin(axis=1)
+    # HOW CLOSE TO A LINE. The nearest centre and the next nearest are the two
+    # families a colour could belong to; halfway between them is the line, so
+    # the distance to it is half the difference of those two gaps.
+    ordered = np.sort(gap, axis=1)
+    on_a_hue_line = ((ordered[:, 1] - ordered[:, 0]) / 2.0) < boundary
+
+    # THE GREYS SIT ON A DIFFERENT LINE, so they are asked a different
+    # question. A neutral is not filed by hue at all, and how near it happens
+    # to lie to the red/yellow boundary says nothing about whether calling it
+    # a grey was a close call. What IS a close call is its chroma: a colour
+    # just under the threshold could as honestly have been called a colour.
+    # Reporting the hue answer here was wrong and looked entirely plausible.
+    grey = chroma < neutral
+    on_the_grey_line = np.abs(chroma - neutral) < QUIET_DE
+
+    out = []
+    for i, (name, _c) in enumerate(families):
+        mine = (nearest == i) & ~grey
+        out.append(_one_family(name, mine, lab_a, moved, de, on_a_hue_line,
+                               families))
+    out.append(_one_family("greys", grey, lab_a, moved, de, on_the_grey_line,
+                           families, is_grey=True))
+    return out
+
+
+def _one_family(name, mine, lab_a, moved, de, on_a_line, families,
+                is_grey=False):
+    """One line of the report, or an empty one when nothing is in the family."""
+    count = int(mine.sum())
+    if not count:
+        return FamilyDrift(name=name, patches=0, mean_de=0.0, max_de=0.0,
+                           moved=(0.0, 0.0, 0.0), toward="", also="",
+                           near_boundary=0, agreement=0.0, certain=False)
+    ours = moved[mine]
+    mean = ours.mean(axis=0)
+    mean_de = float(de[mine].mean())
+
+    # HOW MUCH THEY AGREED. The mean movement in a*/b* over the mean distance
+    # moved in a*/b*: one when every colour went the same way, near zero when
+    # they cancelled. A family that moved a long way in six directions has no
+    # single direction to name, and saying so is the honest answer.
+    # HOW MUCH THEY MOVED AS ONE THING: the length of the mean movement over
+    # the mean length of the movements. One when every colour went the same
+    # way, near zero when they cancelled out.
+    #
+    # MEASURED ON ALL THREE AXES, NOT JUST a*/b*, and getting that wrong was
+    # a real fault. Judging it on a*/b* alone meant a family that only got
+    # darker had no sideways movement to measure, so the test had to be gated
+    # behind "did it move sideways at all" -- and a family whose movements
+    # were pure noise slipped through that gate, because noise cancels to a
+    # mean below the gate. It came out as "ΔE 8.2 toward the yellows", named
+    # from the largest of three numbers that were all noise. On three axes
+    # there is nothing to gate and nothing to slip through.
+    lengths = np.linalg.norm(ours, axis=1)
+    spread = (1.0 if lengths.mean() < 1e-9
+              else float(np.linalg.norm(mean) / lengths.mean()))
+
+    # WHETHER THE DIRECTION OUTRUNS ITS OWN NOISE, which "how much they agreed"
+    # cannot say on its own: one patch agrees with itself perfectly, so a
+    # family of one reported agreement 1.00 and looked like the most reliable
+    # row in the table. This is the mean movement against the standard error
+    # of that mean -- a statement that can actually come out false, and that
+    # is undefined for a single patch rather than flattering to it.
+    if count < 2:
+        certain = False
+    else:
+        se = ours.std(axis=0, ddof=1) / np.sqrt(count)
+        certain = bool(np.hypot(mean[1], mean[2]) > np.hypot(se[1], se[2])
+                       or abs(mean[0]) > se[0])
+
+    toward, also = _which_way(lab_a[mine].mean(axis=0), mean, mean_de, spread,
+                              is_grey=is_grey, families=families, own=name)
+    return FamilyDrift(
+        name=name, patches=count, mean_de=mean_de,
+        max_de=float(de[mine].max()),
+        moved=(float(mean[0]), float(mean[1]), float(mean[2])),
+        toward=toward, also=also,
+        near_boundary=int(on_a_line[mine].sum()),
+        agreement=min(spread, 1.0), certain=certain)
+
+
+def _which_way(from_lab, mean, mean_de, spread, *, is_grey=False,
+               families=HUE_FAMILIES, own=""):
+    """Name the direction of one family's mean movement, or decline to.
+
+    THREE KINDS OF MOVEMENT, NOT ONE, because they want different actions and
+    no single word holds them. A colour can swing round the hue circle (a red
+    going orange), it can move in or out from the grey axis (a red going
+    grey), or it can get lighter or darker -- and these are usually a driver
+    or ink-mix problem, a fading or ink-limit problem, and a linearisation
+    problem respectively. Collapsing them into one direction name is how a
+    report tells somebody to fix the wrong thing.
+
+    So the mean movement is split against the family's OWN position: the part
+    along the line out from the grey axis is chroma, the part across it is
+    hue, and L* is itself. The largest is named, and the second is mentioned
+    when it too is big enough to see. The request this was built from used all
+    three -- "drifted toward green", "tending toward gray" -- so a report that
+    could only say one of them would not have answered it.
+
+    WHY THE HUE NAMES ARE THE FAMILY NAMES AND NOT MORE OF THEM. The request
+    said "trending toward orange", and orange is not one of the six. It is
+    deliberately not added: a seventh direction name that was not also a
+    family name would give this application two different sets of colour
+    words, one for what a colour IS and one for where it is GOING, and a
+    reader would reasonably assume the two agreed. A red drifting the way an
+    orange lies is reported as heading "toward the yellows" -- the same fact,
+    in the words the rest of the program already uses.
+    """
+    if mean_de < QUIET_DE:
+        return "", ""
+    dl, da, db = float(mean[0]), float(mean[1]), float(mean[2])
+    lighter = ("lighter" if dl > 0 else "darker", abs(dl))
+
+    if is_grey:
+        # A grey has no hue to travel within -- that is what makes it a grey,
+        # and naming one would report exactly the noise the neutral threshold
+        # exists to keep out. What can honestly be said of a neutral is which
+        # way it went in a* and in b*, which is what those two axes are for.
+        candidates = [("warmer (yellow)" if db > 0 else "cooler (blue)",
+                       abs(db)),
+                      ("redder" if da > 0 else "greener", abs(da)), lighter]
+    else:
+        if spread < AGREEMENT:
+            # They moved and did not move together. Naming the mean would
+            # describe a direction most of them never took.
+            return "mixed", ""
+        here = np.array([from_lab[1], from_lab[2]], float)
+        radius = float(np.hypot(here[0], here[1]))
+        out = here / max(radius, 1e-9)          # away from the grey axis
+        across = np.array([-out[1], out[0]])    # anticlockwise round it
+        outward = float(da * out[0] + db * out[1])
+        sideways = float(da * across[0] + db * across[1])
+        candidates = [
+            (_neighbour(from_lab, sideways, families, own), abs(sideways)),
+            ("more saturated" if outward > 0 else "toward grey", abs(outward)),
+            lighter]
+
+    candidates.sort(key=lambda c: -c[1])
+    second = candidates[1][0] if candidates[1][1] >= QUIET_DE else ""
+    return candidates[0][0], second
+
+
+def _neighbour(from_lab, sideways, families, own=""):
+    """The family a colour is heading for, going the way it is going.
+
+    NOT the family its end point lands in. A blue that drifts a long way
+    toward the greens is usually still a blue when it arrives, and a report
+    saying "the blues moved toward the blues" answers nothing. The question is
+    which way round the circle it set off, so the next family centre in that
+    direction is the one named.
+
+    A FAMILY IS NEVER ITS OWN DESTINATION, and leaving that out was a real
+    fault rather than a theoretical one. A family's mean hue sits near its own
+    centre but not exactly on it, so for half of them the centre they are
+    already in lies a fraction of a degree "ahead" and wins by being nearest.
+    Reds rotated firmly toward the yellows were reported as heading toward the
+    reds; the same colours rotated the other way came out right, which is what
+    made it worth building the case with the answer known in advance.
+    """
+    hue = np.degrees(np.arctan2(from_lab[2], from_lab[1])) % 360.0
+    ahead = []
+    for name, centre in families:
+        if name == own:
+            continue
+        # How far round the circle, in the direction of travel, that centre is.
+        step = ((centre - hue) if sideways >= 0 else (hue - centre)) % 360.0
+        ahead.append((step, name))
+    if not ahead:
+        return "mixed"
+    return "toward the " + min(ahead)[1]
+
+
 def shared_volume(a, b, *, samples: int = 60_000, seed: int = 20260814
                   ) -> tuple[float, float, float]:
     """How much two gamuts have in common: (shared, union, shared/union).
