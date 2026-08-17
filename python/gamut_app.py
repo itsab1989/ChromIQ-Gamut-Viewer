@@ -67,6 +67,7 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel, QLayout,
                              QDialog, QMainWindow, QPushButton, QScrollArea, QSlider,
                              QColorDialog, QDialogButtonBox, QListView,
+                             QAbstractItemView, QListWidget, QListWidgetItem,
                              QProgressBar, QProgressDialog,
                              QSizeGrip, QSpinBox,
                              QSizePolicy, QStyle, QStyleOptionProgressBar,
@@ -2891,6 +2892,420 @@ class WebPageDialog(QDialog):
                           for name, box in self._offer.items()}}
 
 
+class TimelineDialog(QDialog):
+    """One device, several profiles of it, and how far it has moved.
+
+    WHY THIS IS NOT PART OF THE MAIN WINDOW. That window holds at most two
+    files and compares their SHAPES: how much colour each holds, how much they
+    share, which reaches further in which hues. Eighteen places in it depend on
+    there being one or two, and every one of them is right to. This asks a
+    different question — has one device moved, and how fast — of as many
+    profiles as somebody has. A list and a graph, not a gamut.
+
+    Keeping them apart is what stops the reader having to work out which of
+    two similar-looking answers applies to them.
+    """
+
+    #: How finely each profile is sampled, per channel. The same grid the pair
+    #: comparison uses, because there is nothing to gain by coarsening it:
+    #: measured, ten comparisons take under a hundredth of a second.
+    GRID = 9
+
+    def __init__(self, parent, appearance: str = "dark") -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Follow one device over time")
+        self.setModal(False)          # so files can be dragged in from Finder
+        self._appearance = appearance
+        self._paths: list = []
+        self._run = None
+        self.resize(940, 720)
+        self.setMinimumSize(560, 460)
+        self.setAcceptDrops(True)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(18, 16, 18, 16)
+        outer.setSpacing(10)
+
+        head = QLabel("Open the profiles you have of one device — a scanner, "
+                      "a printer, a screen — made on different days.", self)
+        head.setWordWrap(True)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(head, 1)
+        row.addWidget(Hint(
+            "WHAT THIS IS FOR. You profiled a device, and then months or years "
+            "later you profiled it again. This asks whether it has moved, by "
+            "how much, and whether it moved steadily or all at once.\n\n"
+            "WHAT TO OPEN. Two or more ICC profiles (.icc or .icm) of the SAME "
+            "device. They have to be the same kind — all of a scanner, or all "
+            "of one printer on one paper. Profiles of two different devices "
+            "cannot be followed over time, because there is no \"over time\" "
+            "between them.\n\n"
+            "HOW THEY ARE ORDERED. By the date inside each profile, when every "
+            "one of them carries a usable date. If any does not, the list "
+            "keeps the order you added them in and says so — sorting some by "
+            "date and guessing at the rest would look authoritative and be "
+            "partly invented. Drag a row to put it where you want it.\n\n"
+            "THE TWO LINES. One shows how far the device has moved ALTOGETHER "
+            "since the first profile. The other shows how far it moved SINCE "
+            "THE ONE BEFORE. They answer different questions and they often "
+            "disagree: five steps of half a ΔE each look like nothing "
+            "happening, and add up to a difference anybody can see.\n\n"
+            "WHAT IT CANNOT TELL YOU, and it matters here more than anywhere "
+            "else in this application. Each profile records ONE day's "
+            "measurements of ONE chart. If your charts faded between the "
+            "profiles, or you changed how you built them, that is inside these "
+            "numbers too. A line that climbs steadily is just as consistent "
+            "with charts ageing as with a device drifting, and no arithmetic "
+            "can separate them. To measure the device alone you need a chart "
+            "you trust not to have changed.",
+            self, title="Following a device over time"), 0,
+            Qt.AlignmentFlag.AlignTop)
+        outer.addLayout(row)
+
+        self._list = QListWidget(self)
+        self._list.setMaximumHeight(150)
+        self._list.setDragDropMode(
+            QAbstractItemView.DragDropMode.InternalMove)
+        self._list.setToolTip(
+            "The profiles in this run, oldest first. Drag a row to move it.")
+        self._list.model().rowsMoved.connect(self._reordered)
+        outer.addWidget(self._list)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        add = QPushButton("Add profiles…", self)
+        add.setToolTip("Choose one or more ICC profiles of the same device.")
+        add.clicked.connect(self._on_add)
+        self._remove_btn = QPushButton("Remove the selected one", self)
+        self._remove_btn.setObjectName("secondary")
+        self._remove_btn.clicked.connect(self._on_remove)
+        self._clear_btn = QPushButton("Remove them all", self)
+        self._clear_btn.setObjectName("secondary")
+        self._clear_btn.clicked.connect(self._on_clear)
+        for b in (add, self._remove_btn, self._clear_btn):
+            buttons.addWidget(b)
+        buttons.addStretch(1)
+        self._save_btn = QPushButton("Save this as a web page…", self)
+        # SECONDARY, like every other export in this application. Adding
+        # profiles is the one thing this window is for until there are some,
+        # so it keeps the accent; two accent buttons side by side is two
+        # things claiming to be the main one.
+        self._save_btn.setObjectName("secondary")
+        self._save_btn.setToolTip(
+            "One file that opens in any browser, with the graph in it. "
+            "Nothing needs installing to read it.")
+        self._save_btn.clicked.connect(self._on_save)
+        self._table_btn = QPushButton("Save the numbers as a table…", self)
+        self._table_btn.setObjectName("secondary")
+        self._table_btn.setToolTip(
+            "Every step as a row, for a spreadsheet — with what the numbers "
+            "do and do not mean written beside them.")
+        self._table_btn.clicked.connect(self._on_table)
+        buttons.addWidget(self._table_btn)
+        buttons.addWidget(self._save_btn)
+        outer.addLayout(buttons)
+
+        self._view = QWebEngineView(self)
+        self._view.setMinimumHeight(240)
+        # THE VIEW IS WHITE UNTIL A PAGE PAINTS OVER IT, and in a dark window
+        # that is a white frame round the graph and a white flash every time
+        # it redraws. Both the widget and the page underneath have to be told,
+        # which is what the main window does for exactly the same reason.
+        self._paint_view()
+        outer.addWidget(self._view, 1)
+
+        self._verdict = WrappedLabel("", self, hide_when_empty=True)
+        outer.addWidget(self._verdict)
+        self._complaints = WrappedLabel("", self, hide_when_empty=True)
+        self._complaints.setObjectName("hint")
+        outer.addWidget(self._complaints)
+
+        # THE CAVEAT LIVES BESIDE THE GRAPH, not only behind the ⓘ. A trend
+        # line is the kind of picture people trust more than they should, and
+        # somebody who never opens the help will still read this.
+        self._caution = WrappedLabel(
+            "Remember: this is how far apart the PROFILES are, not how far "
+            "the device drifted. Chart fade and any change in how you built "
+            "them are inside these numbers too.", self)
+        self._caution.setObjectName("hint")
+        outer.addWidget(self._caution)
+
+        self._refresh()
+
+    # --- the list ----------------------------------------------------------
+
+    def _reordered(self, *_a) -> None:
+        """Follow the rows the user dragged, rather than the order they came.
+
+        A HAND-SORTED RUN IS THE USER'S ORDER, so re-sorting it by date after
+        they moved something would undo the move in front of them. The list is
+        the truth once they have touched it.
+        """
+        order = []
+        for i in range(self._list.count()):
+            path = self._list.item(i).data(Qt.ItemDataRole.UserRole)
+            if path:
+                order.append(Path(path))
+        if order:
+            self._paths = order
+            self._rebuild(sort=False)
+
+    def add(self, paths) -> None:
+        """Take on more profiles, ignoring any already in the run."""
+        here = {p.resolve() for p in self._paths}
+        for raw in paths:
+            path = Path(raw)
+            try:
+                if path.resolve() in here:
+                    continue
+            except OSError:
+                pass
+            self._paths.append(path)
+        self._rebuild()
+
+    def _on_add(self) -> None:
+        parent = self.parent()
+        chooser = parent._file_dialog(
+            "Choose profiles of one device", QFileDialog.FileMode.ExistingFiles,
+            "ICC profiles (*.icc *.icm)", profiles=True)
+        if chooser.exec():
+            self.add(chooser.selectedFiles())
+
+    def _on_remove(self) -> None:
+        row = self._list.currentRow()
+        if 0 <= row < len(self._paths):
+            # REMOVED FROM THE RUN, NEVER FROM THE DISK. Nothing in this
+            # window owns the user's files.
+            self._paths.pop(row)
+            self._rebuild()
+
+    def _on_clear(self) -> None:
+        self._paths = []
+        self._rebuild()
+
+    def dragEnterEvent(self, event) -> None:       # noqa: N802  (Qt's name)
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:            # noqa: N802  (Qt's name)
+        dropped = [u.toLocalFile() for u in event.mimeData().urls()
+                   if u.isLocalFile()]
+        wanted = [p for p in dropped
+                  if Path(p).suffix.lower() in (".icc", ".icm")]
+        if wanted:
+            self.add(wanted)
+            event.acceptProposedAction()
+
+    # --- working it out ----------------------------------------------------
+
+    def _rebuild(self, sort: bool = True) -> None:
+        import drift_series
+
+        if len(self._paths) < 1:
+            self._run = None
+        else:
+            self._run = drift_series.build(self._paths, steps=self.GRID)
+            if sort and self._run.ordered_by == "date":
+                # The run put itself in date order, so the list must show that
+                # order rather than the order the files arrived in.
+                self._paths = [e.path for e in self._run.entries]
+        self._refresh()
+
+    def _refresh(self) -> None:
+        import drift_series
+
+        self._list.blockSignals(True)
+        self._list.clear()
+        entries = self._run.entries if self._run else []
+        for entry in entries:
+            if entry.usable:
+                text = f"{entry.name}    {entry.dated}"
+            else:
+                text = f"{entry.name}    — could not be read"
+            item = QListWidgetItem(text, self._list)
+            item.setData(Qt.ItemDataRole.UserRole, str(entry.path))
+            item.setToolTip(str(entry.path))
+        if not entries:
+            for path in self._paths:
+                item = QListWidgetItem(Path(path).stem, self._list)
+                item.setData(Qt.ItemDataRole.UserRole, str(path))
+        self._list.blockSignals(False)
+
+        has = len(self._paths)
+        self._remove_btn.setEnabled(has > 0)
+        self._clear_btn.setEnabled(has > 0)
+        drawable = bool(self._run and self._run.since_first)
+        self._save_btn.setEnabled(drawable)
+        self._table_btn.setEnabled(drawable)
+
+        if self._run is None:
+            self._verdict.setText("")
+            self._complaints.setText(
+                "Nothing open yet. Add two or more profiles of one device.")
+            self._view.setHtml("")
+            return
+
+        self._verdict.setText(drift_series.verdict(self._run))
+        said = list(self._run.complaints)
+        if drawable and self._run.ordered_by != "date":
+            said.append(
+                "These are in the order you added them, because not every "
+                "profile carries a usable date. Drag a row to move it.")
+        self._complaints.setText("\n\n".join(said))
+        self._draw()
+
+    def _draw(self) -> None:
+        """Put the graph in the view, writing into the window's own folder.
+
+        THE PARENT'S TEMPORARY FOLDER, not one of this dialog's own. That
+        folder is swept at startup and removed when the window closes, so a
+        page written into it cannot become the kind of litter that once left
+        644 folders and 27 GB behind. A second folder here would be a second
+        thing to remember to clean up.
+        """
+        import drift_series
+
+        if not (self._run and self._run.since_first):
+            self._view.setHtml("")
+            return
+        figure = drift_series.figure(self._run, mode=self._appearance)
+        parent = self.parent()
+        folder = getattr(parent, "_tmp", None) or Path(tempfile.gettempdir())
+        target = Path(folder) / "timeline.html"
+        try:
+            figure.write_html(str(target), include_plotlyjs=True,
+                              config={"displayModeBar": False})
+            self._view.load(QUrl.fromLocalFile(str(target)))
+        except OSError as exc:
+            _log().warning("could not draw the timeline: %s", exc)
+            self._view.setHtml("")
+
+    def _paint_view(self) -> None:
+        """Give the view the page's own colour, so it never flashes white."""
+        from ti3gamut import SCENE_COLOURS
+        page = SCENE_COLOURS["light" if self._appearance == "light"
+                             else "dark"]["page"]
+        self._view.setStyleSheet(f"background: {page};")
+        self._view.page().setBackgroundColor(QColor(page))
+
+    def look(self, appearance: str) -> None:
+        """Follow the window's light/dark setting."""
+        if appearance != self._appearance:
+            self._appearance = appearance
+            self._paint_view()
+            self._draw()
+
+    # --- taking it away ----------------------------------------------------
+
+    def _on_save(self) -> None:
+        import drift_series
+
+        parent = self.parent()
+        first = self._run.usable[0].name if self._run.usable else "device"
+        chooser = parent._file_dialog(
+            "Where should the page go?", QFileDialog.FileMode.AnyFile,
+            "Web page (*.html)", f"{first}-over-time.html", profiles=False)
+        chooser.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        chooser.setDefaultSuffix("html")
+        if not chooser.exec():
+            return
+        target = Path(chooser.selectedFiles()[0])
+        figure = drift_series.figure(
+            self._run, mode=self._appearance,
+            title=f"How far {first} has moved")
+        try:
+            # THE WORDS TRAVEL WITH THE PICTURE. A graph on its own outlives
+            # the window that explained it, and the caveat is the part most
+            # worth keeping: somebody opening this next year must not read a
+            # rising line as proof their scanner is failing.
+            figure.write_html(
+                str(target), include_plotlyjs=True,
+                config={"displayModeBar": False},
+                post_script=None,
+                full_html=True,
+                div_id="timeline")
+            with open(target, "a", encoding="utf-8") as handle:
+                handle.write(
+                    "<div style=\"font:13px/1.6 -apple-system,system-ui,"
+                    "sans-serif;max-width:44em;margin:0 auto 3em;padding:0 "
+                    "1.5em;opacity:.85\">"
+                    f"<p><b>{_escape(drift_series.verdict(self._run))}</b></p>"
+                    "<p>This is how far apart the <b>profiles</b> are, not how "
+                    "far the device drifted. Each profile records one day's "
+                    "measurements of one chart, so if the charts faded between "
+                    "them, or they were built differently, that is inside "
+                    "these numbers too. A line that climbs steadily is just as "
+                    "consistent with charts ageing as with a device drifting."
+                    "</p><p>The numbers are ΔE2000: below 1 nobody can see the "
+                    "difference, above 3 anybody can.</p></div>")
+        except OSError as exc:
+            Notice.warn(self, "That could not be saved", str(exc))
+            return
+        Notice.say(self, "Saved",
+                   f"Written to\n{target}\n\nIt opens in any browser, and the "
+                   f"sentence explaining what the lines do and do not mean is "
+                   f"saved with it.")
+
+    def _on_table(self) -> None:
+        parent = self.parent()
+        first = self._run.usable[0].name if self._run.usable else "device"
+        chooser = parent._file_dialog(
+            "Where should the table go?", QFileDialog.FileMode.AnyFile,
+            "Table (*.csv)", f"{first}-over-time.csv", profiles=False)
+        chooser.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        chooser.setDefaultSuffix("csv")
+        if not chooser.exec():
+            return
+        target = Path(chooser.selectedFiles()[0])
+        try:
+            with open(target, "w", newline="", encoding="utf-8") as handle:
+                csv.writer(handle).writerows(self.rows())
+        except OSError as exc:
+            Notice.warn(self, "That could not be saved", str(exc))
+            return
+        Notice.say(self, "Saved", f"Written to\n{target}")
+
+    def rows(self) -> list:
+        """The run as table rows, caveat included.
+
+        Separated from the saving so it can be checked without a file dialog,
+        and so the two exports cannot drift apart in what they claim.
+        """
+        import drift_series
+
+        run = self._run
+        if run is None:
+            return []
+        out = [("profile", "made on", "read through"),
+               *[(e.name, e.dated, e.table or "—") for e in run.entries]]
+        out.append(("", "", ""))
+        out.append(("step", "ΔE2000 since the first",
+                    "ΔE2000 since the one before"))
+        for i, step in enumerate(run.since_first):
+            previous = (run.since_previous[i].worst
+                        if i < len(run.since_previous) else "")
+            out.append((step.after, f"{step.worst:.2f}",
+                        f"{previous:.2f}" if previous != "" else ""))
+        out.append(("", "", ""))
+        out.append(("in short", drift_series.verdict(run), ""))
+        out.append(("what this is",
+                    "how far apart the PROFILES are",
+                    "NOT how far the device drifted — chart fade and any "
+                    "change in how each profile was built are in these "
+                    "numbers too"))
+        out.append(("ordered by", run.ordered_by, ""))
+        for complaint in run.complaints:
+            out.append(("note", complaint, ""))
+        return out
+
+
+def _escape(text: str) -> str:
+    """The few characters that would otherwise end a tag early."""
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;"))
+
+
 class Notice(QDialog):
     """The window's own message box, instead of the system one.
 
@@ -5334,6 +5749,20 @@ class GamutApp(QMainWindow):
         self._export_btn.clicked.connect(self._on_export)
         self._export_btn.setEnabled(False)
         v.addWidget(self._export_btn)
+        # A SEPARATE QUESTION, SO A SEPARATE WINDOW. Everything above compares
+        # what is open right now -- at most two shapes, held side by side. This
+        # follows ONE device through as many profiles as somebody has of it,
+        # which is a question about time rather than about shape, and it wants
+        # a list and a graph rather than a gamut. Putting it in this column
+        # beside the other "do something with all this" buttons keeps it
+        # findable without pretending it is one more way of drawing a shape.
+        self._timeline_btn = QPushButton("Follow one device over time…", col)
+        self._timeline_btn.setObjectName("secondary")
+        self._timeline_btn.setToolTip(
+            "Open several profiles of the SAME device, made on different "
+            "days, and see how far it has moved between them.")
+        self._timeline_btn.clicked.connect(self._on_timeline)
+        v.addWidget(self._timeline_btn)
         self._glossary_btn = QPushButton("What do these words mean?", col)
         self._glossary_btn.setObjectName("secondary")
         self._glossary_btn.clicked.connect(self._on_glossary)
@@ -7077,6 +7506,34 @@ class GamutApp(QMainWindow):
         self._update_check = UpdateCheck(__version__, self)
         self._update_check.finished.connect(done)
         self._update_check.start()
+
+    def _on_timeline(self) -> None:
+        """Open the timeline window, or bring the open one forward.
+
+        ONE WINDOW, NOT ONE PER CLICK. Pressing the button twice should show
+        the run already being built, not a second empty list beside it -- and
+        a second window would keep its own list, so the user would have two
+        answers and no way to tell which was which.
+        """
+        existing = getattr(self, "_timeline", None)
+        if existing is not None:
+            try:
+                existing.look(self._appearance)
+                existing.show()
+                existing.raise_()
+                existing.activateWindow()
+                return
+            except RuntimeError:
+                pass            # Qt deleted it; make a new one below
+        self._timeline = TimelineDialog(self, appearance=self._appearance)
+        # OPENED WITH WHAT IS ALREADY IN FRONT OF THEM. Somebody who has two
+        # profiles open and presses this means those two, and being handed an
+        # empty list would read as the button having done nothing.
+        already = [p for p, _g, m in self._slots
+                   if m is None and p.suffix.lower() in (".icc", ".icm")]
+        if already:
+            self._timeline.add(already)
+        self._timeline.show()
 
     def _on_glossary(self) -> None:
         """Explain every word this window uses, in plain language.

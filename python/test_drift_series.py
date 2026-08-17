@@ -382,3 +382,123 @@ def test_the_picture_follows_the_light_and_dark_settings(five_years):
     light = drift_series.figure(run, mode="light")
     assert dark.layout.paper_bgcolor != light.layout.paper_bgcolor
     assert dark.layout.font.color != light.layout.font.color
+
+
+# --- the window ------------------------------------------------------------
+#
+# The dialog is built for real here -- unlike GamutApp, it can be, because it
+# holds one QWebEngineView and does not bring up the whole application.
+
+@pytest.fixture(scope="module")
+def app():
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    import gamut_app                                     # noqa: F401
+    from PyQt6.QtWidgets import QApplication
+    return QApplication.instance() or QApplication(["test"])
+
+
+def test_the_window_lists_every_profile_with_its_date(app, five_years):
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None)
+    dialog.add(five_years)
+    app.processEvents()
+    assert dialog._list.count() == 5
+    rows = [dialog._list.item(i).text() for i in range(5)]
+    assert all("20" in r for r in rows), rows
+    assert "scan-2019" in rows[0] and "scan-2023" in rows[4]
+    dialog.close()
+
+
+def test_the_same_profile_cannot_be_added_twice(app, five_years):
+    """Adding a folder twice is an ordinary slip, and the duplicate would
+    show as a step of exactly zero — which reads as good news."""
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None)
+    dialog.add(five_years)
+    dialog.add(five_years)
+    app.processEvents()
+    assert dialog._list.count() == 5
+    dialog.close()
+
+
+def test_removing_one_leaves_the_rest(app, five_years):
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None)
+    dialog.add(five_years)
+    dialog._list.setCurrentRow(2)
+    dialog._on_remove()
+    app.processEvents()
+    assert dialog._list.count() == 4
+    assert all(five_years[2].stem not in dialog._list.item(i).text()
+               for i in range(4))
+    dialog.close()
+
+
+def test_nothing_can_be_saved_until_there_is_something_to_save(app, tmp_path):
+    """A save button that opens a file dialog and then writes an empty graph
+    is worse than one that is plainly not available yet."""
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None)
+    app.processEvents()
+    assert not dialog._save_btn.isEnabled()
+    assert not dialog._table_btn.isEnabled()
+    dialog.add([dated(tmp_path / "only.icc", (2020, 1, 1, 0, 0, 0))])
+    app.processEvents()
+    assert not dialog._save_btn.isEnabled(), "one profile is not a run"
+    dialog.add([dated(tmp_path / "second.icc", (2021, 1, 1, 0, 0, 0),
+                      gamma=2.4)])
+    app.processEvents()
+    assert dialog._save_btn.isEnabled()
+    dialog.close()
+
+
+def test_the_table_carries_the_caveat_and_the_verdict(app, five_years):
+    """A row of figures outlives the window that explained it."""
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None)
+    dialog.add(five_years)
+    app.processEvents()
+    flat = " | ".join(str(c) for row in dialog.rows() for c in row)
+    assert "NOT how far the device drifted" in flat
+    assert "in short" in flat
+    assert "ordered by" in flat
+    dialog.close()
+
+
+def test_a_bad_file_is_shown_in_the_list_rather_than_silently_dropped(
+        app, tmp_path, five_years):
+    """Dropping it would leave somebody counting four rows where they added
+    five and wondering which one went."""
+    import gamut_app
+    bad = tmp_path / "broken.icc"
+    bad.write_bytes(b"not a profile")
+    dialog = gamut_app.TimelineDialog(None)
+    dialog.add(five_years + [bad])
+    app.processEvents()
+    rows = [dialog._list.item(i).text() for i in range(dialog._list.count())]
+    assert any("broken" in r and "could not be read" in r for r in rows), rows
+    dialog.close()
+
+
+def test_the_window_follows_the_light_and_dark_setting(app, five_years):
+    import gamut_app
+    dialog = gamut_app.TimelineDialog(None, appearance="dark")
+    dialog.add(five_years)
+    app.processEvents()
+    was = dialog._view.styleSheet()
+    dialog.look("light")
+    app.processEvents()
+    assert dialog._view.styleSheet() != was, (
+        "the view kept its dark background in a light window")
+    dialog.close()
+
+
+def test_only_profiles_are_accepted_when_files_are_dropped(app):
+    """A .ti3 dropped here is a measurement, which this window cannot follow
+    over time — taking it would put a row in the list that can never work."""
+    import inspect
+
+    import gamut_app
+    source = inspect.getsource(gamut_app.TimelineDialog.dropEvent)
+    assert '".icc", ".icm"' in source
