@@ -615,6 +615,50 @@ slide or in a forum post, and it is what **Save this view as a web page** then
 writes out. It applies to the whole picture, so two rooms lose the box
 together and the pair still match.
 
+## 9b. Following one device over time
+
+**Follow one device over time…**, in the column on the right, opens a window of
+its own holding as many profiles of one device as you have.
+
+**Why it is a separate window rather than a third file slot.** The main window
+holds at most two files and compares their *shapes* — how much colour each
+holds, how much they share, which reaches further in which hues. Eighteen
+places in it depend on there being one or two, and every one of them is right
+to. This asks a different question of an unlimited number of profiles: has one
+device moved, and how fast. A list and a graph, not a gamut. Keeping the two
+apart is what stops you having to work out which of two similar-looking answers
+applies to you.
+
+| Control | What it does |
+|---|---|
+| **Add profiles…** | Choose ICC profiles of the same device. Files can also be dropped on the window; anything that is not `.icc` or `.icm` is ignored. |
+| **Remove the selected one** / **Remove them all** | Takes them out of the run. **Never off the disk** — nothing in this window owns your files. |
+| Dragging a row | Puts the run in your order, and it stays in your order afterwards. |
+| **Save this as a web page…** | One self-contained file: the graph, the verdict and the caveat. Nothing is fetched when it is opened. |
+| **Save the numbers as a table…** | Every step as a row, with what the numbers do and do not mean written beside them. |
+
+**The two lines.** One is how far the device has moved altogether since the
+first profile; the other how far it moved since the one before. They disagree
+by design and both are needed — flat steps can add up to a long way, and a run
+of even steps means something quite different from one with a single jump.
+
+**Ordering.** By the date inside each profile when every one carries a usable
+one, otherwise by the order you added them, and the window says which. Note
+that a date of midnight on the first of January is treated as no date: several
+profiles that ship with macOS carry `2022-01-01 00:00:00` exactly, which is a
+build stamp rather than a moment anybody measured anything, and ordering a run
+by one would invent the history you are trying to read.
+
+**The axis is spaced by real time**, not evenly. This is not decoration: the
+question is how fast the thing is drifting, and an axis that puts 2019, 2020,
+2021 and 2024 at even intervals draws a steady line through a device that was
+quiet for three years and then moved.
+
+**What it cannot tell you.** How far apart the *profiles* are, not how far the
+device drifted — each profile is one day's measurements of one chart, so chart
+fade and any change in how you built them are in these numbers too. The window
+says so under the graph, and so does the saved page.
+
 ## 10. ArgyllCMS: what needs it, and where it is
 
 Most people never need it, so nothing nags about it. See "Do you need

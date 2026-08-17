@@ -2,6 +2,64 @@
 
 ## v2.17.0
 
+### ⏱ Follow one device through many profiles, not just two
+
+Basti, re-reading the request this came from: the person probably wanted drift
+**in intervals** — several profiles over time, not one pair.
+
+**Follow one device over time…** opens a window holding as many profiles of one
+device as you have. Two lines: how far it has moved **altogether** since the
+first, and how far it moved **since the one before**.
+
+**Both, because they disagree by design.** Measured on five profiles of one
+scanner drifting evenly:
+
+| | | | | |
+|---|---|---|---|---|
+| against the first | 0.55 | 1.08 | 1.68 | 2.19 → **2.67** |
+| against the previous | 0.55 | 0.53 | 0.60 | 0.50 → 0.49 |
+
+Read only the second and the answer is "nothing is happening, every year looks
+like the last". Read only the first and steady creep cannot be told from one
+bad year followed by four quiet ones. Showing one of them would mislead in one
+of the two directions.
+
+That difference is the useful one, so the window says which it is outright.
+Even steps mean the device will keep creeping. **One big step means something
+happened** — and the page then names the dates it happened between, because
+that is a thing you can go and look up, where a trend is only something to
+worry about.
+
+**The axis is spaced by real time**, not evenly, and this is not a nicety: an
+axis that puts 2019, 2020, 2021 and 2024 at even intervals draws a steady line
+through a device that was quiet for three years and then moved. The slope is
+what people read off it. If any profile carries no usable date the list keeps
+the order you added them in and says so — sorting some by date and guessing at
+the rest would look authoritative and be partly invented. Drag a row to move it.
+
+**A build stamp is not a measurement date.** Several profiles that ship with
+macOS carry `2022-01-01 00:00:00` exactly. Ordering a run by that would invent
+the history you are trying to read, so it counts as no date at all.
+
+Nothing is installed for any of this — profiles are read directly.
+
+**What it cannot tell you, said under the graph rather than only behind the ⓘ,**
+and saved into the exported page: this is how far apart the **profiles** are,
+not how far the device drifted. Each is one day's measurements of one chart, so
+chart fade and any change in how you built them are inside these numbers too. A
+line climbing steadily is just as consistent with charts ageing as with a
+device drifting. A trend line is the kind of picture people trust more than
+they should.
+
+Things it refuses or points out rather than drawing quietly: profiles of two
+different kinds of device (there is no "over time" between them), a file that
+will not read (named, with the rest of the run still shown), and the same file
+added twice (which gives a clean zero that reads as good news and is a slip).
+
+Three new examples on the showcase page — a printer drifting steadily, the same
+run with one profile missing, and one that moved all at once (0.18, 0.18,
+**5.05**, 0.17).
+
 ### 🔬 Compare two ICC profiles, which a gamut cannot do
 
 From a request Basti forwarded: somebody has two profiles of one scanner made

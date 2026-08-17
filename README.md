@@ -595,6 +595,56 @@ differs in the fourth decimal. Using the textbook value left a constant ΔE of
 constant leaves nothing. It is a small number that decides whether "agrees
 with ArgyllCMS" means exactly or approximately.
 
+### Following one device through time
+
+Two profiles of one scanner, made years apart, and the question "has it
+drifted?" — that is what **Follow one device over time…** is for.
+
+**A gamut comparison cannot answer it, and the reason is worth stating.** Two
+profiles can enclose almost exactly the same shape and send the colours *inside*
+it to quite different places. Measured on the run in the examples: **0.42%
+apart by volume** — the same shape by any measure — while the colours inside
+move by **ΔE 3.03**. For an input profile such as a scanner's, the inside is
+nearly the whole profile, so the shape is the part that matters least.
+
+Open two or more profiles of the same device and you get two lines:
+
+* **how far it has moved altogether** since the first profile, and
+* **how far it moved since the one before**.
+
+They disagree by design, and both are needed. Five steps of half a ΔE each look
+like nothing happening and add up to a difference anybody can see; and a run
+whose steps are all the same size means something quite different from one with
+a single jump in it. The first will keep creeping. The second already happened,
+on a date you can go and look up — so the page names it.
+
+Profiles are put in order by the date inside each one, and the graph is spaced
+by real time rather than evenly, because an evenly spaced axis draws a steady
+line through a device that was quiet for three years and then moved. If any
+profile has no usable date the list keeps the order you added them in and says
+so — sorting some by date and guessing at the rest would look authoritative and
+be partly invented. Drag a row to put it where you want it.
+
+**What it cannot tell you, and it matters more here than anywhere else in this
+program.** Each profile records one day's measurements of one chart. If your
+charts faded between them, or you changed how you built them, that is inside
+these numbers too. A line that climbs steadily is just as consistent with
+charts ageing as with a device drifting, and no arithmetic can separate them.
+To measure the device alone you need a chart you trust not to have changed.
+That sentence is saved into the page along with the graph, because a graph
+outlives the window that explained it.
+
+It needs nothing installed — profiles are read directly.
+
+### Comparing two profiles, colour by colour
+
+The same question asked of exactly two profiles is answered in the main window,
+under **Has anything changed?** — the same box that compares two measurements
+of one chart, because to you it is one question. **Show me where, in the
+picture** then paints every colour where the first profile puts it, coloured by
+how far the second sends it instead. The numbers say how much; the picture says
+where, which is usually the more useful half.
+
 ### Do you need ArgyllCMS?
 
 **Usually not.** Measurements (`.ti3`), gamut files (`.gam`) and ICC profiles
