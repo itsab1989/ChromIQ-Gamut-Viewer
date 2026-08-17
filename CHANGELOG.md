@@ -85,8 +85,8 @@ as well, because a spreadsheet gets sorted.
 **Three kinds of movement, never collapsed into one.** A colour can swing round
 the hue circle, move in or out from grey, or get lighter or darker — usually an
 ink-mix problem, a fading or ink-limit problem, and a linearisation problem
-respectively. So *"tending toward gray"*, which was one of the request's own
-examples, is sayable and is not treated as a hue statement.
+respectively. So *"tending toward gray"*, which was one of the examples in
+the request itself, is sayable and is not treated as a hue statement.
 
 **It declines to answer when it should.** A family whose colours moved a long
 way in no one direction reads as *mixed* rather than being given the direction
@@ -152,8 +152,8 @@ refuses. This was the only one.
 ### Also
 
 - `Drift` carries the Lab arrays it was already computing and dropping, so the
-  same report works for two **measurements** — the verification form the person who asked
-  also asked for. `ProfileDrift`'s duplicate copies are gone.
+  same report works for two **measurements** — the verification form that was
+  asked for alongside it. `ProfileDrift`'s duplicate copies are gone.
 - 763 tests (760 + 3 skipped without ArgyllCMS). The saved page holds its
   layout at 10 window sizes in both browser engines.
 

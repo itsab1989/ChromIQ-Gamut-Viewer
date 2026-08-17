@@ -896,7 +896,7 @@ def main() -> int:
           "nobody can see" in body and "anybody can see" in body)
     # WHICH COLOURS MOVED, IN THE SAVED FILE. The page is what gets sent to a
     # colleague or a paper supplier, and the sentences are what they will
-    # quote. Asked for by a paper manufacturer; her own objection to it
+    # quote. Asked for by a paper manufacturer; the objection raised with it
     # -- that somebody has to draw an arbitrary line around "what is a red" --
     # is answered on the page rather than in a docstring, so these check for
     # the caveat as hard as for the report.

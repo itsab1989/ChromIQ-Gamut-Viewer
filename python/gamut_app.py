@@ -3435,7 +3435,7 @@ class TimelineDialog(QDialog):
 
         THE FOOTNOTE IS NOT OPTIONAL. The line between one colour family and
         the next is drawn by this application and exists nowhere in nature --
-        the person who asked for this feature said so herself before anybody
+        the request this was built from said so before anybody
         had written a line of it. So the report says where the line is, and
         how many colours sat close enough to it to have gone either way.
         """

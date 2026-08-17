@@ -252,7 +252,7 @@ the sentence rather than a column is deliberate, see below.
    add a "which colour families moved" block under the existing numbers. This
    is the smallest useful port and needs no new data anywhere.
 
-2. **Verification (#133).** the person who asked asked for this form by name:
+2. **Verification (#133).** This form was asked for by name:
    *"Reds: 3dE trending toward orange, Blues: 0.1dE, Greens: 4dE tending
    toward gray"*. A verification run measures a chart through a profile and
    holds both sides already. Same call, same sentences.
@@ -299,8 +299,8 @@ the sentence rather than a column is deliberate, see below.
    lightness are separated against the family's own position, because they
    are different faults with different cures — a driver or ink-mix problem, a
    fade or ink-limit problem, and a linearisation problem. This is also what
-   lets the report say "tending toward gray", which was one of the request's own
-   examples and is not a hue statement at all.
+   lets the report say "tending toward gray", which was one of the examples in
+   the request itself and is not a hue statement at all.
 
 ## What must not be ported without the wording
 

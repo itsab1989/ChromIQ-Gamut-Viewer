@@ -19,6 +19,22 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
+# PATIENCE WITH THE NETWORK, EVERYWHERE, rather than on the pip lines somebody
+# remembers to edit. These are pip's own environment variables, so they reach
+# every install in every job -- including the ones PyInstaller and setup-python
+# make on their own, which no amount of editing our own commands would cover.
+#
+# WHY IT IS WORTH IT. Six platforms fetch several hundred megabytes of wheels
+# each, and a single dropped connection anywhere in that fails a job that has
+# already been running for twenty minutes. pip's default is 5 retries and a
+# 15-second timeout, which is tuned for a desktop with somebody watching it,
+# not for a matrix nobody is watching at all.
+env:
+  PIP_RETRIES: "10"
+  PIP_DEFAULT_TIMEOUT: "60"
+  # Never sit waiting for a prompt that will never be answered.
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
 jobs:
   # EVERY RELEASE SAYS WHAT CHANGED, and this is checked before anything is
   # built. The same check runs again later, where the notes are actually
@@ -332,7 +348,14 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 30, NOT 15, AND THE PATIENT RETRY BELOW IS WHY. This job downloads about
+    # 1.6 GB of artefacts before it uploads anything, and the retry that rides
+    # out a GitHub outage can wait ten minutes on its own. At 15 the retry
+    # would have been killed part way through -- a timeout cancelling the very
+    # thing added to survive an outage, which is worse than not adding it,
+    # because the run would then fail for a reason that has nothing to do with
+    # what went wrong.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
@@ -370,9 +393,59 @@ jobs:
         # needs nothing beyond the standard library, so nothing is installed.
         run: python3 python/release_body.py "${GITHUB_REF_NAME}" --out body.md
 
+      # THE LAST STEP IS THE ONE MOST LIKELY TO FAIL, AND IT FAILS LATE.
+      # Six builds run for half an hour and then this one call decides whether
+      # any of it reaches anybody. Twice now GitHub has answered it with 503
+      # -- once during a Pages outage that also took this down -- and the
+      # action's own retries gave up after about two seconds:
+      #
+      #   17:48:51 503 / 17:48:53 503 / 17:48:55 503 -> "Too many retries."
+      #
+      # Three tries inside four seconds is not a retry policy for an outage;
+      # it is a retry policy for a dropped packet. An outage lasts minutes, so
+      # the waiting has to be measured in minutes too. Everything is already
+      # built and uploaded as artefacts by this point, so waiting costs a
+      # runner sitting idle and saves re-running the entire matrix by hand.
       - name: Attach everything to the release
         uses: softprops/action-gh-release@v2
         with:
           files: assets/*
           generate_release_notes: false
           body_path: body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # NOT FATAL ANY MORE. This is the fast path; the step below is the
+        # patient one, and it only runs when this has already failed.
+        continue-on-error: true
+        id: attach
+
+      # A SECOND, PATIENT ATTEMPT, and it only runs when the first failed.
+      # gh is used directly here rather than the action, because what is
+      # needed is control of the waiting rather than another opinion about
+      # retries -- and because if the release already exists from a partial
+      # first attempt, uploading with --clobber finishes the job instead of
+      # colliding with it.
+      - name: Try again, patiently, if GitHub was having a bad day
+        if: steps.attach.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          tag="${GITHUB_REF_NAME}"
+          for attempt in $(seq 1 10); do
+            echo "attempt $attempt for $tag"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              if gh release upload "$tag" assets/* --clobber; then
+                echo "assets attached on attempt $attempt"; exit 0
+              fi
+            elif gh release create "$tag" assets/* \
+                   --title "$tag" --notes-file body.md; then
+              echo "release created on attempt $attempt"; exit 0
+            fi
+            echo "not yet -- waiting 60s"
+            sleep 60
+          done
+          echo "::error::GitHub would not accept the release after 10 tries \
+          over ten minutes. The builds all succeeded and are attached to this \
+          run as artefacts; re-run this job once githubstatus.com is clear."
+          exit 1
