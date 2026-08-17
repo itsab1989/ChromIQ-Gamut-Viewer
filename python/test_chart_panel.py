@@ -589,6 +589,12 @@ def test_a_long_message_never_gets_wider_than_its_own_window(styled, sentences):
         f"{sentences} sentences ask for {wanted} points inside a window "
         f"{dialog.width()} wide — {wanted - dialog.width()} points of it, "
         f"including the buttons, are cut off")
+    # AND IT IS STILL THE DESIGNED MEASURE unless the buttons genuinely need
+    # more. Letting it grow is the fix for Windows, where the same two buttons
+    # ask for 632 points; letting it grow FREELY would lose the thing 470 was
+    # chosen for, which is that every message is recognisably the same window.
+    from gamut_app import Notice
+    assert dialog.width() >= Notice.WIDTH
     dialog.close()
 
 
@@ -621,3 +627,49 @@ def test_both_buttons_are_whole_however_long_the_message(styled):
             f"“{button.text()}” is {button.sizeHint().width() - button.width()} "
             "points narrower than its own text needs")
     dialog.close()
+
+
+def test_the_box_grows_for_buttons_it_cannot_otherwise_fit(styled):
+    """THE WINDOWS FAULT, pinned on every platform.
+
+    470 points is a deliberate measure — it keeps every message recognisably
+    the same window. It is also a number chosen on one machine. On Windows the
+    same two buttons ask for 632, so "Open the download page" ran 134 points
+    past the right-hand edge: the dialog whose whole purpose is offering that
+    button clipped it, on the platform nobody was looking at.
+
+    The width is a floor now. This proves the growing works by asking for
+    buttons wide enough to force it anywhere, rather than waiting for a
+    platform where the ordinary ones do.
+    """
+    import gamut_app
+    from PyQt6.QtWidgets import QPushButton
+    from gamut_app import Notice
+    dialog = Notice(None, "A choice", "Short.",
+                    ok="A deliberately very long button label indeed here",
+                    cancel="Another rather long button label for good measure")
+    dialog.show()
+    styled.processEvents()
+    assert dialog.width() > Notice.WIDTH, (
+        "the box refused to grow, so its buttons are cut off")
+    for button in dialog.findChildren(QPushButton):
+        right = button.mapTo(dialog, button.rect().topRight()).x()
+        assert right <= dialog.width(), f"“{button.text()}” is clipped"
+        assert button.width() >= button.sizeHint().width()
+    dialog.close()
+
+
+def test_an_ordinary_message_keeps_the_measure_it_always_had(styled):
+    """The growing must be the exception. If every message started sizing
+    itself to its content, the one thing the fixed width was for — every
+    message being recognisably the same window — would be gone."""
+    from gamut_app import Notice
+    for ok, cancel in ((("OK"), None), ("Yes", "Cancel"), ("Save", "Discard")):
+        dialog = Notice(None, "A heading", "A sentence or two of ordinary "
+                        "length, of the sort most of these carry.",
+                        ok=ok, cancel=cancel)
+        dialog.show()
+        styled.processEvents()
+        assert dialog.width() == Notice.WIDTH, (
+            f"an ordinary message grew to {dialog.width()}")
+        dialog.close()

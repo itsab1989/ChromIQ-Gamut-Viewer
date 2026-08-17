@@ -3495,11 +3495,30 @@ class Notice(QDialog):
         if cancel is None:
             yes.setDefault(True)
         lay.addLayout(buttons)
+        # NEVER NARROWER THAN ITS OWN BUTTONS, whatever the design says.
+        #
+        # 470 is a deliberate measure -- it keeps every message recognisably
+        # the same window and the lines short enough to read. It is also a
+        # number chosen on one machine. On Windows the same two buttons ask
+        # for 632 points, so "Open the download page" ran 134 points past the
+        # right-hand edge: the dialog whose whole purpose is offering somebody
+        # that button clipped it, on the platform I was not looking at.
+        #
+        # So the width is a floor rather than a fixed size. Almost every
+        # message keeps exactly the 470 it always had; the few that cannot fit
+        # their own actions grow instead of hiding them, which is the only
+        # answer that is right on every platform at once.
+        wanted = buttons.sizeHint().width() + 2 * (Notice.SIDE + Notice.BORDER)
+        width = max(Notice.WIDTH, wanted)
+        inner = width - 2 * (Notice.SIDE + Notice.BORDER)
+        head.setFixedWidth(inner)
+        text.setFixedWidth(inner if not scroll else
+                           inner - area.verticalScrollBar().sizeHint().width())
         # A width chosen before the text is laid out, not after. A dialog that
         # sizes itself to its longest sentence gives a different shape for
         # every message; a fixed measure keeps them all recognisably the same
         # window and keeps the lines short enough to read comfortably.
-        self.setFixedWidth(Notice.WIDTH)
+        self.setFixedWidth(width)
         # Fixed to exactly what the content needs. With only a minimum, the
         # dialog opened taller than its text and QVBoxLayout handed the spare
         # height to the labels, which pushed the heading away from the body it

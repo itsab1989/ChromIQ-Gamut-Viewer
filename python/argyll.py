@@ -256,7 +256,12 @@ def find_tool(name: str) -> "str | None":
                 try:
                     if not candidate.is_file():
                         continue
-                    if os.access(candidate, os.X_OK):
+                    # THE EXECUTABLE BIT IS A POSIX IDEA. Windows has none,
+                    # and os.access(..., X_OK) there answers True for any file
+                    # that exists -- including a text file. Asking anyway does
+                    # not make the answer more careful, it makes it meaningless
+                    # on one platform while looking identical in the source.
+                    if os.name == "nt" or os.access(candidate, os.X_OK):
                         found = str(candidate)
                         break
                     # THERE, BUT NOT ALLOWED TO RUN. Worth remembering rather

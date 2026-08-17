@@ -192,6 +192,12 @@ def test_a_moved_homebrew_is_followed(monkeypatch):
     assert "/somewhere/of/my/own/bin" in argyll._fixed_folders()
 
 
+@pytest.mark.skipif(os.name == "nt",
+                    reason="Windows has no executable bit: os.access(X_OK) "
+                           "answers True for any file that exists, so there "
+                           "is no such thing as present-but-not-runnable to "
+                           "detect. Found by this very check going red on the "
+                           "Windows build while passing everywhere else.")
 def test_a_tool_that_cannot_run_is_not_reported_as_missing(tmp_path,
                                                            monkeypatch):
     """A zip unpacked by something that does not carry Unix permissions leaves
