@@ -1764,3 +1764,144 @@ def test_the_page_is_told_whether_it_may_carry_on(tmp_path):
     assert "glide: bool = False" in src or "glide=bool(glide)" in src
     assert "glide=bool(glide)" in src, (
         "the setting must reach the page's engine")
+
+
+# --------------------------------------------------------------------------
+# A page that fetches its viewer, and the reader who is told the wrong thing
+# --------------------------------------------------------------------------
+
+def test_a_failed_fetch_does_not_blame_the_connection(tmp_path):
+    """"this one still tells me to reload when i have connection although i
+    do have." The commonest way a 5 MB download fails on a phone is being
+    interrupted -- switching app, locking the screen -- not being offline, and
+    the page said the one thing it could not know."""
+    import numpy as np
+
+    import ti3gamut
+
+    lab = np.column_stack([np.linspace(20, 90, 30), np.linspace(-40, 40, 30),
+                           np.linspace(40, -40, 30)])
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, np.linspace(0, 5, 30), "d"))
+    out = tmp_path / "cdn.html"
+    ti3gamut._write_dark_html(fig, out, "dark", carry_viewer=False)
+    body = out.read_text(encoding="utf-8")
+
+    assert "the download was interrupted" in body
+    assert "does not necessarily mean you are offline" in body
+
+
+def test_a_page_that_fetches_its_viewer_offers_a_way_to_try_again(tmp_path):
+    """Telling somebody to reload is useless when the line is fine. The
+    button re-fetches without losing the page."""
+    import numpy as np
+
+    import ti3gamut
+
+    lab = np.column_stack([np.linspace(20, 90, 30), np.linspace(-40, 40, 30),
+                           np.linspace(40, -40, 30)])
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, np.linspace(0, 5, 30), "d"))
+    out = tmp_path / "cdn.html"
+    ti3gamut._write_dark_html(fig, out, "dark", carry_viewer=False)
+    body = out.read_text(encoding="utf-8")
+
+    assert 'data-cq="retry"' in body
+    assert "min-height:44px" in body, "a finger needs about 44 px"
+    # THE RETRY MUST REDRAW, or it puts the library in place with nothing left
+    # asking it to draw anything: notice gone, page blank, reader worse off.
+    assert 'id="cq-draw"' in body
+    assert "document.getElementById('cq-draw')" in body
+    # and it must fetch a fresh address, or a cached failure is served again
+    assert "cq-retry=" in body
+
+
+def test_a_page_that_carries_its_viewer_has_none_of_that(tmp_path):
+    """Nothing is fetched, so there is nothing to explain or retry."""
+    import numpy as np
+
+    import ti3gamut
+
+    lab = np.column_stack([np.linspace(20, 90, 30), np.linspace(-40, 40, 30),
+                           np.linspace(40, -40, 30)])
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, np.linspace(0, 5, 30), "d"))
+    out = tmp_path / "inline.html"
+    ti3gamut._write_dark_html(fig, out, "dark", carry_viewer=True)
+    body = out.read_text(encoding="utf-8")
+    assert 'data-cq="retry"' not in body
+    assert "cq-noviewer" not in body
+
+
+# --------------------------------------------------------------------------
+# The box must not move when a family is switched off
+# --------------------------------------------------------------------------
+
+def test_hiding_a_family_cannot_move_the_axes(tmp_path):
+    """"when turning more and more options in the legend off the axes change
+    their division and the view changes every time."
+
+    Left to itself the drawing library fits the box to whatever is switched
+    on. Measured on the published page: hiding one family moved the a* axis
+    from -88..92.4 to -87.6..79. It also destroys the reason to hide one --
+    "where does this family sit" cannot be answered by a box that resizes
+    itself to the answer."""
+    import numpy as np
+
+    import ti3gamut
+
+    rng = np.random.default_rng(2)
+    n = 400
+    lab = np.column_stack([rng.uniform(20, 92, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, rng.uniform(0, 6, n), "d", None,
+                                       True))
+    scene = fig.layout.scene
+    for axis in (scene.xaxis, scene.yaxis, scene.zaxis):
+        assert axis.autorange is False, "an axis is still free to rescale"
+        assert axis.range is not None
+    # the range covers every colour, not only the ones a reader leaves on
+    assert scene.xaxis.range[0] <= lab[:, 1].min()
+    assert scene.xaxis.range[1] >= lab[:, 1].max()
+    assert scene.zaxis.range[0] <= lab[:, 0].min()
+    assert scene.zaxis.range[1] >= lab[:, 0].max()
+
+
+def test_the_room_keeps_its_shape_when_only_the_greys_are_left(tmp_path):
+    """"when only greys are visible due to the distorted room there is no more
+    legend on the right side as well." With aspectmode "data" the library also
+    works the room's shape out from the ranges, so pinning the ranges alone is
+    half of it."""
+    import numpy as np
+
+    import ti3gamut
+
+    rng = np.random.default_rng(3)
+    n = 300
+    lab = np.column_stack([rng.uniform(20, 92, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, rng.uniform(0, 6, n), "d", None,
+                                       True))
+    assert fig.layout.scene.aspectmode == "manual"
+    assert fig.layout.scene.aspectratio.x == 1.0
+    assert fig.layout.scene.aspectratio.y > 0
+    assert fig.layout.scene.aspectratio.z > 0
+
+
+def test_an_unsplit_cloud_is_left_exactly_as_it_was(tmp_path):
+    """Nothing can be hidden when the cloud is one trace, so nothing changes
+    -- and every page published before this keeps its framing."""
+    import numpy as np
+
+    import ti3gamut
+
+    rng = np.random.default_rng(4)
+    n = 200
+    lab = np.column_stack([rng.uniform(20, 92, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, rng.uniform(0, 6, n), "d"))
+    assert fig.layout.scene.aspectmode == "data"
+    assert fig.layout.scene.xaxis.range is None

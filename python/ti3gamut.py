@@ -1823,6 +1823,34 @@ def drift_direction(lab, moved, name: str, axis: str = "L",
                           "no change", f"1 {more}", f"{limit:.0f} {more}"])))]
 
 
+def _drift_extent(lab, space: str):
+    """The box that holds ALL the colours, whichever of them are switched on.
+
+    Returned as (x range, y range, z range) in the order the scene draws them,
+    with a little air so nothing sits against a wall.
+
+    THE POINT IS THAT IT DOES NOT DEPEND ON WHAT IS VISIBLE. Worked out once
+    from every colour, it is the same box with one family showing as with all
+    seven -- which is what makes "where does this family sit" a question the
+    picture can answer. Left to itself the drawing library fits the box to
+    whatever is switched on, so every family fills the frame and they all look
+    alike.
+    """
+    import numpy as _np
+
+    lab = _np.asarray(lab, dtype=float)
+    if space == "rgb":
+        cols = (0, 1, 2)
+    else:
+        cols = (1, 2, 0)          # a* across, b* deep, L* up
+    out = []
+    for c in cols:
+        lo, hi = float(lab[:, c].min()), float(lab[:, c].max())
+        pad = max((hi - lo) * 0.05, 1.0)
+        out.append([lo - pad, hi + pad])
+    return out
+
+
 def _drift_key(ceiling):
     """The colour key the distance view uses, in one place."""
     return dict(title=dict(text="ΔE2000", side="right"),
@@ -6316,6 +6344,13 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
     return Path(out)
 
 
+def _js(text: str) -> str:
+    """One python string, safe to paste into a <script> block."""
+    import json as _json
+
+    return _json.dumps(text or "").replace("</", "<\\/")
+
+
 def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
     """A page that fetches its viewer has to say so when it cannot get it.
 
@@ -6384,9 +6419,32 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         ' onload="window.cqViewerCame&&cqViewerCame()"')
 
     tag = re.search(r'<script[^>]*\bsrc="[^"]*plot[^"]*"', html)
+    # THE ADDRESS AND THE HASH THE PAGE ITSELF USES, read back out rather than
+    # written down twice. A retry that fetched a different build, or quoted a
+    # hash from memory, would be blocked by the browser and look like one more
+    # failure -- with no way for the reader to tell the difference.
+    whole = re.search(r'<script[^>]*\bsrc="[^"]*plot[^"]*"[^>]*>', html)
+    src = sri = ""
+    if whole:
+        found = re.search(r'\bsrc="([^"]+)"', whole.group(0))
+        src = found.group(1) if found else ""
+        found = re.search(r'\bintegrity="([^"]+)"', whole.group(0))
+        sri = found.group(1) if found else ""
     if tag:
         html = html[:tag.start()] + functions + html[tag.start():tag.end()] \
             + hooks + html[tag.end():]
+
+    # NAME THE SCRIPT THAT DRAWS, so a retry can run it a second time.
+    #
+    # WITHOUT THIS THE RETRY LOOKS LIKE IT WORKED AND IS USELESS. The call that
+    # draws the picture sits in an inline script AFTER the viewer's tag, so
+    # when the viewer fails that call still runs, throws because Plotly is not
+    # there, and is gone. Fetching the viewer afterwards puts the library in
+    # place with nothing left to ask it to draw: the notice disappears, the
+    # page goes blank, and the reader is worse off than before. Measured in
+    # both engines -- viewer arrived, notice gone, picture never drawn.
+    html = re.sub(r'(<script[^>]*>)(\s*(?:window\.PLOTLYENV|Plotly\.newPlot))',
+                  r'<script id="cq-draw">\2', html, count=1)
 
     note = (
         "<div id=\"cq-noviewer\" hidden style=\"position:fixed;inset:0;"
@@ -6401,11 +6459,23 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "few dozen kilobytes instead of about five megabytes. The viewer is "
         "fetched when the page opens, and this time it could not be "
         "reached.</p>"
-        "<p style=\"margin:0\">Nothing is wrong with the file and no "
-        "measurement is missing. Reload the page when you have a connection "
-        "and it will work from then on. If it has to work offline for good, "
-        "save it again from the application with <b>Put the 3D viewer inside "
-        "the file</b> ticked.</p></div></div>\n"
+        "<p style=\"margin:0 0 .6rem\">Nothing is wrong with this file and no "
+        "measurement is missing. <b>The commonest reason on a phone is that "
+        "the download was interrupted</b> — switching to another app, or "
+        "locking the screen, stops it, and it is about 5 MB. A network that "
+        "filters or proxies downloads can stop it too. So this does not "
+        "necessarily mean you are offline.</p>"
+        "<p style=\"margin:0 0 1rem\">Try it again below — it keeps this page "
+        "as it is. If it has to work with no connection at all, save it again "
+        "from the application with <b>Put the 3D viewer inside the file</b> "
+        "ticked; that makes a bigger file that never needs the internet.</p>"
+        "<button type=\"button\" data-cq=\"retry\" style=\"font:inherit;"
+        f"padding:.6rem 1.1rem;border-radius:8px;border:1px solid {c['text']};"
+        f"background:transparent;color:{c['text']};cursor:pointer;"
+        "min-height:44px\">Try to fetch the viewer again</button>"
+        "<span data-cq=\"tries\" style=\"margin-left:.7rem;opacity:.75\">"
+        "</span>"
+        "</div></div>\n"
         "<script>(function () {\n"
         "  // A FAILURE THAT HAPPENED BEFORE THIS EXISTED is acted on now.\n"
         "  if (window.cqNoViewerWanted)\n"
@@ -6428,6 +6498,50 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "It is about 5 MB, so this can happen on a slow connection. Leave the "
         "page open and it may still appear.');\n"
         "  }, 30000);\n"
+        "  // TRY AGAIN WITHOUT LOSING THE PAGE, which is the thing a reader\n"
+        "  // on a phone actually wants. Being told to reload when the line is\n"
+        "  // fine is useless advice, and an interrupted download -- switching\n"
+        "  // app, locking the screen -- is the commonest way this fails.\n"
+        "  //\n"
+        "  // A FRESH URL EACH TIME, because a failed fetch can sit in the\n"
+        "  // cache and be served again instantly as the same failure. The\n"
+        "  // integrity hash is over the CONTENT, not the address, so a query\n"
+        "  // string cannot break it.\n"
+        "  var tries = 0;\n"
+        "  var note = document.getElementById('cq-noviewer');\n"
+        "  var button = note && note.querySelector('[data-cq=\\\"retry\\\"]');\n"
+        "  var says = note && note.querySelector('[data-cq=\\\"tries\\\"]');\n"
+        "  if (button) button.addEventListener('click', function () {\n"
+        "    if (window.Plotly) { window.cqViewerCame(); return; }\n"
+        "    tries += 1;\n"
+        "    button.disabled = true;\n"
+        "    if (says) says.textContent = 'fetching\\u2026';\n"
+        "    var again = document.createElement('script');\n"
+        "    var where = " + _js(src) + ";\n"
+        "    again.src = where + (where.indexOf('?') < 0 ? '?' : '&')\n"
+        "                + 'cq-retry=' + tries;\n"
+        "    again.crossOrigin = 'anonymous';\n"
+        "    if (" + _js(sri) + ") again.integrity = " + _js(sri) + ";\n"
+        "    again.onload = function () {\n"
+        "      // RUN THE DRAWING AGAIN. The first attempt threw when the\n"
+        "      // viewer was missing, so there is no picture waiting -- only\n"
+        "      // the instructions for one.\n"
+        "      var draw = document.getElementById('cq-draw');\n"
+        "      if (draw) {\n"
+        "        var run = document.createElement('script');\n"
+        "        run.text = draw.textContent;\n"
+        "        document.body.appendChild(run);\n"
+        "      }\n"
+        "      window.cqViewerCame();\n"
+        "    };\n"
+        "    again.onerror = function () {\n"
+        "      button.disabled = false;\n"
+        "      if (says) says.textContent =\n"
+        "        'still no luck (' + tries + (tries === 1 ? ' try' : ' tries')\n"
+        "        + ')';\n"
+        "    };\n"
+        "    document.head.appendChild(again);\n"
+        "  });\n"
         "})();</script>\n")
     at = html.rfind("</body>")
     return html[:at] + note + html[at:] if at > 0 else html + note
@@ -7220,6 +7334,31 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             for trace in drift_cloud(drift_lab, drift_de, drift_name,
                                      space=_axes_space, by_family=families):
                 fig.add_trace(trace)
+        if families:
+            # PIN THE BOX WHEN THE PICTURE CAN BE TAKEN APART.
+            #
+            # Splitting the cloud into families gave the reader seven switches,
+            # and switching one off made the axes rescale to whatever was left
+            # -- so the whole scene jumped, redrew at a different size, and the
+            # numbers down the side changed. Measured on the published page:
+            # hiding one family moved the a* axis from -88..92.4 to -87.6..79.
+            # On a phone, where turning several off in a row is exactly how the
+            # thing is used, the view moves under the finger every time.
+            #
+            # It also destroys the only reason to hide a family. The question
+            # is WHERE IN THE SPACE this family sits, and an axis that resizes
+            # itself to the answer makes every family fill the same box and
+            # look alike.
+            #
+            # So the range is taken from ALL the colours, once, and fixed.
+            # Hiding a family then removes its dots and moves nothing else --
+            # which is what the flat panes have always done for the same
+            # reason, see the note on `extent` above.
+            _pinned = _drift_extent(drift_lab, _axes_space)
+        else:
+            _pinned = None
+    else:
+        _pinned = None
     from gamutview import AXES
     # The axes are named for the space the gamuts were built in, so a
     # picture can never be read against the wrong labels.
@@ -7234,7 +7373,25 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         scene=dict(
             xaxis_title=_axes["x"], yaxis_title=_axes["y"],
             zaxis_title=_axes["z"],
-            aspectmode=aspect,
+            aspectmode="manual" if _pinned else aspect,
+            # WHEN THE BOX IS PINNED THE PROPORTIONS ARE PINNED TOO. With
+            # aspectmode "data" the drawing library still works the shape of
+            # the room out from the ranges it decides to use, so fixing the
+            # ranges alone is only half of it: switch every family off but the
+            # greys and what is left is a sliver of a*/b*, the room is drawn
+            # as a tall thin slab, and the key is pushed off the side of the
+            # picture. Basti found that on a phone -- "when only greys are
+            # visible ... there is no more legend on the right side as well".
+            #
+            # Given the ratio outright, the room keeps its shape whatever is
+            # switched on, and everything drawn beside it stays where it is.
+            aspectratio=(dict(
+                x=1.0,
+                y=(_pinned[1][1] - _pinned[1][0]) / max(
+                    _pinned[0][1] - _pinned[0][0], 1e-9),
+                z=(_pinned[2][1] - _pinned[2][0]) / max(
+                    _pinned[0][1] - _pinned[0][0], 1e-9))
+                if _pinned else None),
             # START A LITTLE FURTHER BACK, AND ABOVE. Plotly's default camera
             # frames the data tightly, which on a wide, flat gamut crops the
             # corners and opens on a close-up of the middle. Pulling the eye
@@ -7276,6 +7433,13 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                     itemdoubleclick="toggleothers"),
         margin=dict(l=0, r=0, t=54, b=0),
     )
+    if _pinned:
+        # SAID WITH THE UNDERSCORE FORM so it merges with the titles, colours
+        # and visibility set just above rather than replacing each axis whole.
+        fig.update_scenes(
+            xaxis_range=_pinned[0], xaxis_autorange=False,
+            yaxis_range=_pinned[1], yaxis_autorange=False,
+            zaxis_range=_pinned[2], zaxis_autorange=False)
     return fig
 
 
