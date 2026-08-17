@@ -723,6 +723,15 @@ them correctly, so re-implementing that would be a worse answer, not a better
 one. For ICC profiles it is *preferred* rather than required, because it works
 the surface out in full precision.
 
+**And it never freezes the window while it tries.** Reading a profile happens
+on a thread of its own, so the window goes on painting and answering. If it
+takes longer than usual — ArgyllCMS is sometimes slow on a profile it does not
+care for — a small dialog says which file it is working on and offers **Stop**,
+which really ends the tool rather than waiting out the timeout. Measured: an
+ordinary profile takes 149 ms and you never see the dialog at all; a stuck one
+used to freeze everything for thirty seconds and now leaves the window fully
+alive, opening the profile directly when ArgyllCMS gives up.
+
 **Preferred means preferred, in all three ways it can go wrong.** A profile
 opens whether ArgyllCMS is missing entirely, present but unable to read the
 file — ICC **v4** is the common case, and Display P3, Rec. 709 and Rec. 2020

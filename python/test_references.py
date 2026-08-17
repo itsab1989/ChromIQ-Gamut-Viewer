@@ -398,9 +398,14 @@ def test_a_profile_argyll_cannot_finish_is_still_opened(tmp_path, monkeypatch):
     def wedges(*_a, **_k):
         raise subprocess.TimeoutExpired(cmd="iccgamut", timeout=1)
 
+    # PATCHED WHERE THE CODE ACTUALLY GOES. This used to stub
+    # subprocess.run; icc_gamut now calls _run_stoppably, which uses Popen so
+    # that a person can press Stop rather than waiting out the timeout. A
+    # stub on the old name is a stub on nothing, and the check would have
+    # gone on passing while measuring the wrong thing.
     monkeypatch.setattr(references, "_find_iccgamut",
                         lambda: "/nowhere/iccgamut")
-    monkeypatch.setattr(subprocess, "run", wedges)
+    monkeypatch.setattr(references, "_run_stoppably", wedges)
     got = references.icc_gamut(profile)
     assert got.volume > 0, "the profile did not open when Argyll got stuck"
 
@@ -418,7 +423,7 @@ def test_the_patience_is_measured_rather_than_generous(tmp_path, monkeypatch):
 def test_the_timeout_that_is_asked_for_is_the_one_that_is_used(tmp_path,
                                                                monkeypatch):
     """A constant nothing reads is a comment. This checks the number actually
-    reaches subprocess.run, which is the only place it does any good."""
+    reaches the thing that waits, which is the only place it does any good."""
     import subprocess
 
     import references
@@ -428,14 +433,14 @@ def test_the_timeout_that_is_asked_for_is_the_one_that_is_used(tmp_path,
     seen = {}
 
     def note(*args, **kw):
-        seen["timeout"] = kw.get("timeout")
+        seen["patience"] = kw.get("patience")
         raise subprocess.TimeoutExpired(cmd="iccgamut", timeout=1)
 
     monkeypatch.setattr(references, "_find_iccgamut",
                         lambda: "/nowhere/iccgamut")
-    monkeypatch.setattr(subprocess, "run", note)
+    monkeypatch.setattr(references, "_run_stoppably", note)
     references.icc_gamut(profile)
-    assert seen["timeout"] == references.ICCGAMUT_PATIENCE
+    assert seen["patience"] == references.ICCGAMUT_PATIENCE
 
 
 # --- a profile opens whether or not ArgyllCMS is there ----------------------
@@ -542,3 +547,115 @@ def test_and_that_complaint_says_what_to_try_next(tmp_path, monkeypatch):
     said = str(complaint.value)
     assert "ArgyllCMS is not installed" in said, said
     assert "nope.icc" in said, said
+
+
+# --- and somebody can change their mind -------------------------------------
+#
+# icc_gamut runs ArgyllCMS, and ArgyllCMS can wedge on a profile it does not
+# like -- measured at over four minutes on one. That call was on the UI
+# thread, so the whole window froze with no way out. The reading now happens
+# on a thread and can be stopped, which needs the tool to be stoppable.
+
+def test_a_reading_can_be_abandoned_rather_than_waited_out():
+    """The tool is ended when the caller says so, and says which happened."""
+    import sys
+    import threading
+    import time
+
+    import pytest
+    import references
+
+    stop = threading.Event()
+    # A child that would sit there for a minute, which is the shape of the
+    # problem: not slow, stuck.
+    sleeper = [sys.executable, "-c", "import time; time.sleep(60)"]
+    threading.Timer(0.3, stop.set).start()
+    started = time.monotonic()
+    with pytest.raises(references.Stopped):
+        references._run_stoppably(sleeper, patience=60, stop=stop)
+    took = time.monotonic() - started
+    assert took < 5.0, f"stopping took {took:.1f}s, which is not stopping"
+
+
+def test_the_patience_still_ends_it_when_nobody_is_watching():
+    """A script with no window has no Stop button, so the timeout is still
+    what saves it -- and it must raise the same thing it always did, because
+    that is what the fallback to the direct reader catches."""
+    import subprocess
+    import sys
+
+    import pytest
+    import references
+
+    sleeper = [sys.executable, "-c", "import time; time.sleep(30)"]
+    with pytest.raises(subprocess.TimeoutExpired):
+        references._run_stoppably(sleeper, patience=0.4)
+
+
+def test_a_tool_that_answers_is_passed_straight_through():
+    """The ordinary case has to stay ordinary: same CompletedProcess, same
+    return code, same output as subprocess.run would give."""
+    import sys
+
+    import references
+
+    done = references._run_stoppably(
+        [sys.executable, "-c", "print('hello'); raise SystemExit(3)"],
+        patience=30)
+    assert done.returncode == 3
+    assert "hello" in done.stdout
+
+
+def test_the_window_waits_before_it_says_anything(tmp_path):
+    """MEASURED, so the dialog cannot flicker on an ordinary open: a profile
+    through ArgyllCMS takes 149 ms, read directly 9 ms, a measurement 31 ms.
+    The grace period has to sit above those and well below the thirty seconds
+    it exists for."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    import gamut_app
+    grace = gamut_app.GamutApp.PATIENCE_BEFORE_SAYING
+    assert 0.2 <= grace <= 2.0, (
+        f"{grace}s either flickers on every open or waits long enough to "
+        f"look like the freeze it replaced")
+
+
+def test_stopping_is_one_class_and_not_two():
+    """THE SHADOWING THAT NEARLY SHIPPED.
+
+    `gamut_app` defined its own `Stopped` AFTER importing `references.Stopped`,
+    so the local one silently won. An `except Stopped` written below that
+    definition caught the local class and let the one raised by the profile
+    reader straight through — into the handler that tells somebody their file
+    "could not be used", which is exactly the wrong thing to say to a person
+    who has just pressed Stop.
+
+    Nothing caught it because nothing exercised pressing Stop at that call
+    site. This does: the two names must be the same object, whatever order
+    anything is imported in.
+    """
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    import gamut_app
+    import references
+    assert gamut_app.Stopped is references.Stopped, (
+        "two different classes both called Stopped; an except for one will "
+        "not catch the other")
+
+
+def test_the_reader_raises_that_very_class(tmp_path):
+    """And it is the one the window catches, not merely one with the same
+    name."""
+    import sys
+    import threading
+
+    import gamut_app
+    import pytest
+    import references
+
+    stop = threading.Event()
+    stop.set()
+    with pytest.raises(gamut_app.Stopped):
+        references._run_stoppably(
+            [sys.executable, "-c", "import time; time.sleep(5)"],
+            patience=30, stop=stop)

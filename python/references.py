@@ -30,6 +30,7 @@ with Bradford rather than by pretending the whites are the same.
 from __future__ import annotations
 
 import pathlib
+import subprocess
 
 import numpy as np
 
@@ -114,8 +115,15 @@ def reference_gamut(name: str, *, white_point: str = "D50", steps: int = 20,
                        white_point=white_point)
 
 
-def gam_gamut(path, *, white_point: str = "D50", space: str = "lab"):
+def gam_gamut(path, *, white_point: str = "D50", space: str = "lab",
+              stop=None):
     """A gamut straight out of an ArgyllCMS ``.gam`` file.
+
+    *stop* is accepted and ignored ON PURPOSE, so that the two readers the
+    window chooses between take the same arguments. This one runs no other
+    program: it reads a finished surface out of a file, which is quick and
+    has nothing to interrupt. Making the caller remember which of the two can
+    be stopped is how a call site comes to pass it to the wrong one.
 
     ``iccgamut``, ``tiffgamut`` and ChromIQ itself all write these, and
     ``viewgam`` reads them — so anybody working with ArgyllCMS already has
@@ -211,8 +219,59 @@ def _read_gam(path) -> "tuple[np.ndarray, np.ndarray]":
     return verts, faces
 
 
+class Stopped(Exception):
+    """Raised when the caller asked for a reading to be abandoned."""
+
+
+def _run_stoppably(command, *, patience: float, stop=None, poll: float = 0.05):
+    """`subprocess.run`, except that somebody can change their mind.
+
+    WHY NOT subprocess.run. It takes a timeout and nothing else: once it is
+    waiting, the only way out is for the timeout to expire. That is fine for a
+    script and wrong for a window, where the person who started this is
+    sitting in front of a Stop button.
+
+    *stop* is a ``threading.Event``. When it is set, the tool is asked to end
+    and then made to, and ``Stopped`` is raised — the caller wanted out, not
+    an answer.
+
+    THE TWO-STEP KILL IS DELIBERATE. `terminate` lets a well-behaved tool
+    close the file it is writing; `kill` is for one that is wedged, which is
+    the case this exists for. Half a second between them is long enough for
+    the polite ending and short enough that nobody notices the difference.
+
+    Returns the same CompletedProcess `subprocess.run` would, and raises the
+    same TimeoutExpired, so every caller downstream is unchanged.
+    """
+    import time
+
+    started = time.monotonic()
+    with subprocess.Popen(command, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True) as running:
+        while True:
+            try:
+                out, err = running.communicate(timeout=poll)
+                return subprocess.CompletedProcess(
+                    command, running.returncode, out, err)
+            except subprocess.TimeoutExpired:
+                pass
+            if stop is not None and stop.is_set():
+                running.terminate()
+                try:
+                    running.communicate(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    running.kill()
+                    running.communicate()
+                raise Stopped("asked to stop while reading the profile")
+            if time.monotonic() - started > patience:
+                running.kill()
+                out, err = running.communicate()
+                raise subprocess.TimeoutExpired(command, patience,
+                                                output=out, stderr=err)
+
+
 def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
-              space: str = "lab", **_ignored):
+              space: str = "lab", stop=None, **_ignored):
     """The gamut of any ICC profile, computed by ArgyllCMS itself.
 
     Asks ``iccgamut`` — the same tool ChromIQ uses — rather than pushing a grid
@@ -291,9 +350,9 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
         # that failed. Nothing here needs the metadata; only the bytes.
         shutil.copyfile(path, work)
         try:
-            done = subprocess.run(
+            done = _run_stoppably(
                 [tool, "-i", intent, str(work)],
-                capture_output=True, text=True, timeout=ICCGAMUT_PATIENCE)
+                patience=ICCGAMUT_PATIENCE, stop=stop)
         except subprocess.TimeoutExpired as exc:
             # FALL BACK RATHER THAN GIVE UP. This used to raise, which meant a
             # profile ArgyllCMS could not finish reading did not open AT ALL --

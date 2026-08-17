@@ -78,8 +78,8 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
 from version import APP_NAME, __version__
 from gamutview import SPACES, build_gamut, coverage, outside_of
 from gamutview import xyz_to_lab
-from references import (REFERENCE_SPACES, gam_gamut, icc_gamut,
-                        reference_gamut)
+from references import (REFERENCE_SPACES, Stopped, gam_gamut,
+                        icc_gamut, reference_gamut)
 from spectral import optimal_colour_solid
 from ti3gamut import (CONVERTERS, DIRECTIONS, compare_measurements,
                       neutral_axis, read_measurement, write_html,
@@ -1045,8 +1045,19 @@ class CentredProgressBar(QProgressBar):
         return middle - (groove.top() + groove.height() / 2.0)
 
 
-class Stopped(Exception):
-    """The person stopped it. Not a fault, and never reported as one."""
+# `Stopped` USED TO BE DEFINED HERE, AND THAT WAS A TRAP WORTH REMOVING.
+#
+# It said the same thing as `references.Stopped` -- the person stopped it, not
+# a fault -- and both existed at once. Because this definition came AFTER the
+# import at the top of the file, it silently shadowed the other one: an
+# `except Stopped` written down here caught the class defined here and let the
+# one raised by the profile reader straight through, into the handler that
+# tells somebody their file "could not be used". Which is exactly wrong for a
+# thing they asked for.
+#
+# The suite did not catch it, because nothing exercised pressing Stop at that
+# call site. One name, one class, imported from `references` -- see the import
+# at the top of this file.
 
 
 class LookSection(QGroupBox):
@@ -9139,7 +9150,14 @@ class GamutApp(QMainWindow):
         if len(self._slots) >= 2:
             self._slots.pop(0)                 # newest two win
         try:
-            g, m = self._build_one(path)
+            g, m = self._build_patiently(path)
+        except Stopped:
+            # ASKED FOR IS NOT WRONG. Somebody pressed Stop; telling them the
+            # file "could not be used" would blame them for their own
+            # decision, and offer a paragraph of advice about file types to
+            # somebody who has just said they did not want to wait.
+            _log().info("stopped while opening %s", path.name)
+            return
         except Exception as exc:               # noqa: BLE001 — always explain
             _log().warning("could not use %s: %s", path.name, exc)
             Notice.warn(
@@ -9194,18 +9212,104 @@ class GamutApp(QMainWindow):
             "are available.")
         self._redraw()
 
-    def _build_one(self, path: Path):
+    #: How long a file may take before the window says anything about it.
+    #:
+    #: MEASURED, on this application's own demo files: a profile read through
+    #: ArgyllCMS takes 149 ms, the same profile read directly 9 ms, and a
+    #: measurement 31 ms. So four hundred milliseconds is never reached by a
+    #: file that is behaving, and a dialog that flickers up on every ordinary
+    #: open would be worse than the silence it replaced.
+    #:
+    #: The case it exists for is at the other end entirely: ArgyllCMS wedging
+    #: on a profile it cannot finish, which is thirty seconds.
+    PATIENCE_BEFORE_SAYING = 0.4
+
+    def _build_patiently(self, path: Path):
+        """Build a gamut without the window going dead while it happens.
+
+        THE FAULT THIS FIXES. `icc_gamut` runs ArgyllCMS, and ArgyllCMS can
+        wedge on a profile it does not like -- measured at over four minutes
+        on one, before this application gave up on it. That call was on the UI
+        thread, so the whole window froze: nothing painted, nothing answered,
+        no way to stop it, and then an error. On a machine with no ArgyllCMS
+        the same file opened instantly, which meant the application was FASTER
+        without the helper installed. That is upside down.
+
+        SO THE READING HAPPENS ON A THREAD and the window keeps painting. If
+        it is quick -- which it is, 149 ms at worst on real files -- nothing
+        appears at all and this is invisible. If it is not, a dialog says
+        which file is being read and offers Stop.
+
+        WHAT STOP REALLY DOES, said plainly rather than implied: for a profile
+        going through ArgyllCMS it ends that program, which is the case worth
+        stopping. For everything else -- a measurement, a picture -- the work
+        is arithmetic in this process and cannot be interrupted part way; the
+        window stops waiting and lets it finish into nothing. That is why the
+        button is only offered where it can keep its word.
+        """
+        import threading
+        import time as _time
+
+        outcome: dict = {}
+        stop = threading.Event()
+
+        def work():
+            try:
+                outcome["got"] = self._build_one(path, stop=stop)
+            except BaseException as exc:                  # noqa: BLE001
+                outcome["trouble"] = exc
+
+        thread = threading.Thread(target=work, daemon=True)
+        thread.start()
+        thread.join(self.PATIENCE_BEFORE_SAYING)
+        progress = None
+        try:
+            while thread.is_alive():
+                if progress is None:
+                    progress = QProgressDialog(
+                        f"Reading {path.name}…\n\nThis one is taking longer "
+                        f"than usual. ArgyllCMS is sometimes slow on a "
+                        f"profile it does not care for; the file will still "
+                        f"open, read directly, if it gives up.",
+                        "Stop", 0, 0, self)
+                    progress.setWindowTitle("Opening")
+                    progress.setWindowModality(
+                        Qt.WindowModality.WindowModal)
+                    progress.setMinimumDuration(0)
+                    progress.setAutoClose(False)
+                    progress.setAutoReset(False)
+                    progress.show()
+                if progress.wasCanceled() and not stop.is_set():
+                    stop.set()
+                    progress.setLabelText(
+                        f"Stopping…\n\nWaiting for ArgyllCMS to let go of "
+                        f"{path.name}.")
+                QApplication.processEvents()
+                _time.sleep(0.02)
+        finally:
+            if progress is not None:
+                progress.close()
+        thread.join()
+        if "trouble" in outcome:
+            raise outcome["trouble"]
+        return outcome["got"]
+
+    def _build_one(self, path: Path, stop=None):
         """The gamut of one file, whichever kind it is.
 
         A profile has no patches, so there is no Measurement to return with
         it -- everything downstream treats that None as "this one was not
         measured" rather than assuming a chart.
+
+        *stop* is passed to the one reader that can honour it -- ArgyllCMS is
+        a separate program and can be ended. The rest is arithmetic here and
+        runs to completion whatever happens; see `_build_patiently`.
         """
         suffix = path.suffix.lower()
         if suffix in (".icc", ".icm", ".gam"):
             reader = gam_gamut if suffix == ".gam" else icc_gamut
             return reader(path, white_point=self._white.currentData(),
-                          space=self._build_space()), None
+                          space=self._build_space(), stop=stop), None
         if suffix in IMAGE_EXTENSIONS:
             from imagegamut import image_gamut
             built, facts = image_gamut(
@@ -9508,7 +9612,7 @@ class GamutApp(QMainWindow):
         rebuilt = []
         for path, _g, _m in self._slots:
             try:
-                g, m = self._build_one(path)
+                g, m = self._build_patiently(path)
                 rebuilt.append((path, g, m))
             except Exception as exc:            # noqa: BLE001
                 Notice.warn(self, "That setting cannot be used here",

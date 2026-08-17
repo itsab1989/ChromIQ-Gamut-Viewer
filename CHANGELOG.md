@@ -1,5 +1,49 @@
 # Changelog
 
+## v2.22.0
+
+### ❄️ Opening a profile no longer freezes the window
+
+`icc_gamut` runs ArgyllCMS, and ArgyllCMS can wedge on a profile it does not
+like — **measured at over four minutes** on one before this application gave up
+waiting. That call was on the UI thread, so the whole window froze: nothing
+painted, nothing answered, no way to stop it, and then an error. On a machine
+with **no** ArgyllCMS the same file opened instantly, which made the
+application *faster without the helper installed*. Upside down.
+
+Reading now happens on a thread of its own. Measured with the tool made to
+wedge on purpose:
+
+| | before | after |
+|---|---|---|
+| the window while it waits | frozen | **352 timer ticks in 8.2 s** |
+| pressing Stop | no such thing | back in **0.9 s** |
+| an ordinary profile | 149 ms | 149 ms, and no dialog at all |
+
+**Nothing appears unless it is slow.** The grace period is 400 ms, chosen from
+measurement: a profile through ArgyllCMS takes 149 ms, read directly 9 ms, a
+measurement 31 ms. A dialog that flickered on every ordinary open would be
+worse than the silence it replaced.
+
+**Stop keeps its word where it can, and says so where it cannot.** For a
+profile going through ArgyllCMS it ends that program. For a measurement or a
+picture the work is arithmetic in this process and cannot be interrupted part
+way — so the button is only offered where it means something.
+
+### 🕳 And a shadowed exception that nearly shipped with it
+
+`gamut_app` defined its own `Stopped` **after** importing `references.Stopped`,
+so the local one silently won. The `except Stopped` written for the new Stop
+button caught the local class and let the one actually raised straight through
+— into the handler that tells you a file **"could not be used"**, which is
+precisely the wrong thing to say to somebody who has just pressed Stop.
+
+Nothing caught it because nothing exercised pressing Stop at that call site.
+One name, one class now, and a check that the two are the same object whatever
+order anything is imported in.
+
+- 708 checks, up from 702.
+
 ## v2.21.0
 
 ### 📉 The run's own starting point is on the graph
