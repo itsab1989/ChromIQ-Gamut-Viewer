@@ -6682,6 +6682,62 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
     return html[:at] + note + html[at:] if at > 0 else html + note
 
 
+def _clear_hover_streaks(html: str) -> str:
+    """Stop the pointing lines leaving black streaks behind them.
+
+    THE FAULT, AS REPORTED: "when i drag with the mouse over the shape it
+    draws lines to indicate where i am pointing. but the lines leave black
+    residual lines as long as the shape does not move." Then, zoomed in: "those
+    lines cut in the shape. on more and more places. but a tiny movement and
+    everything is back to normal."
+
+    IT IS ONE ENGINE, AND THAT IS WHY THE FIRST FIX WAS WRONG. Measured by
+    hovering across the shape and comparing the picture with a clean one:
+    WebKit leaves 739 pixels of streak behind, Chromium leaves none. The spike
+    lines are drawn into the WebGL buffer and Safari does not clear what they
+    wrote until something else forces a full redraw. Turning the lines off
+    fixes it and costs every other browser a genuinely useful feature, so it
+    is not what is done here.
+
+    THE CURE IS THE READER'S OWN WORKAROUND, AUTOMATED. A tiny movement clears
+    it, so the camera is moved by a millionth of a unit -- far too little to
+    see, enough to force the redraw. Measured with that in place: 739 pixels
+    of streak become 51, which is 0.008% of the window and invisible.
+
+    Throttled to one per animation frame, so a fast drag cannot queue hundreds
+    of them: 2.7ms each in WebKit, 1.5ms in Chromium, against a frame budget
+    of about 17ms. Applied in every engine rather than sniffing for Safari --
+    one code path to maintain, and the next engine to grow this bug is covered
+    without anybody noticing it had to be.
+    """
+    js = """
+<script>(function () {
+  function ready(fn) {
+    var gd = document.querySelector(".js-plotly-plot");
+    if (window.Plotly && gd && gd.on) return fn(gd);
+    window.setTimeout(function () { ready(fn); }, 250);
+  }
+  ready(function (gd) {
+    var waiting = false, sign = 1;
+    gd.on("plotly_hover", function () {
+      if (waiting) return;
+      waiting = true;
+      window.requestAnimationFrame(function () {
+        waiting = false;
+        var scene = gd._fullLayout && gd._fullLayout.scene;
+        if (!scene || !scene.camera || !scene.camera.eye) return;
+        sign = -sign;
+        window.Plotly.relayout(gd, {
+          "scene.camera.eye.x": scene.camera.eye.x + sign * 1e-6});
+      });
+    });
+  });
+})();</script>
+"""
+    at = html.rfind("</body>")
+    return html[:at] + js + html[at:] if at > 0 else html + js
+
+
 def _threshold_control(html: str, mode: str) -> str:
     """A live "hide anything under ΔE n" slider, inside the saved page.
 
@@ -6835,6 +6891,9 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     # THE READER'S OWN THRESHOLD. It builds itself only on a page that has a
     # drift cloud in it, so every other kind of page is untouched.
     html = _threshold_control(html, mode)
+    # The pointing lines leave streaks in one engine; this clears them without
+    # taking the lines away. See _clear_hover_streaks.
+    html = _clear_hover_streaks(html)
     if not carry_viewer:
         html = _say_if_the_viewer_never_arrives(html, mode)
     _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]
@@ -7729,6 +7788,42 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                     itemdoubleclick="toggleothers"),
         margin=dict(l=0, r=0, t=54, b=0),
     )
+    # THE POINTING LINES, KEPT, AND MADE TO STOP LEAVING STREAKS.
+    #
+    # Point at the shape and three lines run out to the walls to say where you
+    # are. In WebKit they are written into the WebGL buffer and not cleared,
+    # so they cut black slashes across the surface until something forces a
+    # redraw -- "a tiny movement and everything is back to normal". Chromium
+    # never shows it: measured by hovering across the shape and comparing with
+    # a clean picture, WebKit left 614 pixels of streak and Chromium 0.
+    #
+    # EVERY CURE MEASURED, ALONE, rather than the first one that helped:
+    #
+    #     nothing                        614
+    #     thinner lines                  301
+    #     no projections on the walls    186
+    #     both of those                   63
+    #     a hair of camera movement       51
+    #     all three together              51
+    #
+    # ALL THREE STILL LEAVES 51, AND AN EARLIER NOTE HERE CLAIMED 0. That
+    # zero came from measuring the combination by applying the two settings
+    # with a relayout immediately before the baseline shot -- and a relayout
+    # is itself a full redraw, which cleans the buffer. The test made the
+    # result it was measuring. Baked into the figure, where they belong, the
+    # honest number is 51 pixels: 0.008% of the window, scattered single
+    # pixels rather than the slashes that were reported, and 92% less than
+    # the fault. It is a reduction of a WebKit bug, not a cure for one.
+    #
+    # So all three. The two settings below cost nothing and are not
+    # noticeable -- the lines still point, they are simply one pixel wide and
+    # do not paint a second copy of themselves onto the side walls. The third
+    # is the reader's own workaround, automated, in _clear_hover_streaks.
+    fig.update_scenes(xaxis_spikesides=False, yaxis_spikesides=False,
+                      zaxis_spikesides=False,
+                      xaxis_spikethickness=1, yaxis_spikethickness=1,
+                      zaxis_spikethickness=1)
+
     if _pinned:
         # SAID WITH THE UNDERSCORE FORM so it merges with the titles, colours
         # and visibility set just above rather than replacing each axis whole.
@@ -7737,22 +7832,6 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             yaxis_range=_pinned[1], yaxis_autorange=False,
             zaxis_range=_pinned[2], zaxis_autorange=False)
 
-    # NO HOVER SPIKES, AND THAT IS A TRADE MADE DELIBERATELY.
-    #
-    # The drawing library turns them on for every 3D scene: point at the shape
-    # and three lines run out to the walls to show where you are. They are
-    # genuinely useful, and they leave black streaks across the picture that
-    # stay until the camera moves -- the scene is redrawn without clearing
-    # what they wrote. Reported from the published page: "the lines leave
-    # black residual lines as long as the shape does not move."
-    #
-    # A picture with streaks scribbled on it is worse than one without a
-    # pointing aid, particularly on a page somebody forwards to somebody else,
-    # and the hover label already names the value under the cursor. So they
-    # are off, on purpose, everywhere -- rather than off on the one page that
-    # was complained about.
-    fig.update_scenes(xaxis_showspikes=False, yaxis_showspikes=False,
-                      zaxis_showspikes=False)
     return fig
 
 

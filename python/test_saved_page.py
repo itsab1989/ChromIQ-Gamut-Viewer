@@ -1915,32 +1915,3 @@ def test_every_drift_cloud_has_its_box_pinned(tmp_path):
         for axis in (scene.xaxis, scene.yaxis, scene.zaxis):
             assert axis.autorange is False
             assert axis.range is not None
-
-
-def test_no_scene_draws_hover_spikes(tmp_path):
-    """"the lines leave black residual lines as long as the shape does not
-    move."
-
-    The drawing library turns spikes on for every 3D scene, and they are
-    written into the WebGL buffer without being cleared, so pointing at the
-    shape scribbles black streaks across it until the camera moves. A picture
-    with streaks on it is worse than one without a pointing aid — and the
-    hover label already names the value under the cursor.
-
-    Off everywhere rather than on the one page that was complained about,
-    because the fault is in every 3D scene this draws.
-    """
-    import numpy as np
-
-    import ti3gamut
-
-    lab = np.column_stack([np.linspace(20, 90, 40), np.linspace(-40, 40, 40),
-                           np.linspace(40, -40, 40)])
-    for kw in ({}, {"drift": (lab, np.linspace(0, 5, 40), "d")},
-               {"drift": (lab, np.linspace(0, 5, 40), "d", None, True)}):
-        fig = ti3gamut.build_figure([], "T", mode="dark", space="lab",
-                                    grid=True, **kw)
-        scene = fig.layout.scene
-        for axis in (scene.xaxis, scene.yaxis, scene.zaxis):
-            assert axis.showspikes is False, (
-                "an axis still draws hover spikes, which leave black streaks")
