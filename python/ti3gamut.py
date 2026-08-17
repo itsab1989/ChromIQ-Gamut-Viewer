@@ -4990,7 +4990,35 @@ window.cqSpinControls = function (settings) {
       + "grid-template-columns:repeat(auto-fit,minmax(min(100%,470px),1fr))}"
       + ".cq-spin-panel .cq-looks .cq-rows{"
       + "grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))}"
-      + ".cq-spin-panel .cq-shape{flex-wrap:wrap}"
+      // THE NAME SHORTENS; THE ROW DOES NOT BREAK.
+      //
+      // This was `wrap`, and wrapping is what a browser does BEFORE it
+      // shrinks anything: given a name that wants 288px, controls that need
+      // 181 and a 456px row, it puts the controls on a second line rather
+      // than take 25px off a name that is explicitly allowed to give them up.
+      // So the ellipsis added for exactly this case never once fired, and a
+      // shape's buttons sat under its name beside the next shape's name --
+      // the fault this was all meant to fix, still there on a long name.
+      //
+      // Measured on a page whose shape is called "Glossy-paper — red is out
+      // of reach": wrapped at 1024x1366 and at 2560x1440, in both engines.
+      // A phone puts the wrap back, further down, where a name and three
+      // buttons genuinely cannot share a line.
+      + ".cq-spin-panel .cq-shape{flex-wrap:nowrap}"
+      // AND THE BUTTONS THEMSELVES DO NOT BREAK EITHER.
+      //
+      // Stopping the ROW from wrapping was half of it: the name then shortened
+      // as intended, and the three buttons -- which are their own flex box --
+      // wrapped INSIDE it instead, so one still dropped to a second line. Same
+      // fault, one level down, and it survived the first fix.
+      //
+      // Pinned at their natural width and forbidden to break, they are the
+      // fixed part of the row and the name is the part that gives, which is
+      // the right way round: a shortened name still reads (and the whole of it
+      // is in the tooltip), where a button on its own under a name reads as
+      // belonging to something else.
+      + ".cq-spin-panel .cq-shape .cq-ctl"
+      + "{flex:0 0 auto;flex-wrap:nowrap}"
       // AND THE NAME DOES NOT PUSH THEM OFF THE LINE. Set to grow, it took
       // every spare pixel of the row and the four controls beside it wrapped
       // underneath -- so on an iPad held sideways the shape's own buttons sat
@@ -5738,10 +5766,25 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
     _t = _escape_title(" and ".join(n for n, _f in pages) or "Measured gamut")
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">\
 <title>{_t} — ChromIQ Gamut Viewer</title><style>
- html,body {{ margin:0; padding:0; height:100%; overflow:hidden;
-              background:{colours['page']}; }}
- body  {{ display:flex; flex-direction:column; }}
- .row  {{ display:flex; flex:1 1 auto; min-height:0; width:100%; }}
+ /* THE PAGE GROWS AND SCROLLS; THE PICTURE KEEPS ITS SHARE OF THE FIRST
+    SCREEN. This was `height:100%; overflow:hidden`, which means the page can
+    never be taller than the window -- so when the reader opens the panel of
+    controls, the only place its height can come from is the picture.
+    Measured on a two-room page with the panel open: the picture down to
+    **24% of a 390x844 phone**, and at 320x700 to **0%**. It vanished.
+    A page cannot scroll to reveal what it has pushed off when it has been
+    told never to scroll.
+    The single-scene pages were given this same treatment for the same fault
+    and this one was missed, because their layout is one block and this is a
+    flex row -- the selector that fixed them could not match here. */
+ html {{ height:100%; }}
+ body {{ margin:0; padding:0; height:auto; min-height:100%;
+         background:{colours['page']}; display:flex; flex-direction:column; }}
+ /* 62vh is a floor rather than a share, so a long panel pushes itself below
+    the fold instead of eating the shape; 80vh is the ceiling, so there is
+    always something visible under the picture saying the page carries on. */
+ .row  {{ display:flex; flex:1 1 auto; min-height:62vh; max-height:80vh;
+          width:100%; }}
  @media (max-width:1024px) {{ .modebar {{ display:none !important; }} }}
  @media (max-width:820px) {{ .gtitle {{ font-size:11px !important; }} }}
  .half {{ flex:1 1 0; min-width:0; display:flex; flex-direction:column; }}

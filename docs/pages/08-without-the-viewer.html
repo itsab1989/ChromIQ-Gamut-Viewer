@@ -2892,7 +2892,21 @@ window.cqSpinControls = function (settings) {
       + "grid-template-columns:repeat(auto-fit,minmax(min(100%,470px),1fr))}"
       + ".cq-spin-panel .cq-looks .cq-rows{"
       + "grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))}"
-      + ".cq-spin-panel .cq-shape{flex-wrap:wrap}"
+      // THE NAME SHORTENS; THE ROW DOES NOT BREAK.
+      //
+      // This was `wrap`, and wrapping is what a browser does BEFORE it
+      // shrinks anything: given a name that wants 288px, controls that need
+      // 181 and a 456px row, it puts the controls on a second line rather
+      // than take 25px off a name that is explicitly allowed to give them up.
+      // So the ellipsis added for exactly this case never once fired, and a
+      // shape's buttons sat under its name beside the next shape's name --
+      // the fault this was all meant to fix, still there on a long name.
+      //
+      // Measured on a page whose shape is called "Glossy-paper — red is out
+      // of reach": wrapped at 1024x1366 and at 2560x1440, in both engines.
+      // A phone puts the wrap back, further down, where a name and three
+      // buttons genuinely cannot share a line.
+      + ".cq-spin-panel .cq-shape{flex-wrap:nowrap}"
       // AND THE NAME DOES NOT PUSH THEM OFF THE LINE. Set to grow, it took
       // every spare pixel of the row and the four controls beside it wrapped
       // underneath -- so on an iPad held sideways the shape's own buttons sat

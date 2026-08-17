@@ -58,6 +58,9 @@ WIDE, TALL = 1500, 950
 INK = (1560, 940)
 
 failures: list[str] = []
+#: Every picture written this run, by what it looks like. See the check in
+#: main(): two shots that come out identical are a fault in one of them.
+seen: dict[bytes, str] = {}
 _app = None
 
 
@@ -94,6 +97,28 @@ def pick(combo, data) -> None:
     combo.setCurrentIndex(at)
 
 
+def until_it_changes(window, before, seconds: float = 25.0) -> bool:
+    """Wait for the picture to actually change, rather than for a while.
+
+    WHY A FIXED PAUSE IS NOT ENOUGH. A redraw here writes a fresh
+    self-contained page of about 6 MB and hands it to the web view to load, so
+    "3 seconds" is a guess about somebody else's machine. Guessing short does
+    not fail loudly -- it grabs the frame that is still on screen, which is the
+    PREVIOUS shot, and writes it out under the new name. That is exactly how 03
+    came to be byte-for-byte identical to 02.
+
+    Waiting for the pixels to move instead is both faster on a quick machine
+    and correct on a slow one.
+    """
+    end = time.time() + seconds
+    while time.time() < end:
+        pump(0.25)
+        if window.grab().toImage() != before:
+            pump(0.6)                  # let the rest of the frame settle
+            return True
+    return False
+
+
 def readout(window) -> str:
     return window._readout_text().replace("\n", " ")
 
@@ -124,13 +149,29 @@ def vs_srgb(w):
 
 
 def where_lost(w):
-    """03 — and where that colour is lost, rather than how much of it."""
+    """03 — and where that colour is lost, rather than how much of it.
+
+    THE SWITCH BEING ON IS NOT THE PICTURE BEING DIFFERENT. This asked
+    `_show_lost.isChecked()`, which is true the instant it is set and says
+    nothing about what was drawn -- and the picture it published was
+    **byte-for-byte identical to 02**, the shot before it. A page explaining
+    where a paper falls short of sRGB, illustrated with a picture that does
+    not show it, for as long as nobody compared two files.
+
+    So it is asked of the shape instead: the marks are drawn from the vertices
+    the containment test says are outside, and if there are none of those
+    there is nothing to photograph and the caption is a lie.
+    """
     w._load(GLOSSY)
     pump(3.5)
     compare_with(w, "space", "sRGB")
+    before = w.grab().toImage()
     w._show_lost.setChecked(True)
-    pump(3.0)
     assert w._show_lost.isChecked(), "the switch did not take"
+    assert until_it_changes(w, before), (
+        "the switch is on and the picture never changed -- either nothing is "
+        "marked as lost, or the redraw never reached the screen, and either "
+        "way this shot shows the same thing as 02")
 
 
 def drift(w):
@@ -310,6 +351,23 @@ def main() -> int:
             window.close()
             continue
         image = window.grab()
+        # NO TWO OF THESE MAY BE THE SAME PICTURE.
+        #
+        # Every shot says what must be true of it, and those claims are only
+        # as good as somebody having thought of the right one: 03 asked
+        # whether its switch was ticked, which it was, and published a file
+        # identical to 02. This is the claim that needs no foresight -- two
+        # README pictures illustrating two different things cannot be the same
+        # image, whatever went wrong to make them so.
+        fingerprint = bytes(image.toImage().constBits().asarray(
+            image.toImage().sizeInBytes()))
+        clash = seen.get(fingerprint)
+        if clash:
+            print(f"  [ FAIL ] {name}: identical to {clash}")
+            failures.append(f"{name}: the same picture as {clash}")
+            window.close()
+            continue
+        seen[fingerprint] = name
         ok = image.save(str(OUT / name), "WEBP", 88)
         print(f"  [{'  ok  ' if ok else ' FAIL '}] {name}"
               f"  {image.width()}x{image.height()}")
