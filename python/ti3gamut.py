@@ -6230,47 +6230,115 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
     """A page that fetches its viewer has to say so when it cannot get it.
 
     Saved without the drawing library inside it, a page is a few dozen
-    kilobytes instead of five megabytes — and it fetches the library from the
+    kilobytes instead of five megabytes -- and it fetches the library from the
     internet the first time it is opened. With no connection it drew nothing:
-    a full set of controls sitting over an empty box, saying nothing about
-    why, which reads as a broken file rather than a missing download.
+    a full set of controls over an empty box, saying nothing about why, which
+    reads as a broken file rather than a missing download.
 
-    Reported from a run with no network, where every control on it moved the
-    picture by 0 pixels because there was no picture.
+    WHAT DECIDES, and this took three attempts to get right.
 
-    The note replaces nothing and appears only if the library really is
-    absent, so a page that loads normally never shows it.
+    IT USED TO BE A TIMER. Four seconds, then "you need the internet". The
+    viewer is 4.85 MB and took 2.4 s to fetch here on a good connection, so
+    four seconds is a coin toss on a phone -- and Basti met exactly that: the
+    page told him he had no internet while the download was still in flight.
+    Worse, the notice covers the whole window, so when the viewer did arrive
+    the picture was drawn behind it and stayed hidden.
+
+    THEN IT WAS A LISTENER ADDED AT THE END OF THE PAGE. Too late: the fetch
+    has usually already failed by then, the error event has come and gone, and
+    a listener attached afterwards never hears it. Measured in both engines,
+    with the request aborted outright: nothing was shown at all.
+
+    SO THE HANDLERS ARE WRITTEN ONTO THE TAG, and the functions they call are
+    defined immediately before it. That registers them while the page is still
+    being parsed, before the fetch can resolve either way. The attribute is
+    written defensively as well, because nothing here is entitled to assume
+    the order a browser does things in.
+
+    Three ways it can end, and each says something different:
+
+      the viewer arrives   -- nothing is ever shown, and anything already
+                              showing is taken away again
+      the fetch fails      -- "could not be reached", promptly, which is the
+                              only case where saying so is true
+      neither, for 30 s    -- "taking a long time", which is not the same
+                              claim and does not go away if it does arrive
     """
     c = SCENE_COLOURS["light" if mode == "light" else "dark"]
+
+    # DEFINED BEFORE THE TAG THAT CALLS THEM. Both are safe to call before the
+    # notice itself exists further down the page: the wish is remembered and
+    # acted on when it does.
+    functions = (
+        "<script>\n"
+        "window.cqNoViewerWanted = false;\n"
+        "window.cqNoViewer = function (why) {\n"
+        "  if (window.Plotly) return;\n"
+        "  var n = document.getElementById('cq-noviewer');\n"
+        "  if (!n) { window.cqNoViewerWanted = why || true; return; }\n"
+        "  var line = n.querySelector('[data-cq=\\\"why\\\"]');\n"
+        "  if (line && why) line.textContent = why;\n"
+        "  n.hidden = false;\n"
+        "};\n"
+        "window.cqViewerCame = function () {\n"
+        "  window.cqNoViewerWanted = false;\n"
+        "  var n = document.getElementById('cq-noviewer');\n"
+        "  if (n) n.hidden = true;\n"
+        "};\n"
+        "</script>\n")
+
+    hooks = (
+        ' onerror="window.cqNoViewer&&cqNoViewer(&#39;The viewer could not be '
+        'reached at all \u2014 the browser reported the download as '
+        'failed.&#39;)"'
+        ' onload="window.cqViewerCame&&cqViewerCame()"')
+
+    tag = re.search(r'<script[^>]*\bsrc="[^"]*plot[^"]*"', html)
+    if tag:
+        html = html[:tag.start()] + functions + html[tag.start():tag.end()] \
+            + hooks + html[tag.end():]
+
     note = (
         "<div id=\"cq-noviewer\" hidden style=\"position:fixed;inset:0;"
         "display:flex;align-items:center;justify-content:center;"
         f"background:{c['page']};color:{c['text']};z-index:9;"
         "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
         "\"><div style=\"max-width:34rem;padding:2rem;text-align:left\">"
-        "<p style=\"font-size:1.15rem;margin:0 0 .6rem\"><b>This page needs "
-        "the internet the first time you open it.</b></p>"
-        "<p style=\"margin:0 0 .6rem\">It was saved <i>without</i> the 3D "
-        "viewer inside it, which is what keeps it to a few dozen kilobytes "
-        "instead of about five megabytes. The viewer is fetched when the page "
-        "opens, and this time it could not be reached — so there is nothing "
-        "here to draw the shape with. Nothing is wrong with the file and no "
-        "measurement is missing.</p>"
-        "<p style=\"margin:0\">Connect to the internet and reload the page, "
+        "<p style=\"font-size:1.15rem;margin:0 0 .6rem\"><b>The 3D viewer "
+        "did not arrive.</b></p>"
+        "<p data-cq=\"why\" style=\"margin:0 0 .6rem\">It was saved "
+        "<i>without</i> the 3D viewer inside it, which is what keeps it to a "
+        "few dozen kilobytes instead of about five megabytes. The viewer is "
+        "fetched when the page opens, and this time it could not be "
+        "reached.</p>"
+        "<p style=\"margin:0\">Nothing is wrong with the file and no "
+        "measurement is missing. Reload the page when you have a connection "
         "and it will work from then on. If it has to work offline for good, "
         "save it again from the application with <b>Put the 3D viewer inside "
         "the file</b> ticked.</p></div></div>\n"
-        "<script>window.addEventListener('load', function () {\n"
-        "  // GIVE IT TIME TO ARRIVE. Shown the instant the page loads, this\n"
-        "  // would flash up on every slow connection and then be replaced by\n"
-        "  // the picture, which is worse than saying nothing.\n"
-        "  window.setTimeout(function () {\n"
-        "    if (!window.Plotly) {\n"
-        "      var n = document.getElementById('cq-noviewer');\n"
-        "      if (n) n.hidden = false;\n"
+        "<script>(function () {\n"
+        "  // A FAILURE THAT HAPPENED BEFORE THIS EXISTED is acted on now.\n"
+        "  if (window.cqNoViewerWanted)\n"
+        "    window.cqNoViewer(window.cqNoViewerWanted === true ? '' :\n"
+        "                      window.cqNoViewerWanted);\n"
+        "  // AND IF IT SIMPLY TURNS UP, whichever way, the notice goes -- so\n"
+        "  // a slow arrival cannot leave the picture behind a covered\n"
+        "  // window, which is what the old four-second timer did.\n"
+        "  var watch = window.setInterval(function () {\n"
+        "    if (window.Plotly) {\n"
+        "      window.cqViewerCame(); window.clearInterval(watch);\n"
         "    }\n"
-        "  }, 4000);\n"
-        "});</script>\n")
+        "  }, 250);\n"
+        "  // A LONG STOP, for a request that neither fails nor finishes.\n"
+        "  // Thirty seconds rather than four, and it says 'taking a long\n"
+        "  // time' rather than 'you have no internet', because slow is not\n"
+        "  // the same as absent.\n"
+        "  window.setTimeout(function () {\n"
+        "    window.cqNoViewer('The viewer is taking a long time to arrive. "
+        "It is about 5 MB, so this can happen on a slow connection. Leave the "
+        "page open and it may still appear.');\n"
+        "  }, 30000);\n"
+        "})();</script>\n")
     at = html.rfind("</body>")
     return html[:at] + note + html[at:] if at > 0 else html + note
 
