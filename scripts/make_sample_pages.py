@@ -894,6 +894,23 @@ def main() -> int:
           "not how far the device drifted" in body)
     check("15", "the key explains what the numbers mean",
           "nobody can see" in body and "anybody can see" in body)
+    # WHICH COLOURS MOVED, IN THE SAVED FILE. The page is what gets sent to a
+    # colleague or a paper supplier, and the sentences are what they will
+    # quote. Asked for by a paper manufacturer; her own objection to it
+    # -- that somebody has to draw an arbitrary line around "what is a red" --
+    # is answered on the page rather than in a docstring, so these check for
+    # the caveat as hard as for the report.
+    check("15", "the family report is saved with the graph",
+          'class="families"' in body)
+    check("15", "every family line says how many colours it stands on",
+          body.count("patches)") >= 5,
+          f"{body.count('patches)')} lines carry a count")
+    check("15", "and the greys are reported as greys, never given a hue",
+          "greys:" in body)
+    check("15", "the arbitrary line is admitted on the page itself",
+          "not one that exists in nature" in body)
+    check("15", "and the page says how many colours sat on that line",
+          "could honestly have been counted either side" in body)
 
     print("\n16 — the same run with one profile taken out")
     timeline._list.setCurrentRow(2)

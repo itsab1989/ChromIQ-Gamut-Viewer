@@ -16,6 +16,10 @@
  .words p { margin:0 0 .9em; }
  .verdict { font-size:15px; font-weight:600; }
  .caveat { opacity:.82; }
+ /* One family per line, so the list can be read down and pasted out. No
+    bullets: these are sentences, not items to choose between. */
+ .families { list-style:none; margin:0 0 .9em; padding:0; }
+ .families li { margin:0 0 .25em; }
  @media (max-width:520px) { .picture { height:60vh; } }
 </style></head><body>
 <div class="picture"><div style="height:100%; width:100%;">                        <script>window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
@@ -3911,4 +3915,4 @@ that climbs steadily is just as consistent with charts ageing as with a device
 drifting, and no arithmetic can separate the two.</p>
 <p class="caveat">The numbers are ΔE2000. Below 1 nobody can see the
 difference; above 3 anybody can.</p>
-</div></body></html>
+<p class="verdict">step-2019 to step-2023 — which colour families moved:</p><ul class="families"><li>reds: ΔE 2.0 more saturated, also toward the yellows (137 patches)</li><li>yellows: ΔE 2.3 more saturated, also toward the reds (134 patches)</li><li>greens: ΔE 2.6 toward the yellows, also lighter (86 patches)</li><li>cyans: ΔE 2.3 toward grey, also toward the greens (121 patches)</li><li>blues: ΔE 3.1 toward the magentas, also toward grey (132 patches)</li><li>magentas: ΔE 2.6 toward the reds, also lighter (108 patches)</li><li>greys: ΔE 4.9 redder, also warmer (yellow) (11 patches)</li></ul><p class="caveat">Where one family stops and the next begins is a line this window draws, not one that exists in nature. The families are centred on reds around 0°, yellows around 90°, greens around 150°, cyans around 195°, blues around 270°, magentas around 330° of hue, and each one reaches half way to its neighbours. Anything less colourful than chroma 5 is called a grey instead, because below that a colour's hue is mostly noise and would put it in a family at random. Of these 729 colours, 123 sit within 5° of one of those lines and could honestly have been counted either side of it.</p></div></body></html>

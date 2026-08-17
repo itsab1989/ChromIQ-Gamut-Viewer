@@ -199,3 +199,128 @@ the assertions; `scripts/drive_chart.py` drives the real window through the
 whole journey and is what caught the verdict naming the wrong file when a
 profile and its measurement share a stem — which, for `Glossy-paper.icc`
 beside `Glossy-paper.ti3`, is the ordinary case rather than a contrived one.
+
+---
+
+# Taking the colour-family report into ChromIQ
+
+Asked for by a paper manufacturer, who wanted this shape of answer when
+comparing one year's profile with the next:
+
+```
+Reds:      stayed the same
+Blues:     drifted toward green
+Yellows:   drifted toward red
+Grays:     drifted toward red
+```
+
+and said in the same breath what makes it hard:
+
+> *"of course then you have to draw an arbitrary line around 'what is a red'
+> and 'what is a yellow'"*
+
+She is right, the line cannot be removed, and everything below follows from
+deciding to **state it** instead.
+
+## What moves across, and how much of it
+
+One function and five constants, in `gamutview.py`:
+
+| Name | What it is |
+|---|---|
+| `family_drift(lab_a, lab_b)` | the whole report — a `FamilyDrift` per family, greys last |
+| `HUE_FAMILIES` | the six family centres, already used by `hue_reach` |
+| `NEUTRAL_CHROMA` | below this a colour is a grey, not a hue |
+| `QUIET_DE` | ΔE 1 — "stayed the same" |
+| `BOUNDARY_DEGREES` | how close to a line counts as borderline |
+| `AGREEMENT` | how much a family must move as one before a direction is named |
+
+**No Qt, no ArgyllCMS, no file handling.** It takes two `(N, 3)` Lab arrays of
+the same colours in the same order and returns dataclasses. It ports as a
+single copy-paste into a new `core/hue_families.py`, and every test of it
+(`test_family_drift.py`, 40 cases) ports with it unchanged.
+
+`FamilyDrift.sentence` is the pasteable line, with the patch count already in
+it. Use that rather than formatting the fields again — the count being part of
+the sentence rather than a column is deliberate, see below.
+
+## Where it would fit, concretely
+
+1. **The Measurement Report (#127 `reports/`, Report v3).** ChromIQ already
+   compares two `.ti3` files patch by patch and prints a ΔE summary. That
+   comparison already computes the two Lab arrays; feed them straight in and
+   add a "which colour families moved" block under the existing numbers. This
+   is the smallest useful port and needs no new data anywhere.
+
+2. **Verification (#133).** the person who asked asked for this form by name:
+   *"Reds: 3dE trending toward orange, Blues: 0.1dE, Greens: 4dE tending
+   toward gray"*. A verification run measures a chart through a profile and
+   holds both sides already. Same call, same sentences.
+
+3. **Deciding whether a refinement pass is worth printing.** A run where only
+   the greys moved and one where the blues moved want different answers, and
+   today the operator gets one ΔE for the lot.
+
+4. **The `.ti3` Tools.** Paper/ink contrast already reports per-file figures;
+   this is the same kind of statement about a pair.
+
+## The four things worth knowing before porting
+
+1. **`hue_reach`'s rule is safe for a maximum and not for a mean.** The
+   existing families were built for "which family reaches furthest", which
+   takes a MAX per family — and a near-neutral colour never wins a maximum, so
+   its unstable hue never matters. A mean is *made of* those colours. Measured:
+   nudge one colour by 0.3 Lab units and ask how often it keeps its family —
+
+   | chroma | 0.1 | 0.3 | 0.5 | 1.0 | 2.0 | 3.0 | 5.0 |
+   |---|---|---|---|---|---|---|---|
+   | stays put | 25% | 39% | 55% | 79% | 97% | 99% | 100% |
+
+   Hence `NEUTRAL_CHROMA = 5`. It costs 1.5% of a real 9-step grid, and on a
+   printed chart the colours it catches are the grey ramp — which is exactly
+   what a reader means by "the greys".
+
+2. **The sectors are not equal, and the blues are the least trustworthy.**
+   Measured from the centres: reds 60°, yellows 75°, greens 52.5°, cyans 60°,
+   blues 67.5°, magentas 45°. And CIELAB is not hue-linear through the blues —
+   at a fixed hue angle, raising chroma visibly shifts the hue. CIEDE2000
+   carries a rotation term aimed squarely at it, a Gaussian centred on hue
+   **275°** with a **25°** spread; see the `rt` term in
+   `gamutview.delta_e_2000`. The "blues" sector runs 232.5–300°, sitting on
+   top of that correction. Any ChromIQ version should keep saying so.
+
+3. **The patch count belongs in the sentence, not in a column.** A family of
+   four and one of four hundred produce the same kind of line, and only that
+   number tells a reader how much to trust it. In the CSV it gets its own
+   column as well, because a spreadsheet is sorted; on screen and in prose it
+   is inside the sentence where it cannot be skipped.
+
+4. **Three kinds of movement, never collapsed into one.** Hue, chroma and
+   lightness are separated against the family's own position, because they
+   are different faults with different cures — a driver or ink-mix problem, a
+   fade or ink-limit problem, and a linearisation problem. This is also what
+   lets the report say "tending toward gray", which was one of the request's own
+   examples and is not a hue statement at all.
+
+## What must not be ported without the wording
+
+**The footnote.** Every place this report appears — the panel, the saved page,
+the CSV — carries a note saying where the line is, that it is drawn by the
+application rather than by nature, and how many colours sat within
+`BOUNDARY_DEGREES` of one and could have gone either way. Measured on a
+boundary, the split is 51/49; without that sentence, every number in the report
+is an unexamined claim. It is the answer to the objection the feature was
+requested with, and shipping the report without it would be shipping the half
+that misleads.
+
+**"Mixed" and "but not certainly".** A family whose colours moved a long way
+in no one direction is reported as *mixed* rather than given the direction of
+their average, and a movement no bigger than its own standard error says so.
+Both exist because the alternative reads as a finding. ΔE 8.2 of pure noise was
+reported as "toward the yellows" during development and looked entirely
+plausible.
+
+**Under #130 these sentences are user-facing message text**, so in ChromIQ they
+go to §M-PROPOSED of `unified_measurement_management.md` before they are
+written into any tab. The count-bearing ones already have explicit singular and
+plural forms ("1 patch" / "N patches") rather than "(s)".

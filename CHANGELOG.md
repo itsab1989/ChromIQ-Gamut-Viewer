@@ -1,5 +1,100 @@
 # Changelog
 
+## v2.25.0
+
+### 🎨 Which colour families moved, and which way — in sentences you can send
+
+Asked for by **a paper manufacturer**, comparing one year's profile with
+the next. She wanted this shape of answer:
+
+```
+Reds:      stayed the same
+Blues:     drifted toward green
+Yellows:   drifted toward red
+Grays:     drifted toward red
+```
+
+and named the hard part in the same breath:
+
+> *"of course then you have to draw an arbitrary line around 'what is a red'
+> and 'what is a yellow'"*
+
+She is right. The line cannot be removed — so it is **stated** instead, in
+three places at once: the panel in the timeline window, the saved web page and
+the exported table all say where the families are centred, that the line is
+drawn by this application and not by nature, and **how many colours sat close
+enough to a line to have gone either way**. Measured on a boundary, the split
+is 51/49; without that sentence every number in the report would be an
+unexamined claim.
+
+**Every line says how many patches it stands on.** A family of four and a
+family of four hundred otherwise produce the same kind of sentence, and only
+that number tells you how much to trust it. In the CSV it gets its own column
+as well, because a spreadsheet gets sorted.
+
+**Three kinds of movement, never collapsed into one.** A colour can swing round
+the hue circle, move in or out from grey, or get lighter or darker — usually an
+ink-mix problem, a fading or ink-limit problem, and a linearisation problem
+respectively. So *"tending toward gray"*, which was one of the request's own
+examples, is sayable and is not treated as a hue statement.
+
+**It declines to answer when it should.** A family whose colours moved a long
+way in no one direction reads as *mixed* rather than being given the direction
+of their average, and a movement no bigger than its own scatter says *"but not
+certainly"*. Both exist because the alternative reads as a finding: ΔE 8.2 of
+pure noise was reported as "toward the yellows" during development, and looked
+entirely plausible.
+
+### 🩶 The greys are greys, and that is a measured decision
+
+The existing family rule was built for *"which family reaches furthest"*, which
+takes a **maximum** — and a near-neutral colour never wins a maximum, so its
+unstable hue never mattered. This report takes a **mean**, which is made of
+exactly those colours. Nudge one colour by 0.3 Lab units, less than two
+profiles of one printer routinely differ by, and ask how often it keeps its
+family:
+
+| chroma | 0.1 | 0.3 | 0.5 | 1.0 | 2.0 | 3.0 | 5.0 |
+|---|---|---|---|---|---|---|---|
+| stays put | 25% | 39% | 55% | 79% | 97% | 99% | **100%** |
+
+So anything under chroma 5 is reported as a grey and is never said to have
+drifted toward a colour — it is warmer, cooler, redder, greener, lighter or
+darker instead. It costs 1.5% of a real 9-step grid.
+
+### 🔍 Four faults found, none of which looked wrong on screen
+
+Every case below was built with its answer known in advance, because a sentence
+like *"yellows drifted toward red"* is exactly as plausible when it is wrong.
+
+- **A family reported as heading toward itself.** A family's mean hue sits near
+  its own centre but not on it, so for half of them their own centre lies a
+  fraction of a degree "ahead" and wins by being nearest. Reds turned firmly
+  toward the yellows came out as "toward the reds" — and the same colours
+  turned the *other* way came out right, which is why one example proves
+  nothing.
+- **Noise dressed up as a direction.** Movements that cancel leave a near-zero
+  mean on every axis, and the largest of three near-zero numbers still wins.
+- **One unreadable patch producing "nan ΔE"** beside a confidently named
+  direction. Refused now, with the count.
+- **A report that outlived its files.** "Remove them all" emptied the graph and
+  left the family lines under it, naming two profiles that were no longer open.
+
+### 🕘 "Follow one device over time" is where it can be found
+
+It sat at the bottom of the left column in the quiet style, among *"start
+again"* and the ArgyllCMS paths — the things you go looking for once. It is a
+button that **opens files**, so it now sits with the other two, in the accent,
+under its own heading, with a sentence saying what it is for.
+
+### Also
+
+- `Drift` carries the Lab arrays it was already computing and dropping, so the
+  same report works for two **measurements** — the verification form the person who asked
+  also asked for. `ProfileDrift`'s duplicate copies are gone.
+- 763 tests (760 + 3 skipped without ArgyllCMS). The saved page holds its
+  layout at 10 window sizes in both browser engines.
+
 ## v2.24.0
 
 ### 🪟 A Windows build for ARM, and a check that every build is what it claims
