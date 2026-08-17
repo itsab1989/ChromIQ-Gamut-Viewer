@@ -504,3 +504,41 @@ def test_argyllcms_is_still_asked_first_when_it_is_there(monkeypatch):
     monkeypatch.setattr(references, "_find_iccgamut", watched)
     references.icc_gamut(profile)
     assert asked, "ArgyllCMS was not even looked for"
+
+
+def test_a_file_that_is_not_a_profile_says_so_without_argyllcms_either(
+        tmp_path, monkeypatch):
+    """THE HALF OF THE FALLBACK THAT WAS NOT WRITTEN, and CI found it.
+
+    Adding "read it directly when ArgyllCMS is missing" covered the case
+    where the file is fine and not the case where it is not: the direct
+    reader's own UnsupportedProfile came out instead of the sentence every
+    other path here produces.
+
+    It could not fail on the machine it was written on. That machine has
+    ArgyllCMS, so the only thing exercising the new branch locally was a test
+    handing it a GOOD profile -- the happy path of a new fallback being the
+    half that gets written, and the half that gets checked.
+    """
+    import pytest
+    import references
+    junk = tmp_path / "not-really.icc"
+    junk.write_text("this is a text file wearing a profile's name")
+    monkeypatch.setattr(references, "_find_iccgamut", lambda *a, **k: None)
+    with pytest.raises(ValueError, match="could not be read"):
+        references.icc_gamut(junk)
+
+
+def test_and_that_complaint_says_what_to_try_next(tmp_path, monkeypatch):
+    """A refusal that names no next step leaves somebody stuck with a file
+    they cannot open and nothing to do about it."""
+    import pytest
+    import references
+    junk = tmp_path / "nope.icc"
+    junk.write_bytes(b"\x00" * 40)
+    monkeypatch.setattr(references, "_find_iccgamut", lambda *a, **k: None)
+    with pytest.raises(ValueError) as complaint:
+        references.icc_gamut(junk)
+    said = str(complaint.value)
+    assert "ArgyllCMS is not installed" in said, said
+    assert "nope.icc" in said, said

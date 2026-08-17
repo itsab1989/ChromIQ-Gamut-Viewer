@@ -8,6 +8,21 @@ import os
 
 import pytest
 
+@pytest.fixture(autouse=True)
+def _really_search(monkeypatch):
+    """This file tests the SEARCH, so the "pretend it is not installed" switch
+    must not reach it.
+
+    GAMUTVIEW_NO_ARGYLL makes `find_tool` answer None however ArgyllCMS is
+    installed, so that the rest of the suite can be run as a machine without
+    it -- which is what every build machine is, and what the machine these
+    are written on is not. Here it would turn every check into a check that
+    the switch works, which is one line of it and not the point of the file.
+    """
+    import argyll
+    monkeypatch.delenv(argyll.NO_ARGYLL, raising=False)
+
+
 import argyll
 
 

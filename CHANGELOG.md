@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.20.2
+
+**v2.20.1 was tagged and did not build.** Its change was right and its error
+handling was half-written, all five build machines said so, and this is the
+same change with the other half. The v2.20.1 tag exists and has no release
+against it; nothing was published from it.
+
+What went wrong is the interesting part, and it is written up under v2.20.1
+below: the machines that run the checks have **no ArgyllCMS** and the machine
+these are written on **does**, so a fallback added for "ArgyllCMS is missing"
+could not fail locally. `GAMUTVIEW_NO_ARGYLL=1` now reproduces that condition
+anywhere, and the release workflow sets it rather than relying on the tools
+happening to be absent.
+
 ## v2.20.1
 
 ### 🔓 A profile opens without ArgyllCMS, which is what the README always said
@@ -31,7 +45,30 @@ it computed, with the profile's real dents in it. Measured on the demo profile
 the two readings are 0.76% apart by volume — 818,514 against 824,706 — and
 that difference is checked by a test rather than assumed.
 
-- 695 checks, up from 692.
+### 🧪 And the reason it took a failed build to notice
+
+The first attempt at this shipped the fallback's **happy path only**: a file
+that is not really a profile came back with the direct reader's own exception
+instead of the sentence every other path here produces. All five build
+machines caught it; the local run could not.
+
+**They have no ArgyllCMS and this machine does** — and no `PATH` change hides
+it, because the search deliberately looks in fixed folders as well. So the
+branch that most users take is the one the developer's machine never reaches.
+
+`GAMUTVIEW_NO_ARGYLL=1` now makes the search answer "not installed" wherever
+ArgyllCMS really is, so the same run can be had anywhere:
+
+```
+GAMUTVIEW_NO_ARGYLL=1 pytest -q      # 694 passed, 3 skipped
+pytest -q                            # 697 passed
+```
+
+The release workflow sets it explicitly rather than relying on the tools
+happening to be absent, and `test_argyll.py` — which tests the search itself —
+is exempt from it.
+
+- 697 checks with ArgyllCMS, 694 without, up from 692.
 
 ## v2.20.0
 

@@ -261,8 +261,26 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
         # the volume is 818,514 and the direct reader 824,706, which is 0.76%
         # apart. ArgyllCMS is still asked first wherever it exists, because
         # it returns its own surface with the profile's real dents in it.
+        #
+        # AND A FILE THAT IS NOT A PROFILE STILL HAS TO SAY SO IN WORDS. The
+        # first version of this returned the direct reader's answer and let
+        # its own exception out -- so on a machine with no ArgyllCMS, opening
+        # a text file renamed .icc raised UnsupportedProfile instead of the
+        # sentence every other path here produces. Caught by CI, not by the
+        # local run: this machine HAS ArgyllCMS, so the only branch that
+        # exercises this line locally is a test that hands it a good profile.
+        # The happy path of a new fallback is the half that gets written.
         from icc_read import profile_gamut
-        return profile_gamut(path, white_point=white_point, space=space)
+        try:
+            return profile_gamut(path, white_point=white_point, space=space)
+        except Exception as mine:                        # noqa: BLE001
+            raise ValueError(
+                f"{path.name} could not be read.\n\nArgyllCMS is not "
+                f"installed, so it was read directly instead, and that did "
+                f"not work either: {mine}\n\nIf this really is an ICC "
+                f"profile, installing ArgyllCMS gives it a second way in — "
+                f"it understands some profiles this reader does not."
+            ) from mine
 
     with tempfile.TemporaryDirectory(prefix="iccgamut-") as tmp:
         work = pathlib.Path(tmp) / path.name

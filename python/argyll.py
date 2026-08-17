@@ -245,8 +245,29 @@ def _candidate_folders():
 _unrunnable: list = []
 
 
+#: Set this to anything and the search finds nothing, wherever ArgyllCMS
+#: really is.
+#:
+#: WHY THIS EXISTS, and it is worth the four lines. Most of this application
+#: works without ArgyllCMS and takes a different path when it is absent --
+#: profiles are read directly, and three separate fallbacks depend on it. The
+#: machines that run the checks have no ArgyllCMS; the machine they are
+#: written on has it installed in /Applications, which no PATH change hides,
+#: because the search deliberately looks in fixed folders as well.
+#:
+#: So the developer cannot see what most users see, and it has already cost a
+#: release: a fallback added for "ArgyllCMS is missing" was written with only
+#: its happy path, passed locally where that branch is never taken with a bad
+#: file, and failed on all five build machines at once.
+#:
+#:     GAMUTVIEW_NO_ARGYLL=1 pytest -q      # as a machine without it
+NO_ARGYLL = "GAMUTVIEW_NO_ARGYLL"
+
+
 def find_tool(name: str) -> "str | None":
     """Where ArgyllCMS keeps *name*, if it is installed anywhere usual."""
+    if os.environ.get(NO_ARGYLL):
+        return None
     if name in _cache:
         return _cache[name]
     found = shutil.which(name)

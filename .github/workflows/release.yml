@@ -186,6 +186,22 @@ jobs:
           # written to.
           PYTHONIOENCODING: utf-8
           PYTHONUTF8: "1"
+          # AND SAY OUT LOUD THAT THIS MACHINE HAS NO ARGYLLCMS, rather than
+          # relying on it happening to be absent.
+          #
+          # It IS absent here, and that is the point: most of this application
+          # works without ArgyllCMS and takes different paths when it is
+          # missing, so these machines exercise a set of branches the
+          # developer's machine never reaches. That asymmetry has already
+          # broken a release -- a fallback for "ArgyllCMS is not installed"
+          # was written with only its happy path, passed locally, and failed
+          # on all five builders at once.
+          #
+          # Setting it explicitly means the same run can be had anywhere:
+          #     GAMUTVIEW_NO_ARGYLL=1 pytest -q
+          # If a builder ever DOES get ArgyllCMS installed, this keeps the
+          # checks measuring what they were written to measure.
+          GAMUTVIEW_NO_ARGYLL: "1"
         run: |
           # pyyaml is for the tests alone -- two of them read the workflow
           # itself to check the changelog guard is still wired in. The
