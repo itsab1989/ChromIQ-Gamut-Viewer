@@ -880,6 +880,11 @@ class ProfileDrift(Drift):
     table_a: str = ""          # A2B1, A2B0 or matrix -- see icc_read
     table_b: str = ""
     device_space: str = ""     # RGB or CMYK
+    # THE POINTS THEMSELVES, so the picture and the table are drawn from one
+    # set of numbers. Working them out twice is how a caption ends up
+    # disagreeing with the cloud it sits under.
+    lab_a: object = None       # (N, 3) where profile A puts each colour
+    deltas: object = None      # (N,) how far profile B puts it instead
 
     @property
     def comparable(self) -> bool:
@@ -960,7 +965,8 @@ def compare_profiles(path_a, path_b, *, steps: int = 9,
         over_one=int((de > 1.0).sum()), over_three=int((de > 3.0).sum()),
         worst_patches=worst, steps=int(steps), channels=int(channels),
         table_a=icc_read.which_table(path_a),
-        table_b=icc_read.which_table(path_b), device_space=space_a)
+        table_b=icc_read.which_table(path_b), device_space=space_a,
+        lab_a=lab_a, deltas=de)
 
 
 def _device_label(values, space: str) -> str:
@@ -1634,6 +1640,84 @@ def _patch_cloud(lab, name: str, space: str = "lab"):
         marker=dict(size=2.5, color=[f"rgb({int(r*255)},{int(g*255)},{int(b*255)})"
                                      for r, g, b in rgb]),
         name=f"{name} — patches", showlegend=True, hoverinfo="name")
+
+
+#: Where the eye is told to stop caring, in ΔE2000. Below 1 nobody can see a
+#: difference at all, so painting those as though they were something is a
+#: picture that cries wolf; above 5 the scale would spend most of its range on
+#: a handful of outliers and flatten everything a reader could act on.
+DRIFT_FLOOR = 1.0
+DRIFT_CEILING = 5.0
+
+#: The scale, and it is chosen rather than inherited. Plotly's default runs
+#: dark blue to yellow, which reads as a colour in its own right and fights a
+#: picture whose whole subject is colour. This runs from the page's own quiet
+#: grey through amber to the same red the rest of the application uses for
+#: "out of reach", so "worse" reads as "hotter" without a key.
+DRIFT_SCALE = [[0.0, "#4a4f5a"], [0.25, "#6d7280"], [0.5, "#c9a227"],
+               [0.75, "#e8712f"], [1.0, "#ff4573"]]
+
+
+def drift_cloud(lab, deltas, name: str, space: str = "lab",
+                floor: float = DRIFT_FLOOR, ceiling: float = DRIFT_CEILING):
+    """Where two profiles disagree, drawn where the disagreement happens.
+
+    THE NUMBERS ALONE DO NOT SAY WHERE. "Biggest difference ΔE 10.2, average
+    5.1" is true and nearly useless on its own: it cannot tell somebody
+    whether their scanner has drifted evenly, which is a calibration matter,
+    or only in the deep blues, which is a different problem with a different
+    cause. The same figures come out of both, and they want opposite actions.
+
+    So each colour is drawn at the place profile A puts it, painted by how far
+    profile B sends it instead. A cloud that is grey everywhere but hot in one
+    lobe is a picture somebody can act on without reading a single number.
+
+    DRAWN AT A's POSITIONS, not halfway between, and that is a real choice
+    rather than an arbitrary one: A is the older profile in the case this was
+    built for, so the picture reads "here is what you had, and here is how far
+    it has moved" — which is the question, in the order it is asked.
+
+    Points below *floor* are drawn small and quiet rather than dropped. Nobody
+    can see a ΔE below 1, but leaving those out would show a cloud with holes
+    in it and invite the reading that something is missing there, when what is
+    actually true is that nothing has changed there.
+    """
+    import numpy as _np
+    import plotly.graph_objects as go
+
+    lab = _np.asarray(lab, dtype=float)
+    deltas = _np.asarray(deltas, dtype=float)
+    if lab.ndim != 2 or lab.shape[0] != deltas.shape[0]:
+        raise ValueError("every point needs exactly one difference")
+
+    # L* up the page, as everywhere else in this application.
+    x, y, z = lab[:, 1], lab[:, 2], lab[:, 0]
+    if space == "rgb":
+        x, y, z = lab[:, 0], lab[:, 1], lab[:, 2]
+
+    quiet = deltas < floor
+    sizes = _np.where(quiet, 2.0, 4.0 + 3.0 * _np.clip(
+        (deltas - floor) / max(ceiling - floor, 1e-9), 0.0, 1.0))
+    return [go.Scatter3d(
+        x=x, y=y, z=z, mode="markers", name=name,
+        customdata=deltas,
+        hovertemplate="ΔE %{customdata:.2f}<extra></extra>",
+        marker=dict(
+            size=sizes, color=deltas, colorscale=DRIFT_SCALE,
+            cmin=0.0, cmax=ceiling,
+            # CLAMPED, NOT SCALED TO THE DATA. A scale that stretches to fit
+            # whatever is in front of it makes two pictures uncomparable: a
+            # pair of nearly identical profiles would come out looking as
+            # alarming as a pair that genuinely disagree, because the reddest
+            # point is always red. A fixed ceiling means the same colour means
+            # the same thing in every picture this ever draws.
+            opacity=0.85,
+            colorbar=dict(
+                title=dict(text="ΔE2000", side="right"),
+                thickness=12, len=0.55, x=1.02,
+                tickvals=[0, 1, 3, 5],
+                ticktext=["0 — same", "1 — invisible", "3 — plain",
+                          "5+ — obvious"])))]
 
 
 def _chart_cloud(lab, name: str, outside=None, space: str = "lab",
@@ -6464,7 +6548,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                  ideal_neutrals: bool = False, chart=None,
                  light=None, grid: bool = True, space=None,
                  chart_look=None, agree: float = 1.0, differ: float = 1.0,
-                 split: bool = False):
+                 split: bool = False, drift=None):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -6697,6 +6781,14 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                     page=c["page"], light=light, depth=depth):
                 fig.add_trace(trace)
         for trace in traces:
+            fig.add_trace(trace)
+    if drift is not None:
+        # LAST, so it reads over the shapes rather than through them. This is
+        # the subject of the picture whenever it is present -- nobody asks for
+        # a drift cloud and then wants to look at something else.
+        drift_lab, drift_de, drift_name = drift[:3]
+        for trace in drift_cloud(drift_lab, drift_de, drift_name,
+                                 space=_axes_space):
             fig.add_trace(trace)
     from gamutview import AXES
     # The axes are named for the space the gamuts were built in, so a

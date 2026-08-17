@@ -383,3 +383,127 @@ def test_nothing_is_written_to_the_spreadsheet_when_it_does_not_apply(one,
     win = window_with([one, tmp_path / "reading.ti3"])
     win._slots[1] = (tmp_path / "reading.ti3", None, object())
     assert gamut_app.GamutApp._profile_drift_rows(win) == []
+
+
+# --- drawing it ------------------------------------------------------------
+
+def test_the_drift_is_drawn_where_the_disagreement_is(one, other_gamma):
+    """The numbers say HOW MUCH; only the picture says WHERE. "Average ΔE 2"
+    comes out the same whether a device drifted a little everywhere, which
+    points at calibration, or hardly at all except in the deep blues, which is
+    a different problem. The figures cannot tell those apart."""
+    import ti3gamut
+    d = ti3gamut.compare_profiles(one, other_gamma)
+    figure = ti3gamut.build_figure(
+        [], "t", drift=(d.lab_a, d.deltas, "how far it moved"), space="lab")
+    clouds = [t for t in figure.data if t.type == "scatter3d"]
+    assert len(clouds) == 1
+    assert len(clouds[0].x) == d.matched, "not every colour was drawn"
+    assert list(clouds[0].marker.color) == list(d.deltas), (
+        "the picture and the table must be drawn from the same numbers")
+
+
+def test_the_scale_is_fixed_rather_than_stretched_to_the_data(one, other_gamma):
+    """A scale that fits itself to whatever is in front of it makes two
+    pictures uncomparable: a pair of nearly identical profiles would look as
+    alarming as a pair that genuinely disagree, because the reddest point is
+    always red. A fixed ceiling means the same colour means the same amount in
+    every picture this ever draws."""
+    import ti3gamut
+    small = ti3gamut.compare_profiles(one, one)             # zero everywhere
+    big = ti3gamut.compare_profiles(one, other_gamma)
+    marks = []
+    for drift in (small, big):
+        figure = ti3gamut.build_figure(
+            [], "t", drift=(drift.lab_a, drift.deltas, "d"), space="lab")
+        marks.append(figure.data[-1].marker)
+    assert marks[0].cmin == marks[1].cmin == 0.0
+    assert marks[0].cmax == marks[1].cmax == ti3gamut.DRIFT_CEILING
+
+
+def test_the_key_says_what_the_numbers_mean_in_words(one):
+    """ΔE is not a unit anybody has intuitions about. "3 — plain" is."""
+    import ti3gamut
+    d = ti3gamut.compare_profiles(one, one)
+    figure = ti3gamut.build_figure(
+        [], "t", drift=(d.lab_a, d.deltas, "d"), space="lab")
+    ticks = list(figure.data[-1].marker.colorbar.ticktext)
+    assert any("same" in t for t in ticks)
+    assert any("invisible" in t for t in ticks)
+    assert any("plain" in t for t in ticks)
+
+
+def test_colours_that_agree_are_drawn_quietly_rather_than_dropped(one,
+                                                                  other_gamma):
+    """Leaving them out would put holes in the cloud and invite the reading
+    that something is missing there, when what is true is that nothing has
+    changed there."""
+    import numpy as _np
+    import ti3gamut
+    d = ti3gamut.compare_profiles(one, other_gamma)
+    figure = ti3gamut.build_figure(
+        [], "t", drift=(d.lab_a, d.deltas, "d"), space="lab")
+    sizes = _np.asarray(figure.data[-1].marker.size)
+    assert len(sizes) == d.matched, "a colour was dropped from the cloud"
+    quiet = _np.asarray(d.deltas) < ti3gamut.DRIFT_FLOOR
+    if quiet.any() and (~quiet).any():
+        assert sizes[quiet].max() < sizes[~quiet].min(), (
+            "the ones that moved must stand out from the ones that did not")
+
+
+def test_every_point_needs_exactly_one_difference(one):
+    """A mismatch here would pair a colour with another colour's number and
+    paint a confident picture of nothing."""
+    import numpy as _np
+    import pytest as _pytest
+    import ti3gamut
+    with _pytest.raises(ValueError):
+        ti3gamut.drift_cloud(_np.zeros((5, 3)), _np.zeros(4), "d")
+
+
+def test_the_window_draws_it_only_when_it_means_something(one, other_gamma,
+                                                          tmp_path):
+    """Three ways it must stay out of the picture, each for its own reason."""
+    import gamut_app
+    win = window_with([one, other_gamma])
+    win._space = SimpleNamespace(currentData=lambda: "lab")
+    win._drift_draw = SimpleNamespace(isChecked=lambda: True)
+
+    assert gamut_app.GamutApp._drift_for_figure(win) is not None
+
+    # 1. Not asked for.
+    win._drift_draw = SimpleNamespace(isChecked=lambda: False)
+    assert gamut_app.GamutApp._drift_for_figure(win) is None
+
+    # 2. IN INK AMOUNTS the axes are device values, so a Lab position painted
+    #    into that cube puts every colour in the wrong place while looking
+    #    perfectly plausible.
+    win._drift_draw = SimpleNamespace(isChecked=lambda: True)
+    win._space = SimpleNamespace(currentData=lambda: "rgb")
+    assert gamut_app.GamutApp._drift_for_figure(win) is None
+
+    # 3. Not two profiles at all.
+    win._space = SimpleNamespace(currentData=lambda: "lab")
+    win._slots[1] = (tmp_path / "reading.ti3", None, object())
+    assert gamut_app.GamutApp._drift_for_figure(win) is None
+
+
+def test_a_meaningless_comparison_is_never_painted(one, monkeypatch):
+    """A picture of a meaningless number is worse than no picture: it looks
+    like evidence. When the two were read through different tables the box
+    explains why in words, and the cloud stays away."""
+    import gamut_app
+    import ti3gamut
+
+    real = ti3gamut.compare_profiles
+
+    def mismatched(a, b, **kw):
+        got = real(a, b, **kw)
+        return ti3gamut.ProfileDrift(
+            **{**got.__dict__, "table_a": "A2B1", "table_b": "A2B0"})
+
+    monkeypatch.setattr(ti3gamut, "compare_profiles", mismatched)
+    win = window_with([one, one])
+    win._space = SimpleNamespace(currentData=lambda: "lab")
+    win._drift_draw = SimpleNamespace(isChecked=lambda: True)
+    assert gamut_app.GamutApp._drift_for_figure(win) is None

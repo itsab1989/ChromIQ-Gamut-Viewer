@@ -5123,6 +5123,44 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._drift_worst, 1)
         _r.addWidget(drift_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         dv.addLayout(_r)
+        # IN THIS BOX RATHER THAN AMONG THE DRAWING OPTIONS, because this is
+        # where somebody is standing when the question occurs to them. They
+        # have just read "biggest difference ΔE 3.30" and the next thought is
+        # "where?" — so the answer sits under the number that prompted it,
+        # not in a panel they would have to go looking for.
+        self._drift_draw = QCheckBox("Show me where, in the picture",
+                                     self._drift_box)
+        self._drift_draw.setChecked(False)
+        self._drift_draw.setToolTip(
+            "Paint every colour into the picture, coloured by how far the two "
+            "profiles disagree about it.")
+        self._drift_draw.stateChanged.connect(self._redraw)
+        _d = QHBoxLayout(); _d.setContentsMargins(0, 0, 0, 0)
+        _d.setSpacing(6)
+        _d.addWidget(self._drift_draw, 1)
+        _d.addWidget(Hint(
+            "The numbers above say HOW MUCH the two profiles disagree. This "
+            "says WHERE, which is usually the more useful half.\n\n"
+            "Tick it and every colour is drawn at the place the FIRST profile "
+            "puts it, painted by how far the second one sends it instead. "
+            "Quiet grey means the two agree; amber means a careful eye would "
+            "see it; red means anybody would.\n\n"
+            "WHY THIS IS WORTH LOOKING AT. \"Average ΔE 2\" comes out the same "
+            "whether a scanner has drifted a little everywhere — which points "
+            "at calibration — or hardly at all except in the deep blues, which "
+            "is a different problem with a different cause. The numbers cannot "
+            "tell those apart. One look at the picture can.\n\n"
+            "The scale is fixed rather than stretched to fit, so the same "
+            "colour means the same amount in every picture. Two profiles that "
+            "barely differ come out looking calm, which is the truth about "
+            "them.\n\n"
+            "Colours the two agree about are still drawn, just small and "
+            "quiet. Leaving them out would put holes in the cloud and invite "
+            "the reading that something is missing there, when what is true "
+            "is that nothing has changed there.",
+            self._drift_box, title="Showing the drift in the picture"),
+            0, Qt.AlignmentFlag.AlignVCenter)
+        dv.addLayout(_d)
         self._drift_box.setVisible(False)
         v.addWidget(self._drift_box)
 
@@ -6850,6 +6888,41 @@ class GamutApp(QMainWindow):
             self, "Saved",
             f"Written to\n{target}\n\nIt opens in any spreadsheet, and every "
             "row says what it is and what the units are.")
+
+    def _drift_for_figure(self):
+        """The drift cloud for the picture, or None when it does not apply.
+
+        ASKED ON EVERY REDRAW, so it has to be cheap and it has to be silent
+        about failure: a picture must still be drawn when a profile turns out
+        to be unreadable, and a raise here would take the whole view down over
+        a readout.
+
+        Measured at 9 steps per channel: 729 colours in well under a tenth of
+        a second, which is below the threshold at which a redraw feels slower.
+        """
+        if not getattr(self, "_drift_draw", None) or \
+                not self._drift_draw.isChecked():
+            return None
+        # ONLY IN A SPACE WHERE THE POSITIONS MEAN SOMETHING. In ink amounts
+        # the picture's axes are device values, and a Lab position painted
+        # into that cube would put every colour in the wrong place while
+        # looking perfectly plausible.
+        if self._space.currentData() == "rgb":
+            return None
+        pair = self._profile_pair()
+        if pair is None:
+            return None
+        from ti3gamut import compare_profiles
+        try:
+            d = compare_profiles(*pair, steps=self.PROFILE_GRID)
+        except Exception:          # noqa: BLE001 — a readout must never crash a view
+            return None
+        if not d.comparable:
+            # The number is meaningless when the two were read different ways,
+            # and a picture of a meaningless number is worse than no picture:
+            # it looks like evidence. The box says why in words.
+            return None
+        return d.lab_a, d.deltas, "how far it moved"
 
     def _profile_drift_rows(self) -> list:
         """The two-profile comparison as table rows, for the spreadsheet.
@@ -9413,6 +9486,7 @@ class GamutApp(QMainWindow):
                             and self._ideal_neutral.isChecked()),
             chart=self._chart_cloud(),
             chart_look=self._chart_look(),
+            drift=self._drift_for_figure(),
             light=self._light_position(),
             grid=self._grid_on.isChecked(),
             agree=self._agree.value() / 100.0,
