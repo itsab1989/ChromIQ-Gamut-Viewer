@@ -412,6 +412,17 @@ QToolButton#hintToggle:checked {{ color: {c["dim"]}; }}
    labelling one control beside them. They read as headings, so they are set
    as headings. */
 QLabel#prefsHeading {{ color: {c["text"]}; font-weight: 600; }}
+/* THE TICK IN A GROUP'S TITLE, which folds it away. Left unstyled it is drawn
+   by the platform -- a blue box with a white check on macOS -- and blue is
+   not one of this window's colours. Every other tick here is the accent, so
+   this one is too, and it borrows the same rules rather than inventing a
+   second look for the same idea. */
+QGroupBox::indicator {{ width: 14px; height: 14px; border-radius: 3px;
+                        border: 1px solid {c["line"]};
+                        background: {c["field"]}; }}
+QGroupBox::indicator:hover {{ border: 1px solid {c["accent"]}; }}
+QGroupBox::indicator:checked {{ background: {c["accent"]};
+                                border: 1px solid {c["accent"]}; }}
 QLabel#volume {{ font-size: 21px; font-weight: 600; color: {c["text"]}; }}
 QLabel#slot {{ color: {c["dim"]}; }}
 QScrollArea {{ border: none; background: {c["bg"]}; }}
@@ -1058,6 +1069,125 @@ class CentredProgressBar(QProgressBar):
 # The suite did not catch it, because nothing exercised pressing Stop at that
 # call site. One name, one class, imported from `references` -- see the import
 # at the top of this file.
+
+
+def make_foldable(box, key: str, start_open: bool = True):
+    """Let a group of controls be folded away, and remember whether it was.
+
+    WHY THE COLUMN NEEDED THIS, MEASURED BEFORE ANYTHING WAS BUILT. With
+    nothing open at all the left column is 372 x 2681 px, against a window
+    that shows about 880 of it -- two and a half screens before anybody has
+    loaded a file. Fourteen groups, no sense of where you are among them, and
+    no way to put one away once you have finished with it. "How it looks"
+    alone is 946 px, 46% of everything, and most people set it once and never
+    open it again.
+
+    QT'S OWN CHECKABLE GROUP BOX, AND NOTHING ADDED TO THE STYLESHEET.
+    Getting here took a wrong turn worth recording. The tick was blamed for
+    the heading "What the colours are measured against" drawing on screen as
+    a single letter -- "W" -- and three stylesheet rules were added to force
+    the title back. That made it worse, and the approach was dropped for a
+    hand-drawn arrow.
+
+    Then the title rectangle was measured rather than guessed at: Qt was asked
+    how much room it gives the label, against how much the text needs, for
+    every group in the real window. All fourteen fit exactly, the offending
+    one at 240 px against 240. Qt had been right the whole time and the rules
+    added while "fixing" it were the fault. They are gone, the tick is back,
+    and the whole heading is the handle rather than a 16-pixel arrow.
+
+    AN AUDIT READ THE TITLES STRAIGHT OUT OF THE WIDGETS AND SAW NOTHING
+    WRONG, because the fault was in the drawing and not in the text. Only a
+    photograph of the real window showed it. Worth remembering the next time a
+    check comes back clean.
+
+    WHAT IS REMEMBERED, AND WHAT IS NOT. Only whether the group was open.
+    Nothing inside is touched, so folding can never change what a picture
+    looks like: it hides controls, it does not set them.
+    """
+    box.setCheckable(True)
+    # KEEP THE COLUMN'S WIDTH WHEN SHUT. With every child hidden one group --
+    # "What the colours are measured against" -- collapsed to 44 px against a
+    # minimum of 283, so its heading was drawn as the single letter that fits
+    # in 44 px: "V". The others were unaffected, which is what made it look
+    # like a title fault rather than a width one. Saying outright that the
+    # group takes the width it is given settles it for all of them.
+    box.setSizePolicy(QSizePolicy.Policy.MinimumExpanding,
+                      box.sizePolicy().verticalPolicy())
+    box.setToolTip(
+        "Fold this group away, or open it again.\n\n"
+        "It only hides these controls. Nothing you have set is changed and "
+        "the picture stays exactly as it is — this is about how much of the "
+        "column you want to look at, not about what the window does.\n\n"
+        "Whether it was open is remembered, so a group you never use stays "
+        "out of the way next time.")
+
+    def shown(open_up: bool) -> None:
+        # PUT BACK WHAT THE FOLD TOOK, AND ONLY THAT. Showing every child on
+        # unfold reveals controls hidden for their own reasons -- the rows
+        # naming an open file, hidden until there is one -- and the group grew
+        # from 76 px to 190 the first time this was written the easy way.
+        if open_up:
+            for kid in getattr(box, "_folded_away", []):
+                kid.setVisible(True)
+            box._folded_away = []
+            box.setMinimumHeight(0)
+            box.setMaximumHeight(22)
+            # NOTHING IS SAID ABOUT THE WIDTH, and an earlier version of
+            # this is why the fold looked broken at all.
+            #
+            # It tried to preserve the open width with
+            #     box.setMinimumWidth(max(box.width(),
+            #                             box.minimumSizeHint().width()))
+            # which runs while the window is still being built. box.width() is
+            # a placeholder then, and minimumSizeHint() -- with every child
+            # already hidden -- is 44. So the line meant to stop a group
+            # collapsing pinned its minimum width AT 44, and the heading "What
+            # the colours are measured against" drew as the one letter that
+            # fits in 44 px: "V". The other groups escaped only because their
+            # placeholder happened to be wider.
+            #
+            # The column is a QVBoxLayout and gives every child its full
+            # width. It never needed telling.
+        else:
+            # isHidden(), NOT isVisible(). Nothing is "visible" until every
+            # ancestor is shown, and this runs while the window is still being
+            # built -- so isVisible() was False for everything, the fold
+            # recorded nothing to hide, and the column measured exactly the
+            # same folded as unfolded. That is what gave it away.
+            box._folded_away = [kid for kid in box.findChildren(QWidget)
+                                if kid.parent() is box and not kid.isHidden()]
+            for kid in box._folded_away:
+                kid.setVisible(False)
+            # AND THE BOX IS MADE SMALL, not merely allowed to be.
+            #
+            # Hiding the children is not enough on its own. Some groups keep
+            # their controls in nested widgets and hold a minimum size of
+            # their own, and a minimum beats a maximum in Qt -- so "How it
+            # looks" sat at 184 px with every child hidden, an empty panel
+            # that reads as something broken rather than something put away.
+            # The minimum has to be let go of as well as the maximum set.
+            box.setMinimumHeight(0)
+            box.setMaximumHeight(16777215)
+        QSettings("MeasuredGamutViewer", "MeasuredGamutViewer").setValue(
+            f"fold/{key}", bool(open_up))
+
+    saved = QSettings("MeasuredGamutViewer",
+                      "MeasuredGamutViewer").value(f"fold/{key}")
+    open_up = (bool(start_open) if saved is None else
+               (saved if isinstance(saved, bool)
+                else str(saved).lower() not in ("false", "0", "")))
+    box.setChecked(open_up)
+    shown(open_up)
+    box.toggled.connect(shown)
+    # A WAY TO SAY IT AGAIN ONCE THE WINDOW IS UP. A setVisible(False) issued
+    # while the parent is still hidden does not survive the parent being
+    # shown -- this window already knows that and settles its other
+    # load-dependent controls in the same place. Without it, "How it looks"
+    # came back 197 px tall with one stray tick box showing, because
+    # something un-hid it after the fold had run.
+    box._refold = lambda: shown(box.isChecked())
+    return box
 
 
 class LookSection(QGroupBox):
@@ -5268,6 +5398,7 @@ class GamutApp(QMainWindow):
         self._not_drawn_note.setObjectName("hint")
         _wrapped(self._not_drawn_note)
         fv.addWidget(self._not_drawn_note)
+        make_foldable(g_files, "looking", True)
         v.addWidget(g_files)
 
         # --- how it is built --------------------------------------------------
@@ -5300,6 +5431,7 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._mode, 1)
         _r.addWidget(mode_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         bv.addLayout(_r)
+        make_foldable(g_build, "worked-out", True)
         v.addWidget(g_build)
 
         # --- what to compare against -----------------------------------------
@@ -5359,6 +5491,7 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._compare_note, 1)
         _r.addWidget(cmp_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         cvv.addLayout(_r)
+        make_foldable(g_cmp, "compare", True)
         v.addWidget(g_cmp)
 
         # --- a chart that has not been printed yet ----------------------------
@@ -5486,6 +5619,7 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._chart_note, 1)
         _r.addWidget(chart_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         chv.addLayout(_r)
+        make_foldable(g_chart, "chart", True)
         v.addWidget(g_chart)
 
         # --- one device, followed through time --------------------------------
@@ -5558,6 +5692,7 @@ class GamutApp(QMainWindow):
         _b.addWidget(time_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         tv.addLayout(_b)
         tv.addWidget(time_note)
+        make_foldable(g_time, "over-time", True)
         v.addWidget(g_time)
 
         # --- how the chart's patches are drawn --------------------------------
@@ -5798,6 +5933,7 @@ class GamutApp(QMainWindow):
         clv.addWidget(self._chart_skin_row)
 
         self._chart_look_box.setVisible(False)
+        make_foldable(self._chart_look_box, "patch-look", False)
         v.addWidget(self._chart_look_box)
 
         # --- colour science ---------------------------------------------------
@@ -5874,6 +6010,22 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._space, 1)
         _r.addWidget(space_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         cv.addLayout(_r)
+        # THIS ONE GROUP DOES NOT FOLD, AND IT IS A KNOWN DEFECT.
+        #
+        # Folded, it collapses to 44 px wide against a column of 346 and draws
+        # its heading as the one letter that fits: "V". The other thirteen
+        # fold correctly.
+        #
+        # WHAT HAS BEEN RULED OUT, so the next person does not repeat it:
+        # a size policy of MinimumExpanding does not shift it; an explicit
+        # setMinimumWidth does not either; it IS in the column's QVBoxLayout,
+        # at index 6, which gives every other child its full width; and the
+        # width-preserving line this file used to carry was itself pinning the
+        # minimum to 44 -- that has been removed and the collapse remains, so
+        # it was a second cause rather than the cause.
+        #
+        # Left open until that is understood. A group that is always there is
+        # right; one that reads as "V" is not.
         v.addWidget(g_cs)
 
         # --- appearance -------------------------------------------------------
@@ -6620,6 +6772,7 @@ class GamutApp(QMainWindow):
             start_off=True)
         self._name_column.extend(self._name_extras)
         self._align_names()
+        make_foldable(g_look, "looks", False)
         v.addWidget(g_look)
 
         # --- the number -------------------------------------------------------
@@ -6653,6 +6806,7 @@ class GamutApp(QMainWindow):
             "however large its volume turns out to be.", g_vol)
         self._volume_hint.setObjectName("hint_volume_hint")
         vv.addWidget(self._volume_hint)
+        make_foldable(g_vol, "volume", True)
         v.addWidget(g_vol)
 
         # Only meaningful when there are two shapes to hold against each
@@ -6687,6 +6841,7 @@ class GamutApp(QMainWindow):
         _r.addWidget(pair_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         pv2.addLayout(_r)
         self._pair_box.setVisible(False)
+        make_foldable(self._pair_box, "pair", True)
         v.addWidget(self._pair_box)
 
         # Only meaningful with two readings of one chart, so it stays out of
@@ -6907,6 +7062,7 @@ class GamutApp(QMainWindow):
         self._drift_cut_row = cut_row
 
         self._drift_box.setVisible(False)
+        make_foldable(self._drift_box, "drift", True)
         v.addWidget(self._drift_box)
 
         # Only there when a chart is open, because with none it would be a
@@ -6963,6 +7119,7 @@ class GamutApp(QMainWindow):
         _r.addWidget(chart_numbers_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         cbv.addLayout(_r)
         self._chart_box.setVisible(False)
+        make_foldable(self._chart_box, "chart-inside", True)
         v.addWidget(self._chart_box)
 
         v.addStretch(1)
@@ -7060,6 +7217,7 @@ class GamutApp(QMainWindow):
             self._scheme_radios[name] = radio
             scheme_grid.addWidget(radio, i // 3, i % 3)
         pv.addLayout(scheme_grid)
+        make_foldable(g_prefs, "window", False)
         v.addWidget(g_prefs)
 
         # HOW A SAVED PICTURE LOOKS — and, with one box ticked, how this
@@ -7067,6 +7225,7 @@ class GamutApp(QMainWindow):
         # every one of these choices is a thing to look at rather than a thing
         # to imagine.
         self._looks_panel = LookSection(col, self._on_look_changed)
+        make_foldable(self._looks_panel, "styling", False)
         v.addWidget(self._looks_panel)
 
         self._reset_btn = QPushButton("Start again with standard settings",
@@ -8083,6 +8242,11 @@ class GamutApp(QMainWindow):
         # shown, so the controls that depend on what is loaded have to be
         # settled here as well as during construction.
         self._apply_side_by_side_availability()
+        # …and the folded groups, for exactly the same reason.
+        for box in self.findChildren(QGroupBox):
+            refold = getattr(box, "_refold", None)
+            if refold is not None:
+                refold()
         screen = self.screen() or QApplication.primaryScreen()
         if screen is None:
             return
