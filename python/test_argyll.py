@@ -93,6 +93,166 @@ def test_a_wrong_folder_is_recognised_as_wrong(tmp_path):
     assert argyll.looks_like_argyll(_fake_install(tmp_path / "Argyll"))
 
 
+def test_picking_the_argyll_folder_works_as_well_as_picking_bin(tmp_path):
+    """The pick somebody actually makes.
+
+    `/Applications/Argyll` is the folder with the name on it; `bin` is an
+    implementation detail they have no reason to know about. Turning that pick
+    down -- which is what happened -- teaches somebody the button is broken at
+    the moment they are trying to help themselves.
+    """
+    binfolder = _fake_install(tmp_path / "Argyll_V3.5.0")
+    outer = tmp_path / "Argyll_V3.5.0"
+
+    assert argyll.looks_like_argyll(outer), "the obvious pick was refused"
+    assert argyll.tools_folder(outer) == binfolder      # and bin was found for them
+    assert argyll.tools_folder(binfolder) == binfolder  # picking bin still works
+    assert argyll.tools_folder(tmp_path / "nowhere") is None
+
+
+def test_a_newer_version_wins_even_when_the_digits_read_as_text(tmp_path,
+                                                                monkeypatch):
+    """3.10 is later than 3.5, and a plain string sort says the opposite.
+
+    The existing check used V2.0.0 against V3.5.0, where sorting as text gives
+    the right answer by luck -- so it passed while the ordering was wrong. This
+    is the pair that tells them apart.
+    """
+    _fake_install(tmp_path / "Argyll_V3.5.0")
+    newer = _fake_install(tmp_path / "Argyll_V3.10.0")
+    monkeypatch.setattr(argyll.shutil, "which", lambda _n: None)
+    monkeypatch.setattr(argyll.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(argyll.sys, "platform", "linux")
+    argyll.forget()
+    assert argyll.find_tool("iccgamut") == str(newer / "iccgamut")
+
+
+def test_a_lowercase_folder_is_found_too(tmp_path, monkeypatch):
+    """Linux filesystems are case-sensitive, so a glob for `Argyll*` misses
+    `argyll` and `argyll-cms` -- which is what a tarball unpacks to and what a
+    distribution package installs. The same search then behaves differently on
+    the two platforms for no reason the user can see."""
+    binfolder = _fake_install(tmp_path / "argyll-cms")
+    monkeypatch.setattr(argyll.shutil, "which", lambda _n: None)
+    monkeypatch.setattr(argyll.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(argyll.sys, "platform", "linux")
+    argyll.forget()
+    assert argyll.find_tool("iccgamut") == str(binfolder / "iccgamut")
+
+
+@pytest.mark.parametrize("landing", ["Downloads", "Desktop", "Documents"])
+@pytest.mark.parametrize("platform,osname",
+                         [("darwin", "posix"), ("win32", "nt"),
+                          ("linux", "posix")])
+def test_it_is_found_where_a_download_actually_lands(tmp_path, monkeypatch,
+                                                     landing, platform, osname):
+    """The gap this whole task came from. The official build is a zip, and
+    what people do with a zip is unpack it and carry on -- so Downloads is the
+    single most likely folder on any platform, and it was not being looked in.
+
+    ASKS WHETHER THE FOLDER IS SEARCHED, not what find_tool finally answers,
+    and that is deliberate. The roots include real system folders that are not
+    redirected by faking the home directory -- /Applications on this very
+    machine holds an installation -- so an equality check against find_tool
+    passes or fails on what the developer happens to have installed rather
+    than on the behaviour under test.
+    """
+    binfolder = _fake_install(tmp_path / landing / "Argyll_V3.5.0")
+    monkeypatch.setattr(argyll.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(argyll.sys, "platform", platform)
+    monkeypatch.setattr(argyll.os, "name", osname)
+    argyll.forget()
+    assert str(binfolder) in argyll.searched_folders(), (
+        f"{landing} is not looked in on {platform}")
+
+
+def test_the_homebrew_folders_are_looked_in():
+    """Homebrew genuinely carries it: the argyll-cms formula does
+    `prefix.install "bin"`, so the tools are symlinked into $(brew --prefix)/bin
+    -- and the formula has arm64_linux and x86_64_linux bottles, so Linux
+    Homebrew is a real installation rather than a curiosity.
+
+    NONE OF THESE ARE ON THE PATH OF A BUNDLED APPLICATION. Measured on macOS:
+    `launchctl getenv PATH` is unset, so an app started from Finder gets
+    /usr/bin:/bin:/usr/sbin:/sbin. If the folder is not in this list, a
+    Homebrew install cannot be found at all.
+    """
+    looked = set(argyll._fixed_folders())
+    assert "/opt/homebrew/bin" in looked            # Apple silicon
+    assert "/usr/local/bin" in looked               # Intel
+    assert "/home/linuxbrew/.linuxbrew/bin" in looked   # Linux, shared
+    assert "/opt/local/bin" in looked               # MacPorts
+    assert "/usr/bin" in looked                     # a distribution package
+
+
+def test_a_moved_homebrew_is_followed(monkeypatch):
+    """HOMEBREW_PREFIX is what brew itself exports, so it is the honest answer
+    for anybody who did not install it in the default place."""
+    monkeypatch.setenv("HOMEBREW_PREFIX", "/somewhere/of/my/own")
+    assert "/somewhere/of/my/own/bin" in argyll._fixed_folders()
+
+
+def test_a_tool_that_cannot_run_is_not_reported_as_missing(tmp_path,
+                                                           monkeypatch):
+    """A zip unpacked by something that does not carry Unix permissions leaves
+    every program in place and none of them runnable. Saying "not found" sends
+    somebody looking for the wrong problem entirely."""
+    binfolder = tmp_path / "Argyll" / "bin"
+    binfolder.mkdir(parents=True)
+    tool = binfolder / "iccgamut"
+    tool.write_text("#!/bin/sh\nexit 0\n")
+    tool.chmod(0o644)                                    # there, but not runnable
+    monkeypatch.setattr(argyll.shutil, "which", lambda _n: None)
+    monkeypatch.setattr(argyll, "_candidate_folders", lambda: iter([binfolder]))
+    argyll.forget()
+
+    assert argyll.find_tool("iccgamut") is None           # honestly unusable
+    assert str(tool) in argyll.found_but_not_runnable()   # but say why
+
+
+def test_where_it_looked_can_be_shown_and_repeats_nothing(monkeypatch,
+                                                          tmp_path):
+    """The "not found" message names the folders. Duplicates would pad it with
+    the same path three times, because the roots deliberately overlap."""
+    monkeypatch.setattr(argyll.Path, "home", staticmethod(lambda: tmp_path))
+    looked = argyll.searched_folders()
+    assert looked, "the search covers nothing at all"
+    assert len(set(looked)) == len(looked), "a folder is listed twice"
+
+
+def test_the_message_says_it_looked_in_downloads_even_when_it_is_empty(
+        tmp_path, monkeypatch):
+    """The case the user is actually in when they read the message.
+
+    A list built from the folders PROBED cannot mention Downloads on a machine
+    with nothing installed -- there is no Argyll folder inside it to probe --
+    which is exactly the machine whose owner needs telling that it was looked
+    in. So the shown list names the places searched instead.
+    """
+    (tmp_path / "Downloads").mkdir()
+    monkeypatch.setattr(argyll.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(argyll.sys, "platform", "darwin")
+    argyll.forget()
+
+    assert not any("Downloads" in f for f in argyll.searched_folders())
+    roots, _tools = argyll.searched_places()
+    assert any("Downloads" in place for place in roots), roots
+
+
+def test_nothing_is_named_that_does_not_exist_on_this_machine(tmp_path,
+                                                              monkeypatch):
+    """A Mac told that C:\\Argyll\\bin was checked reads it as a fault rather
+    than as diligence, and stops believing the rest of the message."""
+    monkeypatch.setattr(argyll.Path, "home", staticmethod(lambda: tmp_path))
+    roots, tools = argyll.searched_places()
+    for place in list(roots) + list(tools):
+        # Written the short way for the message, so "~" has to come back to a
+        # real path before it can be asked whether it exists.
+        folder = place.replace("~", str(tmp_path), 1) if place.startswith("~") \
+            else place
+        assert os.path.isdir(folder), f"named a folder that is not there: {folder}"
+
+
 def test_the_search_survives_a_folder_it_may_not_read(tmp_path, monkeypatch):
     """A root that cannot be listed must not stop the search."""
     forbidden = tmp_path / "forbidden"

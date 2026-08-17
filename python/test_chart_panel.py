@@ -533,3 +533,91 @@ def test_the_scrolling_list_fades_at_the_edge_that_has_more_past_it(app):
     top, bottom = area.fades()
     assert top > 0 and bottom == 0, "at the end only the top may fade"
     dialog.close()
+
+
+# --- the message box, at every length a message actually reaches -------------
+
+@pytest.fixture
+def styled(app):
+    """The application's real stylesheet, put on and taken off again.
+
+    THE DIALOG IS TWO POINTS NARROWER WITH IT ON, because the card carries
+    `border: 1px solid` and the border is drawn inside the fixed width. Two
+    points is enough to clip a button, so a check run against a bare
+    application is not checking the thing the user sees.
+
+    It was found the bad way: these tests passed on their own and failed in a
+    full run, because some other module had left a stylesheet on the shared
+    QApplication. That made the result depend on test ORDER — so the
+    stylesheet is put on deliberately here, and taken off afterwards so no
+    other module inherits it.
+    """
+    import gamut_app
+    was = app.styleSheet()
+    app.setStyleSheet(gamut_app.stylesheet("dark"))
+    yield app
+    app.setStyleSheet(was)
+
+
+@pytest.mark.parametrize("sentences", [1, 3, 10, 30, 60])
+def test_a_long_message_never_gets_wider_than_its_own_window(styled, sentences):
+    """A word-wrapping QLabel does not ask for the width its longest LINE
+    needs. It asks for a width that stops the block becoming absurdly tall, so
+    the more text it holds the wider it wants to be, whatever the lines say.
+
+    This box is a fixed 470 points across, so that request cannot be granted
+    and the layout silently overflows instead: measured at 610 wanted against
+    470 given, which cut the right-hand end off BOTH buttons, on the dialog
+    whose whole purpose is offering somebody those two buttons. Nothing warns
+    about it — it simply comes up wrong.
+
+    Parametrised by length because that is the axis the fault lives on: the
+    short messages fitted by luck, and every one in the application was short
+    until one of them grew.
+    """
+    import gamut_app
+    from gamut_app import Notice
+    body = " ".join(f"Sentence number {i} saying something ordinary."
+                    for i in range(sentences))
+    dialog = Notice(None, "A message with a reasonably long heading on it",
+                    body, ok="Open the download page",
+                    cancel="Choose the folder…")
+    dialog.show()
+    styled.processEvents()
+    wanted = dialog.layout().minimumSize().width()
+    assert wanted <= dialog.width(), (
+        f"{sentences} sentences ask for {wanted} points inside a window "
+        f"{dialog.width()} wide — {wanted - dialog.width()} points of it, "
+        f"including the buttons, are cut off")
+    dialog.close()
+
+
+def test_both_buttons_are_whole_however_long_the_message(styled):
+    """The consequence the reader actually meets. Width arithmetic can be
+    right in the abstract and still leave a button with its label sliced in
+    half, so this asks the question about the buttons themselves.
+
+    THE BODY IS LONG ON PURPOSE, and was made longer after the first version
+    of this check passed with the fix taken out — twenty-five short paragraphs
+    did not push the label far enough to squeeze anything, so it was a green
+    test guarding nothing at all. Sixty sentences is past the measured point
+    where the label starts asking for more width than the window has.
+    """
+    import gamut_app
+    from PyQt6.QtWidgets import QPushButton
+    from gamut_app import Notice
+    body = " ".join(f"Sentence number {i} saying something ordinary enough."
+                    for i in range(60))
+    dialog = Notice(None, "ArgyllCMS was not found", body,
+                    ok="Open the download page", cancel="Choose the folder…")
+    dialog.show()
+    styled.processEvents()
+    for button in dialog.findChildren(QPushButton):
+        right = button.mapTo(dialog, button.rect().topRight()).x()
+        assert right <= dialog.width(), (
+            f"“{button.text()}” runs {right - dialog.width()} points past the "
+            f"right-hand edge of the dialog")
+        assert button.width() >= button.sizeHint().width(), (
+            f"“{button.text()}” is {button.sizeHint().width() - button.width()} "
+            "points narrower than its own text needs")
+    dialog.close()

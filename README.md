@@ -605,13 +605,29 @@ them correctly, so re-implementing that would be a worse answer, not a better
 one. For ICC profiles it is *preferred* rather than required, because it works
 the surface out in full precision.
 
-It is found automatically in all the usual places, including the
-version-numbered folder the official download unpacks into
-(`Argyll_V3.5.0`). **This window** says whether it was found and where, and
-**Where ArgyllCMS is…** lets you point at the folder yourself, or open
-[argyllcms.com](https://www.argyllcms.com/) to get it — it is free, and it is
-the same toolkit that reads a printed chart in the first place. Nothing nags
-you about it on startup, because most people never need it.
+It is found automatically in all the usual places:
+
+* **Where a download lands and stays** — your Downloads, Desktop or Documents
+  folder, including the version-numbered folder the official build unpacks
+  into (`Argyll_V3.5.0`). Unpacking the zip and leaving it there is enough.
+* **Where an installer puts it** — `/Applications` on a Mac, `Program Files`
+  on Windows, `/opt` or `/usr/local` on Linux.
+* **Homebrew**, which carries it as `argyll-cms` on macOS *and* on Linux, so
+  `brew install argyll-cms` is enough on either. A Homebrew moved from its
+  default place is followed too.
+* **MacPorts**, and a distribution package that puts the tools in `/usr/bin`.
+
+If it is somewhere else entirely, **This window** says so and **Where
+ArgyllCMS is…** lets you point at the folder yourself. Choose either the
+ArgyllCMS folder or the `bin` folder inside it — both are accepted, and the
+right one is worked out for you. The same button opens
+[argyllcms.com](https://www.argyllcms.com/) if you have not got it — it is
+free, and it is the same toolkit that reads a printed chart in the first
+place. Nothing nags you about it on startup, because most people never need
+it.
+
+If it is not found, the message names the folders it looked in, so you can see
+at a glance whether the place you installed it was among them.
 
 ### The blacks a dark page hides, and the whites a light one hides
 

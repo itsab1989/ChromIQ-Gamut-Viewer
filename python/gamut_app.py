@@ -2914,6 +2914,19 @@ class Notice(QDialog):
     that carries the default.
     """
 
+    #: How wide every one of these is, and the gap either side of the text.
+    #: Named rather than repeated so the label can be sized from them: the two
+    #: numbers have to agree, and they did not.
+    WIDTH = 470
+    SIDE = 26
+    #: The card's own border, from `QFrame#noticeCard { border: 1px solid … }`
+    #: in the stylesheet. It is drawn INSIDE the 470, so the text has two
+    #: points less room than the arithmetic suggests — which is exactly two
+    #: points more than it had, and enough to clip the buttons. Kept here
+    #: beside the other two so the sum is written down once; if that rule
+    #: changes, this changes with it.
+    BORDER = 1
+
     def __init__(self, parent, title: str, body: str, *, rich: bool = False,
                  ok: str = "OK", cancel: str | None = None,
                  scroll: bool = False) -> None:
@@ -2928,11 +2941,28 @@ class Notice(QDialog):
         card.setObjectName("noticeCard")
         outer.addWidget(card)
         lay = QVBoxLayout(card)
-        lay.setContentsMargins(26, 22, 26, 20)
+        lay.setContentsMargins(Notice.SIDE, 22, Notice.SIDE, 20)
         lay.setSpacing(0)
+        # THE TEXT IS TOLD ITS WIDTH RATHER THAN ASKED FOR ONE, and without
+        # this a long message silently breaks the dialog.
+        #
+        # A word-wrapping QLabel does not ask for the width its longest line
+        # needs; it asks for a width that keeps the block from becoming absurdly
+        # tall, so the MORE text it holds the WIDER it wants to be, whatever the
+        # lines say. This window is a fixed 470 points across, so that request
+        # cannot be met, and the layout quietly overflows: measured at 610
+        # points wanted against 470 given, which cut the right-hand end off both
+        # buttons. Nothing warns about it -- the dialog simply comes up wrong.
+        #
+        # Fixing the label's width instead makes the wrap point the real one and
+        # lets heightForWidth do the rest, so the box grows downwards as it
+        # always should have. Found by measuring a message that had grown by a
+        # dozen lines; every earlier one fitted by luck rather than by design.
+        inner = Notice.WIDTH - 2 * (Notice.SIDE + Notice.BORDER)
 
         head = QLabel(title, card)
         head.setObjectName("noticeTitle")
+        head.setFixedWidth(inner)
         head.setWordWrap(True)
         head.setSizePolicy(QSizePolicy.Policy.Preferred,
                            QSizePolicy.Policy.Minimum)
@@ -2946,6 +2976,7 @@ class Notice(QDialog):
         # twice the height it needs.
         text = QLabel(body, card)
         text.setObjectName("noticeBody")
+        text.setFixedWidth(inner)
         text.setWordWrap(True)
         text.setSizePolicy(QSizePolicy.Policy.Preferred,
                            QSizePolicy.Policy.Minimum)
@@ -2958,6 +2989,13 @@ class Notice(QDialog):
             # would gain a scroll bar it never uses.
             area = QScrollArea(card)
             area.setWidgetResizable(True)
+            # ROOM FOR THE SCROLL BAR ITSELF. It is drawn inside the viewport,
+            # so a label sized to the full inner width is wider than what is
+            # left for it, and the reader gets a sideways scroll bar as well —
+            # on the one message in the application long enough to need this.
+            area.setVerticalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+            text.setFixedWidth(inner - area.verticalScrollBar().sizeHint().width())
             area.setWidget(text)
             area.setMinimumHeight(360)
             lay.addWidget(area, 1)
@@ -2984,7 +3022,7 @@ class Notice(QDialog):
         # sizes itself to its longest sentence gives a different shape for
         # every message; a fixed measure keeps them all recognisably the same
         # window and keeps the lines short enough to read comfortably.
-        self.setFixedWidth(470)
+        self.setFixedWidth(Notice.WIDTH)
         # Fixed to exactly what the content needs. With only a minimum, the
         # dialog opened taller than its text and QVBoxLayout handed the spare
         # height to the labels, which pushed the heading away from the body it
@@ -8258,8 +8296,10 @@ class GamutApp(QMainWindow):
                 "If you have not got it, it is free, and it is the same "
                 "toolkit that reads a printed chart in the first place.\n\n"
                 "If you have got it and it simply lives somewhere unusual, "
-                "choose the folder holding the tools instead — normally the "
-                "bin folder inside the ArgyllCMS one.",
+                "choose the folder you installed it into — either the "
+                "ArgyllCMS folder itself or the bin folder inside it, "
+                "whichever you find first.\n\n"
+                + self._where_it_looked(),
                 yes="Open the download page", no="Choose the folder…")
             if wanted:
                 QDesktopServices.openUrl(QUrl(argyll.DOWNLOAD_URL))
@@ -8276,23 +8316,84 @@ class GamutApp(QMainWindow):
             | QFileDialog.Option.ShowDirsOnly)
         if not chosen:
             return
-        if not argyll.looks_like_argyll(chosen):
+        # EITHER FOLDER IS ACCEPTED. Somebody who picks /Applications/Argyll
+        # has picked the right thing by every reasonable reading — `bin` is our
+        # detail, not theirs — so the bin folder inside it is found for them
+        # rather than being demanded of them.
+        holding = argyll.tools_folder(chosen)
+        if holding is None:
             # TURNED DOWN NOW rather than at the moment a file fails to open,
             # which would be a puzzle days later in a different part of the app.
             Notice.warn(
                 self, "That folder does not hold the tools",
                 f"None of the ArgyllCMS programs are in:\n{chosen}\n\n"
-                "The folder to choose is the one with the programs "
-                "themselves in it — iccgamut, cxf2ti3 and the rest. In a "
-                "normal installation that is the bin folder inside the "
-                "ArgyllCMS folder.\n\nNothing has been changed.")
+                "The folder to choose is the ArgyllCMS folder itself, or the "
+                "bin folder inside it — the one with the programs in it, "
+                "iccgamut and cxf2ti3 and the rest. Either will do.\n\n"
+                + self._not_runnable_note()
+                + "Nothing has been changed.")
             return
-        self._store.setValue("argyll_folder", chosen)
-        argyll.set_folder(chosen)
+        holding = str(holding)
+        self._store.setValue("argyll_folder", holding)
+        argyll.set_folder(holding)
         self._refresh_argyll()
         Notice.say(self, "That is where it will look",
-                   f"ArgyllCMS will be used from:\n{chosen}\n\n"
+                   f"ArgyllCMS will be used from:\n{holding}\n\n"
                    "Every file type can be opened now.")
+
+    @staticmethod
+    def _where_it_looked() -> str:
+        """The folders the search covered, for the "not found" message.
+
+        Named rather than summarised, and capped rather than complete: a wall
+        of paths is not read by anybody. The point is to let somebody see at a
+        glance that the obvious place was already tried, so they reach for the
+        button instead of arguing with the message.
+
+        KEPT NARROW ON PURPOSE. This box is a fixed 470 points wide, and a
+        wrapping label asks for room enough for its longest line — so paths
+        are written the short way, and the reason they are searched is said
+        once above the list rather than repeated on every line. Spelled out in
+        full it cost the dialog 597 points of width and cut the buttons off.
+        """
+        import argyll
+
+        def listed(folders, limit):
+            shown = folders[:limit]
+            more = len(folders) - len(shown)
+            # A bare ~ is the home folder, and reads as a stray mark on its own
+            # line to anybody who has not met the shorthand.
+            lines = "\n".join(f"    {'~ (your home folder)' if w == '~' else w}"
+                              for w in shown)
+            return lines + (f"\n    …and {more} more" if more > 0 else "")
+
+        roots, tools = argyll.searched_places()
+        said = "It looked on your PATH"
+        if roots:
+            said += (",\nand for a folder whose name starts with “Argyll” in:\n"
+                     + listed(roots, 6))
+        if tools:
+            said += "\nas well as the usual tool folders:\n" + listed(tools, 4)
+        return said + "\n"
+
+    @staticmethod
+    def _not_runnable_note() -> str:
+        """Said only when it applies: the tools are there but have no
+        permission to run, which reads as "missing" and is not.
+
+        This is a real way to end up stuck rather than a hypothetical one — a
+        zip unpacked by a tool that does not carry Unix permissions leaves
+        every program in place and none of them runnable.
+        """
+        import argyll
+        stuck = argyll.found_but_not_runnable()
+        if not stuck:
+            return ""
+        return ("One thing worth knowing: the ArgyllCMS programs WERE found "
+                f"here, but your system will not run them —\n    {stuck[0]}\n"
+                "That usually means the download was unpacked by something "
+                "that dropped their permission to run. Unpacking it again "
+                "with your system's own unzip normally fixes it.\n\n")
 
     def _look_after_appearance(self) -> None:
         """Dark or light was switched, so the page follows — unless a look of

@@ -1,5 +1,89 @@
 # Changelog
 
+## v2.17.0
+
+### 🔎 ArgyllCMS was not looked for where people actually put it
+
+Prompted by Basti: *"we have to make sure the app can reliably detect argyll
+on the users system or allow him to point at it. on my mac it is installed in
+a location most people would probably not install it in."*
+
+His own install was found — but testing the search rather than trusting it
+turned up a row of ways it could fail for somebody else.
+
+**The PATH is nearly useless inside the bundled application, so the folder
+list carries the whole weight.** Measured on macOS: `launchctl getenv PATH` is
+unset, so an app started from Finder inherits launchd's default of
+`/usr/bin:/bin:/usr/sbin:/sbin` — not the shell's. On a machine with ArgyllCMS
+in `/Applications/Argyll/bin` **and** on the login shell's PATH,
+`shutil.which("xicclu")` still answers `None` inside the bundle. That makes
+every gap in the folder list a tool that cannot be found, however carefully it
+was installed. The gaps, all confirmed by measurement:
+
+* **Downloads, Desktop and Documents were not searched at all.** The official
+  build is a zip, and what people do with a zip is unpack it and leave it
+  where it landed. Now covered on all three platforms, plus the OneDrive
+  redirection of Desktop and Documents that a great many Windows machines
+  have.
+* **Homebrew is a real way to get it and was only half covered.** The
+  `argyll-cms` formula does `prefix.install "bin"`, so the tools are symlinked
+  into `$(brew --prefix)/bin` — and it ships `arm64_linux` and `x86_64_linux`
+  bottles, so Linux Homebrew is an ordinary installation and not a curiosity.
+  `/home/linuxbrew/.linuxbrew/bin` is now searched, and `HOMEBREW_PREFIX` is
+  honoured for anyone who moved it.
+* **`Argyll_V3.10.0` lost to `Argyll_V3.5.0`.** Folder names were sorted as
+  text, which compares `5` against `1` as characters, so somebody with two
+  versions installed was handed the older one. The digits are read as numbers
+  now. The existing test compared `V2.0.0` with `V3.5.0`, where sorting as
+  text gives the right answer by luck — so it passed while the ordering was
+  wrong.
+* **A lower-case folder was invisible on Linux.** Linux filesystems are
+  case-sensitive, so a search for `Argyll*` never matched `argyll` or
+  `argyll-cms` — which is what a tarball unpacks to and what a distribution
+  package installs.
+
+### 🖱 The obvious folder to choose was the one being refused
+
+Picking `/Applications/Argyll` — the folder with the name on it — was turned
+down with "that folder does not hold the tools", because only the `bin` folder
+inside it was accepted. `bin` is our detail, not the user's. Both are taken
+now and the right one is worked out for them.
+
+Two other things about that button:
+
+* **"Not found" says where it looked.** A bare "not found" invites the reply
+  "well, did you look in…?", and this is the answer to it. It names the places
+  searched rather than the folders found, because on a machine with nothing
+  installed the folder list cannot mention Downloads at all — and that is
+  exactly the machine whose owner needs telling it was looked in. Nothing is
+  named that does not exist on this machine, since a Mac told that
+  `C:\Argyll\bin` was checked reads it as a fault rather than as diligence.
+* **A tool that is present but will not run is no longer reported as
+  missing.** A zip unpacked by something that does not carry Unix permissions
+  leaves every program in place and none of them runnable; calling that "not
+  found" sends somebody looking for the wrong problem entirely.
+
+### 💬 A long message box cut its own buttons off
+
+Found while checking the above on screen rather than reading the string: the
+"not found" message had grown by a dozen lines, and both buttons came up with
+their right-hand ends sliced away.
+
+The cause is a Qt behaviour worth writing down. **A word-wrapping `QLabel`
+does not ask for the width its longest line needs — it asks for a width that
+keeps the block from becoming absurdly tall, so the more text it holds the
+wider it wants to be, whatever the lines say.** These message boxes are a
+fixed 470 points across, so the request could not be granted and the layout
+silently overflowed: 610 points wanted against 470 given. Nothing warns about
+it; the dialog simply comes up wrong.
+
+The text is now told its width instead of asked for one, so the box grows
+downwards as it always should have. This was never specific to the new
+message — every message box in the application was one paragraph away from it,
+and the short ones fitted by luck rather than by design. The card's own 1-point
+border is counted in as well, which is a further two points and by itself
+enough to clip a button.
+
 ## v2.16.0
 
 ### 🕳 "Does this colour fit" was asked of a shape with the dents filled in

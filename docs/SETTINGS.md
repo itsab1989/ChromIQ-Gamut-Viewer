@@ -623,10 +623,43 @@ under **This window** saying whether it was found, and a **Where ArgyllCMS
 is…** button for the case where it lives somewhere the search does not know
 about. A folder that does not actually hold the tools is turned down while you
 are still looking at the chooser, rather than days later when a file will not
-open.
+open. **Either the ArgyllCMS folder or the `bin` folder inside it is
+accepted** — `bin` is our detail, not yours, so picking the folder with the
+name on it works.
 
 The saved setting is `argyll_folder`. The environment variable
 `CHROMIQ_ARGYLL_BIN` overrides everything, for a scripted install.
+
+### Why the search matters more than it looks
+
+**The PATH is nearly useless inside a bundled application, so the list of
+folders carries the whole weight.** Measured on macOS: `launchctl getenv PATH`
+is unset, so an application started from Finder inherits launchd's default of
+`/usr/bin:/bin:/usr/sbin:/sbin` — not the shell's PATH. On a machine with
+ArgyllCMS in `/Applications/Argyll/bin` *and* on the login shell's PATH,
+`shutil.which("xicclu")` still answers `None` inside the bundle. The same goes
+for Homebrew: `/opt/homebrew/bin` is not on that PATH either.
+
+So a folder missing from the search is a tool that cannot be found, however
+carefully it was installed — which is why the list covers Downloads, Desktop
+and Documents as well as the install locations, and why Homebrew's own bin
+folders are named outright on all three platforms.
+
+Two smaller things the search now gets right, both found by measuring rather
+than by reading:
+
+* **`Argyll_V3.10.0` is newer than `Argyll_V3.5.0`.** Sorting folder names as
+  text says the opposite, because it compares `5` against `1` as characters,
+  so somebody with both installed was handed the older one. The digits are
+  read as numbers.
+* **Case does not matter.** Linux filesystems are case-sensitive, so a search
+  for `Argyll*` never matched `argyll` or `argyll-cms` — which is what a
+  tarball unpacks to and what a distribution package installs.
+
+If a tool is present but the system will not run it — a zip unpacked by
+something that does not carry Unix permissions leaves exactly this — the
+message says so and names the file, rather than reporting it as missing and
+sending you looking for the wrong problem.
 
 ## 11. If this goes into ChromIQ
 
