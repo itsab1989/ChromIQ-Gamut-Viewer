@@ -218,6 +218,11 @@ from types import SimpleNamespace
 
 
 class FakeLabel:
+    """A label the window can also enable and disable."""
+
+    def setEnabled(self, _on):                            # noqa: N802 (Qt)
+        pass
+
     def __init__(self):
         self._text = ""
         self._shown = True
@@ -247,6 +252,13 @@ def window_with(paths):
         # that refuse to answer -- a report left behind from the last pair
         # names colours belonging to files the reader has closed.
         _drift_families=FakeLabel(), _drift_families_note=FakeLabel(),
+        # The two options the cloud is drawn with. Carried by the stand-in
+        # because _drift_for_figure reads them on every redraw -- they were
+        # in the timeline window only until the showcase needed shells and a
+        # split cloud in one picture, which only the main window can draw.
+        _drift_split=SimpleNamespace(isChecked=lambda: False),
+        _drift_cut=FakeSlider(), _drift_cut_label=FakeLabel(),
+        _drift_cut_says=FakeLabel(),
         READOUTS=gamut_app.GamutApp.READOUTS,
         PROFILE_SUFFIXES=gamut_app.GamutApp.PROFILE_SUFFIXES,
         PROFILE_GRID=gamut_app.GamutApp.PROFILE_GRID)
@@ -256,7 +268,46 @@ def window_with(paths):
     # it too -- bound to the real one rather than to a second copy of the
     # logic, which would let the two drift apart without anything noticing.
     win._profile_pair = lambda: gamut_app.GamutApp._profile_pair(win)
+    for name in ("_fit_drift_cut", "_drift_hiding", "_drift_cut_reads",
+                 "_drift_cut_changed"):
+        method = getattr(gamut_app.GamutApp, name)
+        setattr(win, name,
+                (lambda m: lambda *a, **k: m(win, *a, **k))(method))
     return win
+
+
+class FakeSlider:
+    """Enough of a QSlider for the drift options to be read and set."""
+
+    def __init__(self):
+        self._lo, self._hi, self._v, self._on = 0, 1, 0, True
+
+    def minimum(self):
+        return self._lo
+
+    def maximum(self):
+        return self._hi
+
+    def value(self):
+        return self._v
+
+    def isEnabled(self):                                  # noqa: N802 (Qt)
+        return self._on
+
+    def setEnabled(self, on):                             # noqa: N802 (Qt)
+        self._on = on
+
+    def setMinimum(self, v):                              # noqa: N802 (Qt)
+        self._lo = v
+
+    def setMaximum(self, v):                              # noqa: N802 (Qt)
+        self._hi = v
+
+    def setValue(self, v):                                # noqa: N802 (Qt)
+        self._v = v
+
+    def blockSignals(self, _on):                          # noqa: N802 (Qt)
+        return False
 
 
 def drift_text(paths):

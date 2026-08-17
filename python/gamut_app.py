@@ -6834,6 +6834,78 @@ class GamutApp(QMainWindow):
             self._drift_box, title="Showing the drift in the picture"),
             0, Qt.AlignmentFlag.AlignVCenter)
         dv.addLayout(_d)
+
+        # --- the same two options the timeline window offers ------------------
+        #
+        # THEY EXISTED IN ONE WINDOW ONLY. The timeline could split its cloud
+        # into colour families and hide the colours that barely moved; the
+        # main window drew the same kind of cloud and could do neither -- and
+        # the main window is the one that can also show the SHAPES, which is
+        # where the two halves of the answer meet. A reader who found the
+        # controls in one place and not the other would reasonably think they
+        # had done something wrong.
+        self._drift_split = QCheckBox("Split it into colour families",
+                                      self._drift_box)
+        self._drift_split.setToolTip(
+            "Draws the cloud as seven groups — reds, yellows, greens, cyans, "
+            "blues, magentas and greys — instead of one, and puts them in the "
+            "key at the side with the number of colours in each.\n\n"
+            "WHAT IT IS FOR: click a family in the key to hide it, and again "
+            "to bring it back. With everything but the blues hidden you can "
+            "see exactly where in the blues the two disagree, which a single "
+            "cloud cannot show you because the interesting part is buried "
+            "under everything else.\n\n"
+            "THE GROUPS ARE THE ONES THE LIST ABOVE DESCRIBES, so if the text "
+            "says the blues drifted toward the magentas, this is how you go "
+            "and look at those very colours.\n\n"
+            "IT KEEPS WORKING IN A SAVED PAGE — whoever opens it can hide and "
+            "show the families too, with nothing installed and no internet "
+            "needed.\n\n"
+            "GREYS are colours too close to neutral to have a hue worth "
+            "naming, so they are their own group rather than being scattered "
+            "among the six.")
+        self._drift_split.stateChanged.connect(self._redraw)
+        dv.addWidget(self._drift_split)
+
+        cut_row = QHBoxLayout()
+        cut_row.setContentsMargins(0, 0, 0, 0)
+        cut_row.setSpacing(8)
+        self._drift_cut_label = QLabel("Hide anything under", self._drift_box)
+        cut_row.addWidget(self._drift_cut_label, 0)
+        self._drift_cut = QSlider(Qt.Orientation.Horizontal, self._drift_box)
+        self._drift_cut.setMinimum(0)
+        self._drift_cut.setMaximum(1)
+        self._drift_cut.setSingleStep(1)
+        self._drift_cut.setPageStep(5)
+        self._drift_cut.setToolTip(
+            "Leaves out every colour the two agree about more closely than "
+            "this, so what is left is only the disagreement worth looking "
+            "at.\n\n"
+            "WHY YOU WANT IT: the lines above give an AVERAGE for each "
+            "family, and an average hides the shape. \"Blues: ΔE 1.7\" reads "
+            "the same whether all of them moved 1.7 or nearly all sat still "
+            "and a handful moved a great deal — and those are very different "
+            "problems. Drag this up and only the colours anybody could see "
+            "are left.\n\n"
+            "WHERE IT STOPS: at the biggest difference between THESE two, "
+            "because past that there would be nothing left to hide. If the "
+            "two agree everywhere the slider is switched off.\n\n"
+            "IN STEPS OF ΔE 0.1, which is as fine as the numbers support: a "
+            "hand-held spectrophotometer repeats to about ΔE 0.1 on white and "
+            "two different instruments agree to about 0.4, so anything finer "
+            "would be reading the instrument rather than the printing.\n\n"
+            "IT CHANGES THE PICTURE ONLY — every number and sentence above "
+            "still describes all the colours, so two people with the slider "
+            "in different places quote each other the same figures. The "
+            "picture says how many it left out, and so does a saved page.")
+        self._drift_cut.valueChanged.connect(self._drift_cut_changed)
+        cut_row.addWidget(self._drift_cut, 1)
+        self._drift_cut_says = QLabel("everything", self._drift_box)
+        self._drift_cut_says.setMinimumWidth(96)
+        cut_row.addWidget(self._drift_cut_says, 0)
+        dv.addLayout(cut_row)
+        self._drift_cut_row = cut_row
+
         self._drift_box.setVisible(False)
         v.addWidget(self._drift_box)
 
@@ -8573,6 +8645,44 @@ class GamutApp(QMainWindow):
             f"Written to\n{target}\n\nIt opens in any spreadsheet, and every "
             "row says what it is and what the units are.")
 
+    def _drift_cut_changed(self, _value=None) -> None:
+        self._drift_cut_says.setText(self._drift_cut_reads())
+        self._redraw()
+
+    def _drift_cut_reads(self) -> str:
+        if not self._drift_hiding():
+            return "everything"
+        return f"under ΔE {self._drift_cut.value() / 10:.1f}"
+
+    def _drift_hiding(self) -> bool:
+        return (self._drift_cut.isEnabled()
+                and self._drift_cut.value() > self._drift_cut.minimum())
+
+    def _fit_drift_cut(self, deltas) -> None:
+        """Span only this pair, at both ends. Same rule as the timeline's.
+
+        A fixed 0..5 would be mostly inert on a close pair, and a slider that
+        starts below the smallest difference spends its first stretch
+        announcing an action it is not performing.
+        """
+        import numpy as _np
+
+        deltas = _np.asarray(deltas, float)
+        lo = int(float(deltas.min()) * 10)
+        hi = int(float(deltas.max()) * 10)
+        usable = hi > lo
+        for part in (self._drift_cut, self._drift_cut_label,
+                     self._drift_cut_says):
+            part.setEnabled(usable)
+        self._drift_cut.blockSignals(True)
+        self._drift_cut.setMinimum(lo)
+        self._drift_cut.setMaximum(max(hi, lo + 1))
+        if self._drift_cut.value() < lo:
+            self._drift_cut.setValue(lo)
+        self._drift_cut.blockSignals(False)
+        self._drift_cut_says.setText(
+            self._drift_cut_reads() if usable else "nothing to hide")
+
     def _drift_for_figure(self):
         """The drift cloud for the picture, or None when it does not apply.
 
@@ -8606,7 +8716,10 @@ class GamutApp(QMainWindow):
             # and a picture of a meaningless number is worse than no picture:
             # it looks like evidence. The box says why in words.
             return None
-        return d.lab_a, d.deltas, "how far it moved"
+        self._fit_drift_cut(d.deltas)
+        return (d.lab_a, d.deltas, "how far it moved", None,
+                self._drift_split.isChecked(),
+                self._drift_cut.value() / 10.0 if self._drift_hiding() else 0.0)
 
     def _profile_drift_rows(self) -> list:
         """The two-profile comparison as table rows, for the spreadsheet.
