@@ -9299,6 +9299,14 @@ class GamutApp(QMainWindow):
         # own. Two rooms exist precisely to compare two papers, so a chart
         # that answers for the wrong one is worse than no chart at all.
         chart = options.pop("chart", None)
+        # THE DRIFT CLOUD BELONGS TO THE FIRST ROOM ONLY, and left in the
+        # shared options it went into both. It is drawn at the FIRST profile's
+        # positions, so in the second room it would be one profile's colours
+        # floating inside the other profile's shape -- a picture that looks
+        # deliberate and says something untrue. Room one reads "here is what
+        # you had, and here is how far it has moved"; room two is simply the
+        # other shape. Same trap as the chart above, one line further down.
+        drift = options.pop("drift", None)
         figures = []
         for i, (name, gamut) in enumerate(gamuts[:2]):
             # THE SLOT, not just the shape. Judging happens in CIELAB, and
@@ -9313,6 +9321,7 @@ class GamutApp(QMainWindow):
                 styles=["solid"],
                 lost=[lost[i]] if lost and i < len(lost) else None,
                 chart=self._chart_marked_against(chart, gamut, slot),
+                drift=drift if i == 0 else None,
                 **options)))
         write_side_by_side_html(figures, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked(),

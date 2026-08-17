@@ -507,3 +507,48 @@ def test_a_meaningless_comparison_is_never_painted(one, monkeypatch):
     win._space = SimpleNamespace(currentData=lambda: "lab")
     win._drift_draw = SimpleNamespace(isChecked=lambda: True)
     assert gamut_app.GamutApp._drift_for_figure(win) is None
+
+
+def test_the_picture_export_photographs_the_cloud_that_is_on_screen():
+    """BOTH EXPORTS, and the picture one works differently from the page one.
+
+    A still is not rebuilt from a fresh figure -- it is Plotly.toImage called
+    on the div already in the view. So whatever is on screen is what lands in
+    the PNG, and the drift cloud reaches it through the same _render_options
+    that put it on screen. That is worth pinning rather than trusting: if the
+    still ever started rebuilding its own figure, it would quietly lose every
+    option not passed to that rebuild, and nothing would look wrong until
+    somebody compared a saved picture with the window.
+    """
+    import inspect
+
+    import gamut_app
+    still = inspect.getsource(gamut_app.GamutApp._save_still)
+    assert "plotly-graph-div" in still, (
+        "the still no longer photographs the view; check it still carries "
+        "everything the window is showing")
+    assert "Plotly.toImage" in still
+    assert "build_figure" not in still, (
+        "the still now builds its own figure, so it can silently disagree "
+        "with the window it came from")
+    # And the option really is in the one place both routes read.
+    options = inspect.getsource(gamut_app.GamutApp._render_options)
+    assert "drift=" in options
+
+
+def test_the_drift_cloud_goes_into_one_room_not_both():
+    """Two rooms show one shape each. The cloud is drawn at the FIRST
+    profile's positions, so putting it in the second room would be one
+    profile's colours floating inside the other profile's shape -- a picture
+    that looks deliberate and says something untrue.
+
+    The same trap the chart hit one line above it, which is why that one is
+    popped out of the shared options and marked per room.
+    """
+    import inspect
+
+    import gamut_app
+    source = inspect.getsource(gamut_app.GamutApp._write_two_rooms)
+    assert 'options.pop("drift"' in source, (
+        "drift is still in the shared options, so both rooms draw it")
+    assert "drift=drift if i == 0 else None" in source
