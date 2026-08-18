@@ -100,26 +100,34 @@ ASK = """
   var data = d._fullData || d.data || [];
   var seen = [];
   for (var i = 0; i < data.length; i++) {
-    var t = data[i], m = t.marker || {};
-    seen.push([t.type, (t.x || []).length, (t.i || []).length, t.opacity,
-               // MARKER OPACITY WAS MISSING FROM THIS LIST, and three chart
-               // sliders that change nothing else were therefore reported
-               // dead -- by a check that had simply not been told to look.
-               m.opacity === undefined ? null : m.opacity,
-               JSON.stringify(m.size || null),
-               JSON.stringify(m.color || null).slice(0, 60),
-               JSON.stringify(t.lighting || null), t.name,
-               t.visible === undefined ? true : t.visible]);
+    var t = data[i], one = {};
+    // EVERYTHING THE TRACE CARRIES, rather than a list of attributes somebody
+    // remembered to write down. Three sliders were called dead by this audit
+    // for no other reason than that its list did not mention the attribute
+    // they change -- marker opacity twice, and then the light's POSITION,
+    // which is a different attribute from the lighting beside it. A check
+    // that cannot see a thing reports its absence as a fault, confidently,
+    // and that is worse than not checking.
+    //
+    // Long arrays are counted rather than copied: 20,000 vertices in a
+    // fingerprint would be slow and would say nothing a length does not.
+    for (var k in t) {
+      if (k.charAt(0) === "_") continue;
+      var v = t[k];
+      if (typeof v === "function") continue;
+      try {
+        if (v && v.length !== undefined && typeof v !== "string"
+            && v.length > 24) { one[k] = "len:" + v.length; continue; }
+        one[k] = JSON.stringify(v);
+      } catch (e) { one[k] = "unreadable"; }
+    }
+    seen.push(one);
   }
   var l = d.layout || {}, s = l.scene || {}, cam = null;
   // TWO ANSWERS, NOT ONE. See the note on THE RIGHT PAIR in the module
   // docstring: with "turn it by itself" ticked the camera moves every frame,
   // so a fingerprint that included it reported every slider in the window as
   // live -- including five that plainly rebuild the page.
-  // THE CAMERA THAT IS ACTUALLY IN USE. layout.scene.camera is only brought
-  // up to date when the library relayouts, so a picture asked while it is
-  // turning answers with where it USED to be -- and every movement slider
-  // read as dead.
   try {
     var sc = d._fullLayout && d._fullLayout.scene && d._fullLayout.scene._scene;
     if (sc && sc.getCamera) cam = sc.getCamera();
