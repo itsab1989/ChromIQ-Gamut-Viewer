@@ -1293,7 +1293,8 @@ and so everything below can be run without hunting for files of your own.
 Tests:
 
 ```bash
-cd python && python -m pytest . -q          # 374 tests
+pip install -r requirements-test.txt        # pytest, and pyyaml for one file
+cd python && python -m pytest . -q          # 851 tests
 ```
 
 They check the colour science against published reference values rather than

@@ -1,0 +1,12 @@
+# What the TESTS need, on top of requirements.txt. The application itself
+# does not use any of this.
+#
+# WHY THIS FILE EXISTS. The venv was destroyed by the operating system's
+# nightly clean-out of /tmp and rebuilt from the instructions in the README --
+# and the rebuilt one could not run the tests: two of them import yaml, which
+# nothing listed, so a fresh clone failed with "No module named 'yaml'"
+# through no fault of the person following the instructions.
+pytest>=8.0
+# test_binary_arch.py reads the GitHub workflow files to check that every
+# platform the build claims to make is actually built and checked.
+pyyaml>=6.0
