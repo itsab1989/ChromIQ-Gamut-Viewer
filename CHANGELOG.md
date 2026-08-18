@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.37.0
 
 ### 🗂 A file that cannot be read no longer closes one that could
 
