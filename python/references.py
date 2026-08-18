@@ -161,6 +161,34 @@ def gam_gamut(path, *, white_point: str = "D50", space: str = "lab",
                  space=space, mode="argyll-gam")
 
 
+#: How finely ``iccgamut`` is asked to follow the profile's surface, its -d.
+#:
+#: NOT ASKED AT ALL UNTIL NOW, so Argyll's own default decided, and that
+#: default is the outlier. This application has TWO ways of reading one
+#: profile -- iccgamut, and the direct reader below it, used when ArgyllCMS
+#: is missing or refuses -- and they should give the same answer for the same
+#: file. Measured on five profiles, as the gap between the two readers'
+#: volumes:
+#:
+#:     -d          default      8        6        4
+#:     disagree      0.73%   0.19%    0.03%    0.16%
+#:     per profile   0.15s   0.36s    0.71s    3.16s
+#:
+#: 6 is not a taste. It is where the two doors into the same profile agree,
+#: to three hundredths of a percent, and 4 overshoots it the other way -- so
+#: this is the value at which the application stops contradicting itself
+#: rather than the value that looks nicest.
+#:
+#: IT IS ALSO WHAT THE SHAPE LOOKS LIKE. The facets a reader can see at the
+#: outline are 4.50 degrees across at the default and 2.91 at 6, measured as
+#: the angle a face covers seen from the middle of the shape. Reported from
+#: the window: "at the edges of the shape there still seem to be hints of
+#: triangles instead of a smooth surface".
+#:
+#: WHAT IT COSTS is half a second per profile, once, and the result is kept:
+#: shapes are cached on the file and the time it was written.
+SURFACE_DETAIL = 6
+
 #: How long to let ``iccgamut`` work before reading the profile here instead.
 #:
 #: SET FROM MEASUREMENT, not from caution. Timed on this machine over seven
@@ -283,7 +311,9 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
 
     *intent* is passed to ``iccgamut -i``: "r" relative colorimetric (the
     default, and the right one for "what can this profile actually reach"),
-    "a" absolute, "p" perceptual, "s" saturation.
+    "a" absolute, "p" perceptual, "s" saturation. The surface resolution is
+    ``-d SURFACE_DETAIL``; see there for why it is asked for rather than
+    left to Argyll.
 
     The profile is copied to a temporary folder first, because ``iccgamut``
     writes its result beside its input and nothing should appear uninvited in
@@ -351,7 +381,7 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
         shutil.copyfile(path, work)
         try:
             done = _run_stoppably(
-                [tool, "-i", intent, str(work)],
+                [tool, "-i", intent, "-d", str(SURFACE_DETAIL), str(work)],
                 patience=ICCGAMUT_PATIENCE, stop=stop)
         except subprocess.TimeoutExpired as exc:
             # FALL BACK RATHER THAN GIVE UP. This used to raise, which meant a

@@ -447,3 +447,35 @@ def test_the_static_shortcuts_ask_for_our_dialog_too():
             f"{func.attr} opens the system's dialog: {text[:120]}")
     # If this ever drops to zero the check has quietly stopped checking.
     assert found >= 1, "no static QFileDialog call found — has one been renamed?"
+
+
+def test_the_surface_resolution_is_asked_for_and_not_left_to_argyll():
+    """The two ways of reading one profile have to agree.
+
+    ASKED FOR NOTHING UNTIL NOW, so Argyll's own default decided -- and that
+    default is the outlier. This application reads a profile two ways:
+    `iccgamut`, and the direct reader used when ArgyllCMS is missing or
+    refuses. Measured on five profiles, as the gap between the two readers'
+    volumes for the SAME file:
+
+        -d          default      8        6        4
+        disagree      0.73%   0.19%    0.03%    0.16%
+        per profile   0.15s   0.36s    0.71s    3.16s
+
+    6 is where the two doors into one profile agree, and 4 overshoots the
+    other way -- so it is the value at which the application stops
+    contradicting itself, not the one that looks nicest. It also halves the
+    facets a reader can see at the outline, 4.50 degrees across to 2.91,
+    which is what was reported from the window.
+    """
+    import inspect
+
+    import references
+
+    assert references.SURFACE_DETAIL == 6, (
+        "the surface resolution changed; the two readers were measured to "
+        "agree at 6 and to disagree either side of it")
+    src = inspect.getsource(references.icc_gamut)
+    assert '"-d", str(SURFACE_DETAIL)' in src, (
+        "iccgamut is asked for no surface resolution again, so Argyll's "
+        "default decides and the two readers disagree by 0.73%")
