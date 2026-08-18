@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### ✂️ A cross-section greys out what it cannot use
+
+Measured rather than reasoned: with a cut on screen, every shape control was
+touched and the page was asked what changed. Rings, the styles, both fade
+sliders, the box and the measured patches all change a cut. **How solid it
+looks, how deep the shading is, and the whole manual light block do not** — a
+flat cut is drawn as outlines and takes no opacity and no light at all.
+
+They are greyed out there now, with a tooltip that says which switch brings
+them back. The window's own rule, written where two rooms are handled: a
+control that cannot do anything is worse than a missing one, because it
+invites a change and answers with nothing.
+
+Greying needed the stylesheet to say so as well — Qt dims a disabled widget
+through the palette, and this application paints over the palette, so a
+switched-off slider had been drawn in the accent colour exactly like a live
+one.
+
 ### 💾 A window opened later cannot disagree with its own slider
 
 *How solid it looks* and *how deep the shading is* wrote their value into the

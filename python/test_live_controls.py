@@ -176,3 +176,50 @@ def test_no_written_page_carries_an_upside_down_camera():
             if float(found[2]) <= 0:
                 bad.append(f"{page.name}: up={found}")
     assert not bad, bad
+
+
+def test_a_cut_greys_out_what_it_cannot_use():
+    """A flat cross-section has no surface and no light.
+
+    MEASURED, NOT REASONED: with a cut on screen every shape control was
+    touched and the page asked what changed. Rings, the styles, both fade
+    sliders, the box and the measured patches all change a cut; how solid,
+    how deep the shading, and the manual light do not — build_slice_figure
+    takes no opacity and no lighting at all.
+
+    The window's own rule, written where two rooms are handled: a control
+    that cannot do anything is worse than a missing one, because it invites
+    a change and answers with nothing.
+    """
+    import gamut_app
+
+    text = (ROOT / "gamut_app.py").read_text(encoding="utf-8")
+    assert "_apply_flat_availability" in text
+    assert "NOTHING_TO_ACT_ON_IN_A_CUT" in text
+    # And it says which switch brings them back, which is the half of a
+    # message that lets somebody act on it.
+    assert "Slice it at one lightness" in gamut_app.GamutApp.NOTHING_TO_ACT_ON_IN_A_CUT
+
+
+def test_disabled_controls_are_actually_drawn_disabled():
+    """Qt greys a disabled widget through the palette; this app paints over it.
+
+    So a slider switched off by the application was drawn in the accent
+    colour, exactly like a live one. The stylesheet has to say so itself.
+
+    AND THE PSEUDO-STATE GOES AFTER THE SUB-CONTROL. Written the other way
+    round — "QSlider:disabled::groove" — Qt dropped the groove's own height
+    and radius for EVERY slider in the window, so the live ones grew a fat
+    grey bar. Caught in a screenshot; this keeps it caught.
+    """
+    text = (ROOT / "gamut_app.py").read_text(encoding="utf-8")
+    assert "QSlider::groove:horizontal:disabled" in text
+    assert "QSlider::handle:horizontal:disabled" in text
+    assert "QLabel:disabled" in text
+    # AT THE START OF A LINE, which is where a rule lives. The first version
+    # of this looked for the string anywhere and failed on the COMMENT that
+    # explains the mistake -- a check reading the wrong thing, in miniature,
+    # in a test written to guard against exactly that.
+    assert not re.search(r"^QSlider:disabled::", text, re.M), (
+        "the pseudo-state must follow the sub-control, or the rule applies to "
+        "every slider in the window")

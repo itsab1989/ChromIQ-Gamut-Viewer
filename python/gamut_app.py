@@ -342,6 +342,23 @@ QSlider::groove:horizontal {{ height: 4px; background: {c["line"]};
 QSlider::handle:horizontal {{ width: 12px; height: 12px; margin: -4px 0;
                              border-radius: 6px; border: none;
                              background: {c["accent"]}; }}
+/* A CONTROL THAT CANNOT ACT HAS TO LOOK LIKE IT. Qt greys a disabled widget
+   through the palette, and this stylesheet paints over the palette -- so a
+   slider switched off by the application was drawn in the accent colour,
+   exactly like a live one, and the label beside it stayed white. Measured
+   from a screenshot of the cross-section view, where three controls are
+   disabled because a flat cut has no surface for them to act on: nothing on
+   screen said so. Written out here, they dim. */
+/* THE PSEUDO-STATE GOES AFTER THE SUB-CONTROL, and getting that backwards
+   is not a no-op: written "QSlider:disabled::groove", Qt dropped the groove's
+   own height and radius for EVERY slider in the window, so the live ones grew
+   a fat grey bar. Seen at once in a screenshot, which is the only reason it
+   did not ship. */
+QSlider::groove:horizontal:disabled {{ background: {c["line_soft"]}; }}
+QSlider::handle:horizontal:disabled {{ background: {c["faint"]}; }}
+QLabel:disabled {{ color: {c["faint"]}; }}
+QCheckBox:disabled {{ color: {c["faint"]}; }}
+QRadioButton:disabled {{ color: {c["faint"]}; }}
 /* A radio has to be round, and in Qt that means the radius must be half of
    the WHOLE box -- content plus both borders. 14 + 1 + 1 = 16, so 8. Thicken
    the border to draw a ring and the box grows to 22 while the radius stays 8,
@@ -7150,7 +7167,10 @@ class GamutApp(QMainWindow):
         _r.addWidget(target_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
         orow = QHBoxLayout()
-        orow.addWidget(QLabel("How solid it looks", g_look))
+        # KEPT, so it can be greyed out with the slider it names. A bright
+        # label over a dead control says the control is live.
+        self._opacity_name = QLabel("How solid it looks", g_look)
+        orow.addWidget(self._opacity_name)
         self._opacity = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         # FULLY OPAQUE BY DEFAULT. Any transparency blends the shape with
         # whatever is behind it -- which darkens colours on a dark background
@@ -7301,6 +7321,8 @@ class GamutApp(QMainWindow):
         self._slice_on.stateChanged.connect(self._redraw)
         self._slice_on.stateChanged.connect(
             lambda *_a: self._apply_spin_availability())
+        self._slice_on.stateChanged.connect(
+            lambda *_a: self._apply_flat_availability())
         lv.addWidget(self._slice_on)
         srow = QHBoxLayout()
         srow.addWidget(QLabel("Lightness", g_look))
@@ -7330,7 +7352,8 @@ class GamutApp(QMainWindow):
         slice_hint.setObjectName("hint_slice_hint")
         lv.addWidget(slice_hint)
         drow = QHBoxLayout()
-        drow.addWidget(QLabel("Depth", g_look))
+        self._depth_name = QLabel("Depth", g_look)
+        drow.addWidget(self._depth_name)
         self._depth = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._depth.setRange(0, 100)
         self._depth.setValue(35)
@@ -9637,6 +9660,7 @@ class GamutApp(QMainWindow):
         # shown, so the controls that depend on what is loaded have to be
         # settled here as well as during construction.
         self._apply_side_by_side_availability()
+        self._apply_flat_availability()
         # …and the folded groups, for exactly the same reason.
         for box in self.findChildren(QGroupBox):
             refold = getattr(box, "_refold", None)
@@ -12671,6 +12695,47 @@ class GamutApp(QMainWindow):
                 axis["speed_value"].setText(
                     f"{round(math.pi * sweep / speed)} s a swing")
             axis["sweep_value"].setText(f"{sweep}° wide")
+
+    #: What a flat cross-section has no use for, with the reason each one is
+    #: dead there. MEASURED rather than reasoned: every shape control was
+    #: touched with a cut on screen and the page asked what changed. Rings,
+    #: the styles, both fade sliders, the box and the measured patches all
+    #: change a cut; these three do not, because build_slice_figure draws
+    #: outlines and takes no opacity and no light at all.
+    NOTHING_TO_ACT_ON_IN_A_CUT = (
+        "A cross-section is drawn flat, as outlines: there is no surface to "
+        "make more or less solid and no light falling on one. Switch off "
+        "Slice it at one lightness to use this.")
+
+    def _apply_flat_availability(self) -> None:
+        """Grey out what a cross-section cannot use.
+
+        The window's own rule, stated where two rooms are handled: a control
+        that cannot do anything is worse than a missing one, because it
+        invites a change and answers with nothing. Three of them survived into
+        the flat view -- how solid, how deep the shading, and the whole manual
+        light block.
+
+        GREYED RATHER THAN HIDDEN, which is the other half of the same rule
+        and the choice already made for the neutral line: it stays visible so
+        it is clear the setting exists, and its tooltip says which switch
+        brings it back.
+        """
+        flat = self._slice_on.isChecked()
+        for widget in (self._opacity, self._opacity_lbl, self._opacity_name,
+                       self._depth, self._depth_lbl, self._depth_name,
+                       self._manual_light):
+            widget.setEnabled(not flat)
+            if flat:
+                if not widget.property("cq_tip_when_live"):
+                    widget.setProperty("cq_tip_when_live", widget.toolTip())
+                widget.setToolTip(self.NOTHING_TO_ACT_ON_IN_A_CUT)
+            else:
+                was = widget.property("cq_tip_when_live")
+                if was is not None:
+                    widget.setToolTip(str(was))
+        for slider, _lo, _hi in self._light_sliders.values():
+            slider.setEnabled(not flat)
 
     def _apply_spin_availability(self) -> None:
         """Show only what applies, and nothing that does not.
