@@ -110,6 +110,23 @@ def main() -> int:
         win._load(profile)
         pump(6)
 
+    # A NAME THAT IS A PREFIX OF ANOTHER, which is where picking a shape by
+    # name goes wrong: with printer-2019 and printer-2019-again open, a prefix
+    # match faded both when only the first was asked for. Set up here so every
+    # crossing below is driven against the harder pair rather than the easy
+    # one.
+    import shutil
+
+    twin_folder = pathlib.Path(tempfile.mkdtemp(prefix="twin-"))
+    twin = twin_folder / (profiles[0].stem + "-again" + profiles[0].suffix)
+    shutil.copy(profiles[1], twin)
+    win._on_clear()
+    pump(4)
+    win._load(profiles[0])
+    pump(6)
+    win._load(twin)
+    pump(7)
+
     problems, done = [], 0
     for first in STYLES:
         for second in STYLES:
@@ -149,8 +166,13 @@ def main() -> int:
                     should = names
                 else:
                     wanted = win._name_of_shape(target)
-                    should = [n for n in names
-                              if wanted and n.startswith(wanted)]
+                    # EXACTLY THE NAME. This expectation was written with
+                    # startswith, which is the very bug the harder pair was
+                    # brought in to expose -- so the audit reported the fixed
+                    # application as wrong: "the fade should have gone to
+                    # ['printer-2019', 'printer-2019-again']". A surface
+                    # belongs to one shape, and the name is the whole name.
+                    should = [n for n in names if n == wanted]
                 where = (f"first={first}, second={second}, "
                          f"set this for={target}")
                 print(f"      {where:52s} surfaces={len(names)}  "
@@ -220,6 +242,7 @@ def main() -> int:
     win._side_by_side.setChecked(False)
     pump(5)
 
+    shutil.rmtree(twin_folder, ignore_errors=True)
     print(f"\n  {done} crossing(s) driven.")
     if problems:
         for line in problems:

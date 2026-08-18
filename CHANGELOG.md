@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### 🏷 Two files whose names start alike are two shapes
+
+*Set this for* picks the shape a change belongs to, and the live change found
+it by asking which surface's name **starts with** that shape's name. Equivalent
+until two files share a beginning: with `printer-2019` and
+`printer-2019-again` open, asking for the first shape faded both, and nothing
+on screen said why the other one had changed. The name is the whole name now.
+
 ### ✂️ A cross-section greys out what it cannot use
 
 Measured rather than reasoned: with a cut on screen, every shape control was

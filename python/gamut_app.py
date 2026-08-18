@@ -13166,8 +13166,18 @@ class GamutApp(QMainWindow):
         name = self._name_of_shape(target)
         if not name:
             return "[]"
+        # EXACTLY THE NAME, not a name that starts with it. A prefix match
+        # looks equivalent until two files share one: with printer-2019 and
+        # printer-2019-again open, asking for the first shape faded both --
+        #
+        #     faded: ['printer-2019', 'printer-2019-again']
+        #
+        # and nothing on screen would say why the wrong shape had changed. A
+        # surface carries its shape's name and nothing else; the outline, the
+        # rings and the chart's skin are separate traces with names of their
+        # own, and none of them is a mesh3d belonging to another shape.
         return ("idx.filter(function(n){return String(el.data[n].name||'')"
-                f".indexOf({json.dumps(name)})===0;}})")
+                f"==={json.dumps(name)};}})")
 
     def _push_lighting(self, values: dict) -> None:
         """Send a lighting dictionary into the scene already on screen."""
