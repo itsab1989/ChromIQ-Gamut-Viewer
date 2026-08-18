@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.36.0
 
 ### 🌗 Every word in the window, measured in both appearances
 
