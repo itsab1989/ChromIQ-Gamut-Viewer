@@ -25,6 +25,27 @@ and the same kind of answer: a number, not an opinion.
 
 This one PRINTS rather than fails: which controls deserve a live path is a
 judgement, and a table is what that judgement needs.
+
+WHERE THAT JUDGEMENT HAS GOT TO, measured 2026-08-18: **80 controls touched,
+34 rebuild** -- down from 41. The seven that changed are the ones a person
+drags: how solid, how deep the shading, the chart's four dot settings and its
+skin, plus the box and its grid, which the reader's own copy of the page had
+always been able to switch without a rebuild while this window wrote a new
+page for it.
+
+THE 34 THAT REMAIN ARE NOT A BACKLOG. Every one of them changes WHAT is
+drawn rather than how it looks: splitting into colour families, adding the two
+shapes, the rings, the greys, the neutral line, every measured patch, two
+rooms, a cross-section, a different white point, a different space, a
+different pair to compare. Five sliders are in there for the same reason and
+are named in scripts/audit_sliders.py with the reason each: the cut height,
+the rings, the fineness, and the two agreement sliders.
+
+ONE IS AN OPEN QUESTION rather than settled: Light/Dark/Amber. A saved page
+can change its own palette without a reload, because the palettes travel in
+the file -- this window's live view is written without them, so switching
+means writing the page again. Carrying them into the live view would cure it,
+at the cost of putting three palettes into every page this window writes.
 """
 from __future__ import annotations
 

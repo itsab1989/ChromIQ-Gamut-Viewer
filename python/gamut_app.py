@@ -7209,7 +7209,7 @@ class GamutApp(QMainWindow):
         lv.addLayout(_r)
         self._grid_on = QCheckBox("Show the box and its grid", g_look)
         self._grid_on.setChecked(True)
-        self._grid_on.stateChanged.connect(self._redraw)
+        self._grid_on.stateChanged.connect(self._on_grid_changed)
         lv.addWidget(self._grid_on)
         grid_hint = Hint(
             "The box the shape sits in: the three walls behind it, the grid "
@@ -13126,6 +13126,42 @@ class GamutApp(QMainWindow):
             f"if(which.length)Plotly.restyle(el,"
             f"{{opacity:{value / 100.0}}},which);"
             "})();")
+
+    def _on_grid_changed(self, *_args) -> None:
+        """Show or hide the box, in the picture already on screen.
+
+        THE READER'S OWN COPY HAS ALWAYS DONE THIS WITHOUT A REBUILD -- the
+        strip's "walls & grid" button relayouts the axes where they stand --
+        while this window wrote and loaded a whole new page for the same tick,
+        which is a second or two of black for a change that is one property
+        per axis.
+
+        AND IT PUTS ITSELF RIGHT. A flat cross-section has its axes at the top
+        level rather than inside a scene, and a picture may not have loaded
+        yet; the page answers whether it managed, and a "no" falls through to
+        the redraw that always worked.
+        """
+        on = "true" if self._grid_on.isChecked() else "false"
+        page = self._view.page() if self._view is not None else None
+        if page is None:
+            self._redraw()
+            return
+
+        def fell_back(did_it):
+            if not did_it:
+                self._redraw()
+
+        page.runJavaScript(
+            "(function(){var el=document.getElementsByClassName("
+            "'plotly-graph-div')[0];"
+            "if(!el||!window.Plotly||!el._fullLayout)return false;"
+            f"var on={on};"
+            "if(el._fullLayout.scene){Plotly.relayout(el,{"
+            "'scene.xaxis.visible':on,'scene.yaxis.visible':on,"
+            "'scene.zaxis.visible':on});return true;}"
+            "if(el._fullLayout.xaxis){Plotly.relayout(el,{"
+            "'xaxis.visible':on,'yaxis.visible':on});return true;}"
+            "return false;})();", fell_back)
 
     def _on_side_by_side(self) -> None:
         """Side by side changes which other controls make sense."""
