@@ -15,12 +15,22 @@ The folder is what distinguishes them, so the folder is what is added — and
 only to the names that need it. A file whose name is already its own is left
 exactly as it was, in the picture, in the legend and in the list.
 
+**And the folder is not always what differs.** `Glossy-paper.ti3` and
+`Glossy-paper.icc` — the measurement and the profile made from it — sit in one
+folder in this project's own demo set, so adding the folder to both would have
+produced the same name twice all over again. What differs is taken in turn:
+the extension first, because *Glossy-paper.ti3* beside *Glossy-paper.icc* is
+what a person sees in their own folder; the folder after it; the whole path
+only if even that is shared.
+
 **The same thing happens inside a run**, where it is even more natural: one
 printer profiled into a folder per month gives every profile the same file
 name. Both shells were called `the-printer`, *Set this for* offered the same
 words twice, and fading the first faded both. A run is one device over time,
 so there the **date** is what tells them apart — which is why the rows already
-carry it — and that is what the shells, the legend and the picker now say.
+carry it — and that is what the shells, the legend and the picker now say — including
+the *Show me* list, which had been offering "Where it moved — the-printer →
+the-printer" for every step, so there was no way to tell the entries apart.
 
 ## v2.37.0
 

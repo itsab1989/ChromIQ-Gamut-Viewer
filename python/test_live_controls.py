@@ -359,3 +359,41 @@ def test_a_run_tells_two_profiles_of_one_name_apart():
                    gamut_app.GamutApp._name_of_shape,
                    gamut_app.GamutApp._name_the_shapes_being_styled):
         assert "_name_in_run" in inspect.getsource(method), method.__name__
+
+
+def test_two_files_in_one_folder_are_told_apart_by_their_suffix():
+    """Glossy-paper.ti3 and Glossy-paper.icc — this project's own demo set.
+
+    The measurement and the profile made from it sit in ONE folder, so adding
+    the folder to both names would have produced the same name twice all over
+    again. What differs is taken in turn: the extension first, because
+    "Glossy-paper.ti3" beside "Glossy-paper.icc" is what a person sees in
+    their own folder; the folder after it; and the whole path only if even
+    that is shared.
+    """
+    import pathlib
+
+    import gamut_app
+
+    class OneFolder:
+        _slots = [(pathlib.Path("/demo/Glossy-paper.ti3"), None, None),
+                  (pathlib.Path("/demo/Glossy-paper.icc"), None, None)]
+
+    assert gamut_app.GamutApp._slot_names(OneFolder()) == ["Glossy-paper.ti3",
+                                                            "Glossy-paper.icc"]
+
+
+def test_a_step_with_two_ends_of_one_name_carries_the_dates():
+    """"Where it moved — the-printer → the-printer" is not a choice.
+
+    Every entry in the list read the same, so there was no way to pick the
+    step you wanted. The step already carries both dates; they go in exactly
+    where the names fail to separate.
+    """
+    import inspect
+
+    import gamut_app
+
+    text = inspect.getsource(gamut_app.TimelineDialog._fill_pictures)
+    assert "step.before_on" in text and "step.after_on" in text
+    assert "if before == after" in text

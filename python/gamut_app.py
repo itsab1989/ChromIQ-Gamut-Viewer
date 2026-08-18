@@ -4580,17 +4580,30 @@ class TimelineDialog(QDialog):
         run = self._run
         usable = list(run.usable) if run else []
         steps = list(run.since_previous) if run else []
+        # TWO ENDS WITH ONE NAME IS NOT A CHOICE ANYBODY CAN MAKE. A printer
+        # profiled into a folder per month gives every profile the same file
+        # name, so this list read "Where it moved — the-printer → the-printer"
+        # and every entry in it looked identical. The step already carries the
+        # two dates; they are put in exactly where the names do not separate.
         for i, step in enumerate(steps):
+            before, after = step.before, step.after
+            if before == after and step.before_on and step.after_on:
+                before = f"{before} ({step.before_on})"
+                after = f"{after} ({step.after_on})"
             self._picture_of.addItem(
-                f"Where it moved — {step.before} → {step.after} "
+                f"Where it moved — {before} → {after} "
                 f"(ΔE {step.worst:.2f})", ("step", i))
         # THE WHOLE RUN IS A PAIR TOO, and the one people ask for first: not
         # what happened in any single year but where it has ended up against
         # where it began. Offered only when there is more than one step, since
         # with two profiles it would be the same picture listed twice.
         if len(steps) > 1 and run is not None:
+            first_name, last_name = usable[0].name, usable[-1].name
+            if first_name == last_name:
+                first_name = f"{first_name} ({usable[0].dated})"
+                last_name = f"{last_name} ({usable[-1].dated})"
             self._picture_of.addItem(
-                f"Where it moved — {usable[0].name} → {usable[-1].name}, "
+                f"Where it moved — {first_name} → {last_name}, "
                 f"altogether (ΔE {run.total:.2f})", ("whole", 0))
         # ONLY WHERE THERE IS A CHOICE TO MAKE. With two profiles there is
         # exactly one possible pair and the step above already is it, so this
@@ -13215,14 +13228,30 @@ class GamutApp(QMainWindow):
         and only to the ones that need it: a name that is already unique is
         left exactly as it was.
         """
-        stems = [Path(path).stem for path, _g, _m in self._slots]
+        paths = [Path(path) for path, _g, _m in self._slots]
+        stems = [path.stem for path in paths]
         names = []
-        for path, _g, _m in self._slots:
-            stem = Path(path).stem
-            if stems.count(stem) > 1:
-                names.append(f"{stem} ({Path(path).parent.name})")
+        for path in paths:
+            if stems.count(path.stem) == 1:
+                names.append(path.stem)
+                continue
+            # THE FOLDER IS NOT ALWAYS WHAT DIFFERS. Glossy-paper.ti3 and
+            # Glossy-paper.icc sit in ONE folder in this project's own demo
+            # set -- the measurement and the profile made from it -- so
+            # adding the folder to both would have produced the same name
+            # twice all over again. What differs is taken in turn: the
+            # extension first, because "Glossy-paper.ti3" and
+            # "Glossy-paper.icc" is what a person sees in their own folder,
+            # and the folder after it.
+            others = [other for other in paths if other != path
+                      and other.stem == path.stem]
+            if all(other.name != path.name for other in others):
+                names.append(path.name)
+            elif all(other.parent.name != path.parent.name
+                     for other in others):
+                names.append(f"{path.stem} ({path.parent.name})")
             else:
-                names.append(stem)
+                names.append(str(path))
         return names
 
     def _name_of_shape(self, which: int) -> str:
