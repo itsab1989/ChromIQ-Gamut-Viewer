@@ -1320,7 +1320,17 @@ def test_turning_the_greys_off_does_not_put_the_shape_back():
     stand = Stand()
     stand._follow_neutral(False)
     assert stand._opacity.value() == 38
-    assert not stand._ideal_neutral.isChecked()
+    # AND THE NEUTRAL LINE IS LEFT ALONE, which is the opposite of what this
+    # asserted before. The two were tied: the perfectly neutral line was
+    # greyed out until the greys were shown and unticked when they went away,
+    # because a line to compare the greys against means nothing without them.
+    #
+    # That is a good argument and it was overruled from the window: "i get
+    # your argument but i'd rather set them independently". It is a fair
+    # call -- where neutral runs is a fact about the space rather than about
+    # this print, and somebody may want to see it with nothing else in the
+    # way. Nothing switches it off but the reader.
+    assert stand._ideal_neutral.isChecked()
 
 
 # ------------------------------------------------------- the colour of white

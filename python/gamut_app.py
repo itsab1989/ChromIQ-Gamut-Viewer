@@ -7956,7 +7956,7 @@ class GamutApp(QMainWindow):
         differ_hint.setObjectName("hint_differ_hint")
         lv.addWidget(differ_hint)
 
-        self._neutral = QCheckBox("Show the greys", g_look)
+        self._neutral = QCheckBox("Show the greys as they came out", g_look)
         self._neutral.stateChanged.connect(self._redraw)
         self._neutral.toggled.connect(self._follow_neutral)
         neutral_hint = Hint(
@@ -7978,9 +7978,13 @@ class GamutApp(QMainWindow):
         _r.addWidget(neutral_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
 
-        self._ideal_neutral = QCheckBox("…and a perfectly neutral line",
+        # A NAME THAT STANDS ON ITS OWN. It began "…and a perfectly neutral
+        # line", which only reads as anything after the line above it -- and
+        # that made sense while the two were tied together. They are not any
+        # more, so each says what it draws: one is what your greys DID, the
+        # other is where perfectly neutral greys WOULD run.
+        self._ideal_neutral = QCheckBox("Show a perfectly neutral line",
                                         g_look)
-        self._ideal_neutral.setEnabled(False)      # nothing to compare yet
         self._ideal_neutral.toggled.connect(
             lambda on: self._make_room_to_see_inside() if on else None)
         self._ideal_neutral.stateChanged.connect(self._redraw)
@@ -8007,7 +8011,12 @@ class GamutApp(QMainWindow):
             "lines properly: at full strength the surface is opaque and "
             "everything inside it is hidden.", g_look)
         ideal_hint.setObjectName("hint_ideal_hint")
-        _r = QHBoxLayout(); _r.setContentsMargins(16, 0, 0, 0)
+        # NO INDENT. It was inset by 16 px to read as a sub-option of the
+        # greys above it, which is what it was. Now that the two are set
+        # independently the indent says something untrue, and it showed:
+        # "their checkboxes are not aligned, the neutral line's one (and in
+        # turn the label itself) is a little more to the right".
+        _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
         _r.setSpacing(6)
         _r.addWidget(self._ideal_neutral, 1)
         _r.addWidget(ideal_hint, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -14418,18 +14427,24 @@ class GamutApp(QMainWindow):
             self._after_shape_setting("opacity")
 
     def _follow_neutral(self, on: bool) -> None:
-        """A line to compare the greys against means nothing without them.
+        """Make room to see inside, because both these lines are drawn inside.
 
-        Greyed out rather than hidden, so it is clear the choice exists and
-        what turns it on — and unticked when the greys go, so the picture
-        always matches the boxes.
+        THE TWO WERE TIED TOGETHER AND ARE NOT ANY MORE. The neutral line was
+        greyed out until the greys were shown, and unticked when they went
+        away, on the argument that a line to compare the greys against means
+        nothing without them. That argument is sound and was not what was
+        wanted: "i get your argument but i'd rather set them independently".
+        It is a fair call -- the perfectly neutral line is a fact about the
+        space rather than about this print, and somebody may well want to see
+        where neutral runs with nothing else in the way.
+
+        What is kept is the part that was never about the coupling: both
+        lines run up the INSIDE of the shape, so a surface at full strength
+        hides them. Ticking either turns it down far enough to see in, once,
+        and leaves it alone afterwards.
         """
-        self._ideal_neutral.setEnabled(on)
         if on:
             self._make_room_to_see_inside()
-        if not on and self._ideal_neutral.isChecked():
-            self._ideal_neutral.blockSignals(True)
-            self._ideal_neutral.setChecked(False)
             self._ideal_neutral.blockSignals(False)
 
     def _neutral_list(self) -> list:
