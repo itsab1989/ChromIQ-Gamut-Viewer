@@ -1657,7 +1657,7 @@ def test_the_window_offers_every_outline_colour_that_can_be_drawn():
     import inspect
     src = inspect.getsource(gamut_app.GamutApp)
     assert "self._outline_paint.addItem(\"plain grey\", \"plain\")" in src
-    assert "\"the same as the shapes\", \"match\"" in src
+    assert "\"as the shapes\", \"match\"" in src
     # The five named ones come from PAINTS itself rather than being typed
     # again, so they cannot fall behind it.
     assert "for _key, _label in PAINTS:" in src

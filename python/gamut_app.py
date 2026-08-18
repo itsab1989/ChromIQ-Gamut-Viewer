@@ -7222,14 +7222,14 @@ class GamutApp(QMainWindow):
         # THE NAME BELONGS BESIDE THE CONTROL, ONCE -- not inside every item.
         # Carried in the item text it was repeated on all four lines of the
         # open list, where the only thing that differs is the value.
-        self._target.addItem("all shapes together", "all")
+        self._target.addItem("all shapes", "all")
         self._target.addItem("the first shape", 0)
         self._target.addItem("the second shape", 1)
         self._target.addItem("the comparison", 2)
         self._target.currentIndexChanged.connect(self._on_target_changed)
         target_hint = Hint(
             "Everything below applies to whatever is chosen here. Leave it on "
-            "all shapes together and one change moves them all, which is what "
+            "all shapes and one change moves them all, which is what "
             "you want most of the time. Pick a single shape and only that one "
             "changes — so you can, for instance, have your own chart solid and "
             "fully opaque while the thing you are comparing against is a faint "
@@ -7317,7 +7317,15 @@ class GamutApp(QMainWindow):
         _r.addWidget(self._aspect, 1)
         _r.addWidget(aspect_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
-        self._grid_on = QCheckBox("Show the box and its grid", g_look)
+        # THE WORDS SOMEBODY LOOKING FOR IT WOULD USE. Reported twice, and
+        # the second time as a question rather than a fault: "the room / the
+        # walls / the grid or whatever it is called behind the shape is
+        # missing", and then "it is ok when this wall can be turned off and on
+        # but i'd need to know the option that does it". The switch was called
+        # "Show the box and its grid", which is accurate and is not what the
+        # thing is called by the person hunting for it.
+        self._grid_on = QCheckBox("Show the walls, the grid and the numbers",
+                                  g_look)
         self._grid_on.setChecked(True)
         self._grid_on.stateChanged.connect(self._on_grid_changed)
         lv.addWidget(self._grid_on)
@@ -7569,7 +7577,12 @@ class GamutApp(QMainWindow):
         # shapes do not, or missing one they gained.
         self._outline_paint = NoScrollComboBox(g_look)
         self._outline_paint.addItem("plain grey", "plain")
-        self._outline_paint.addItem("the same as the shapes", "match")
+        # SHORTER BECAUSE THE COLUMN IS AS WIDE AS ITS WIDEST DROP-DOWN.
+        # Measured: this entry wanted 145 px of text, which made its box 210
+        # and its row 330 -- the widest thing in the whole column, and so the
+        # number every other section was stretched to. "as the shapes" says
+        # the same thing in 88.
+        self._outline_paint.addItem("as the shapes", "match")
         # Lower-cased from the radios above rather than typed out again: the
         # combos on this panel read as the end of their label ("Proportions:
         # as measured"), the radios are sentences of their own, and one list
@@ -7586,7 +7599,7 @@ class GamutApp(QMainWindow):
             "Plain grey is the starting point, and it is the right one on top "
             "of a solid shape: hundreds of thin lines in the colours "
             "underneath compete with those colours instead of showing the "
-            "form. Choose the same as the shapes and the cage stays in step "
+            "form. Choose as the shapes and the cage stays in step "
             "with whatever you pick above under How the shapes are coloured, "
             "so changing one changes both.\n\n"
             "The five below that ignore the shapes entirely, which is the "
@@ -7651,7 +7664,13 @@ class GamutApp(QMainWindow):
             "comes from how many patches you measured.", g_look)
         detail_hint.setObjectName("hint_detail_hint")
         lv.addWidget(detail_hint)
-        self._show_lost = QCheckBox("Show what the comparison cannot print",
+        # SHORTER BECAUSE THE COLUMN IS AS WIDE AS ITS WIDEST LABEL, and a
+        # tick cannot wrap. Measured: this one asked for 270 px, "Keep both
+        # rooms pointing the same way" for 272, and the column has to be wider
+        # than all of them -- 520 in the end, which was noticed at once: "the
+        # left panel used to be less wide". The ⓘ beside each carries what the
+        # longer sentence said.
+        self._show_lost = QCheckBox("Show what it cannot print",
                                     g_look)
         self._show_lost.stateChanged.connect(self._redraw)
         lost_hint = Hint(
@@ -7848,7 +7867,7 @@ class GamutApp(QMainWindow):
         points_hint.setObjectName("hint_points_hint")
         lv.addWidget(points_hint)
 
-        self._side_by_side = QCheckBox("Show them in two rooms, side by side",
+        self._side_by_side = QCheckBox("Two rooms, side by side",
                                        g_look)
         self._side_by_side.stateChanged.connect(self._on_side_by_side)
         lv.addWidget(self._side_by_side)
@@ -7880,7 +7899,7 @@ class GamutApp(QMainWindow):
         _lr = QVBoxLayout(self._link_row)
         _lr.setContentsMargins(0, 0, 0, 0)
         _lr.setSpacing(4)
-        self._link_cameras = QCheckBox("Keep both rooms pointing the same way",
+        self._link_cameras = QCheckBox("Both rooms point the same way",
                                        self._link_row)
         self._link_cameras.setChecked(True)
         self._link_cameras.stateChanged.connect(self._redraw)

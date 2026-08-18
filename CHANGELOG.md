@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### 🧱 The switch for the walls is called what people call it
+
+"Show the box and its grid" is accurate, and it is not the name anybody uses
+while hunting for it: *"the room / the walls / the grid or whatever it is
+called behind the shape is missing"*, and then *"it is ok when this wall can
+be turned off and on but i'd need to know the option that does it"*. It is
+**Show the walls, the grid and the numbers**, in *How it looks*.
+
+### ↔ The column is 503 wide again, not 520
+
+Measured rather than trimmed by eye: the column is as wide as its widest row,
+and the widest row was *Outline colour* at 330 px — a label, a drop-down whose
+longest entry ("the same as the shapes") wanted 145 px of text, and an ⓘ. That
+one entry set the width of every other section in the column.
+
+"as the shapes" says the same thing in 88 px, "all shapes" replaces "all
+shapes together", and three tick labels that a tick cannot wrap were shortened
+with their ⓘ carrying the longer sentence. Nothing is clipped at the new
+width, and the column is still sized once and never moves.
+
 ## v2.38.0
 
 ### 🏷 Two files with one name are two shapes
