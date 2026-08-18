@@ -10836,8 +10836,9 @@ class GamutApp(QMainWindow):
                  f"through {icc_read.TABLE_NAMES[d.table_b]} — these answer "
                  f"different questions, so the difference above is mostly "
                  f"that rather than drift"))
+        lead = "moved most" if self._one_thing_over_time() else "differs most"
         for label, delta, lab_a, lab_b in d.worst_patches:
-            rows.append((f"moved most: {label}", f"{delta:.2f}",
+            rows.append((f"{lead}: {label}", f"{delta:.2f}",
                          "Lab {:.1f} {:.1f} {:.1f} -> {:.1f} {:.1f} {:.1f}"
                          .format(*lab_a, *lab_b)))
         return rows
@@ -14584,6 +14585,28 @@ class GamutApp(QMainWindow):
             return None                      # .gam files have no lookup table
         return paths[0], paths[1]
 
+    def _one_thing_over_time(self) -> bool:
+        """Has the reader said the two open files are one thing at two times?
+
+        #123's chooser. Kept as a method rather than read where it is needed,
+        because it turned out to be needed in FOUR places and was read in
+        one: the family heading switched to "how the two compare" while the
+        line above it still said "The ones that moved most" and the exported
+        table still had a "moved most:" row for every patch. Two papers
+        printed on one afternoon have not moved anywhere, and that is the
+        whole reason the chooser exists.
+
+        True when there is no chooser yet, which is what every path that has
+        only one file wants.
+        """
+        picker = getattr(self, "_same_thing", None)
+        return True if picker is None else bool(picker.currentData())
+
+    def _the_ones_that(self) -> str:
+        """"moved most" or "differ most", by what the reader chose."""
+        return ("The ones that moved most:" if self._one_thing_over_time()
+                else "The ones that differ most:")
+
     def _say_drift_families(self, lab_a=None, lab_b=None, spans="",
                             of="profiles") -> None:
         """Fill — or clear — the family lines under the drift numbers.
@@ -14595,10 +14618,8 @@ class GamutApp(QMainWindow):
         """
         said = None
         if lab_a is not None and lab_b is not None:
-            picker = getattr(self, "_same_thing", None)
-            over_time = True if picker is None else bool(picker.currentData())
             said = family_report(lab_a, lab_b, spans, of=of,
-                                 over_time=over_time)
+                                 over_time=self._one_thing_over_time())
         self._drift_families.setText("" if said is None else said[0])
         self._drift_families_note.setText("" if said is None else said[1])
 
@@ -14647,7 +14668,7 @@ class GamutApp(QMainWindow):
         summary = (", ".join(above) if above
                    else "no patch differs by more than 1")
         self._drift_worst.setText(
-            f"Of those, {summary}. The ones that moved most:\n"
+            f"Of those, {summary}. {self._the_ones_that()}\n"
             + "\n".join(lines))
         # AND WHICH COLOURS DID THE MOVING. Two readings of one chart are the
         # DEVICE, near enough -- the only thing between them is the chart
@@ -14731,7 +14752,7 @@ class GamutApp(QMainWindow):
                     f"above is mostly that, and not drift. Compare two "
                     f"profiles of the same kind for a figure you can trust.")
         self._drift_worst.setText(
-            f"Of those, {summary}. The ones that moved most:\n"
+            f"Of those, {summary}. {self._the_ones_that()}\n"
             + "\n".join(lines) + note)
         # AND WHICH COLOURS DID THE MOVING. Two PROFILES are two
         # characterisations, not the device, so the footnote says so -- the

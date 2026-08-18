@@ -268,8 +268,14 @@ def window_with(paths):
     # it too -- bound to the real one rather than to a second copy of the
     # logic, which would let the two drift apart without anything noticing.
     win._profile_pair = lambda: gamut_app.GamutApp._profile_pair(win)
+    # #123's answer, and the two verbs that hang off it. No chooser is set on
+    # the stand-in, so _one_thing_over_time gives its no-chooser answer --
+    # which is what every one of these tests wants, since none of them is
+    # about two papers. Bound to the real methods, so a change to what the
+    # window asks reaches these tests instead of passing them by.
     for name in ("_fit_drift_cut", "_drift_hiding", "_drift_cut_reads",
-                 "_drift_cut_changed"):
+                 "_drift_cut_changed", "_one_thing_over_time",
+                 "_the_ones_that", "_profile_drift_rows"):
         method = getattr(gamut_app.GamutApp, name)
         setattr(win, name,
                 (lambda m: lambda *a, **k: m(win, *a, **k))(method))

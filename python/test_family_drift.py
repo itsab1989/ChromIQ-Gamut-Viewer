@@ -989,6 +989,12 @@ def test_the_report_is_cleared_on_every_path_that_cannot_fill_it():
 
     win = SimpleNamespace(_drift_families=Label(),
                           _drift_families_note=Label())
+    # THE REAL METHOD, BOUND TO THE STAND-IN, not a copy of what it does: the
+    # window asks one place whether the two files are one thing at two times,
+    # and a double that answered for itself would keep passing while that one
+    # place changed underneath it.
+    win._one_thing_over_time = (
+        lambda: gamut_app.GamutApp._one_thing_over_time(win))
     say = lambda *a, **k: gamut_app.GamutApp._say_drift_families(win, *a, **k)
 
     rng = np.random.default_rng(33)
@@ -1330,6 +1336,8 @@ def test_the_windows_chooser_really_reaches_the_words():
         win = SimpleNamespace(_drift_families=Label(),
                               _drift_families_note=Label(),
                               _same_thing=Picker(answer))
+        win._one_thing_over_time = (
+            lambda w=win: gamut_app.GamutApp._one_thing_over_time(w))
         gamut_app.GamutApp._say_drift_families(win, lab, moved, "A → B",
                                                of="measurements")
         said[answer] = (win._drift_families.text(),
@@ -1464,3 +1472,62 @@ def test_the_destination_swatches_are_the_true_hues_of_the_families():
         parts = [int(v) for v in text[4:-1].split(",")]
         assert min(parts) <= 2 or max(parts) >= 253, (
             f"{name} at {text} has chroma left to spend")
+
+
+def test_the_chooser_reaches_the_worst_patches_line_and_the_table():
+    """#123's answer must govern every verb, not just the family heading.
+
+    IT WAS WIRED TO ONE PLACE AND LOOKED FINISHED. With "two different
+    things" chosen, the heading switched to "how the two compare, family by
+    family" while the line directly above it still read "The ones that moved
+    most" and every row of the exported table still said "moved most:". Two
+    papers printed on one afternoon have not moved anywhere.
+
+    The window-driving version of this is
+    scripts/audit_one_thing_or_two.py, which crosses both drift paths against
+    both settings. This pins the two smaller pieces without a window, so the
+    gate catches them too.
+    """
+    import inspect
+
+    import gamut_app
+
+    # BOTH READOUTS ASK, rather than one of them carrying the words itself.
+    lead = inspect.getsource(gamut_app.GamutApp._the_ones_that)
+    assert "moved most" in lead and "differ most" in lead
+    for name in ("_update_drift", "_update_profile_drift"):
+        body = inspect.getsource(getattr(gamut_app.GamutApp, name))
+        if "_drift_worst.setText" in body:
+            assert "_the_ones_that()" in body, (
+                f"{name} writes the worst-patches line without asking the "
+                f"chooser, so it says 'moved' of two different papers")
+            assert "The ones that moved most" not in body, (
+                f"{name} still has the wording built in")
+
+    # AND THE EXPORTED TABLE, which nobody sees until it is in a spreadsheet
+    # in front of somebody else.
+    rows = inspect.getsource(gamut_app.GamutApp._profile_drift_rows)
+    assert "_one_thing_over_time()" in rows, (
+        "the exported table labels every worst patch 'moved most:' whatever "
+        "the reader chose")
+    assert "differs most" in rows
+
+
+def test_a_run_is_one_thing_over_time_and_does_not_ask():
+    """The chooser governs a PAIR. A run is not a pair.
+
+    Several profiles of one device, in order, ARE one thing at two times --
+    that is what a run is -- so its wording is fixed and asking would be
+    noise. Pinned because the obvious way to "finish" the chooser is to route
+    every report through it, which would put a chooser above a run and let
+    somebody tell the window that its own run is two different things.
+    """
+    import inspect
+
+    import gamut_app
+
+    body = inspect.getsource(gamut_app.TimelineDialog._family_report)
+    assert "over_time" not in body, (
+        "the run's report now takes the pair chooser's answer, and a run is "
+        "one device over time by definition")
+    assert 'of="profiles"' in body

@@ -447,6 +447,32 @@ the same families, the same patch counts — which is worth stating in the
 tooltip, because a control that appears to change a measurement will be left
 alone by anybody careful.
 
+**THE ANSWER REACHES FOUR PLACES, NOT ONE, and that is the porting trap.** It
+was wired to one and looked finished: the family heading switched to *how the
+two compare, family by family* while the line directly above it still read
+*The ones that moved most* and every row of the exported table still said
+`moved most:`. Two papers printed on one afternoon have not moved anywhere,
+and a reader who has just told the window so is entitled to have it
+remembered everywhere it writes something down. The four are
+
+| what | where in the viewer |
+|---|---|
+| the family heading | `family_report(..., over_time=…)` |
+| the footnote under it | the same call |
+| the worst-patches readout | `_the_ones_that()` — "moved most" / "differ most" |
+| the exported table's row labels | `_profile_drift_rows()` |
+
+There are also TWO drift paths with their own copies of those sentences — two
+measurements of a chart, and two profiles — and the chooser sits above both.
+Wiring one and testing one is how this stayed half-done. The check that keeps
+it honest crosses both paths against both settings:
+`scripts/audit_one_thing_or_two.py`.
+
+Two things do NOT switch, deliberately: a **run** of several profiles is one
+device over time by definition, so its wording is fixed; and the plain
+difference figures ("1035 patches appear in both readings, biggest difference
+ΔE 9.84") name no verb at all and are right either way.
+
 **The concrete port**: `family_report(lab_a, lab_b, spans, of=…,
 over_time=…)` in `python/gamut_app.py` takes the answer as an argument and
 never guesses. ChromIQ fills that argument from the table above instead of

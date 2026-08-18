@@ -1323,6 +1323,7 @@ python scripts/audit_offers.py            # the export dialog offers exactly wha
 python scripts/audit_promises.py          # does the window do what its own words claim?
 python scripts/audit_width.py             # the column is sized once and never moves
 python scripts/audit_run_beside_the_rest.py  # a run open beside a file, a comparison and a chart
+python scripts/audit_one_thing_or_two.py  # the chooser reaches every place that writes a verb
 ```
 
 Several of these were written after a fault got past everything else, and each
