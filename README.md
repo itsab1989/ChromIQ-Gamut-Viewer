@@ -1310,7 +1310,27 @@ python scripts/audit_panel.py             # every control, 24 states, nothing cl
 python scripts/drive_ink_amounts.py       # 27 scenarios through the ink-amount view
 python scripts/drive_all_combinations.py  # 6,912 combinations, 60,076 checks
 python scripts/make_sample_pages.py       # the ten showcase pages, and their claims
+
+python scripts/audit_truth.py             # does each control say what the picture shows?
+python scripts/audit_sliders.py           # which sliders act under the hand, in four scenes
+python scripts/audit_controls.py          # which controls rebuild the page, and which restyle
+python scripts/audit_crossed_shapes.py    # Set this for x how it is drawn, all 13 crossings
+python scripts/audit_what_you_save.py     # the file against the screen it came from
+python scripts/audit_comes_back.py        # what a restart keeps, picture included
+python scripts/audit_readable.py          # every word, in both appearances, measured
+python scripts/audit_routes.py            # every writing route carries what the others learned
+python scripts/audit_offers.py            # the export dialog offers exactly what a page can do
+python scripts/audit_promises.py          # does the window do what its own words claim?
+python scripts/audit_width.py             # the column is sized once and never moves
 ```
+
+Several of these were written after a fault got past everything else, and each
+one says in its own file what it was written for. Three of them have been
+mutation-tested — the fault put back on purpose, to see whether the check
+still notices — because a check phrased in terms of the thing it guards
+cannot catch that thing being removed. `scripts/mutation_test_audit_truth.py`
+does that for one of them and is worth reading before trusting any of the
+rest.
 
 The last one is worth knowing about even if you never publish anything. It
 writes each page by pressing the window's own **Save** button, then reads the

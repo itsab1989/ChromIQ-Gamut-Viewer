@@ -190,6 +190,37 @@ def main() -> int:
         for ratio, kind, text in worst[:6]:
             print(f"      {ratio:>6.2f}:1  {kind:<5}  {text}")
 
+    # ---- AND THE PAGES SOMEBODY IS SENT ----------------------------------
+    # A saved page carries four grounds a reader can switch between, and the
+    # window's own appearance is only two of them. Nothing here is rendered:
+    # these are plain colour pairs, so they are compared as such.
+    #
+    # THE FLOOR IS THE QUIET ONE, and that is a decision rather than a
+    # convenience: a caption and an axis number annotate a picture rather
+    # than being read as prose, and the standards' 4.5 is written for prose.
+    # Below 3:1 they stop being legible at all, and that is the line.
+    from ti3gamut import SCENE_COLOURS
+
+    print("\n  the grounds a saved page can be switched to")
+    for name, ground in SCENE_COLOURS.items():
+        page, plot = ground.get("page"), ground.get("plot")
+        if not page or not plot or len(str(page)) != 7:
+            continue                      # "none" is see-through, not a colour
+        def rgb(value):
+            value = value.lstrip("#")
+            return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+        for what, ink, paper in (("the caption", ground.get("caption"), page),
+                                 ("the lettering", ground.get("text"), plot)):
+            if not ink or len(str(ink)) != 7:
+                continue
+            ratio = contrast(rgb(ink), rgb(paper))
+            counted += 1
+            print(f"      {name:<6} {what:<14} {ratio:>6.2f}:1")
+            if ratio < FLOORS["quiet"]:
+                problems.append(
+                    f"[readable] a page on {name}: {what} is {ratio:.2f}:1 "
+                    f"against the ground it is drawn on")
+
     import shutil
     shutil.rmtree(folder, ignore_errors=True)
     print(f"\n  {counted} pieces of text measured, in two appearances.")
