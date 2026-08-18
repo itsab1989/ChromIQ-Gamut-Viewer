@@ -10278,6 +10278,25 @@ class GamutApp(QMainWindow):
             self._target.setCurrentIndex(index)
             self._target.blockSignals(False)
         self._carry_over_the_old_outline_tick()
+        # AND THE TWO COPIES ARE MADE TO AGREE BEFORE ANYTHING IS DRAWN.
+        #
+        # A shape setting is kept twice: as the slider's own value, and inside
+        # the record the renderer reads. They are restored from two different
+        # keys, so a window could open with the handle at 55% and the shapes
+        # drawn at 100% -- reported exactly that way: "how solid it looks was
+        # then at 55% although the shapes suggest to be at 100%. clicking the
+        # knob and moving it corrected the viewer immediately".
+        #
+        # Touching the control cured it because that is when the record is
+        # written. The control is the thing a person can see, so the control
+        # wins: every shared value is taken from the widget that shows it.
+        for key, (widget, read) in self._shape_controls().items():
+            if widget is None:
+                continue
+            try:
+                self._shared[key] = read(widget)
+            except Exception:              # noqa: BLE001 — never block a start
+                pass
         self._sync_slider_labels()
         self._on_manual_light()
 
@@ -12753,7 +12772,11 @@ class GamutApp(QMainWindow):
         keep, because it is where the reader will be put back when a shape
         returns.
         """
-        return self._camera
+        # ASKED WITH getattr BECAUSE THIS IS REACHED FROM A STUB. Three
+        # tests call _spin_options against an object that stands in for the
+        # window and has no camera at all; a plain attribute made them fail
+        # for a reason that has nothing to do with what they check.
+        return getattr(self, "_camera", None)
 
     def _spin_options(self, glide: bool = False) -> dict:
         """What the page's turning engine should be doing, right now.
@@ -12767,6 +12790,11 @@ class GamutApp(QMainWindow):
         return dict(
             on=self._spin_on.isChecked(),
             glide=bool(glide),
+            # THIS PAGE'S CAMERA CAME FROM THE LAST ONE, so the page must not
+            # fit it again -- see the note beside fitAll. Only true for the
+            # window's own view, and only once there is a camera to carry:
+            # the first draw of a session is a fresh page like any other.
+            placed=self._camera_now() is not None,
             turn=dict(mode=self._turn_mode.currentData(),
                       speed=float(self._turn_speed.value()),
                       range=float(self._turn_sweep.value())),
