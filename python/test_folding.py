@@ -46,8 +46,11 @@ def _settle(app, seconds=0.05):
 
 
 def _forget(key):
-    from PyQt6.QtCore import QSettings
-    QSettings(*NAME).remove(f"fold/{key}")
+    # THROUGH prefs, so this reaches whichever store is in force -- under the
+    # suite that is a throwaway one, and it must not be somebody's real
+    # preferences even for a key named "test".
+    import prefs
+    prefs.store().remove(f"fold/{key}")
 
 
 @pytest.fixture

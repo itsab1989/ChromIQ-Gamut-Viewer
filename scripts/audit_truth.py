@@ -33,6 +33,16 @@ import time
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
+
+# THE SETTINGS GO SOMEWHERE THROWAWAY, and this must happen before the
+# window is built. A driver that uses the real store both destroys what
+# the person using this application has chosen and leaves its own last
+# state behind as their new preference -- which is how "the walls behind
+# the shape are missing" was reported as a bug in the viewer. See
+# python/prefs.py.
+import prefs  # noqa: E402
+
+prefs.use_a_scratch_store()
 sys.argv = ["audit_truth"]
 
 
@@ -169,7 +179,6 @@ def main() -> int:
 
     import gamut_app
 
-    QSettings("MeasuredGamutViewer", "MeasuredGamutViewer").clear()
     app = QApplication.instance() or QApplication(sys.argv)
     win = gamut_app.GamutApp([])
     win.resize(1500, 950)

@@ -7669,7 +7669,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                  ideal_neutrals: bool = False, chart=None,
                  light=None, grid: bool = True, space=None,
                  chart_look=None, agree: float = 1.0, differ: float = 1.0,
-                 split: bool = False, drift=None):
+                 split: bool = False, drift=None, camera=None):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -8046,7 +8046,17 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             # Keeping the eye above the default's 35 degrees rather than below
             # it shows the shape as a solid. Distance and elevation have to be
             # raised together; scaling x and y alone flattens the view.
-            camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
+            # WHERE THE READER IS ALREADY LOOKING FROM, when somebody hands
+            # one over. The window rewrites this page for anything it cannot
+            # restyle in place, and a page opens at the camera it was written
+            # with -- so a shape turned to the angle somebody wanted snapped
+            # back to three-quarters-front a few seconds after they let go of
+            # a slider. Reported exactly like that: "i drag let go it settles
+            # and after a few seconds it jumps".
+            #
+            # It travels into a SAVED page too, which is what the button
+            # offering to save "this view" has always said it would do.
+            camera=camera or dict(eye=dict(x=1.5, y=1.5, z=1.5)),
             # THE BOX AROUND THE SHAPE, or nothing at all. Turned off, the
             # walls, the grid, the numbers and the axis names all go with it
             # and the shape is left floating on the page -- which is what a

@@ -25,6 +25,7 @@ import math
 
 import movie
 import picture
+import prefs
 from imagegamut import readable_extensions
 
 #: Worked out once: which picture formats this machine can actually open.
@@ -57,7 +58,7 @@ import numpy as np
 
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
-from PyQt6.QtCore import (QEvent, QRect, QSettings, QSize, QStandardPaths, Qt,
+from PyQt6.QtCore import (QEvent, QRect, QSize, QStandardPaths, Qt,
                           QTimer, QUrl, pyqtSignal)
 from PyQt6.QtGui import (QColor, QDesktopServices, QFont, QFontMetrics,
                          QIcon, QImage, QKeySequence, QLinearGradient,
@@ -1230,11 +1231,9 @@ def make_foldable(box, key: str, start_open: bool = True):
         # folded one still answers honestly. Widening on every open made the
         # whole column jump under the hand.
         if remember:
-            QSettings("MeasuredGamutViewer", "MeasuredGamutViewer").setValue(
-                f"fold/{key}", bool(open_up))
+            prefs.store().setValue(f"fold/{key}", bool(open_up))
 
-    saved = QSettings("MeasuredGamutViewer",
-                      "MeasuredGamutViewer").value(f"fold/{key}")
+    saved = prefs.store().value(f"fold/{key}")
     open_up = (bool(start_open) if saved is None else
                (saved if isinstance(saved, bool)
                 else str(saved).lower() not in ("false", "0", "")))
@@ -1255,7 +1254,17 @@ def make_foldable(box, key: str, start_open: bool = True):
         QGroupBox.mousePressEvent(_box, event)
 
     box.mousePressEvent = pressed
-    box.setCursor(Qt.CursorShape.PointingHandCursor)
+    # NO HAND CURSOR HERE, and that is deliberate. Setting it on the group set
+    # it on everything INSIDE the group as well -- Qt hands a widget's cursor
+    # down to every child that has not asked for one of its own -- so the
+    # pointer became a hand over labels, over readouts, over empty space, in
+    # rooms where a click does nothing at all. Reported plainly: "i don't want
+    # the mouse arrow to turn into a hand symbol in some occasions".
+    #
+    # THE HEADING IS STILL THE CONTROL; what it lost is a promise it was
+    # making on behalf of the whole section. The triangle at the left of the
+    # heading is what says a section folds, and it says it without following
+    # the mouse around.
     # RE-ASSERTED ONCE THE WINDOW IS UP, and now that is safe: showing or
     # hiding one widget says the same thing however many times it is said.
     # The version that remembered a list of children could not survive being
@@ -5750,7 +5759,6 @@ class Hint(QToolButton):
         self._title = title or "About this setting"
         self.setObjectName("hintIcon")
         self.setFixedSize(QSize(Hint.ICON + 4, Hint.ICON + 4))
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         # No button frame: a QToolButton paints the platform's raised box and
         # its shadow otherwise, which on a light background looks like a
@@ -6077,6 +6085,12 @@ class GamutApp(QMainWindow):
         self._last_folder = ""
         #: Renders so far, so each one gets a URL the view has not seen.
         self._render_count = 0
+        #: WHERE THE READER HAS TURNED THE SHAPE TO, kept up to date from the
+        #: page itself. Anything this window cannot restyle in place is drawn
+        #: by writing a new page and loading it, and a page opens at the
+        #: camera it was written with -- so every rebuild threw away the angle
+        #: somebody had chosen. See _watch_the_camera.
+        self._camera = None
         # Papers rebuilt in CIELAB for judging, keyed by everything that
         # changes the shape. See _in_lab.
         self._lab_gamuts: dict = {}
@@ -6092,7 +6106,11 @@ class GamutApp(QMainWindow):
                             mesh_paint="plain", paint="true")
         #: Light or dark. Remembered between runs, because an appearance you
         #: have to set again every time is not really a setting.
-        self._store = QSettings("MeasuredGamutViewer", "MeasuredGamutViewer")
+        # THROUGH prefs.store AND NOT BUILT HERE, so that a driver can send
+        # the whole application's settings to a throwaway file and be sure it
+        # has: an audit that writes into somebody's real preferences turns
+        # every state it tries into their new default. See python/prefs.py.
+        self._store = prefs.store()
         self._appearance = str(self._store.value("appearance", "dark"))
         if self._appearance not in PALETTES:
             self._appearance = "dark"
@@ -6341,7 +6359,6 @@ class GamutApp(QMainWindow):
             shut.setObjectName("closer")
             shut.setFixedSize(22, 22)
             shut.setToolTip("Close this one")
-            shut.setCursor(Qt.CursorShape.PointingHandCursor)
             shut.clicked.connect(lambda _checked=False, which=i:
                                  self._close_one(which))
             rl.addWidget(shut, 0)
@@ -6554,7 +6571,6 @@ class GamutApp(QMainWindow):
         shut.setObjectName("closer")
         shut.setFixedSize(22, 22)
         shut.setToolTip("Close this chart")
-        shut.setCursor(Qt.CursorShape.PointingHandCursor)
         shut.clicked.connect(self._close_chart)
         rl.addWidget(shut, 0)
         row.setVisible(False)
@@ -6742,7 +6758,9 @@ class GamutApp(QMainWindow):
                                          self._chart_look_box)
         self._chart_dot.setRange(20, 100)      # tenths, so 2.0 to 10.0
         self._chart_dot.setValue(32)
-        self._chart_dot.valueChanged.connect(lambda _v: self._redraw())
+        self._chart_dot.valueChanged.connect(
+            lambda v: self._restyle_the_chart('printed', 'marker.size',
+                                              v / 10.0))
         dot_hint = Hint(
             "How large each patch is drawn. This changes nothing about the "
             "chart itself — only how easy its patches are to see.\n\n"
@@ -6769,7 +6787,10 @@ class GamutApp(QMainWindow):
         # put the dots and the skin back.
         self._chart_dot_opacity.setRange(0, 100)
         self._chart_dot_opacity.setValue(100)
-        self._chart_dot_opacity.valueChanged.connect(lambda _v: self._redraw())
+        self._chart_dot_opacity.valueChanged.connect(
+            lambda v: self._restyle_the_chart('printed',
+                                              'marker.opacity',
+                                              v / 100.0))
         dot_op_hint = Hint(
             "How much of each dot you can see through. Fully solid is the "
             "usual choice and the one to come back to.\n\n"
@@ -6819,7 +6840,9 @@ class GamutApp(QMainWindow):
                                              self._chart_outside_row)
         self._chart_out_dot.setRange(20, 140)
         self._chart_out_dot.setValue(55)
-        self._chart_out_dot.valueChanged.connect(lambda _v: self._redraw())
+        self._chart_out_dot.valueChanged.connect(
+            lambda v: self._restyle_the_chart('outside', 'marker.size',
+                                              v / 10.0))
         out_dot_hint = Hint(
             "How large the patches a paper cannot reach are drawn, set "
             "separately from the rest so the two can be balanced against each "
@@ -6844,7 +6867,10 @@ class GamutApp(QMainWindow):
                                                  self._chart_outside_row)
         self._chart_out_opacity.setRange(0, 100)
         self._chart_out_opacity.setValue(100)
-        self._chart_out_opacity.valueChanged.connect(lambda _v: self._redraw())
+        self._chart_out_opacity.valueChanged.connect(
+            lambda v: self._restyle_the_chart('outside',
+                                              'marker.opacity',
+                                              v / 100.0))
         out_op_hint = Hint(
             "How much of each out-of-reach dot you can see through, set "
             "separately from the ones that fit.\n\n"
@@ -6949,7 +6975,9 @@ class GamutApp(QMainWindow):
             Qt.Orientation.Horizontal, self._chart_skin_row)
         self._chart_skin_opacity.setRange(0, 100)
         self._chart_skin_opacity.setValue(30)
-        self._chart_skin_opacity.valueChanged.connect(lambda _v: self._redraw())
+        self._chart_skin_opacity.valueChanged.connect(
+            lambda v: self._restyle_the_chart('skin', 'opacity',
+                                              v / 100.0))
         skin_opacity_hint = Hint(
             "How much of the skin you can see through. Low is nearly clear, "
             "high is nearly solid.\n\n"
@@ -9475,6 +9503,51 @@ class GamutApp(QMainWindow):
         # contents -- so the difference came out negative, the frame counted
         # as nothing, and the column was fourteen pixels short. That is what
         # cut the ⓘ column down the right-hand side.
+        # A HIDDEN BODY UNDER-REPORTS ITSELF, AND THAT IS WHAT MADE THE COLUMN
+        # GROW A SECOND TIME. The note above says a folded group's body still
+        # answers honestly while it is hidden. Measured, it does not quite:
+        #
+        #     How it looks                     hidden 320   shown 348
+        #     What the colours are measured..  hidden 287   shown 315
+        #     Viewer and export styling        hidden 182   shown 204
+        #
+        # Polishing it does not help; only showing it does. So the column was
+        # sized from 320, and the next time anything asked -- opening the
+        # section, or changing the appearance, which re-polishes everything --
+        # the same body said 348 and the column grew by exactly 28. Reported
+        # twice, the second time as "the left panel became wider again for
+        # whatever reason".
+        #
+        # SO EACH BODY IS MEASURED ONCE, HONESTLY: shown, asked, and put back,
+        # with the column's painting switched off around it so nothing of it
+        # reaches the screen. The answer is kept on the group, and every later
+        # call uses it -- which is what makes the width settle instead of
+        # ratcheting upwards.
+        column.setUpdatesEnabled(False)
+        try:
+            for box in column.findChildren(QGroupBox):
+                body = getattr(box, "body", None)
+                if body is None or hasattr(box, "_widest_body"):
+                    continue
+                if body.isHidden():
+                    body.setVisible(True)
+                    if body.layout() is not None:
+                        body.layout().invalidate()
+                        body.layout().activate()
+                    box._widest_body = body.minimumSizeHint().width()
+                    body.setVisible(False)
+                else:
+                    box._widest_body = body.minimumSizeHint().width()
+        finally:
+            column.setUpdatesEnabled(True)
+
+        def inside_of(box):
+            body = getattr(box, "body", None)
+            if body is None:
+                return box.minimumSizeHint().width()
+            return max(getattr(box, "_widest_body", 0),
+                       body.minimumSizeHint().width())
+
         edge = 22
         for box in column.findChildren(QGroupBox):
             body = getattr(box, "body", None)
@@ -9483,10 +9556,8 @@ class GamutApp(QMainWindow):
                            - body.minimumSizeHint().width())
         wants = []
         for box in column.findChildren(QGroupBox):
-            body = getattr(box, "body", None)
             frame = edge
-            inside = (body.minimumSizeHint().width() if body is not None
-                      else box.minimumSizeHint().width())
+            inside = inside_of(box)
             # THE WIDER OF THE TWO ANSWERS, because each is right about a
             # different thing: a shut group knows its heading, an open one
             # knows its contents, and taking the body's alone made the column
@@ -10137,9 +10208,22 @@ class GamutApp(QMainWindow):
         if self._slots:
             self._redraw()
 
+    #: Settings the picture on screen can be restyled into without being
+    #: written again. Letting go of these must NOT rebuild: the change is
+    #: already on screen, and the rebuild's only visible effect is the pause
+    #: and the jump that follow it -- "i drag let go it settles and after a
+    #: few seconds it jumps".
+    RESTYLED_IN_PLACE = ("opacity", "depth")
+
     def _after_shape_setting(self, key: str) -> None:
-        """Record a per-shape (or shared) value, then repaint."""
+        """Record a per-shape (or shared) value, and repaint if it needs it."""
         self._remember_shape_setting(key)
+        if key in self.RESTYLED_IN_PLACE:
+            # RECORDED AND NOT REDRAWN. The value still has to be written down
+            # -- every future rebuild reads it from there -- but the picture
+            # was changed under the hand and rebuilding it would only take it
+            # away and put it back.
+            return
         self._redraw()
 
     def _set_paint(self, which: str) -> None:
@@ -12393,6 +12477,53 @@ class GamutApp(QMainWindow):
         self._name_extras.append(mode_name)
         return mode, speed, sweep
 
+    def _watch_the_camera(self) -> None:
+        """Keep track of where the reader is looking, from the page itself.
+
+        THERE IS NO OTHER WAY TO KNOW. The camera lives in the browser: it
+        moves when somebody drags the shape, and nothing tells this side of
+        the window that it has. So it is asked, a few times a second, and the
+        answer is kept for the next time a page has to be written.
+
+        DURING A DRAG THE REAL CAMERA IS INTERNAL. `layout.scene.camera` is
+        only brought up to date when the drawing library relayouts, so a
+        picture asked mid-turn answers with where the shape USED to be; the
+        scene object underneath it knows the truth. Both are tried, in that
+        order, which is the same thing the page's own movement script does.
+        """
+        page = self._view.page() if self._view is not None else None
+        if page is None:
+            return
+
+        def keep(raw):
+            if not raw:
+                return
+            try:
+                got = json.loads(raw)
+            except (TypeError, ValueError):
+                return
+            if isinstance(got, dict) and got.get("eye"):
+                self._camera = got
+
+        page.runJavaScript(
+            "(function(){var d=document.getElementsByClassName("
+            "'plotly-graph-div')[0];if(!d)return '';var c=null;"
+            "try{var s=d._fullLayout&&d._fullLayout.scene&&"
+            "d._fullLayout.scene._scene;if(s&&s.getCamera)c=s.getCamera();}"
+            "catch(e){}"
+            "if(!c)c=d.layout&&d.layout.scene&&d.layout.scene.camera;"
+            "return c?JSON.stringify(c):'';})();", keep)
+
+    def _camera_now(self):
+        """The camera to write into the next page, or None for the default.
+
+        A CROSS-SECTION HAS NONE, and neither has a window with nothing in it
+        yet -- in both cases the last remembered angle is exactly right to
+        keep, because it is where the reader will be put back when a shape
+        returns.
+        """
+        return self._camera
+
     def _spin_options(self, glide: bool = False) -> dict:
         """What the page's turning engine should be doing, right now.
 
@@ -12735,6 +12866,51 @@ class GamutApp(QMainWindow):
         if self._manual_light.isChecked():
             self._push_lighting(self._manual_lighting())
 
+    def _restyle_the_chart(self, group: str, field: str, value) -> None:
+        """Change how the chart's patches are drawn, in the picture on screen.
+
+        THESE FIVE SLIDERS REBUILT THE WHOLE PAGE ON EVERY STEP. Not on
+        release -- on every step of the drag, because they were wired to
+        `valueChanged`, so a slow drag across a 1,000-patch chart wrote and
+        loaded the page dozens of times and the view went black between each
+        of them.
+
+        Which traces: the ones in the chart's own legend group, and NOT the
+        key beside the name. A key is a key whatever the dots are doing -- a
+        restyle that caught the proxies too would shrink and fade the legend
+        along with the patches, which is the fault the proxies were added to
+        cure in the first place.
+        """
+        page = self._view.page() if self._view is not None else None
+        if page is None:
+            return
+        import json as _json
+        page.runJavaScript(
+            "(function(){var el=document.getElementsByClassName("
+            "'plotly-graph-div')[0];"
+            "if(!el||!window.Plotly||!el.data)return;"
+            "var idx=[];for(var i=0;i<el.data.length;i++){var t=el.data[i];"
+            f"if(String(t.legendgroup||'').slice(-{len(group) + 1})==='-{group}'"
+            "&&t.hoverinfo!=='skip')idx.push(i);}"
+            f"if(idx.length)Plotly.restyle(el,{{{_json.dumps(field)}:"
+            f"{_json.dumps(value)}}},idx);"
+            "})();")
+
+    def _which_meshes_js(self) -> str:
+        """The JavaScript that picks the shapes a live change applies to.
+
+        SET THIS FOR: ONE SHAPE MEANT ALL OF THEM WHILE THE HANDLE WAS DOWN.
+        The live restyle changed every surface in the picture and the rebuild
+        that followed put the other shapes back -- so the fault was invisible
+        as long as there was a rebuild to correct it. Taking the rebuild away
+        (which is what stops the view jumping) would have left the wrong
+        picture standing, which is how one fix becomes the next bug.
+        """
+        target = self._target.currentData()
+        if isinstance(target, int):
+            return f"(idx.length>{target}?[idx[{target}]]:idx)"
+        return "idx"
+
     def _push_lighting(self, values: dict) -> None:
         """Send a lighting dictionary into the scene already on screen."""
         page = self._view.page()
@@ -12752,7 +12928,8 @@ class GamutApp(QMainWindow):
             "if(!el||!window.Plotly||!el.data)return;"
             "var idx=[];for(var i=0;i<el.data.length;i++)"
             "if(el.data[i].type==='mesh3d')idx.push(i);"
-            f"if(idx.length)Plotly.restyle(el,{{lighting:{{{body}}}}},idx);"
+            f"var which={self._which_meshes_js()};"
+            f"if(which.length)Plotly.restyle(el,{{lighting:{{{body}}}}},which);"
             "})();")
 
     def _on_depth_changed(self, value: int) -> None:
@@ -12779,12 +12956,21 @@ class GamutApp(QMainWindow):
         the camera stays exactly where you put it, and nothing is recomputed.
         """
         page = self._view.page()
-        if page is None or not self._slots:
+        # THE RUN'S SHELLS ARE SHAPES ON SCREEN TOO -- the same omission the
+        # lighting had, and with the same result: the slider went dead for
+        # exactly the picture that has two shapes in it.
+        if page is None or not (self._slots
+                                or getattr(self, "_run_drawn", False)):
             return
         page.runJavaScript(
-            "(function(){var d=document.getElementsByClassName("
+            "(function(){var el=document.getElementsByClassName("
             "'plotly-graph-div')[0];"
-            f"if(d&&window.Plotly)Plotly.restyle(d,{{opacity:{value / 100.0}}});"
+            "if(!el||!window.Plotly||!el.data)return;"
+            "var idx=[];for(var i=0;i<el.data.length;i++)"
+            "if(el.data[i].type==='mesh3d')idx.push(i);"
+            f"var which={self._which_meshes_js()};"
+            f"if(which.length)Plotly.restyle(el,"
+            f"{{opacity:{value / 100.0}}},which);"
             "})();")
 
     def _on_side_by_side(self) -> None:
@@ -13430,6 +13616,10 @@ class GamutApp(QMainWindow):
             drift=self._drift_for_figure(),
             light=self._light_position(),
             grid=self._grid_on.isChecked(),
+            # WHERE THE SHAPE HAS BEEN TURNED TO. See _watch_the_camera: a
+            # rebuilt page that opens at the library's default angle is the
+            # jump reported after letting go of a slider.
+            camera=self._camera_now(),
             agree=self._agree.value() / 100.0,
             differ=self._differ.value() / 100.0,
             # Named explicitly rather than read off the first shape, because

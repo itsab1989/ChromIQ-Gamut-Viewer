@@ -12,13 +12,22 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "python"))
+
+# THE SETTINGS GO SOMEWHERE THROWAWAY, and this must happen before the
+# window is built. A driver that uses the real store both destroys what
+# the person using this application has chosen and leaves its own last
+# state behind as their new preference -- which is how "the walls behind
+# the shape are missing" was reported as a bug in the viewer. See
+# python/prefs.py.
+import prefs  # noqa: E402
+
+prefs.use_a_scratch_store()
 sys.argv = ["x"]
 from pathlib import Path
 
 from PyQt6.QtCore import QSettings
 from PyQt6.QtWidgets import QApplication
 
-QSettings("MeasuredGamutViewer", "MeasuredGamutViewer").clear()
 import gamut_app
 
 # WHERE THE FILES COME FROM. A real measurement and the profile built from it

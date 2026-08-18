@@ -26,6 +26,16 @@ import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
+
+# THE SETTINGS GO SOMEWHERE THROWAWAY, and this must happen before the
+# window is built. A driver that uses the real store both destroys what
+# the person using this application has chosen and leaves its own last
+# state behind as their new preference -- which is how "the walls behind
+# the shape are missing" was reported as a bug in the viewer. See
+# python/prefs.py.
+import prefs  # noqa: E402
+
+prefs.use_a_scratch_store()
 sys.argv = ["drive_ink_amounts"]
 
 import numpy as np                                          # noqa: E402
@@ -52,7 +62,6 @@ def check(name: str, expectation: str, ok: bool, detail: str = "") -> None:
 
 
 def main() -> int:
-    QSettings("MeasuredGamutViewer", "MeasuredGamutViewer").clear()
     import chart as chart_mod
     import gamut_app
 

@@ -38,6 +38,16 @@ import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
+
+# THE SETTINGS GO SOMEWHERE THROWAWAY, and this must happen before the
+# window is built. A driver that uses the real store both destroys what
+# the person using this application has chosen and leaves its own last
+# state behind as their new preference -- which is how "the walls behind
+# the shape are missing" was reported as a bug in the viewer. See
+# python/prefs.py.
+import prefs  # noqa: E402
+
+prefs.use_a_scratch_store()
 _ASKED = [a for a in sys.argv[1:] if not a.startswith("-")]
 sys.argv = ["make_screenshots"]
 
@@ -627,7 +637,6 @@ def main() -> int:
         # after another one would inherit whatever that one switched on -- and
         # the picture would be right on a clean machine and wrong on the
         # machine that makes them.
-        QSettings("MeasuredGamutViewer", "MeasuredGamutViewer").clear()
         window = gamut_app.GamutApp([])
         window.resize(wide, tall)
         window.show()

@@ -44,6 +44,13 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
 sys.argv = ["audit_offers"]
 
+# THE SETTINGS GO SOMEWHERE THROWAWAY: this imports the window for its
+# dialog's table, and importing is one step from building one. See
+# python/prefs.py.
+import prefs  # noqa: E402
+
+prefs.use_a_scratch_store()
+
 import numpy as np                                            # noqa: E402
 
 #: Which control in the built page proves a switch was honoured, by the
