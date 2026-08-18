@@ -656,6 +656,23 @@ class WrappedLabel(QLabel):
                  hide_when_empty: bool = False, hug: bool = False) -> None:
         super().__init__(text, parent)
         self._hide_when_empty = hide_when_empty
+        # AND IT CAN BE SELECTED AND COPIED, because half of these readouts
+        # say so. "written out so you can paste it into an email or a report"
+        # is on the family report's own ⓘ, and until now it was not true of
+        # the window at all: a QLabel hands the mouse straight through, so
+        # there was nothing to drag over and nothing for Ctrl+C to take.
+        # Basti asked the obvious question: "a hover tooltip from the info
+        # section says it is written so one can copy it for an email for
+        # example. but can one really copy or export the info text?"
+        #
+        # BY MOUSE AND BY KEYBOARD both, so a reader can drag over one line or
+        # press Ctrl+A inside the readout and take the lot.
+        self.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        # A TEXT CURSOR WHERE TEXT CAN BE TAKEN, which is the only thing that
+        # says so before somebody tries.
+        self.setCursor(Qt.CursorShape.IBeamCursor)
         # TAKE EXACTLY THE TEXT'S HEIGHT AND NO SPARE.
         #
         # The default here is MinimumExpanding, which is right for a readout
@@ -3815,7 +3832,17 @@ class TimelineDialog(QDialog):
         # to the next -- and the prose was in a box with a scrollbar of its
         # own, inside a column that already scrolls, which is a fault in its
         # own right: nobody expects a second scrollbar.
-        (controls if self._hosted else said).addWidget(self._by_family)
+        # THE SAME KIND OF ROW AS THE TICK BELOW IT. Added straight to the
+        # column while its neighbour sat in a row with an ⓘ, it started four
+        # pixels to the left -- the same fault, and the same measurement, as
+        # the pair in "Has anything changed?". Reported again here: "split
+        # into colour families and show the two shapes checkboxes are not
+        # correctly aligned".
+        _split_row = QHBoxLayout()
+        _split_row.setContentsMargins(0, 0, 0, 0)
+        _split_row.setSpacing(6)
+        _split_row.addWidget(self._by_family, 1)
+        (controls if self._hosted else said).addLayout(_split_row)
 
         # THE TWO SHAPES AROUND THE CLOUD, off unless it is asked for.
         #
@@ -3865,12 +3892,77 @@ class TimelineDialog(QDialog):
         shapes_hint.follow(self._with_shapes)
         self._with_shapes.setChecked(False)
         self._with_shapes.stateChanged.connect(lambda *_a: self._draw())
+
+        # AND THE CONTROLS FOR THEM, because otherwise the person who MAKES
+        # the picture has fewer than the person who receives it. Basti, on
+        # seeing the shapes go in: "when the shapes are drawn around how can i
+        # then adjust their transparency / movement / mesh / color or grey and
+        # so on?" -- and the honest answer was: in the saved page, and nowhere
+        # in the window.
+        #
+        # THE SAME THREE THE SAVED PAGE HANDS THE READER, and no more: how
+        # solid they are, drawn as edges instead of a surface, and with the
+        # colour taken out. Everything else about how a shape is drawn --
+        # the lighting, the shading depth, the rings, the proportions -- is
+        # already inherited from How it looks, because these shells are drawn
+        # by the same code as every other shape in this application.
+        self._shape_solid = NoScrollSlider(Qt.Orientation.Horizontal, self)
+        self._shape_solid.setRange(5, 100)
+        self._shape_solid.setValue(55)
+        self._shape_solid.setToolTip(
+            "How solid the two shapes are, from almost invisible to opaque.")
+        self._shape_solid.valueChanged.connect(lambda *_a: self._draw())
+        self._shape_wires = QCheckBox("as edges", self)
+        self._shape_wires.setToolTip(
+            "Draws the two shapes as their edges instead of as surfaces, so "
+            "nothing can hide the cloud inside them.")
+        self._shape_wires.stateChanged.connect(lambda *_a: self._draw())
+        self._shape_grey = QCheckBox("in grey", self)
+        self._shape_grey.setToolTip(
+            "Takes the colour out of the two shapes so the cloud inside is "
+            "the only coloured thing in the picture.")
+        self._shape_grey.stateChanged.connect(lambda *_a: self._draw())
+        shape_look = Hint(
+            "How the two shapes around the cloud are drawn.\n\n"
+            "HOW SOLID THEY ARE is the one to reach for first. They start "
+            "just over half solid, which is enough to read them as shapes "
+            "and still see the dots through them. Drag it down when the "
+            "cloud is what you are studying, up when the shapes are.\n\n"
+            "AS EDGES draws each shape as a cage of lines instead of a "
+            "surface. Two see-through surfaces over a cloud of dots is the "
+            "one arrangement in this application that can genuinely be hard "
+            "to read; two cages never are, and nothing is hidden behind "
+            "them.\n\n"
+            "IN GREY takes the colour out of both shapes and keeps their "
+            "light and dark exactly. The usual reason to want it: the cloud "
+            "is already telling you something with colour, and two "
+            "full-colour shapes around it are competing for the same "
+            "attention.\n\n"
+            "EVERYTHING ELSE ABOUT THEM comes from How it looks further down "
+            "this column — the lighting, how deep the shading goes, the rings "
+            "inside them, the proportions of the box. These shells are drawn "
+            "by the same code as every other shape here, so anything you set "
+            "there reaches them too.\n\n"
+            "AND ALL OF IT TRAVELS into a saved web page, where whoever opens "
+            "it gets the same three controls for themselves.",
+            self, title="How the two shapes are drawn")
+        shape_look.setObjectName("hint_shape_look")
+        shape_look.follow(self._shape_solid)
+        self._shape_look_row = QHBoxLayout()
+        self._shape_look_row.setContentsMargins(0, 0, 0, 0)
+        self._shape_look_row.setSpacing(6)
+        self._shape_look_row.addWidget(self._shape_solid, 1)
+        self._shape_look_row.addWidget(self._shape_wires, 0)
+        self._shape_look_row.addWidget(self._shape_grey, 0)
+        self._shape_look_row.addWidget(shape_look, 0,
+                                       Qt.AlignmentFlag.AlignVCenter)
         _shapes_row = QHBoxLayout()
         _shapes_row.setContentsMargins(0, 0, 0, 0)
         _shapes_row.setSpacing(6)
         _shapes_row.addWidget(self._with_shapes, 1)
         _shapes_row.addWidget(shapes_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         (controls if self._hosted else said).addLayout(_shapes_row)
+        (controls if self._hosted else said).addLayout(self._shape_look_row)
 
         # --- hide the colours that barely moved -------------------------------
         #
@@ -3924,7 +4016,11 @@ class TimelineDialog(QDialog):
         self._cut.valueChanged.connect(self._cut_changed)
         cut_row.addWidget(self._cut, 1)
         self._cut_says = QLabel("nothing hidden", self)
-        self._cut_says.setMinimumWidth(116)
+        # A FLOOR IN THE WINDOW, where it shares a line with the slider and
+        # the words would otherwise jog it about as they change. In the
+        # column it sits at the end of the caption's line with the slider
+        # below, so it needs no reserved room at all.
+        self._cut_says.setMinimumWidth(0 if hosted else 116)
         cut_row.addWidget(self._cut_says, 0)
         cut_hint = Hint(
             "The picture keeps every colour by default. Sliding this to the "
@@ -3940,7 +4036,40 @@ class TimelineDialog(QDialog):
         cut_row.addWidget(cut_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         cut_hint.follow(self._cut)
         self._cut_row = cut_row
-        (controls if self._hosted else said).addLayout(cut_row)
+        if self._hosted:
+            # THE SLIDER GETS THE WIDTH, and the words go above it. Squeezed
+            # into one row between a caption, a reading and an ⓘ, it was
+            # about 60 px long for a range of two and a half ΔE -- roughly
+            # four pixels per tenth, which is not something a hand can aim.
+            # Reported: "the slider of the option below is too short to give
+            # granular control".
+            #
+            # THE SAME THREE THINGS, IN TWO ROWS: the caption and its ⓘ, then
+            # the slider with its reading beside it. Nothing is lost and the
+            # slider is three times the length.
+            items = [cut_row.takeAt(0) for _ in range(cut_row.count())]
+            widgets = [item.widget() for item in items]
+            top = QHBoxLayout()
+            top.setContentsMargins(0, 0, 0, 0)
+            top.setSpacing(6)
+            # THE CAPTION, THE READING AND THE ⓘ ON ONE LINE; the slider
+            # gets the whole of the next. Sharing its line with the reading
+            # left it 156 px for 24 steps; alone it has the width of the
+            # column, which is fourteen pixels a tenth -- an amount a hand can
+            # actually place.
+            top.addWidget(widgets[0], 0)                  # the caption
+            top.addStretch(1)
+            top.addWidget(widgets[2], 0)                  # what it reads
+            if len(widgets) > 3 and widgets[3] is not None:
+                top.addWidget(widgets[3], 0, Qt.AlignmentFlag.AlignVCenter)
+            bottom = QHBoxLayout()
+            bottom.setContentsMargins(0, 0, 0, 0)
+            bottom.setSpacing(6)
+            bottom.addWidget(widgets[1], 1)               # the slider itself
+            controls.addLayout(top)
+            controls.addLayout(bottom)
+        else:
+            said.addLayout(cut_row)
 
         # --- which colour families moved --------------------------------------
         #
@@ -4257,6 +4386,12 @@ class TimelineDialog(QDialog):
         useful = self._chosen_pair() is not None
         self._by_family.setVisible(useful)
         self._with_shapes.setVisible(useful)
+        # THE CONTROLS FOR THE SHAPES ONLY WHILE THERE ARE SHAPES. A slider
+        # that moves nothing is this file's own definition of worse than
+        # nothing.
+        drawn = useful and self._with_shapes.isChecked()
+        for part in (self._shape_solid, self._shape_wires, self._shape_grey):
+            part.setVisible(drawn)
         for part in (self._cut, self._cut_label, self._cut_says):
             part.setVisible(useful)
         # AND EVERY ⓘ GOES WITH THE CONTROL IT EXPLAINS. An icon follows its
@@ -4826,6 +4961,35 @@ class TimelineDialog(QDialog):
         self._fit_cut_to(d.worst, float(_np.min(d.deltas)))
         cut = self._cut_off()
         look = self._how_the_window_draws_shapes() if shells else {}
+        if shells:
+            # THE THREE THE READER OF A SAVED PAGE GETS, said the same way:
+            # per-shape overrides, which is how this application has always
+            # described "this one shape, drawn differently".
+            each = {"opacity": self._shape_solid.value() / 100.0}
+            if self._shape_wires.isChecked():
+                # EDGES ARE A STYLE, NOT A PAINTING. Which of the two a shape
+                # is drawn as comes from `styles`, one entry per shape; the
+                # per-shape dictionary only says how the thing that IS drawn
+                # is coloured. Set in the wrong place it was accepted in
+                # silence and changed nothing, which is exactly the fault the
+                # combination audit exists for -- and it took a driven picture
+                # to notice: "as edges" left two surfaces and no wires.
+                # "mesh" IS THE NAME FOR EDGES HERE. The three a shape can
+                # be drawn as are mesh, solid and solid+mesh -- "outline" is
+                # the CHART SKIN's name for the same idea, and the two
+                # vocabularies live a few hundred lines apart. Asking for the
+                # wrong one raises rather than drawing something unintended,
+                # which is why this cost a minute and not a release.
+                look["styles"] = ["mesh", "mesh"]
+            if self._shape_grey.isChecked():
+                # "lightness" IS the grey this application means: it keeps
+                # each vertex's light and dark exactly and drops the hue, so
+                # the shape stays as readable as it was and simply stops
+                # competing with the cloud. There is no "grey" painting --
+                # asking for one raises, which is how this was found rather
+                # than shipped.
+                each["paint"] = "lightness"
+            look["per_shape"] = [dict(each), dict(each)]
         # WHAT THIS PICTURE DECIDES FOR ITSELF is named here as well, and
         # Python refuses the same argument twice. The appearance, the box and
         # the space are settled for a drift cloud: it is always drawn in Lab,
@@ -9418,13 +9582,7 @@ class GamutApp(QMainWindow):
                     # whose full text now lives nowhere at all is worse.
                     continue
                 row, at, sideways = spot
-                icon = Hint(tip, control.parentWidget(),
-                            title="About this setting")
-                icon.setObjectName("hint_from_tooltip")
-                if sideways:
-                    row.insertWidget(at + 1, icon, 0,
-                                     Qt.AlignmentFlag.AlignVCenter)
-                else:
+                if not sideways:
                     # A CONTROL STACKED IN A COLUMN GETS NO ICON, and both
                     # ways of giving it one were tried and measured.
                     #
@@ -9440,9 +9598,19 @@ class GamutApp(QMainWindow):
                     # rehoused. These are buttons whose labels already say
                     # what they do ("Remove them all"), and the section they
                     # sit in carries an ⓘ of its own.
-                    icon.deleteLater()
                     control.setToolTip(_one_sentence(tip))
                     continue
+                # THE ICON IS NOT MADE UNTIL THERE IS SOMEWHERE TO PUT IT.
+                # Built first and thrown away second, it existed for a moment
+                # as a child of the panel with no place in any layout -- which
+                # is a widget drawn at the top left corner of its parent, over
+                # whatever is there. That is what a stray ⓘ sitting on the
+                # list of profiles was.
+                icon = Hint(tip, control.parentWidget(),
+                            title="About this setting")
+                icon.setObjectName("hint_from_tooltip")
+                row.insertWidget(at + 1, icon, 0,
+                                 Qt.AlignmentFlag.AlignVCenter)
                 icon.follow(control)
             control.setToolTip(_one_sentence(tip))
 
