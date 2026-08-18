@@ -6884,7 +6884,7 @@ def _clear_hover_streaks(html: str) -> str:
     return html[:at] + js + html[at:] if at > 0 else html + js
 
 
-def _threshold_control(html: str, mode: str) -> str:
+def _threshold_control(html: str, mode: str, its_own_slider: bool = True) -> str:
     """A live "hide anything under ΔE n" slider, inside the saved page.
 
     WHY IT IS LIVE RATHER THAN BAKED IN AT SAVE TIME. Whoever opens the page
@@ -6905,6 +6905,11 @@ def _threshold_control(html: str, mode: str) -> str:
     every colour back exactly as it was.
     """
     c = SCENE_COLOURS["light" if mode == "light" else "dark"]
+    # THE CONTROL ITSELF IS FOR A SAVED PAGE. In the application's own view
+    # the window already has this slider in its column, and two of them a few
+    # inches apart is two controls for one thing that can disagree. The
+    # WORKING PART is handed out either way -- see window.cqHideBelow -- so
+    # the window's own slider drives exactly the code a reader would.
     js = """
 <div id="cq-cut" hidden style="max-width:46em;margin:0 auto;padding:.4em 1.5em 1.2em;
      font:14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
@@ -7050,11 +7055,42 @@ def _threshold_control(html: str, mode: str) -> str:
            + "that moved least.");
     }
     slider.addEventListener("input", apply);
+    // AND THE WINDOW CAN ASK FOR THE SAME THING WITHOUT REBUILDING ANYTHING.
+    // The application's own threshold slider used to redraw the whole page on
+    // every step: the view went black, loaded again, and only settled when the
+    // drag ended -- "dragging the hide anything under slider also blacks out
+    // the whole viewer and then puts everything back at once instead of only
+    // granularly hiding what the slider promises".
+    //
+    // What the reader of a saved page gets is exactly what the window wants:
+    // the dots are already drawn, and hiding some of them is a restyle. So
+    // the same function is handed out under a name the window can call, and
+    // there is one implementation rather than two that would drift.
+    window.cqHideBelow = function (de) {
+      var tenths = Math.round(de * 10);
+      slider.value = Math.max(+slider.min, Math.min(+slider.max, tenths));
+      apply();
+      return slider.value / 10;
+    };
     apply();
   });
 })();</script>
 """
     js = js.replace("__TEXT__", c["text"])
+    if not its_own_slider:
+        # THE SLIDER IS HIDDEN, NOT DELETED, and the difference is the whole
+        # bug. Cut out of the page, its elements went with it -- and the script
+        # that does the hiding reads the slider for its value and the two
+        # lines beside it for what to say, so it found nothing and gave up
+        # before defining anything. The window's slider then moved and no dot
+        # moved with it: "now dragging the slider does not black out / redraw
+        # everything but in turn nothing gets hidden".
+        #
+        # Left in place and hidden, the machinery is all there and the window
+        # drives it; nobody sees a second control.
+        js = js.replace('<div id="cq-cut" hidden style="',
+                        '<div id="cq-cut" hidden data-cq-window="1" style="'
+                        'display:none !important;', 1)
     at = html.rfind("</body>")
     return html[:at] + js + html[at:] if at > 0 else html + js
 
@@ -7111,7 +7147,7 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     html = _titled(html, _page_title(fig))
     # THE READER'S OWN THRESHOLD. It builds itself only on a page that has a
     # drift cloud in it, so every other kind of page is untouched.
-    html = _threshold_control(html, mode)
+    html = _threshold_control(html, mode, its_own_slider=controls)
     # The pointing lines leave streaks in one engine; this clears them without
     # taking the lines away. See _clear_hover_streaks.
     html = _clear_hover_streaks(html)

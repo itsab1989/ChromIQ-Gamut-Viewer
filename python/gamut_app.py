@@ -769,17 +769,26 @@ class NoScrollSpinBox(QSpinBox):
 
 
 class NoScrollSlider(QSlider):
-    """A slider with the same rule, for the same reason."""
+    """A slider the wheel never moves.
+
+    THE FOCUS EXCEPTION WAS THE FAULT. This used to let the wheel through
+    once the slider had focus, which sounds reasonable and means that the
+    moment somebody DRAGS a slider -- which is how it gets focus -- scrolling
+    the column past it starts changing it again. Reported exactly that way:
+    "hovering over how it looks slider and scrolling changes its value
+    although it should not".
+
+    The wheel belongs to the column, which is longer than the window. A
+    keyboard still adjusts a focused slider by arrow key, which is the precise
+    control the wheel was pretending to be.
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def wheelEvent(self, event) -> None:        # noqa: N802 (Qt naming)
-        if self.hasFocus():
-            super().wheelEvent(event)
-        else:
-            event.ignore()
+        event.ignore()
 
 
 class _ScrollFade(QWidget):
@@ -1215,17 +1224,11 @@ def make_foldable(box, key: str, start_open: bool = True):
         # at 346, and opening it then clipped its right-hand edge -- reported
         # as "how it looks section became too wide now". Widening only ever
         # grows, so this can be asked as often as it likes.
-        if open_up:
-            widen = getattr(box.window(), "_widen_the_column_to_fit_it", None)
-            if widen is not None:
-                # ASKED AFTER THE LAYOUT HAS SETTLED, not in the same breath.
-                # A group opened this instant still answers with the width it
-                # had while it was shut, so the column is sized for the old
-                # answer -- measured: the column stayed at 346 while "How it
-                # looks" had grown to 366, and its frame was cut. Asking again
-                # one event later gets the honest number, and the same trap
-                # cost a report on the theme change an hour earlier.
-                QTimer.singleShot(0, widen)
+        # THE COLUMN IS NOT RESIZED HERE. It is sized once, for the widest
+        # thing any group could ever show -- see _widen_the_column_to_fit_it,
+        # which asks each group's BODY rather than the group itself, so a
+        # folded one still answers honestly. Widening on every open made the
+        # whole column jump under the hand.
         if remember:
             QSettings("MeasuredGamutViewer", "MeasuredGamutViewer").setValue(
                 f"fold/{key}", bool(open_up))
@@ -4711,9 +4714,26 @@ class TimelineDialog(QDialog):
             self._blank()
 
     def _cut_changed(self, _value=None) -> None:
-        """Say where the slider is, in words, and redraw."""
+        """Say where the slider is, and hide the dots that fall under it.
+
+        LIVE, NOT A REBUILD. Every step used to write a new page and load it:
+        the view went black, drew again, and only settled when the drag ended.
+        "dragging the hide anything under slider also blacks out the whole
+        viewer and then puts everything back at once instead of only granularly
+        hiding what the slider promises."
+
+        THE PAGE ALREADY KNOWS HOW. Whoever opens a saved page gets this exact
+        control, and the working half of it is handed out as window.cqHideBelow
+        -- so the window's own slider drives the same code rather than a second
+        copy of it, and the dots simply disappear and come back as it moves.
+        """
         self._cut_says.setText(self._cut_reads())
-        self._draw()
+        host = self._host if getattr(self, "_hosted", False) else None
+        run_js = getattr(host, "_run_js_now", None)
+        if run_js is None or self._chosen_pair() is None:
+            self._draw()
+            return
+        run_js(f"if(window.cqHideBelow)window.cqHideBelow({self._cut_off():.2f});")
 
     def _cut_reads(self) -> str:
         """What the slider is doing, in words that are true at both ends.
@@ -4875,13 +4895,21 @@ class TimelineDialog(QDialog):
         for path in (Path(path_a), Path(path_b)):
             try:
                 key = (str(path), path.stat().st_mtime_ns,
-                       host._white.currentData(), host._build_space(),
+                       host._white.currentData(), "lab",
                        host._mode.currentData())
             except OSError:
                 return []
             if key not in self._shell_cache:
                 try:
-                    gamut, _measured = builder(path)
+                    # ALWAYS IN LAB, WHATEVER THE WINDOW IS DRAWING IN. The
+                    # run's picture is a cloud of ΔE2000 differences, which is
+                    # a Lab measurement, and its shells have to stand in the
+                    # same space or the axes are labelled for one and the
+                    # shapes built for the other. The window says so outright
+                    # rather than drawing it: "asked to label the axes 'lab'
+                    # while the shapes were built in 'luv'". Found by the
+                    # control sweep, which changed the space with a run open.
+                    gamut, _measured = builder(path, space="lab")
                 except Exception as exc:   # noqa: BLE001 — a view must not fall
                     _log().warning("could not build the shape of %s: %s",
                                    path, exc)
@@ -4953,11 +4981,23 @@ class TimelineDialog(QDialog):
         self._fit_cut_to(d.worst, float(_np.min(d.deltas)))
         cut = self._cut_off()
         look = self._how_the_window_draws_shapes() if shells else {}
+        # WITH NO SHELLS THERE IS NO LOOK TO INHERIT, and the box is still a
+        # thing the reader can switch off.
+        if "grid" not in look:
+            host_grid = getattr(getattr(self, "_host", None), "_grid_on", None)
+            look["grid"] = (host_grid.isChecked() if host_grid is not None
+                            else True)
         # WHAT THIS PICTURE DECIDES FOR ITSELF is named below as well, and
         # Python refuses the same argument twice: a drift cloud is always
-        # drawn in Lab, always with its box, and always in the window's own
-        # light or dark.
-        for mine in ("mode", "grid", "space"):
+        # drawn in Lab and always in the window's own light or dark.
+        #
+        # THE BOX IS NOT ONE OF THOSE. It was, and that made "Show the box and
+        # its grid" a switch that did nothing to this picture while still
+        # showing itself ticked or unticked -- a control saying something
+        # untrue, which is worse than one that does nothing. Found by the
+        # audit that compares every control with the picture: "says False,
+        # draws True".
+        for mine in ("mode", "space"):
             look.pop(mine, None)
         if axis == "toward":
             # NOT "IN LAB UNITS": this one is not a measurement along an axis,
@@ -4966,21 +5006,21 @@ class TimelineDialog(QDialog):
             return build_figure(
                 shells, f"Where {spans} is heading — the family each colour is "
                     f"moving toward",
-                mode=self._appearance, space="lab", grid=True, **look,
+                mode=self._appearance, space="lab", **look,
                 split=split_for_fading,
                 drift=(d.lab_a, moved, f"heading for: {spans}", "toward",
                        split, cut, d.deltas))
         if axis:
             return build_figure(
                 shells, f"Which way {spans} moved — {asks}, in Lab units",
-                mode=self._appearance, space="lab", grid=True, **look,
+                mode=self._appearance, space="lab", **look,
                 split=split_for_fading,
                 drift=(d.lab_a, moved, f"{asks}: {spans}", axis, split, cut,
                        d.deltas))
         return build_figure(
             shells, f"Where {spans} disagree — ΔE2000, biggest {d.worst:.2f}, "
                 f"average {d.average:.2f}",
-            mode=self._appearance, space="lab", grid=True, **look,
+            mode=self._appearance, space="lab", **look,
             split=split_for_fading,
             drift=(d.lab_a, d.deltas, f"how far it moved: {spans}", None,
                    split, cut))
@@ -6722,7 +6762,12 @@ class GamutApp(QMainWindow):
         clv.addWidget(QLabel("How solid the dots are", self._chart_look_box))
         self._chart_dot_opacity = NoScrollSlider(Qt.Orientation.Horizontal,
                                                  self._chart_look_box)
-        self._chart_dot_opacity.setRange(10, 100)
+        # ALL THE WAY DOWN, like every other percentage in this window. A
+        # floor here meant the control stopped short of what its label
+        # promises, and what it was protecting against -- something invisible
+        # and unrecoverable -- is not true: the switches in this same group
+        # put the dots and the skin back.
+        self._chart_dot_opacity.setRange(0, 100)
         self._chart_dot_opacity.setValue(100)
         self._chart_dot_opacity.valueChanged.connect(lambda _v: self._redraw())
         dot_op_hint = Hint(
@@ -6797,7 +6842,7 @@ class GamutApp(QMainWindow):
                              self._chart_outside_row))
         self._chart_out_opacity = NoScrollSlider(Qt.Orientation.Horizontal,
                                                  self._chart_outside_row)
-        self._chart_out_opacity.setRange(10, 100)
+        self._chart_out_opacity.setRange(0, 100)
         self._chart_out_opacity.setValue(100)
         self._chart_out_opacity.valueChanged.connect(lambda _v: self._redraw())
         out_op_hint = Hint(
@@ -6902,7 +6947,7 @@ class GamutApp(QMainWindow):
         srl.addWidget(QLabel("How solid the skin is", self._chart_skin_row))
         self._chart_skin_opacity = NoScrollSlider(
             Qt.Orientation.Horizontal, self._chart_skin_row)
-        self._chart_skin_opacity.setRange(5, 100)
+        self._chart_skin_opacity.setRange(0, 100)
         self._chart_skin_opacity.setValue(30)
         self._chart_skin_opacity.valueChanged.connect(lambda _v: self._redraw())
         skin_opacity_hint = Hint(
@@ -7076,7 +7121,18 @@ class GamutApp(QMainWindow):
         # and washes them out on a light one, so the same setting flattered one
         # appearance and spoiled the other. Solid shows the measured colours as
         # they are; the slider is there for looking inside two shapes at once.
-        self._opacity.setRange(15, 100); self._opacity.setValue(100)
+        # AND IT GOES ALL THE WAY DOWN. The floor was 15%, on the reasoning
+        # that a shape nobody can see is a shape nobody can find again -- but
+        # the picture already answers that: every shape has its name under it
+        # and clicking the name brings it back, which is what the note above
+        # this slider says. A control that stops short of what its label
+        # promises is the smaller of the two faults. Reported plainly: "i
+        # can't turn how solid it looks completely down to 0".
+        #
+        # At 0 the surface is gone and its outline, its rings and its name
+        # remain -- which is a useful state in its own right: the shape's
+        # extent without anything hiding what is inside it.
+        self._opacity.setRange(0, 100); self._opacity.setValue(100)
         self._opacity.valueChanged.connect(self._on_opacity_changed)
         self._opacity.sliderReleased.connect(
             lambda: self._after_shape_setting("opacity"))
@@ -9231,6 +9287,21 @@ class GamutApp(QMainWindow):
             progress.close()
         return made
 
+    def _show_page(self, path) -> None:
+        """Put a newly written page on screen.
+
+        A SECOND VIEW WAS TRIED HERE AND TAKEN OUT AGAIN. Loading into a spare
+        and swapping the two on loadFinished removes the blink that every
+        rebuild causes -- and it left the frame EMPTY: the widget that ended
+        up in the layout was the one that had just been sent to about:blank.
+        Reported with a photograph of a window with no picture in it at all.
+
+        A blink is cosmetic. An empty viewer is not, and a cure that can do
+        that has no business in the redraw path until it is proved by a driver
+        that watches the frame rather than the address in it.
+        """
+        self._view.setUrl(QUrl.fromLocalFile(str(path)))
+
     def _run_js_now(self, script: str, seconds: float = 2.0) -> None:
         """Run it and WAIT until the page has actually done it.
 
@@ -9387,9 +9458,42 @@ class GamutApp(QMainWindow):
         # THE COLUMN'S OWN MARGINS ARE PART OF WHAT IT NEEDS, which is why
         # this asks the column first and the sections second: a section that
         # needs 372 needs 376 of column around it. See _build_controls.
-        needs = max(346, column.minimumSizeHint().width(),
-                    *(box.minimumSizeHint().width() + 4
-                      for box in column.findChildren(QGroupBox)) or (0,))
+        # ASK A FOLDED GROUP WHAT IT WOULD NEED IF IT WERE OPEN. A shut group
+        # says "as wide as my heading", so a column sized from that grew every
+        # time somebody opened one -- and a column that jumps wider under the
+        # hand is worse than the clipping it was meant to cure. Reported at
+        # once: "when i enlarged the how it looks section the whole left panel
+        # became wider which it should not".
+        #
+        # ITS BODY STILL ANSWERS WHILE IT IS HIDDEN, which is what makes this
+        # possible: measured, "This window" folded says 119 px for itself and
+        # 250 for its body. So the column is sized ONCE, for the widest thing
+        # it could ever have to show, and folding changes nothing about it.
+        # HOW MUCH A GROUP'S OWN FRAME COSTS, measured from one that is
+        # actually open rather than worked out from a folded one. Folded, a
+        # group's least width is its HEADING, which is smaller than its
+        # contents -- so the difference came out negative, the frame counted
+        # as nothing, and the column was fourteen pixels short. That is what
+        # cut the ⓘ column down the right-hand side.
+        edge = 22
+        for box in column.findChildren(QGroupBox):
+            body = getattr(box, "body", None)
+            if body is not None and getattr(box, "_fold_open", False):
+                edge = max(edge, box.minimumSizeHint().width()
+                           - body.minimumSizeHint().width())
+        wants = []
+        for box in column.findChildren(QGroupBox):
+            body = getattr(box, "body", None)
+            frame = edge
+            inside = (body.minimumSizeHint().width() if body is not None
+                      else box.minimumSizeHint().width())
+            # THE WIDER OF THE TWO ANSWERS, because each is right about a
+            # different thing: a shut group knows its heading, an open one
+            # knows its contents, and taking the body's alone made the column
+            # eleven pixels short -- cut through the ⓘ column on the right.
+            wants.append(max(inside + max(frame, 0) + 4,
+                             box.minimumSizeHint().width() + 4))
+        needs = max(346, column.minimumSizeHint().width(), *(wants or (0,)))
         if needs > column.minimumWidth():
             column.setFixedWidth(needs)
         gutter = area.verticalScrollBar().sizeHint().width()
@@ -11660,7 +11764,7 @@ class GamutApp(QMainWindow):
             raise outcome["trouble"]
         return outcome["got"]
 
-    def _build_one(self, path: Path, stop=None):
+    def _build_one(self, path: Path, stop=None, space=None):
         """The gamut of one file, whichever kind it is.
 
         A profile has no patches, so there is no Measurement to return with
@@ -11675,7 +11779,7 @@ class GamutApp(QMainWindow):
         if suffix in (".icc", ".icm", ".gam"):
             reader = gam_gamut if suffix == ".gam" else icc_gamut
             return reader(path, white_point=self._white.currentData(),
-                          space=self._build_space(), stop=stop), None
+                          space=space or self._build_space(), stop=stop), None
         if suffix in IMAGE_EXTENSIONS:
             from imagegamut import image_gamut
             built, facts = image_gamut(
@@ -12783,7 +12887,7 @@ class GamutApp(QMainWindow):
         except OSError as exc:
             _log().warning("could not draw the run: %s", exc)
             return
-        self._view.setUrl(QUrl.fromLocalFile(str(out)))
+        self._show_page(out)
         self._drop_the_scene_before_last()
 
     def _let_the_exports_follow_the_picture(self) -> None:
@@ -12847,6 +12951,11 @@ class GamutApp(QMainWindow):
         self._opacity.blockSignals(True)
         self._opacity.setValue(55)
         self._opacity.blockSignals(False)
+        # AND THE NUMBER BESIDE IT, which is written by a separate connection
+        # -- blocked along with everything else. The slider sat at 55 with
+        # "100%" printed next to it: "how solid it looks says 100% although
+        # the slider is more in the middle".
+        self._opacity_lbl.setText("55%")
         self._shared["opacity"] = 0.55
         # THE READING BESIDE THE SLIDER FOLLOWS IT, through the window's own
         # handler rather than a second copy of what that handler does.
@@ -12944,7 +13053,7 @@ class GamutApp(QMainWindow):
         out = self._tmp / f"scene-{self._render_count}.html"
         flat = self._write_scene(gamuts, clouds, styles, lost, out,
                                  controls=False)
-        self._view.setUrl(QUrl.fromLocalFile(str(out)))
+        self._show_page(out)
         self._drop_the_scene_before_last()
         self._update_volume()
         self._update_coverage()
