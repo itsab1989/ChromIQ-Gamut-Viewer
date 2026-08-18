@@ -1,6 +1,83 @@
 # Changelog
 
-## Unreleased
+## v2.39.0
+
+### 🔺 The cut triangles are gone
+
+Kite-shaped dark wedges on a shape the moment it was made see-through,
+changing as it turned, and gone only when it was solid again — reported four
+times: *"at the edges of the shape there still seem to be hints of triangles
+instead of a smooth surface"*, *"triangles here as well that change during
+movement"*, *"as soon as transparency comes into play the triangles appear it
+seems"*.
+
+**The far wall of a shape is now drawn wholly before the near wall**, each
+half still sorted farthest-first. A pure reordering: nothing is dropped, so
+the outline is untouched — which is where three attempts at culling had
+failed, each of them shredding the rim to shards.
+
+A depth sort of triangle *middles* is right about which TRIANGLE is farther
+and still wrong at the pixels where the rim's foreshortened far-wall facets
+overlap the near wall. Those pixels are the wedges. Ordering by which way a
+face points settles them all at once: at any pixel of a closed shell the near
+wall is nearer than the far wall, so far-wall-first is right **per pixel**,
+which no ordering of triangles can promise.
+
+Measured on one picture with the switch thrown, and crossed over six cameras
+and four scenes: 22 of 24 states improve or hold, **none loses a pixel of its
+outline**. Nine other explanations were measured and ruled out first, ending
+with the one that settled it — with *no lighting at all* the wedges are still
+there, so they were never shading. The whole trail is in
+`docs/THE-SEE-THROUGH-TRIANGLES.md`.
+
+### 🧭 After a drag, the shape was sorted for the wrong direction
+
+Any camera move left the scene's axis ranges as junk — `[-88..92, …]` became
+`[-1..6, …]` — so the line of sight bent from (0.577, 0.577, 0.577) to
+(0.468, 0.286, 0.836) and **every frame after a drag put the triangles in
+order for somewhere the reader was not looking.** Read from the scene's own
+`dataScale` now, which is identical across camera moves.
+
+### 🎨 The cloud can be coloured five ways in the main window too
+
+*Show me where, in the picture* could only ever paint by **how far** a colour
+moved. The run panel three sections up offered five ways to paint the same
+kind of cloud, and the main window — where somebody with two profiles of one
+printer actually works — offered none.
+
+It now offers all five: how far it moved, the three named directions, and
+**the colour it is heading for**, which paints every dot in the family it is
+moving toward and answers the question people ask out loud — *what are my
+greys going to?* The two controls beside it, which act only on that cloud,
+are greyed out until there is a cloud to act on.
+
+### 🗣 "One thing at two times" now reaches everything that writes it down
+
+The chooser was wired to one place and looked finished: the family heading
+switched to *how the two compare*, while the line above it still read **The
+ones that moved most** and every row of the exported table still said
+`moved most:`. Two papers printed on one afternoon have not moved anywhere,
+and the spreadsheet is the copy that ends up in front of somebody else.
+
+### 🧹 Nothing is drawn around nothing
+
+*One device over time* showed **an empty frame over the Add button** — the
+file list holding its least height with no rows in it. Driving that fix found
+the same fault twice more in the same section: an empty *Show me* dropdown,
+and a *coloured by* offering five ways to paint a picture that did not exist.
+All of them now arrive with the first profile.
+
+### 📐 The shape follows the profile more closely
+
+`iccgamut` was asked for no surface resolution at all, so its default decided
+— and that default is the outlier. This application reads a profile two ways,
+and they disagreed by **0.73%** about how much colour it holds. Asked for the
+resolution where the two agree, they now differ by **0.03%**, and the facets
+a reader can see at the outline drop from 4.50 degrees across to 2.91.
+
+Dragged for real, five times the triangles does not slow anything: Argyll's
+own default had the *most* frames over budget of any setting tried.
+
 
 ### 🧱 The switch for the walls is called what people call it
 
