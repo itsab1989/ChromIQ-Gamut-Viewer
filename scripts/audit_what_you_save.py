@@ -30,6 +30,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -44,6 +45,32 @@ import prefs                                                   # noqa: E402
 prefs.use_a_scratch_store()
 
 from PyQt6.QtWidgets import QApplication                       # noqa: E402
+
+
+def how_many(value) -> int:
+    """How many points an array in a written page holds.
+
+    THE ARRAYS TRAVEL PACKED, and this audit believed the wrong number before
+    it was told: a packed array arrives as {"dtype": …, "bdata": …}, so asking
+    Python for its length answers TWO -- the number of keys -- and the run's
+    saved page was reported as drawing 2 colours where the screen showed 149.
+    The page was right; the check was counting a dictionary.
+
+    Third time this family of mistake has been made in a week, twice in this
+    audit's own siblings: what a check cannot read, it reports as a fault.
+    """
+    if value is None:
+        return 0
+    if isinstance(value, list):
+        return len(value)
+    if isinstance(value, dict) and "bdata" in value:
+        import base64
+
+        import numpy as np
+
+        raw = base64.b64decode(value["bdata"])
+        return len(raw) // np.dtype(value.get("dtype", "f8")).itemsize
+    return 0
 
 
 def _json_at(text: str, at: int):
@@ -197,17 +224,70 @@ def main() -> int:
         problems += [p for p in (one("how deep the shading is (diffuse)",
                                      expected, got),) if p]
 
-    import shutil
-    shutil.rmtree(folder, ignore_errors=True)
+    # ---- AND THE RUN'S OWN PAGE, which is a second writing route ---------
+    # The same risk, one route further along: the run's threshold hides dots
+    # live and its two shells fade live, so both have to reach the file as
+    # well as the screen. A check that covered only the window's own scene
+    # would have said "clean" about half the application.
+    print("\n  AND THE RUN'S OWN PAGE\n")
+    panel = win._timeline
+    panel.add(profiles)
+    pump(8)
+    for i in range(panel._picture_of.count()):
+        if panel._picture_of.itemData(i) == ("whole", 0):
+            panel._picture_of.setCurrentIndex(i)
+            break
+    panel._draw()
+    pump(4)
+    panel._with_shapes.setChecked(True)
+    pump(5)
+    # Half way up the threshold, and the shells at a distinctive strength.
+    panel._cut.setValue((panel._cut.minimum() + panel._cut.maximum()) // 2)
+    pump(3)
+    win._opacity.setValue(52)
+    win._opacity.sliderReleased.emit()
+    pump(4)
+
+    run_page = folder / "run.html"
+    panel.write_page(run_page, carry_viewer=False, controls=True,
+                     numbers=True)
+    pump(2)
+    run_traces, run_layout = figures_in(run_page)
+    run_surfaces = [t for t in run_traces if t.get("type") == "mesh3d"]
+    dots = [t for t in run_traces
+            if t.get("type") == "scatter3d" and t.get("mode") == "markers"
+            and t.get("hoverinfo") != "skip"]
+    drawn_dots = sum(how_many(t.get("x")) for t in dots)
+
+    import numpy as _np
+    from ti3gamut import compare_profiles
+
+    pair = panel._chosen_pair()
+    d = compare_profiles(pair[0], pair[1], steps=panel.GRID)
+    cut = panel._cut_off()
+    should_draw = int(_np.sum(_np.asarray(d.deltas) >= cut)) if cut \
+        else len(d.deltas)
+
+    problems += [p for p in (
+        one("how solid the run's shells look",
+            round(win._opacity.value() / 100.0, 3),
+            round(run_surfaces[0].get("opacity", -1), 3)
+            if run_surfaces else None),
+        one("how many colours survive the threshold",
+            should_draw, drawn_dots),
+    ) if p]
+
     print()
     if problems:
         for line in problems:
             print("  " + line)
         print(f"\n{len(problems)} value(s) reached the screen and not the "
               f"file.")
+        shutil.rmtree(folder, ignore_errors=True)
         win.close()
         return 1
-    print("  Clean: the page carries the picture that was on screen.")
+    print("  Clean: both pages carry the picture that was on screen.")
+    shutil.rmtree(folder, ignore_errors=True)
     win.close()
     pump(0.3)
     return 0
