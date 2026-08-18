@@ -119,3 +119,21 @@ def test_the_isolation_check_compares_paths_and_not_text():
     prefs.use_a_scratch_store(link)
     landed = pathlib.Path(prefs.store().fileName()).resolve()
     assert str(real.resolve()) in str(landed)
+
+
+def test_the_suite_never_draws_on_somebody_s_screen():
+    """A gate run must not put windows on top of what a person is doing.
+
+    It builds windows and shows them — test_folding calls show() three times,
+    test_drift_series builds a standalone "Follow one device over time" dialog
+    with no parent, which takes the SYSTEM palette rather than this
+    application's. Reported with a photograph of a light dialog sitting over
+    the dark window: "how do you reach this window at this point? i thought
+    it was fully integrated in the main windows left panel?" — it is not
+    reachable at all; it was a test's.
+    """
+    import os
+
+    assert os.environ.get("QT_QPA_PLATFORM") == "offscreen", (
+        "the suite is drawing on the real platform, which puts its windows on "
+        "whatever the person using this machine is looking at")
