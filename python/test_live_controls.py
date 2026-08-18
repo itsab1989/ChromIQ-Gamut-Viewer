@@ -223,3 +223,45 @@ def test_disabled_controls_are_actually_drawn_disabled():
     assert not re.search(r"^QSlider:disabled::", text, re.M), (
         "the pseudo-state must follow the sub-control, or the rule applies to "
         "every slider in the window")
+
+
+def _contrast(one: str, other: str) -> float:
+    """WCAG contrast between two hex colours."""
+    def channel(v):
+        v = v / 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+
+    def light(hexv):
+        hexv = hexv.lstrip("#")
+        r, g, b = (int(hexv[i:i + 2], 16) for i in (0, 2, 4))
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+    a, b = light(one), light(other)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+def test_a_switched_off_control_can_still_be_read():
+    """Unavailable is not the same as invisible, in either appearance.
+
+    A cross-section switches three controls off, and they have to say which
+    they are while they are off. Measured against the group-box fill they sit
+    on, before this had a colour of its own:
+
+        dark    text 15.25:1   disabled 5.51:1
+        light   text 14.66:1   disabled 2.26:1   ← LM_TEXT_FAINT, barely there
+
+    So the disabled state has its own key rather than borrowing the one meant
+    for hints.
+    """
+    import gamut_app
+
+    for name, palette in gamut_app.PALETTES.items():
+        against = _contrast(palette["disabled"], palette["panel"])
+        alive = _contrast(palette["text"], palette["panel"])
+        assert against >= 3.0, (
+            f"{name}: a switched-off control comes to {against:.2f}:1 against "
+            f"the panel, which is not readable")
+        # And it must not be mistaken for a live one: clearly dimmer.
+        assert alive > against * 1.5, (
+            f"{name}: {against:.2f}:1 against {alive:.2f}:1 is not a visible "
+            f"difference between live and switched off")

@@ -105,6 +105,12 @@ PALETTES = {
         text="#e6e6e6",          # TEXT_MAIN
         dim="#8a8a8a",           # TEXT_DIM
         faint="#8a8a8a",         # TEXT_DIM
+        # WHAT A SWITCHED-OFF CONTROL IS WRITTEN IN. Its own key, because
+        # "faint" is right for a hint and wrong for a control somebody has to
+        # be able to READ while it is unavailable. Measured against the panel
+        # it sits on: text 15.25:1, this 5.51:1 -- plainly secondary, plainly
+        # legible.
+        disabled="#8a8a8a",
         accent="#ff4573", accent_hot="#ff6b90", on_accent="#ffffff",
         second="#262626",        # BG_WIDGET    — default button fill
         second_hover="#3a3a3a",
@@ -123,6 +129,11 @@ PALETTES = {
         text="#22211f",          # LM_TEXT_MAIN
         dim="#7a7570",           # LM_TEXT_DIM
         faint="#a8a4a0",         # LM_TEXT_FAINT
+        # NOT "faint" ON A LIGHT WINDOW, and this is why the key exists.
+        # Measured on the group-box fill: faint comes to 2.26:1, which is
+        # barely there -- a disabled control ought to look unavailable, not
+        # nearly invisible. LM_TEXT_DIM gives 4.16:1 against text at 14.66:1.
+        disabled="#7a7570",      # LM_TEXT_DIM
         accent="#ff4573", accent_hot="#e02a58", on_accent="#ffffff",
         second="#edebe6",        # LM_BG_WIDGET
         second_hover="#e0ded8",
@@ -253,7 +264,7 @@ QPushButton {{ background: {c["accent"]}; color: {c["on_accent"]}; border: none;
               border-radius: 5px; padding: 7px 12px; font-weight: 600;
               min-height: 20px; }}
 QPushButton:hover {{ background: {c["accent_hot"]}; }}
-QPushButton:disabled {{ background: {c["second"]}; color: {c["faint"]}; }}
+QPushButton:disabled {{ background: {c["second"]}; color: {c["disabled"]}; }}
 /* A QUIET BUTTON STILL HAS TO BE A BUTTON. Its fill is one step from the
    window it sits on -- #edebe6 on #eeece8 in the light appearance, a contrast
    ratio of 1.01:1, which is nothing at all -- so with no edge it simply was
@@ -330,7 +341,7 @@ QSpinBox, QDoubleSpinBox {{ background: {c["field"]};
                            selection-color: {c["on_accent"]}; }}
 QSpinBox:hover, QDoubleSpinBox:hover {{ border-color: {c["accent"]}; }}
 QSpinBox:focus, QDoubleSpinBox:focus {{ border-color: {c["accent"]}; }}
-QSpinBox:disabled, QDoubleSpinBox:disabled {{ color: {c["faint"]}; }}
+QSpinBox:disabled, QDoubleSpinBox:disabled {{ color: {c["disabled"]}; }}
 QLineEdit, QPlainTextEdit, QTextEdit {{ background: {c["field"]};
                            border: 1px solid {c["line"]}; border-radius: 5px;
                            padding: 3px 6px; color: {c["text"]};
@@ -355,10 +366,10 @@ QSlider::handle:horizontal {{ width: 12px; height: 12px; margin: -4px 0;
    a fat grey bar. Seen at once in a screenshot, which is the only reason it
    did not ship. */
 QSlider::groove:horizontal:disabled {{ background: {c["line_soft"]}; }}
-QSlider::handle:horizontal:disabled {{ background: {c["faint"]}; }}
-QLabel:disabled {{ color: {c["faint"]}; }}
-QCheckBox:disabled {{ color: {c["faint"]}; }}
-QRadioButton:disabled {{ color: {c["faint"]}; }}
+QSlider::handle:horizontal:disabled {{ background: {c["disabled"]}; }}
+QLabel:disabled {{ color: {c["disabled"]}; }}
+QCheckBox:disabled {{ color: {c["disabled"]}; }}
+QRadioButton:disabled {{ color: {c["disabled"]}; }}
 /* A radio has to be round, and in Qt that means the radius must be half of
    the WHOLE box -- content plus both borders. 14 + 1 + 1 = 16, so 8. Thicken
    the border to draw a ring and the box grows to 22 while the radius stays 8,

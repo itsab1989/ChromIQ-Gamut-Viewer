@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### 🌗 A switched-off control can still be read on a light window
+
+The cross-section greys out three controls it cannot use, and on a light
+window they were nearly invisible. Measured against the group-box fill they
+sit on:
+
+    dark    text 15.25:1    switched off 5.51:1
+    light   text 14.66:1    switched off 2.26:1
+
+2.26:1 is barely there. The disabled state has its own colour now rather than
+borrowing the one meant for hints — 4.16:1 on a light window, still plainly
+secondary against text at 14.66:1 — and a test holds every palette to a floor
+of 3:1.
+
 ## v2.35.0
 
 ### 📝 The caption fits the pane it is in
