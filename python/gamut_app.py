@@ -2439,10 +2439,18 @@ class WebPageDialog(QDialog):
     #: A SWITCH THAT CANNOT ACT IS WORSE THAN A MISSING ONE -- this file's own
     #: rule, applied to the dialog that hands them out.
     NEEDS = {
-        "agree": "two_shapes",       # fading one against the other
-        "opacity": "surfaces",       # a cloud of dots has none
-        "wires": "surfaces",
-        "grey": "surfaces",
+        # FADING ONE AGAINST THE OTHER NEEDS TWO SHAPES **AND A ROOM**. The
+        # first version of this asked only for two, and the offers audit found
+        # it: a cross-section of two papers was offering the fade, and the
+        # page does not build it there. "two_shapes" was the rule I assumed;
+        # "fade" is the rule the page actually follows.
+        "agree": "fade",
+        # AND OPACITY AND GREY ARE NOT ABOUT SURFACES, which is the same
+        # mistake the other way round. A drift cloud has no surfaces at all
+        # and still builds both -- its colour families are the things being
+        # made fainter or grey. Withholding them meant a reader saving that
+        # page could not hand over two controls it was going to have anyway.
+        "wires": "surfaces",         # a cloud of dots has no edges to draw
         "cut": "flat",               # the cross-section's own slider
         "play": "camera",            # a flat page has no camera at all
         "speed": "camera",
