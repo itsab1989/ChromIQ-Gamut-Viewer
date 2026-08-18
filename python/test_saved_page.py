@@ -2004,3 +2004,37 @@ def test_every_arrangement_carries_the_numbers(tmp_path):
     missing = [where for where, path in made.items()
                if NOTES not in path.read_text(encoding="utf-8")]
     assert not missing, f"these arrangements dropped the numbers: {missing}"
+
+
+def test_a_page_fits_itself_to_a_tall_narrow_pane():
+    """A portrait pane cropped the shape and lost the lightness axis entirely.
+
+    The eye at 1.5 frames a printer's gamut for a pane wider than it is tall.
+    The application's own view becomes portrait on a laptop — 424 wide by 833
+    tall at a 1000px window — and there the magenta side ran off the edge and
+    the whole L* axis was outside the view. Measured on the app's own pane,
+    counting lit pixels in the outermost six columns:
+
+        pane 1024   0 left   0 right
+        pane  624  85 left  36 right      <- before
+        pane  424 108 left 123 right      <- before
+        every one   0 left   0 right      <- after
+
+    THE CONDITIONS MATTER AS MUCH AS THE FIT. A page that re-fitted on every
+    resize would overrule a reader who had turned the shape, so the fitting
+    stops the moment anybody touches it and starts again when they press
+    "back to the start".
+    """
+    import ti3gamut
+
+    js = ti3gamut._SPIN_JS
+    assert "function fitToPane" in js
+    # Landscape panes are left exactly as they were: every desktop window and
+    # every saved page opened normally.
+    assert "if (!w || !h || h <= w) return;" in js
+    # And no further than twice, or a very tall thin pane would push the
+    # shape into the distance.
+    assert "Math.min(2, h / w)" in js
+    # The reader's own view wins, and pressing home hands it back.
+    assert "function untouched(id) { return !touched[id]; }" in js
+    assert "touched[ids[i]] = false;" in js

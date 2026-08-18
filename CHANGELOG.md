@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### 📐 The picture fits a narrow window instead of running off the edge
+
+On a laptop the viewer's pane becomes taller than it is wide — 424 by 833 at a
+1000-pixel window — and the camera that frames a printer's gamut for a wide
+pane cropped it there: the magenta side ran off the edge and **the whole
+lightness axis was outside the view**. Measured on the application's own pane,
+counting lit pixels in the outermost six columns:
+
+    pane 1024    0 left    0 right
+    pane  624   85 left   36 right      before
+    pane  424  108 left  123 right      before
+    every one    0 left    0 right      after
+
+The eye is pulled back by as much as the pane is out of shape and no further
+than twice, when the page opens and whenever the window changes shape. A pane
+wider than it is tall is untouched, which is every desktop window and every
+saved page opened normally.
+
+**The conditions matter as much as the fit.** A page that re-fitted on every
+resize would overrule somebody who had turned the shape, so the fitting stops
+the moment anybody touches it — and starts again when they press *back to the
+start*.
+
 ## v2.33.0
 
 ### 🏷 Two files whose names start alike are two shapes
