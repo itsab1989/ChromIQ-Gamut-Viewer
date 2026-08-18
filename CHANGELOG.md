@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### 🧱 The box and its grid stops rewriting the page
+
+The reader's own copy of a page has always switched the walls with a relayout;
+this window wrote and loaded a whole new page for the same tick. It relayouts
+now, and falls back to the old way where a picture is flat or not loaded yet.
+
+That takes the table to **80 controls touched, 34 rebuild** — from 41. The 34
+that remain all change *what* is drawn rather than how it looks, and
+`scripts/audit_controls.py` now says so, with the one open question named:
+Light/Dark/Amber could be live too, at the cost of putting all three palettes
+into every page this window writes.
+
 ## v2.32.0
 
 ### 🎚 The sliders answer under your hand

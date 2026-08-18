@@ -200,7 +200,15 @@ def main() -> int:
     win._manual_light.setChecked(True)
     win._spin_on.setChecked(True)
     win._rings_on.setChecked(True)
-    pump(4)
+    # AND THE TIPPING, or its two sliders are never shown and never judged --
+    # which the report said in as many words the first time round. The rows
+    # for it appear only once it is doing something.
+    at = win._tilt_mode.findData("swing")
+    if at < 0:
+        at = min(1, win._tilt_mode.count() - 1)
+    win._tilt_mode.setCurrentIndex(at)
+    win._tilt_mode.activated.emit(at)
+    pump(5)
 
     column = win.findChild(QScrollArea).widget()
     for box in column.findChildren(QGroupBox):
