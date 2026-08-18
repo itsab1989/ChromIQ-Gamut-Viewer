@@ -1329,6 +1329,11 @@ python scripts/audit_two_groupings.py     # the split and the destination colour
 python scripts/audit_two_groupings_run.py  # and the same pair on the OTHER path, a run
 ```
 
+An open fault, with everything measured about it so far, is written up in [docs/THE-SEE-THROUGH-TRIANGLES.md](docs/THE-SEE-THROUGH-TRIANGLES.md): the kite-shaped wedges that appear on a shape the moment it is made see-through.
+
+```
+```
+
 Several of these were written after a fault got past everything else, and each
 one says in its own file what it was written for. Three of them have been
 mutation-tested — the fault put back on purpose, to see whether the check
