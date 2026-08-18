@@ -967,6 +967,58 @@ def _lighting(depth: float, opacity: float = 1.0) -> dict:
     the near one, so anything that changes how the two are blended -- rather
     than which of them exists -- is where to look next.
 
+    AND THE ORDERING IS NOT IT EITHER, asked exactly rather than assumed. The
+    sort above is approximate on purpose -- 4,096 buckets, two triangles in
+    one bucket coming out either way round -- and near the outline the far
+    wall is foreshortened, so many of its triangles crowd into few buckets.
+    That is what an unstable order would look like. Replaced with a full
+    comparison sort on ONE page, the flank came back at 0.886 against 0.886,
+    and 0.886 again when it was switched back. Not the buckets.
+
+    NOR IS IT HOW COARSE THE SHELL IS. At iccgamut's default the facets are
+    4.50 degrees across; at -d 3 they are 1.43 and there are 14,412 of them
+    instead of 1,824. Eight times the geometry:
+
+        -d      faces    see-through 68%   solid 100%
+        default  1,824        0.886           0.808
+        6        4,462        0.912           0.808
+        4        9,110        0.902           0.808
+        3       14,412        0.844           0.813
+
+    The solid column does not move at all, and the see-through one never
+    comes down to it. Whatever this is, it is not facet size.
+
+    WHAT IT IS: THE RENDERER'S SEE-THROUGH PATH ITSELF. Reported from the
+    window in those words -- "as soon as transparency comes into play the
+    triangles appear" -- and the opacity sweep agrees, on one shape, one
+    camera, one crop:
+
+        opacity     0.15  0.30  0.45  0.60  0.68  0.80  0.92  1.00
+        layer step  .128  .210  .247  .240  .218  .160  .074  .000
+        flank       .233  .445  .630  .800  .886 1.013 1.137  .808
+
+    THE LAYER-COUNT EXPLANATION IS WRONG AND THIS IS WHAT KILLS IT. Inside
+    the far wall's own horizon you look through two thicknesses of shell and
+    outside it through one, and that step is biggest around half opacity --
+    so wedges made of it would peak there. They do not. They climb all the
+    way to 0.92, where the step has nearly gone, and then vanish in a single
+    jump at solid. Reported from the window in exactly those terms: "when you
+    increase the opacity step by step those triangles are not affected and
+    only in the very last step they become totally solid like the rest".
+
+    What matches every number is that the library draws a see-through surface
+    down a different path from a solid one, and the artefact belongs to that
+    path; its visibility simply tracks how bright the shape is, which is why
+    it looks worst just below solid. It is also why an exact sort changes
+    nothing: sorting TRIANGLES cannot fix blending that interleaves at the
+    PIXEL level wherever triangles overlap in depth.
+
+    SO THERE ARE THREE HONEST ANSWERS, and only the first two are ours:
+    draw it solid; draw one layer instead of two (culling -- measured above,
+    and it cannot be separated from the outline); or a renderer that composes
+    transparency without depending on order, which this library does not
+    offer.
+
     NOT DRAWING THE FAR WALL WAS THE ONLY CURE FOUND, AND IT IS NOT SHIPPABLE.
     It was built -- each face turned outward against the shape's own middle,
     the eye's position (not merely its direction) taken from the scene's
