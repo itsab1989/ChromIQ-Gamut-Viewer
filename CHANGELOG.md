@@ -34,6 +34,21 @@ across the two, with no page written.
 Found by the audit that drags every slider and asks the page what changed:
 five of the seven lighting sliders answered and these two did not.
 
+### 🎯 A live change lands on the shape it was meant for
+
+*Set this for* and *how each shape is drawn* multiply, and the multiplication
+is where this broke. A shape drawn as a mesh has no surface in the picture at
+all — so "the second surface" is not the second shape, and asking to fade the
+second one faded the **first**:
+
+    first=solid, second=mesh, set this for=the second shape
+        the fade should have gone to nothing and went to printer-2019
+
+It was invisible while every setting rebuilt the page, because the rebuild
+redrew everything from the recorded values and put it right. Shapes are picked
+by name now, and all twelve crossings of the two controls land where they
+should.
+
 ### 🧭 The view stays where you put it
 
 Anything this window cannot restyle in place is drawn by writing a new page

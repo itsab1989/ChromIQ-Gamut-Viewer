@@ -74,8 +74,10 @@ def test_the_scratch_store_really_is_somewhere_else():
     import prefs
 
     where = prefs.use_a_scratch_store()
-    landed = pathlib.Path(prefs.store().fileName())
-    assert str(where) in str(landed), landed
+    landed = pathlib.Path(prefs.store().fileName()).resolve()
+    # AS PATHS, NOT AS TEXT -- see the test below, and the Windows build that
+    # taught us the difference.
+    assert where.resolve() in landed.parents, landed
     assert "Library/Preferences" not in str(landed), landed
     # AND IT IS A REAL, WRITABLE STORE -- an isolation that silently swallowed
     # every write would hide state faults instead of causing them.
@@ -83,3 +85,37 @@ def test_the_scratch_store_really_is_somewhere_else():
     prefs.store().sync()
     assert int(prefs.store().value("a_probe")) == 41
     prefs.store().remove("a_probe")
+
+
+def test_the_isolation_check_compares_paths_and_not_text():
+    """One folder named two ways is still one folder.
+
+    THIS BROKE A WINDOWS BUILD AND NOTHING ELSE. The check asked whether the
+    scratch folder's name appeared anywhere in the store's file name — true on
+    macOS and Linux by luck, false on Windows, where tempfile hands out the
+    short form of a path and Qt hands back the long one:
+
+        asked for  C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\gv-settings-…
+        landed in  C:\\Users\\runneradmin\\AppData\\Local\\Temp\\gv-settings-…
+
+    Same folder; the check called it a failure and refused to run, taking
+    thirteen tests with it. macOS has the same trap in /var against
+    /private/var, which is what this uses to reproduce it anywhere.
+    """
+    import os
+    import tempfile
+
+    import prefs
+
+    real = pathlib.Path(tempfile.mkdtemp(prefix="gv-alias-real-"))
+    link = pathlib.Path(tempfile.mkdtemp(prefix="gv-alias-")) / "by-another-name"
+    try:
+        os.symlink(real, link, target_is_directory=True)
+    except (OSError, NotImplementedError):                     # pragma: no cover
+        import pytest
+
+        pytest.skip("this platform will not make a symlink")
+    # Asked for by one name, stored under the other: the check must accept it.
+    prefs.use_a_scratch_store(link)
+    landed = pathlib.Path(prefs.store().fileName()).resolve()
+    assert str(real.resolve()) in str(landed)

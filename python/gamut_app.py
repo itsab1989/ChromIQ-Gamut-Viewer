@@ -13014,6 +13014,24 @@ class GamutApp(QMainWindow):
             f"{_json.dumps(value)}}},idx);"
             "})();")
 
+    def _name_of_shape(self, which: int) -> str:
+        """What the shape at this position is CALLED in the picture.
+
+        Its position among the surfaces is not the same thing, which is the
+        whole reason this exists -- see _which_meshes_js.
+        """
+        panel = getattr(self, "_timeline", None)
+        if getattr(self, "_run_drawn", False) and panel is not None \
+                and panel.shows_two_shapes():
+            pair = panel._chosen_pair()
+            if pair is not None and which in (0, 1):
+                return Path(pair[which]).stem
+        if which == 2:
+            return str(self._reference[0]) if self._reference else ""
+        if which < len(self._slots):
+            return Path(self._slots[which][0]).stem
+        return ""
+
     def _which_meshes_js(self) -> str:
         """The JavaScript that picks the shapes a live change applies to.
 
@@ -13023,11 +13041,29 @@ class GamutApp(QMainWindow):
         as long as there was a rebuild to correct it. Taking the rebuild away
         (which is what stops the view jumping) would have left the wrong
         picture standing, which is how one fix becomes the next bug.
+
+        BY NAME, AND NOT BY POSITION AMONG THE SURFACES, which is the second
+        fault and was found by crossing the two controls that decide this
+        rather than trying them one at a time. A shape drawn as a mesh has NO
+        surface in the picture, so "the second surface" is not the second
+        shape -- with one shape solid and the other a mesh, asking for the
+        second faded the first:
+
+            first=solid, second=mesh, set this for=the second shape
+                the fade should have gone to nothing and went to printer-2019
+
+        Nothing is the right answer there: a wireframe has no solidity to
+        change, and the value is still recorded for when it is drawn solid
+        again.
         """
         target = self._target.currentData()
-        if isinstance(target, int):
-            return f"(idx.length>{target}?[idx[{target}]]:idx)"
-        return "idx"
+        if not isinstance(target, int):
+            return "idx"
+        name = self._name_of_shape(target)
+        if not name:
+            return "[]"
+        return ("idx.filter(function(n){return String(el.data[n].name||'')"
+                f".indexOf({json.dumps(name)})===0;}})")
 
     def _push_lighting(self, values: dict) -> None:
         """Send a lighting dictionary into the scene already on screen."""

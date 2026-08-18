@@ -107,12 +107,31 @@ def use_a_scratch_store(folder=None) -> pathlib.Path:
     # the store still resolves to somewhere under the user's own preferences,
     # the isolation did not take and the driver would quietly go on writing
     # there. Better to say so than to find out from a bug report.
-    where_it_lands = pathlib.Path(store().fileName()).resolve()
-    if str(where) not in str(where_it_lands):
+    #
+    # COMPARED AS PATHS, NOT AS TEXT, and that distinction cost a Windows
+    # build. The first version asked whether the folder's name appeared
+    # ANYWHERE in the store's file name -- true on macOS and Linux by luck,
+    # and false on Windows, where the same folder is handed back in its long
+    # form while tempfile gave out the short one:
+    #
+    #     asked for  C:\Users\RUNNER~1\AppData\Local\Temp\gv-settings-…
+    #     landed in  C:\Users\runneradmin\AppData\Local\Temp\gv-settings-…
+    #
+    # Those are one folder. The check called it a failure, refused to run,
+    # and took thirteen tests down with it -- an isolation that was working
+    # perfectly. macOS has the same trap waiting in /var against /private/var,
+    # which is why both sides are resolved before they are compared.
+    landed = pathlib.Path(store().fileName()).resolve()
+    home = where.resolve()
+    inside = landed == home or home in landed.parents
+    if not inside:
+        # Windows paths differ in case without differing at all.
+        inside = str(landed).lower().startswith(str(home).lower())
+    if not inside:
         raise RuntimeError(
-            f"the settings were not isolated: they still resolve to "
-            f"{where_it_lands}. Refusing to run, because this would overwrite "
-            f"real preferences.")
+            f"the settings were not isolated: they resolve to {landed}, "
+            f"which is not inside {home}. Refusing to run, because this "
+            f"could overwrite real preferences.")
     return where
 
 
