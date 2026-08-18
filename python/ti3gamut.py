@@ -2934,7 +2934,7 @@ window.cqOrder = (function () {
         // this is here to remove.
         if (!(t.opacity < 1) && !someColourFades(t.vertexcolor)) continue;
         var m = t.i.length, mid = new Float64Array(m * 3), f;
-        var nrm = new Float64Array(m * 3);
+        var nrm = new Float64Array(m * 3), vol = 0;
         for (f = 0; f < m; f++) {
           var a = t.i[f], b = t.j[f], c = t.k[f];
           mid[f * 3]     = (t.x[a] + t.x[b] + t.x[c]) / 3;
@@ -2948,7 +2948,18 @@ window.cqOrder = (function () {
           nrm[f * 3]     = uy * wz - uz * wy;
           nrm[f * 3 + 1] = uz * wx - ux * wz;
           nrm[f * 3 + 2] = ux * wy - uy * wx;
+          vol += t.x[a] * nrm[f * 3] + t.y[a] * nrm[f * 3 + 1]
+               + t.z[a] * nrm[f * 3 + 2];
         }
+        // MADE TO POINT INTO THE SHAPE WHICHEVER WAY THE FACES ARE WOUND.
+        // The shells this application builds are wound inward (measured:
+        // signed volume -818,514 for a shape of volume 818,514) and their
+        // cross products already point in; a surface wound the other way
+        // has positive signed volume, and flipping the stored normals once
+        // here means the far-wall test below never needs to know. An OPEN
+        // surface has no far wall and a near-zero signed volume; either
+        // sign leaves its picture the depth sort it always had.
+        if (vol > 0) for (f = 0; f < m * 3; f++) nrm[f] = -nrm[f];
         keep.push({uid: t.uid, index: n, m: m, mid: mid, nrm: nrm,
                    i: Int32Array.from(t.i), j: Int32Array.from(t.j),
                    k: Int32Array.from(t.k),
@@ -2996,9 +3007,25 @@ window.cqOrder = (function () {
     if (!e) return null;
     var ar = sc.aspectratio, ax = ['xaxis', 'yaxis', 'zaxis'];
     var kk = ['x', 'y', 'z'], out = [], len = 0;
+    // THE AXIS RANGES CANNOT BE TRUSTED AFTER A RELAYOUT. On this page they
+    // read the data's own spans when it opens, and junk the moment any
+    // camera relayout has run -- measured: the same probe returned
+    // [-88..92, -80..130, 1.7..103] before and [-1..6, -1..4, -1..6] after,
+    // which bent the line of sight from (.577,.577,.577) to (.47,.29,.84)
+    // and quietly missorted every frame after the first drag. The scene's
+    // own dataScale is what the library ACTUALLY multiplied each axis by,
+    // and it does not move; the ranges stay only as the fallback for a
+    // scene not yet built.
+    var ds = null;
+    try { ds = sc._scene && sc._scene.dataScale; } catch (err) {}
     for (var d = 0; d < 3; d++) {
-      var r = (sc[ax[d]] && sc[ax[d]].range) || [0, 1];
-      var span = (r[1] - r[0]) || 1, a = (ar && ar[kk[d]]) || 1;
+      var a = (ar && ar[kk[d]]) || 1, span;
+      if (ds && ds[d]) {
+        span = 1 / ds[d];
+      } else {
+        var r = (sc[ax[d]] && sc[ax[d]].range) || [0, 1];
+        span = (r[1] - r[0]) || 1;
+      }
       out.push(e[kk[d]] * span / a);
       len += out[d] * out[d];
     }
