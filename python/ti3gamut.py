@@ -2860,7 +2860,12 @@ window.cqOrder = (function () {
   //: it is how the tests compare the two ways of drawing the same page
   //: without editing the page, which is the only comparison that is fair.
   var pooling = true;
-  var BUCKETS = 4096, tally = new Int32Array(BUCKETS + 1);
+  //: EXPERIMENT SWITCH (see docs/THE-SEE-THROUGH-TRIANGLES.md): when on, the
+  //: whole away-facing wall is drawn before the whole toward-facing wall,
+  //: each half still farthest-first. wallSign -1 inverts the two walls -- the
+  //: mutation test that proves the switch reaches the drawn picture.
+  var wall = false, wallSign = 1;
+  var BUCKETS = 4096, tally = new Int32Array(2 * BUCKETS + 1);
 
   function graphs() {
     var out = [], all = document.querySelectorAll('.js-plotly-plot');
@@ -2929,13 +2934,22 @@ window.cqOrder = (function () {
         // this is here to remove.
         if (!(t.opacity < 1) && !someColourFades(t.vertexcolor)) continue;
         var m = t.i.length, mid = new Float64Array(m * 3), f;
+        var nrm = new Float64Array(m * 3);
         for (f = 0; f < m; f++) {
           var a = t.i[f], b = t.j[f], c = t.k[f];
           mid[f * 3]     = (t.x[a] + t.x[b] + t.x[c]) / 3;
           mid[f * 3 + 1] = (t.y[a] + t.y[b] + t.y[c]) / 3;
           mid[f * 3 + 2] = (t.z[a] + t.z[b] + t.z[c]) / 3;
+          // The triangle's own cross product, fixed in the measurements'
+          // numbers: which way it points against the line of sight is the
+          // only view-dependent part, and that is one dot product a frame.
+          var ux = t.x[b] - t.x[a], uy = t.y[b] - t.y[a], uz = t.z[b] - t.z[a];
+          var wx = t.x[c] - t.x[a], wy = t.y[c] - t.y[a], wz = t.z[c] - t.z[a];
+          nrm[f * 3]     = uy * wz - uz * wy;
+          nrm[f * 3 + 1] = uz * wx - ux * wz;
+          nrm[f * 3 + 2] = ux * wy - uy * wx;
         }
-        keep.push({uid: t.uid, index: n, m: m, mid: mid,
+        keep.push({uid: t.uid, index: n, m: m, mid: mid, nrm: nrm,
                    i: Int32Array.from(t.i), j: Int32Array.from(t.j),
                    k: Int32Array.from(t.k),
                    key: new Float64Array(m), slot: new Int32Array(m),
@@ -3011,14 +3025,24 @@ window.cqOrder = (function () {
       if (v > hi) hi = v;
     }
     var s = (hi > lo) ? BUCKETS / (hi - lo) : 0;
+    var banks = (wall && A.nrm) ? 2 : 1;
     tally.fill(0);
     for (f = 0; f < m; f++) {
       var b = (key[f] - lo) * s | 0;
       if (b < 0) b = 0; else if (b >= BUCKETS) b = BUCKETS - 1;
+      if (banks === 2) {
+        // The faces are wound inward (measured: the shell's signed volume is
+        // the negative of its volume), so the cross product points INTO the
+        // shape and a face whose cross product runs WITH the line of sight
+        // is the far wall. Bank 0 is drawn first.
+        var toward = (A.nrm[f * 3] * look[0] + A.nrm[f * 3 + 1] * look[1]
+                    + A.nrm[f * 3 + 2] * look[2]) * wallSign < 0;
+        if (toward) b += BUCKETS;
+      }
       A.bin[f] = b;
       tally[b + 1]++;
     }
-    for (f = 0; f < BUCKETS; f++) tally[f + 1] += tally[f];
+    for (f = 0; f < banks * BUCKETS; f++) tally[f + 1] += tally[f];
     for (f = 0; f < m; f++) A.slot[tally[A.bin[f]]++] = f;
     for (f = 0; f < m; f++) {
       var g = A.slot[f], t = A.tri[f];
@@ -3285,6 +3309,7 @@ window.cqOrder = (function () {
                 base: objs[0].__cqGiven,
                 i: new Int32Array(m), j: new Int32Array(m),
                 k: new Int32Array(m), mid: new Float64Array(m * 3),
+                nrm: new Float64Array(m * 3),
                 key: new Float64Array(m), slot: new Int32Array(m),
                 bin: new Int32Array(m), tri: new Array(m)};
     var at = 0;
@@ -3323,7 +3348,10 @@ window.cqOrder = (function () {
     for (n = 0; n < objs.length; n++) {
       var A2 = P.meshes[n], had2 = objs[n].__cqGiven;
       if (A2.m !== had2.cells.length) return null;   // not the same surface
-      for (f = 0; f < A2.m * 3; f++) pool.mid[into + f] = A2.mid[f];
+      for (f = 0; f < A2.m * 3; f++) {
+        pool.mid[into + f] = A2.mid[f];
+        pool.nrm[into + f] = A2.nrm[f];
+      }
       into += A2.m * 3;
     }
     for (f = 0; f < m; f++) pool.tri[f] = [0, 0, 0];
@@ -3615,6 +3643,10 @@ window.cqOrder = (function () {
   return {start: start, collect: collect, wake: wake,
           now: function () { return pass(true); },
           pool: function (on) { pooling = !!on; return pass(true); },
+          wallOrder: function (on, sign) {
+            wall = !!on; wallSign = (sign === -1) ? -1 : 1;
+            return pass(true);
+          },
           // For the tests: which door was used, and how much there is to do.
           how: function () {
             var n = 0, pooled = 0, surfaces = 0;

@@ -174,20 +174,36 @@ def gam_gamut(path, *, white_point: str = "D50", space: str = "lab",
 #:     disagree      0.73%   0.19%    0.03%    0.16%
 #:     per profile   0.15s   0.36s    0.71s    3.16s
 #:
-#: 6 is not a taste. It is where the two doors into the same profile agree,
-#: to three hundredths of a percent, and 4 overshoots it the other way -- so
-#: this is the value at which the application stops contradicting itself
-#: rather than the value that looks nicest.
+#: 6 is where the two doors into the same profile agree exactly, and 4
+#: overshoots the other way. IT IS NOT THE VALUE THAT SHIPPED, because
+#: accuracy is not the only thing being paid for: every triangle of every
+#: SEE-THROUGH surface is put in depth order on every frame of a drag, and
+#: this multiplies them. Timed in the page, two shapes at 68%, twenty passes:
+#:
+#:     -d      triangles   median   worst    a frame has 16.7 ms
+#:     10          3,666    4.6ms   12.6ms
+#:      8          5,958    8.8ms   12.5ms
+#:      6          8,876   12.4ms   20.5ms   <- over a frame
+#:
+#: At 6 the worst pass misses a frame, with only two shapes open; a chart's
+#: skin beside them would be worse. At 8 even the worst pass stays inside
+#: one, and the disagreement between the two readers still falls from 0.73%
+#: to 0.19%. The remaining 0.16% is a figure nobody can act on; a drag that
+#: stutters is felt by everybody who makes a shape see-through.
+#:
+#: SOLID COSTS NOTHING AT ALL -- measured, 0.0 ms, because a solid surface
+#: hides its own far side and the engine leaves it alone. So this is paid
+#: only by a reader who has asked to see through something.
 #:
 #: IT IS ALSO WHAT THE SHAPE LOOKS LIKE. The facets a reader can see at the
-#: outline are 4.50 degrees across at the default and 2.91 at 6, measured as
+#: outline are 4.50 degrees across at the default and 3.55 at 8, measured as
 #: the angle a face covers seen from the middle of the shape. Reported from
 #: the window: "at the edges of the shape there still seem to be hints of
 #: triangles instead of a smooth surface".
 #:
 #: WHAT IT COSTS is half a second per profile, once, and the result is kept:
 #: shapes are cached on the file and the time it was written.
-SURFACE_DETAIL = 6
+SURFACE_DETAIL = 8
 
 #: How long to let ``iccgamut`` work before reading the profile here instead.
 #:

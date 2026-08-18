@@ -3651,7 +3651,7 @@ class TimelineDialog(QDialog):
         # screen or saved.
         picture_row = QHBoxLayout()
         picture_row.setSpacing(8)
-        picture_label = QLabel("Show me", self)
+        picture_label = self._picture_label = QLabel("Show me", self)
         self._picture_of = NoScrollComboBox(self)
         self._picture_of.setToolTip(
             "Which of the two pictures to show.\n\n"
@@ -3667,7 +3667,8 @@ class TimelineDialog(QDialog):
         self._picture_of.activated.connect(lambda _i: self._draw())
         picture_row.addWidget(picture_label, 0)
         picture_row.addWidget(self._picture_of, 1)
-        picture_row.addWidget(QLabel("coloured by", self), 0)
+        self._coloured_label = QLabel("coloured by", self)
+        picture_row.addWidget(self._coloured_label, 0)
         # WHICH QUESTION THE COLOURS ANSWER. "How far" is the first thing
         # anybody wants and stays the default; the three named directions are
         # the second thing, and they are what ΔE cannot say -- a printer going
@@ -3726,7 +3727,7 @@ class TimelineDialog(QDialog):
         self._coloured_by.activated.connect(
             lambda _i: self._show_only_what_applies())
         picture_row.addWidget(self._coloured_by, 0)
-        picture_row.addWidget(Hint(
+        self._picture_hint = Hint(
             "TWO AT A TIME, AND ONLY TWO, and it is worth saying why rather "
             "than leaving you to wonder.\n\n"
             "Every dot in the cloud is painted by how far apart two profiles "
@@ -3744,8 +3745,9 @@ class TimelineDialog(QDialog):
             "above 3 anybody can. The colours are fixed to that scale rather "
             "than stretched to fit, so two of these pictures can be held "
             "against each other.",
-            self, title="Why only two profiles at a time"), 0,
-            Qt.AlignmentFlag.AlignVCenter)
+            self, title="Why only two profiles at a time")
+        picture_row.addWidget(self._picture_hint, 0,
+                              Qt.AlignmentFlag.AlignVCenter)
         if self._hosted:
             # The ⓘ goes with the chooser it explains -- "Show me", item 1,
             # not "coloured by" -- and the second caption keeps its own
@@ -4414,6 +4416,20 @@ class TimelineDialog(QDialog):
             item = QListWidgetItem(text, self._list)
             item.setData(Qt.ItemDataRole.UserRole, str(entry.path))
             item.setToolTip(str(entry.path))
+        # AN EMPTY LIST IS A FRAME AROUND NOTHING, and in the column it is a
+        # framed 52 px of nothing sitting on top of the button that fills it.
+        # Reported from the window exactly that way: "one device over time
+        # shows an empty frame over the add button".
+        #
+        # It has a least height for the good reason written where it is made
+        # -- a list that grows and shrinks by one row as profiles arrive is
+        # worse than one that holds still -- and that reason does not apply
+        # when there is nothing in it at all.
+        #
+        # HIDING IT COSTS NO DROP TARGET. The rows can be dragged among
+        # themselves (InternalMove), but a file is dropped on the PANEL, which
+        # is still there and still the same size everywhere else.
+        self._list.setVisible(bool(entries))
         self._show_only_what_applies()
         if self._hosted:
             rows = max(1, min(6, self._list.count()))
@@ -4505,6 +4521,20 @@ class TimelineDialog(QDialog):
         panel audit saw the other half of it, an ⓘ left beside them: "ORPHAN
         ⓘ hint_cut explains nothing on its row".
         """
+        # NOTHING OPEN, NOTHING TO CHOOSE BETWEEN. With no profiles at all
+        # "Show me" is an empty dropdown and "coloured by" offers five ways to
+        # paint a picture that does not exist. Found while fixing the empty
+        # frame reported just above it -- "one device over time shows an empty
+        # frame over the add button" -- which is the same fault twice more in
+        # the same section: a control drawn around nothing.
+        #
+        # These come back the moment a profile arrives, which is also when
+        # they have something in them.
+        started = bool(self._paths)
+        for part in (self._picture_label, self._picture_of,
+                     self._coloured_label, self._coloured_by,
+                     self._picture_hint):
+            part.setVisible(started)
         useful = self._chosen_pair() is not None
         self._by_family.setVisible(useful)
         # AND THE SAME RULE AS THE MAIN WINDOW'S, because it is the same pair

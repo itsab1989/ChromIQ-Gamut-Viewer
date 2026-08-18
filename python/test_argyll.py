@@ -462,19 +462,33 @@ def test_the_surface_resolution_is_asked_for_and_not_left_to_argyll():
         disagree      0.73%   0.19%    0.03%    0.16%
         per profile   0.15s   0.36s    0.71s    3.16s
 
-    6 is where the two doors into one profile agree, and 4 overshoots the
-    other way -- so it is the value at which the application stops
-    contradicting itself, not the one that looks nicest. It also halves the
-    facets a reader can see at the outline, 4.50 degrees across to 2.91,
-    which is what was reported from the window.
+    6 is where the two doors into one profile agree exactly, and 4 overshoots
+    the other way -- but 6 is not what ships. Every triangle of every
+    see-through surface is put in depth order on every frame of a drag, and
+    finer means more of them. Timed in the page, two shapes at 68%:
+
+        -d      triangles   median   worst      (a frame has 16.7 ms)
+        10          3,666    4.6ms   12.6ms
+         8          5,958    8.8ms   12.5ms
+         6          8,876   12.4ms   20.5ms   over a frame
+
+    So 8: the worst pass stays inside a frame, the disagreement still falls
+    from 0.73% to 0.19%, and the facets from 4.50 degrees to 3.55. A drag
+    that stutters is felt by everybody who makes a shape see-through; the
+    0.16% left on the table is a figure nobody can act on.
+
+    Solid costs nothing at all -- 0.0 ms, because the engine leaves a solid
+    surface alone -- so this is paid only when somebody asks to see through
+    something.
     """
     import inspect
 
     import references
 
-    assert references.SURFACE_DETAIL == 6, (
-        "the surface resolution changed; the two readers were measured to "
-        "agree at 6 and to disagree either side of it")
+    assert references.SURFACE_DETAIL == 8, (
+        "the surface resolution changed; 8 was chosen because it keeps even "
+        "the worst ordering pass inside a frame while still cutting the two "
+        "readers' disagreement from 0.73% to 0.19%")
     src = inspect.getsource(references.icc_gamut)
     assert '"-d", str(SURFACE_DETAIL)' in src, (
         "iccgamut is asked for no surface resolution again, so Argyll's "

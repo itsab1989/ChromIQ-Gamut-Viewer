@@ -1280,3 +1280,53 @@ def test_the_landing_keeps_the_line_that_says_the_view_changed_hands(fresh):
     assert abs(bar.value() - min(panel_top_now, bar.maximum())) <= 4, (
         f"with nothing to explain the view should start at the panel, "
         f"{panel_top_now}, and it started at {bar.value()}")
+
+
+def test_nothing_is_drawn_around_nothing_before_a_run_is_added(fresh):
+    """An empty list is a frame around nothing, and so is an empty chooser.
+
+    REPORTED FROM THE WINDOW: "one device over time shows an empty frame over
+    the add button". The list holds a least height on purpose -- a list that
+    grows and shrinks by a row as profiles arrive is worse than one that
+    holds still -- and that reason stops applying when there is nothing in it
+    at all, leaving 52 px of framed nothing sitting on the button that fills
+    it.
+
+    Driving the fix found the same fault twice more in the same section:
+    "Show me" was an empty dropdown, and "coloured by" offered five ways to
+    paint a picture that did not exist.
+
+    All of them come back the moment a profile arrives, which is also the
+    moment they have something in them.
+    """
+    app, win, area, panel = fresh
+    inner = area.widget()
+    panel._paths = []
+    panel._refresh()
+    panel._show_only_what_applies()
+    _settle(app, 0.3)
+    for name, widget in (("the list", panel._list),
+                         ("Show me", panel._picture_label),
+                         ("the picture chooser", panel._picture_of),
+                         ("coloured by", panel._coloured_label),
+                         ("the colour chooser", panel._coloured_by)):
+        assert not widget.isVisibleTo(inner), (
+            f"{name} is on screen with no run added, framing nothing")
+
+    # AND THEY ARE BACK when there is something to show. Without this half
+    # the test passes just as well with the whole section deleted.
+    #
+    # THROUGH _rebuild, NOT _refresh: the list is filled from the RUN, and
+    # only _rebuild makes one. Setting the paths and refreshing left the run
+    # at None, so the list stayed empty and stayed hidden -- and the test
+    # blamed the window for it. Two profiles that cannot be read still make a
+    # run, with both rows marked as unreadable, which is all this needs.
+    import pathlib as _pl
+
+    panel._paths = [_pl.Path("printer-2019.icc"), _pl.Path("printer-2024.icc")]
+    panel._rebuild(sort=False)
+    panel._show_only_what_applies()
+    _settle(app, 0.3)
+    assert panel._list.count() == 2, "the run did not take the two paths"
+    assert panel._list.isVisibleTo(inner), "the list did not come back"
+    assert panel._picture_of.isVisibleTo(inner), "the chooser did not come back"
