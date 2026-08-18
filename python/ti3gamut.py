@@ -8296,8 +8296,23 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             # right for a picture of one thing and wrong for this one, where
             # the last family standing is the whole answer: it is the reader's
             # only way of knowing WHICH colours those two dots are.
-            fig.update_layout(coloraxis=colour_axis_for(which),
-                              showlegend=True)
+            # NO SHARED SCALE OVER A PICTURE OF NAMES, and this CRASHED
+            # rather than merely looking wrong: colour_axis_for describes a
+            # measurement along an axis and reads DIRECTIONS[which], which
+            # has no entry for "toward". Ticking "Split it into colour
+            # families" while the cloud is coloured by the family each colour
+            # is HEADING FOR took the whole window down with a KeyError.
+            #
+            # Reachable from both windows and never crossed until now: each
+            # control was driven with the other left alone. The destinations
+            # are already their own key -- one trace per family, each in the
+            # colour of the place -- so the split has nothing to add and the
+            # scale would be a scale over names.
+            if which == "toward":
+                fig.update_layout(showlegend=True)
+            else:
+                fig.update_layout(coloraxis=colour_axis_for(which),
+                                  showlegend=True)
         if True:
             # PIN THE BOX WHENEVER A DRIFT CLOUD IS DRAWN. NO EXCEPTIONS.
             #

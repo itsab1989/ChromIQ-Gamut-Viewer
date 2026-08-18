@@ -1531,3 +1531,43 @@ def test_a_run_is_one_thing_over_time_and_does_not_ask():
         "the run's report now takes the pair chooser's answer, and a run is "
         "one device over time by definition")
     assert 'of="profiles"' in body
+
+
+def test_splitting_a_destination_cloud_does_not_take_the_window_down():
+    """Two groupings of one cloud, crossed — and it used to be a crash.
+
+    "Split it into colour families" groups by the family each colour IS IN.
+    "The colour it is heading for" groups by the family it is going TO. Each
+    had been driven with the other left alone. Set together, build_figure
+    asked colour_axis_for("toward") for a shared scale, that reads
+    DIRECTIONS["toward"], and there is no such direction: KeyError, and the
+    whole window went down.
+
+    Reachable from both windows -- the run panel has had both controls all
+    along -- so this is not new, only newly crossed.
+
+    There is nothing for a scale to say here anyway: the destinations are
+    already their own key, one trace per family in the colour of the place.
+    """
+    import numpy as np
+
+    import ti3gamut
+
+    rng = np.random.default_rng(7)
+    n = 200
+    lab = np.column_stack([rng.uniform(20, 90, n), rng.uniform(-50, 50, n),
+                           rng.uniform(-50, 50, n)])
+    moved = rng.normal(0.0, 2.0, (n, 3))
+    de = np.linalg.norm(moved, axis=1)
+
+    # families=True is the tick; "toward" is the chooser. Both at once.
+    fig = ti3gamut.build_figure(
+        [], "crossed", drift=(lab, moved, "heading for", "toward", True,
+                              0.0, de))
+    names = [t.name for t in fig.data if getattr(t, "name", None)]
+    assert any("toward the" in str(n) for n in names), (
+        "the destinations are not in the key")
+    # AND NO SCALE OVER A PICTURE OF NAMES.
+    assert not any(getattr(t.marker, "showscale", False)
+                   for t in fig.data if hasattr(t, "marker")), (
+        "a colour bar was drawn over a picture of named destinations")

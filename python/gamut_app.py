@@ -3723,6 +3723,8 @@ class TimelineDialog(QDialog):
             "means the key is learned once and cannot be mistaken for the "
             "thing it describes.")
         self._coloured_by.activated.connect(lambda _i: self._draw())
+        self._coloured_by.activated.connect(
+            lambda _i: self._show_only_what_applies())
         picture_row.addWidget(self._coloured_by, 0)
         picture_row.addWidget(Hint(
             "TWO AT A TIME, AND ONLY TWO, and it is worth saying why rather "
@@ -3898,6 +3900,7 @@ class TimelineDialog(QDialog):
             "GREYS ARE COLOURS TOO CLOSE TO NEUTRAL to have a hue worth "
             "naming. They are their own group rather than being scattered "
             "among the six.")
+        self._split_words = self._by_family.toolTip()
         self._by_family.stateChanged.connect(lambda _s: self._draw())
         # THE CONTROLS ARE NOT READOUTS, and hosted they no longer sit among
         # them. Basti, looking at the panel in the column: "maybe in this
@@ -4504,6 +4507,22 @@ class TimelineDialog(QDialog):
         """
         useful = self._chosen_pair() is not None
         self._by_family.setVisible(useful)
+        # AND THE SAME RULE AS THE MAIN WINDOW'S, because it is the same pair
+        # of controls. "Split it into colour families" groups the cloud by the
+        # family each colour IS IN; "the colour it is heading for" groups it by
+        # the family it is going TO, and wins -- the split is not even passed
+        # on. Ticked together they used to CRASH the window (see build_figure);
+        # with that fixed the tick would merely have sat there lit, claiming a
+        # grouping the picture does not use.
+        #
+        # Fixed in the main window first and only there, which is exactly the
+        # asymmetry Basti asked to stop: "in general both path should benefit
+        # from any improvements".
+        by_destination = self._coloured_by.currentData() == "toward"
+        self._by_family.setEnabled(useful and not by_destination)
+        self._by_family.setToolTip(
+            GamutApp.SPLIT_IS_THE_DESTINATIONS if by_destination
+            else self._split_words)
         self._with_shapes.setVisible(useful)
         for part in (self._cut, self._cut_label, self._cut_says):
             part.setVisible(useful)
@@ -8428,6 +8447,8 @@ class GamutApp(QMainWindow):
             "those a confident colour would be inventing a direction out of "
             "noise.")
         self._drift_by.activated.connect(lambda _i: self._redraw())
+        self._drift_by.activated.connect(
+            lambda _i: self._refresh_drift_controls())
         by_row.addWidget(self._drift_by, 1)
         by_row.addWidget(Hint(
             "One cloud, five questions, and the numbers above answer none of "
@@ -8479,6 +8500,7 @@ class GamutApp(QMainWindow):
             "GREYS are colours too close to neutral to have a hue worth "
             "naming, so they are their own group rather than being scattered "
             "among the six.")
+        self._split_tooltip = self._drift_split.toolTip()
         self._drift_split.stateChanged.connect(self._redraw)
         # IN A ROW OF ITS OWN, exactly like the tick above it, and that is the
         # whole reason for the row. Added straight to the column it began two
@@ -10897,6 +10919,18 @@ class GamutApp(QMainWindow):
                     d.deltas)
         return (d.lab_a, d.deltas, "how far it moved", None, split, cut)
 
+    #: Why the split is greyed out while the cloud is painted by destination.
+    #: Says what to do about it and names the control to do it with, because
+    #: "unavailable" on its own leaves somebody hunting for the reason.
+    SPLIT_IS_THE_DESTINATIONS = (
+        "Not available while the cloud is coloured by the colour it is "
+        "heading for, because that already splits it — one group per family "
+        "the colours are moving TOWARD, each in the colour of the place, all "
+        "of them in the key.\n\n"
+        "This tick splits by the family each colour IS IN, which is the other "
+        "question. To get it back, set \"coloured by\" to anything else: how "
+        "far it moved, or one of the three directions.")
+
     def _refresh_drift_controls(self) -> None:
         """Grey out the three that only act on the cloud, when there is none.
 
@@ -10919,6 +10953,26 @@ class GamutApp(QMainWindow):
             widget = getattr(self, name, None)
             if widget is not None:
                 widget.setEnabled(drawing)
+        # AND ONE OF THEM CANNOT ACT WHILE ANOTHER IS SET A CERTAIN WAY.
+        #
+        # "Split it into colour families" groups the cloud by the family each
+        # colour IS IN. "The colour it is heading for" groups it by the family
+        # each colour is going TO. Two groupings of one cloud, and the
+        # destination one wins -- the split is not even passed on. Crossed
+        # rather than driven one at a time: six traces with the tick, six
+        # without, and the tick still lit and ticked, claiming a grouping the
+        # picture does not use. That is a control saying something untrue,
+        # which this window has already learnt is worse than one that does
+        # nothing.
+        #
+        # (The same crossing found a crash: the shared colour scale is built
+        # from DIRECTIONS, which has no "toward" in it. See build_figure.)
+        split = getattr(self, "_drift_split", None)
+        if split is not None and drawing:
+            by_destination = self._drift_colouring() == "toward"
+            split.setEnabled(not by_destination)
+            split.setToolTip(self.SPLIT_IS_THE_DESTINATIONS if by_destination
+                             else self._split_tooltip)
 
     def _drift_colouring(self):
         """Which question the cloud's colours answer, or None for how far.

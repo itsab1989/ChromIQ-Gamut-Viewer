@@ -1325,6 +1325,8 @@ python scripts/audit_width.py             # the column is sized once and never m
 python scripts/audit_run_beside_the_rest.py  # a run open beside a file, a comparison and a chart
 python scripts/audit_one_thing_or_two.py  # the chooser reaches every place that writes a verb
 python scripts/audit_cloud_colours.py     # all five ways the cloud can be painted, in the main window
+python scripts/audit_two_groupings.py     # the split and the destination colouring, set together
+python scripts/audit_two_groupings_run.py  # and the same pair on the OTHER path, a run
 ```
 
 Several of these were written after a fault got past everything else, and each
