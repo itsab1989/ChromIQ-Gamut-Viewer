@@ -21,6 +21,19 @@ The live fade also **respects *Set this for***. It faded every shape and the
 rebuild afterwards quietly put the others back, so removing the rebuild would
 have turned one fix into the next bug.
 
+### 💡 Two light controls that had never moved anything
+
+*Which side the light comes from* and *how high the light hangs* did nothing
+at all. They were being sent into the scene as `lighting.direction` and
+`lighting.height` — attributes that do not exist, so the drawing library
+dropped them silently, while the hint beside those sliders promised "every one
+of them moves the picture as you drag". They place the lamp now, live:
+measured, the light moved from x 745, y 745, z 1700 to x 705, y −512, z −1800
+across the two, with no page written.
+
+Found by the audit that drags every slider and asks the page what changed:
+five of the seven lighting sliders answered and these two did not.
+
 ### 🧭 The view stays where you put it
 
 Anything this window cannot restyle in place is drawn by writing a new page

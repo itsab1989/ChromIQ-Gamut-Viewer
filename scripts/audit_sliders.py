@@ -92,11 +92,16 @@ MUST_RECOMPUTE = {
 ASK = """
 (function () {
   var d = document.getElementsByClassName('plotly-graph-div')[0];
-  if (!d || !d.data) return "no picture";
+  if (!d) return "no picture";
+  // _fullData, NOT data. The arrays travel packed, and only the library's own
+  // copy is unpacked -- asked of `data`, every length comes back undefined,
+  // so a shape rebuilt at a different fineness looked identical to one that
+  // had not changed at all. That is how "detail" came to be called dead.
+  var data = d._fullData || d.data || [];
   var seen = [];
-  for (var i = 0; i < d.data.length; i++) {
-    var t = d.data[i], m = t.marker || {};
-    seen.push([t.type, (t.x || []).length, t.opacity,
+  for (var i = 0; i < data.length; i++) {
+    var t = data[i], m = t.marker || {};
+    seen.push([t.type, (t.x || []).length, (t.i || []).length, t.opacity,
                // MARKER OPACITY WAS MISSING FROM THIS LIST, and three chart
                // sliders that change nothing else were therefore reported
                // dead -- by a check that had simply not been told to look.
@@ -206,6 +211,9 @@ def main() -> int:
 
     #: name → the slider, found by the attribute it is stored under, so the
     #: report names the control the way the code does.
+    def by_widget_name(widget):
+        return named.get(widget, "an unnamed slider")
+
     named = {}
     for attr in dir(win):
         try:
@@ -226,10 +234,19 @@ def main() -> int:
         if isinstance(thing, QSlider) and thing not in named:
             named[thing] = "the run's " + attr.lstrip("_")
 
+    skipped = set()
+
     def sweep(scene_name):
         found = []
         for slider in column.findChildren(QSlider):
-            if slider.isHidden():
+            # NOT SHOWN IS NOT THE SAME AS HIDDEN. A slider inside a section
+            # the window has closed answers isHidden() == False while being
+            # nowhere on screen -- and one judged there is judged with its
+            # prerequisite missing. "Detail" governs the shape you COMPARE
+            # against and is not shown until there is one; asked anyway, it
+            # answered "nothing happened", which is true and says nothing.
+            if not slider.isVisibleTo(win):
+                skipped.add((slider, scene_name))
                 continue
             name = named.get(slider, "an unnamed slider")
             group = slider
@@ -310,6 +327,16 @@ def main() -> int:
     if (demo / "verification-chart-480.ti1").exists():
         win._open_chart_file(demo / "verification-chart-480.ti1")
         pump(7)
+    # AND SOMETHING TO COMPARE AGAINST, because "Detail" is about the shape
+    # you compare WITH -- "how finely the shape you compare against is built"
+    # -- and is not even shown until there is one.
+    for i in range(win._compare.count()):
+        if win._compare.itemText(i).startswith("sRGB"):
+            win._compare.setCurrentIndex(i)
+            win._compare.activated.emit(i)
+            win._on_compare_changed()
+            break
+    pump(8)
     # A SKIN OVER THE PATCHES, or "how solid the skin is" has nothing to be
     # solid: the chart opens with no skin, so that slider was being asked
     # about a thing that was not in the picture.
@@ -342,6 +369,12 @@ def main() -> int:
             order.append(key)
     rows = [best[key] for key in order]
 
+    # A SLIDER NO SCENE EVER SHOWED is not "fine", it is unexamined, and
+    # saying so is the difference between a report and a clean bill.
+    judged = {name for _w, name, *_rest in rows}
+    never = sorted({by_widget_name(s) for s, _scene in skipped
+                    if by_widget_name(s) not in judged})
+
     print("\n  WHAT EVERY SLIDER DOES WHILE IT IS BEING DRAGGED\n")
     wide = max(len(r[1]) for r in rows)
     last = None
@@ -362,6 +395,9 @@ def main() -> int:
             continue
         faults.append(f"{name} in “{where}”: {verdict}")
 
+    if never:
+        print("\n  NOT SHOWN IN ANY SCENE, so not judged: "
+              + ", ".join(never))
     print()
     if faults:
         for line in faults:

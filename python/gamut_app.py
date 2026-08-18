@@ -12902,16 +12902,57 @@ class GamutApp(QMainWindow):
         else:
             self._on_depth_changed(self._depth.value())
 
+    #: The two sliders that PLACE the light rather than describe it. Plotly
+    #: keeps those apart -- lighting is how a surface answers light,
+    #: lightposition is where the lamp stands -- and sending them together
+    #: means sending two of them to an attribute that has no such keys.
+    LIGHT_IS_PLACED_BY = ("direction", "height")
+
     def _manual_lighting(self) -> dict:
-        """The five values as the sliders currently stand."""
+        """How the surface answers the light, as the sliders stand.
+
+        WITHOUT THE TWO THAT PLACE IT. They were in here, and they were being
+        pushed into the scene as `lighting.direction` and `lighting.height` --
+        attributes that do not exist, so the drawing library dropped them and
+        the two sliders did nothing at all while their own hint promised
+        "every one of them moves the picture as you drag".
+
+        Found by the audit that drags every slider and asks the page what
+        changed: five of the seven answered and these two did not.
+        """
         out = {}
         for key, (slider, lo, hi) in self._light_sliders.items():
+            if key in self.LIGHT_IS_PLACED_BY:
+                continue
             out[key] = lo + (hi - lo) * slider.value() / 100.0
         return out
 
+    def _push_light_position(self) -> None:
+        """Move the lamp in the scene already on screen."""
+        page = self._view.page() if self._view is not None else None
+        if page is None or not (self._slots
+                                or getattr(self, "_run_drawn", False)):
+            return
+        where = self._light_position()
+        body = ",".join(f"'{k}':{float(v)}" for k, v in where.items())
+        page.runJavaScript(
+            "(function(){var el=document.getElementsByClassName("
+            "'plotly-graph-div')[0];"
+            "if(!el||!window.Plotly||!el.data)return;"
+            "var idx=[];for(var i=0;i<el.data.length;i++)"
+            "if(el.data[i].type==='mesh3d')idx.push(i);"
+            f"var which={self._which_meshes_js()};"
+            f"if(which.length)Plotly.restyle(el,"
+            f"{{lightposition:{{{body}}}}},which);"
+            "})();")
+
     def _on_light_changed(self, key: str, value: float, label) -> None:
         label.setText(f"{value:.2f}")
-        if self._manual_light.isChecked():
+        if not self._manual_light.isChecked():
+            return
+        if key in self.LIGHT_IS_PLACED_BY:
+            self._push_light_position()
+        else:
             self._push_lighting(self._manual_lighting())
 
     def _restyle_the_chart(self, group: str, field: str, value) -> None:
