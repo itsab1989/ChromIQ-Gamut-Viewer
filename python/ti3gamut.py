@@ -587,6 +587,34 @@ _KEPT = "rgb(105,112,126)"
 _COLOUR_IS_THE_ANSWER = {"cq": "colour"}
 
 
+def _is_a_shell(only=None) -> dict:
+    """Mark a surface that is CLOSED, for the engine that orders the walls.
+
+    WHY IT MATTERS. `cqOrder` draws the whole away-facing half of a surface
+    before the whole toward-facing half, which fixes the kite-shaped wedges.
+    The rule that makes that right is true of a closed shell and only of a
+    closed shell: along any ray the near wall is nearer than the far wall, so
+    far-wall-first is correct per pixel.
+
+    AN OPEN SURFACE HAS NO FAR WALL. Splitting a sheet by which way its
+    triangles point and drawing one group before the other has no such
+    justification, and the two groups can come out in an order that changes
+    as the shape turns -- patches appearing and disappearing during movement,
+    which is exactly how it was reported.
+
+    The window makes open surfaces routinely: `only` is a subset of the
+    triangles, which is how ONE shape becomes an agreeing half and a
+    differing half so the two can be drawn at different strengths. Those are
+    the halves of a shell, not shells.
+
+    Asking the drawn triangles whether they close was tried and is not good
+    enough -- a closed shell of 914 corners comes back with 133 edges
+    belonging to one triangle, because corners in the same place are kept
+    apart where the colouring needs a sharp edge (see `_weld`).
+    """
+    return {} if only is not None else {"cqShell": 1}
+
+
 def _mesh_lost(gamut, name: str, opacity: float, lost,
                kept: str = _KEPT, depth: float = 0.35, light=None,
                only=None, alphas=None, stand=None) -> "list":
@@ -639,7 +667,7 @@ def _mesh_lost(gamut, name: str, opacity: float, lost,
         name=f"{name} — red is out of reach, grey is within it", showlegend=True,
         hoverinfo="name",
         # The red IS the answer here — see _COLOUR_IS_THE_ANSWER.
-        meta=dict(_COLOUR_IS_THE_ANSWER,
+        meta=dict(_COLOUR_IS_THE_ANSWER, **_is_a_shell(only),
                   **({"stand": carried} if carried is not None else {})))
 
 
@@ -1795,7 +1823,8 @@ def _mesh(gamut, name: str, opacity: float,
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
         vertexcolor=colours, opacity=opacity, name=name, showlegend=False,
         legendgroup=name,
-        meta=(dict(stand=carried) if carried is not None else None),
+        meta=dict(_is_a_shell(only),
+                  **({"stand": carried} if carried is not None else {})),
         # Only the legend key uses this; vertexcolor paints the surface.
         color=_legend_swatch(chosen if chosen is not None else gamut.colors,
                              page),
@@ -2558,7 +2587,7 @@ def _chart_cloud(lab, name: str, outside=None, space: str = "lab",
             showlegend=False, hoverinfo="name",
             legendgroup=f"{name}-outside",
             # Red is what "outside" MEANS here — see _COLOUR_IS_THE_ANSWER.
-            meta=dict(_COLOUR_IS_THE_ANSWER),
+            meta=dict(_COLOUR_IS_THE_ANSWER, **_is_a_shell()),
             name=f"{name} — outside"))
         traces.append(_legend_proxy(f"{name} — outside", _LOST,
                                     f"{name}-outside"))
@@ -2942,12 +2971,19 @@ window.cqOrder = (function () {
         // this is here to remove.
         if (!(t.opacity < 1) && !someColourFades(t.vertexcolor)) continue;
         var m = t.i.length, mid = new Float64Array(m * 3), f;
-        var nrm = new Float64Array(m * 3), vol = 0;
+        // ONLY A CLOSED SURFACE HAS A WALL BEHIND IT. Without this the wall
+        // order was applied to every see-through mesh alike, including the
+        // agreeing and differing HALVES of a shape -- open sheets, where the
+        // rule it rests on is not true and the two groups can swap as the
+        // shape turns. The page says which are closed; see `_is_a_shell`.
+        var shut = !!(t.meta && t.meta.cqShell);
+        var nrm = shut ? new Float64Array(m * 3) : null, vol = 0;
         for (f = 0; f < m; f++) {
           var a = t.i[f], b = t.j[f], c = t.k[f];
           mid[f * 3]     = (t.x[a] + t.x[b] + t.x[c]) / 3;
           mid[f * 3 + 1] = (t.y[a] + t.y[b] + t.y[c]) / 3;
           mid[f * 3 + 2] = (t.z[a] + t.z[b] + t.z[c]) / 3;
+          if (!nrm) continue;
           // The triangle's own cross product, fixed in the measurements'
           // numbers: which way it points against the line of sight is the
           // only view-dependent part, and that is one dot product a frame.
