@@ -858,6 +858,44 @@ def test_the_direction_view_keeps_its_key_the_same_way():
     assert fig.layout.coloraxis.cmin < 0 < fig.layout.coloraxis.cmax
 
 
+def test_the_last_family_standing_still_gets_its_name():
+    """The key must not switch itself off when one family is left.
+
+    REPORTED FROM THE PUBLISHED PAGE, with a photograph: the threshold pushed
+    up until two dots remained, and every label gone. "here are still two
+    patches left but no more labels visible."
+
+    THE CAUSE, MEASURED IN A BROWSER rather than reasoned about. The drawing
+    library marks a trace with no points left not-visible, and then applies
+    its own rule that a single visible trace needs no key at all:
+
+        reds ... magentas   visible=False  n=0
+        greys — 11          visible=True   n=2     showlegend flipped to false
+
+    That default is right for a picture of one thing. Here the last family
+    standing is the whole answer -- it is the only way of knowing which
+    colours those two dots are -- so the key is asked for by name.
+
+    ASKED OF THE FIGURE, NOT OF THE SOURCE. What matters is what the scene
+    says, and a figure that has been through the same call the page is
+    written from is the thing that carries it.
+    """
+    import ti3gamut
+
+    rng = np.random.default_rng(24)
+    n = 240
+    lab = np.column_stack([rng.uniform(20, 92, n), rng.uniform(-60, 60, n),
+                           rng.uniform(-60, 60, n)])
+    for values, axis in ((rng.uniform(0, 6, n), None),
+                         (rng.normal(0, 3, (n, 3)), "L")):
+        fig = ti3gamut.build_figure([], "x", mode="dark", space="lab",
+                                    grid=True,
+                                    drift=(lab, values, "d", axis, True))
+        assert fig.layout.showlegend is True, (
+            "the key is left to the library, which drops it as soon as only "
+            "one family still has a dot in it")
+
+
 def test_an_unsplit_cloud_still_carries_its_own_key():
     """One trace cannot be hidden without hiding everything, so nothing
     changes for it — and no page published before this looks different."""

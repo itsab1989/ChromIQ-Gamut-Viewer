@@ -63,7 +63,8 @@ from PyQt6.QtGui import (QColor, QDesktopServices, QFont, QFontMetrics,
                          QIcon, QImage, QLinearGradient,
                          QPainter, QPalette,
                          QPen, QPixmap)
-from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog,
+from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QComboBox,
+                             QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel, QLayout,
                              QDialog, QMainWindow, QPushButton, QScrollArea, QSlider,
                              QColorDialog, QDialogButtonBox, QListView,
@@ -1083,22 +1084,78 @@ def make_foldable(box, key: str, start_open: bool = True):
 
     THE SAME ARROW CHROMIQ USES, not a tick, and that is Basti's call: "those
     arrows are better for collapsing options. a checkbox looks like it
-    activates things." He is right, and ChromIQ has the pattern already in
-    CollapsibleGroupBox, written for the Create-Chart sections. Borrowing its
-    behaviour rather than inventing a second way of folding a group in the
-    same family of applications: a filled triangle in the title, the title
-    band as the click target, and the frame dropped while shut so a folded
-    group is one line rather than an empty bordered box.
+    activates things."
 
-    An earlier version used box.setCheckable(True). It cost a blue platform
-    tick that was not this window's colour, an "enable this" reading nobody
-    wanted, and a chase after a heading that drew as the single letter "V".
+    ONE BODY, HIDDEN WHOLE -- AND THE FIRST VERSION OF THIS DID NOT DO THAT.
+    It walked the group's children, hid the ones that were not already hidden,
+    remembered the list, and put that list back on opening. Every part of that
+    is a way to lose something, and it lost plenty. Reported after two minutes
+    in the real window: "collapsing sections is horrible. they don't collapse
+    in place but they move around, become only a little smaller and empty",
+    and "there is a viewer and export styling section that is empty".
+
+    THE FAULT, TRACED. A group that started shut recorded its list during
+    __init__ and hid them. The window is then shown, and a later pass
+    re-asserts every fold -- because a setVisible(False) issued while the
+    parent is hidden does not always survive the parent being shown. That
+    second call recorded the list AGAIN, found everything already hidden,
+    and stored an empty one. From then on the group could never be opened:
+    there was nothing left to put back. Four groups shipped like that.
+
+    So it works the way ChromIQ's own CollapsibleGroupBox does instead. The
+    group's entire layout is moved onto one body widget, and folding shows or
+    hides that single widget. Nothing is remembered, nothing is walked, and
+    every control inside keeps its own visibility -- so a row hidden because
+    no file is loaded stays hidden when the group is opened, which the list
+    version had to be taught separately and got wrong twice.
 
     WHAT IS REMEMBERED, AND WHAT IS NOT. Only whether the group was open.
     Nothing inside is touched, so folding can never change what a picture
     looks like: it hides controls, it does not set them.
     """
+    inner = box.layout()
+    body = QWidget()
+    # MOVING A LAYOUT IS ALLOWED, and it takes its widgets with it -- their
+    # parent stays the group, so nothing else in the window has to know. The
+    # group is left free to take a layout of its own.
+    body.setLayout(inner)
+    body.setParent(box)
+    outer = QVBoxLayout(box)
+    outer.setContentsMargins(0, 0, 0, 0)
+    outer.setSpacing(0)
+    outer.addWidget(body)
+    # NEVER TALLER THAN WHAT IS IN IT, which is the rule _tighten_groups
+    # applies to every group. That pass ran before this one and put the
+    # constraint on the layout this has just moved, so the group itself needs
+    # it again -- otherwise a folded group keeps the height of its contents
+    # and "becomes only a little smaller".
+    #
+    # WHICH CONSTRAINT DEPENDS ON WHETHER IT IS OPEN, and both halves of that
+    # were learned the hard way.
+    #
+    # OPEN: SetMinAndMaxSize, which is what _tighten_groups applied before
+    # this pass moved the layout. It writes the group's least WIDTH from its
+    # contents, and the column is sized from those least widths -- so leaving
+    # it off shrank the column by ten pixels and "How it looks", which
+    # genuinely needs 366, was handed 346 and clipped. Reported as "how it
+    # looks section became too wide now".
+    #
+    # SHUT: the maximum only. SetMinAndMaxSize would then write the least
+    # width from a layout holding one hidden widget, which asks for nothing --
+    # the group's least width became 6 px and the heading was drawn as the
+    # single letter that fits in it, "W". Shut, the minimum is set from the
+    # heading instead; see below.
     box._fold_title = box.title()
+    # THE NAME EVERYTHING ELSE ASKS FOR IS THE NAME WITHOUT THE ARROW, which
+    # is how ChromIQ's own collapsible group behaves and is not decoration:
+    # this window keeps three lists keyed on a group's heading -- which
+    # sections depend on the colour space, which need no ⓘ, which are
+    # space-independent -- and the arrow silently stopped every one of them
+    # matching. The panel audit went from clean to twenty-eight "a control
+    # nobody thought about" reports, none of which was true. Qt paints from
+    # its own copy, so the arrow is still drawn.
+    box.title = lambda _b=box: _b._fold_title
+    box.body = body
     box.setToolTip(
         "Click the heading to fold this group away, or to open it again.\n\n"
         "It only hides these controls. Nothing you have set is changed and "
@@ -1107,59 +1164,47 @@ def make_foldable(box, key: str, start_open: bool = True):
         "Whether it was open is remembered, so a group you never use stays "
         "out of the way next time.")
 
-    def paint(open_up: bool) -> None:
-        # A FILLED TRIANGLE, and a big one. ChromIQ settled this: the small
-        # ▸ / ▾ do not read as something to press, and the trailing space
-        # sets the arrow off from the words.
-        box.setTitle(("▼  " if open_up else "▶  ") + box._fold_title)
-
-    def shown(open_up: bool) -> None:
-        if open_up:
-            for kid in getattr(box, "_folded_away", []):
-                kid.setVisible(True)
-            box._folded_away = []
-            box.setMaximumHeight(16777215)
-            inner = box.layout()
-            was = getattr(box, "_open_constraint", None)
-            if inner is not None and was is not None:
-                inner.setSizeConstraint(was)
-        else:
-            # isHidden(), NOT isVisible(). Nothing is "visible" until every
-            # ancestor is shown, and this can run while the window is still
-            # being built -- so isVisible() was False for everything, the fold
-            # recorded nothing to hide, and the column measured exactly the
-            # same folded as unfolded.
-            #
-            # And only what the fold hid is put back, because rows hidden for
-            # their own reasons -- the ones naming an open file, hidden until
-            # there is one -- must stay hidden.
-            box._folded_away = [kid for kid in box.findChildren(QWidget)
-                                if kid.parent() is box and not kid.isHidden()]
-            for kid in box._folded_away:
-                kid.setVisible(False)
-            # LIFT THE SIZE CONSTRAINT WHILE IT IS SHUT, AND CLEAR WHAT IT
-            # WROTE. _tighten_groups gives every group
-            # setSizeConstraint(SetMinAndMaxSize) so it is never taller than
-            # its contents. With the contents hidden that says 44 px, and Qt
-            # writes the minimum WIDTH from it as well -- so one heading came
-            # out as the single letter that fits in 44 px, "V". Watching every
-            # Python width-setter caught nothing, because Qt does it inside
-            # the layout.
-            inner = box.layout()
-            if inner is not None:
-                box._open_constraint = inner.sizeConstraint()
-                inner.setSizeConstraint(
-                    QLayout.SizeConstraint.SetNoConstraint)
-            box.setMinimumWidth(0)
-            box.setMaximumHeight(box.fontMetrics().height() + 12)
+    def shown(open_up: bool, remember: bool = True) -> None:
+        body.setVisible(bool(open_up))
+        outer.setSizeConstraint(
+            QLayout.SizeConstraint.SetMinAndMaxSize if open_up
+            else QLayout.SizeConstraint.SetMaximumSize)
         # THE FRAME GOES WITH THE CONTENTS. A shut group with its border still
         # drawn is an empty box, which reads as something broken rather than
         # something put away. ChromIQ drops the frame for the same reason.
         box.setFlat(not open_up)
-        paint(open_up)
+        # A FILLED TRIANGLE, and a big one. ChromIQ settled this: the small
+        # ▸ / ▾ do not read as something to press, and the trailing space
+        # sets the arrow off from the words.
+        drawn = ("▼  " if open_up else "▶  ") + box._fold_title
+        box.setTitle(drawn)
+        # WITH THE BODY GONE, NOTHING IN THE GROUP ASKS FOR ANY WIDTH, and a
+        # group constrained to its contents will then be given the width of
+        # nothing -- which is how a heading came to be drawn as the single
+        # letter that fits, "W". The title is what is left, so the title is
+        # what the width is asked of.
+        box.setMinimumWidth(
+            0 if open_up
+            else box.fontMetrics().horizontalAdvance(drawn) + 34)
+        # AND THE LEAST HEIGHT HAS TO BE GIVEN BACK, or the group cannot
+        # shrink at all: while it was open, the constraint wrote a minimum
+        # height from its contents, and a minimum outranks the new maximum.
+        # Measured with the fold on a three-row group: 78 px open, 78 px shut.
+        box.setMinimumHeight(0)
         box.updateGeometry()
-        QSettings("MeasuredGamutViewer", "MeasuredGamutViewer").setValue(
-            f"fold/{key}", bool(open_up))
+        # AND THE COLUMN IS ASKED AGAIN, because a group nobody had opened yet
+        # was not part of the width it was sized to. "How it looks" needs 366
+        # px for one unwrappable label; while it was folded the column settled
+        # at 346, and opening it then clipped its right-hand edge -- reported
+        # as "how it looks section became too wide now". Widening only ever
+        # grows, so this can be asked as often as it likes.
+        if open_up:
+            widen = getattr(box.window(), "_widen_the_column_to_fit_it", None)
+            if widen is not None:
+                widen()
+        if remember:
+            QSettings("MeasuredGamutViewer", "MeasuredGamutViewer").setValue(
+                f"fold/{key}", bool(open_up))
 
     saved = QSettings("MeasuredGamutViewer",
                       "MeasuredGamutViewer").value(f"fold/{key}")
@@ -1167,7 +1212,7 @@ def make_foldable(box, key: str, start_open: bool = True):
                (saved if isinstance(saved, bool)
                 else str(saved).lower() not in ("false", "0", "")))
     box._fold_open = open_up
-    shown(open_up)
+    shown(open_up, remember=False)
 
     # THE TITLE BAND IS THE CONTROL, as it is in ChromIQ: a press in the top
     # strip of the group toggles it, and anything lower is left to whatever
@@ -1184,7 +1229,11 @@ def make_foldable(box, key: str, start_open: bool = True):
 
     box.mousePressEvent = pressed
     box.setCursor(Qt.CursorShape.PointingHandCursor)
-    box._refold = lambda: shown(box._fold_open)
+    # RE-ASSERTED ONCE THE WINDOW IS UP, and now that is safe: showing or
+    # hiding one widget says the same thing however many times it is said.
+    # The version that remembered a list of children could not survive being
+    # asked twice, which is precisely what broke it.
+    box._refold = lambda: shown(box._fold_open, remember=False)
     return box
 
 
@@ -1367,6 +1416,9 @@ class LookSection(QGroupBox):
         self._walls_row = line - 1
 
         self._wall_colour = QPushButton("Choose a colour…", self)
+        self._wall_colour.setToolTip(
+            "Opens the colour picker for the three PANELS the grid is drawn on, behind and beneath the shape."
+            "\n\nThe colours already in the picture are offered in the picker's own swatches, because matching the shape or the page it is going onto is the commonest thing to want here — and hunting for the same grey twice is how two panels end up almost matching.\n\nOnce you have chosen, this button shows the colour it is set to. It only changes what a picture LOOKS like; nothing measured is touched.")
         self._wall_colour.setObjectName("secondary")
         self._wall_colour.clicked.connect(self._pick_wall_colour)
         self._wall_chosen = "#202020"
@@ -1382,6 +1434,9 @@ class LookSection(QGroupBox):
         self._wall_colour_row = line - 1
 
         self._colour = QPushButton("Choose a colour…", self)
+        self._colour.setToolTip(
+            "Opens the colour picker for the PAGE the shape sits on — everything outside the grid box."
+            "\n\nThe colours already in the picture are offered in the picker's own swatches, because matching the shape or the page it is going onto is the commonest thing to want here — and hunting for the same grey twice is how two panels end up almost matching.\n\nOnce you have chosen, this button shows the colour it is set to. It only changes what a picture LOOKS like; nothing measured is touched.")
         self._colour.setObjectName("secondary")
         self._colour.clicked.connect(self._pick_colour)
         self._chosen = "#ffffff"
@@ -1420,6 +1475,9 @@ class LookSection(QGroupBox):
         self._lettering_row = line - 1
 
         self._lettering_colour = QPushButton("Choose a colour…", self)
+        self._lettering_colour.setToolTip(
+            "Opens the colour picker for the LETTERING — the numbers up the sides of the box and the names of the three axes."
+            "\n\nThe colours already in the picture are offered in the picker's own swatches, because matching the shape or the page it is going onto is the commonest thing to want here — and hunting for the same grey twice is how two panels end up almost matching.\n\nOnce you have chosen, this button shows the colour it is set to. It only changes what a picture LOOKS like; nothing measured is touched.")
         self._lettering_colour.setObjectName("secondary")
         self._lettering_colour.clicked.connect(self._pick_lettering_colour)
         self._lettering_chosen = "#22211f"
@@ -1458,6 +1516,9 @@ class LookSection(QGroupBox):
         self._gridlines_row = line - 1
 
         self._gridlines_colour = QPushButton("Choose a colour…", self)
+        self._gridlines_colour.setToolTip(
+            "Opens the colour picker for the GRID LINES ruled across the walls."
+            "\n\nThe colours already in the picture are offered in the picker's own swatches, because matching the shape or the page it is going onto is the commonest thing to want here — and hunting for the same grey twice is how two panels end up almost matching.\n\nOnce you have chosen, this button shows the colour it is set to. It only changes what a picture LOOKS like; nothing measured is touched.")
         self._gridlines_colour.setObjectName("secondary")
         self._gridlines_colour.clicked.connect(self._pick_gridlines_colour)
         self._gridlines_chosen = "#d0ccc6"
@@ -3158,8 +3219,31 @@ class TimelineDialog(QDialog):
     GRID = 9
 
     def __init__(self, parent, appearance: str = "dark",
-                 preview: bool = True) -> None:
+                 preview: bool = True, hosted: bool = False) -> None:
         """*preview* False builds the window without its graph view.
+
+        *hosted* True builds the same thing as a PANEL for the main window's
+        left column instead of a window of its own — asked for in as many
+        words: "i would like to load the profiles in the main window directly
+        with the ability to close individual ones or all, then the options i
+        can choose in what is at the moment still in its own window", and
+        again after seeing it: "clicking follow the device over time still
+        opens the window with the same name instead of giving me all those
+        options in the main window".
+
+        WHY THE SAME CLASS RATHER THAN A SECOND PANEL. Everything here — the
+        run, the ordering, the verdict, the family report, the threshold, the
+        saved page and the table — is one body of behaviour, and this project
+        has been bitten three times by the same thing written in two places:
+        the readout list that existed in three copies, so the report survived
+        "Close them all" and was missing from every saved page. A hosted panel
+        that re-implemented any of it would be the fourth.
+
+        WHAT HOSTING CHANGES IS THE SHAPE, NOT THE WORK: the rows stack
+        instead of running across, because the column is 366 px wide and this
+        window was 940; there is no graph view of its own, because the point
+        of the move is to use the big one; and the picture is handed to the
+        host to draw.
 
         A REAL CAPABILITY, not a test hatch, though the tests are what needed
         it first. Everything this window computes -- the run, the verdict, the
@@ -3174,24 +3258,49 @@ class TimelineDialog(QDialog):
         that run the real application.
         """
         super().__init__(parent)
+        self._hosted = bool(hosted)
+        self._host = parent if self._hosted else None
+        if self._hosted:
+            # A QDialOG IS A WIDGET FIRST. Told it is a plain one, it draws
+            # inline in whatever layout it is put into, with no title bar and
+            # no window of its own -- so the panel and the window really are
+            # the same object rather than two that have to be kept in step.
+            self.setWindowFlags(Qt.WindowType.Widget)
+            preview = False
         self._preview = preview
         self.setWindowTitle("Follow one device over time")
         self.setModal(False)          # so files can be dragged in from Finder
         self._appearance = appearance
         self._paths: list = []
         self._run = None
-        self.resize(940, 720)
-        self.setMinimumSize(560, 460)
+        if not self._hosted:
+            self.resize(940, 720)
+            # NOT WHEN IT IS A PANEL. A window's least size is a promise about
+            # a window; carried into the column it is a 560 px floor inside a
+            # 366 px space, and the whole column is dragged out to fit it.
+            # Measured on the first drive: the group came out 596 px wide and
+            # every label in it was cut -- "coloured by" needing 95 px in 73.
+            self.setMinimumSize(560, 460)
         self.setAcceptDrops(True)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(18, 16, 18, 16)
-        outer.setSpacing(10)
+        # NO MARGINS OF ITS OWN INSIDE THE COLUMN. The group it sits in
+        # already has its padding, and a second set inside that reads as the
+        # panel being indented from everything above it.
+        outer.setContentsMargins(0, 0, 0, 0) if self._hosted else \
+            outer.setContentsMargins(18, 16, 18, 16)
+        outer.setSpacing(8 if self._hosted else 10)
 
         head = QLabel("Open the profiles you have of one device — a scanner, "
                       "a printer, a screen — made on different days.", self)
         head.setWordWrap(True)
         row = QHBoxLayout()
+        # ONE EXPLANATION, NOT TWO. Hosted, the group this panel sits in
+        # already carries a sentence saying what it is for and an ⓘ with the
+        # long answer. Both together put two paragraphs and two icons within
+        # sixty pixels of each other, which is what "two tooltip icons next to
+        # some options" looks like from the outside.
+        row.setEnabled(True)
         row.setSpacing(8)
         row.addWidget(head, 1)
         row.addWidget(Hint(
@@ -3223,10 +3332,23 @@ class TimelineDialog(QDialog):
             "you trust not to have changed.",
             self, title="Following a device over time"), 0,
             Qt.AlignmentFlag.AlignTop)
-        outer.addLayout(row)
+        if self._hosted:
+            for i in reversed(range(row.count())):
+                widget = row.itemAt(i).widget()
+                if widget is not None:
+                    widget.setParent(None)
+        else:
+            outer.addLayout(row)
 
         self._list = QListWidget(self)
+        # AS TALL AS THE RUN, UP TO A POINT. A fixed 150 px is right in a
+        # window with room to spare and wrong in a column: four profiles left
+        # sixty pixels of empty list under them, in the one place where
+        # height is the scarce thing. Six rows is where it stops and scrolls,
+        # which is more profiles than most people have of one device.
         self._list.setMaximumHeight(150)
+        if self._hosted:
+            self._list.setMinimumHeight(52)
         self._list.setDragDropMode(
             QAbstractItemView.DragDropMode.InternalMove)
         self._list.setToolTip(
@@ -3241,9 +3363,33 @@ class TimelineDialog(QDialog):
         add.clicked.connect(self._on_add)
         self._remove_btn = QPushButton("Remove the selected one", self)
         self._remove_btn.setObjectName("secondary")
+        self._remove_btn.setToolTip(
+            "Takes the profile you have picked in the list above out of this "
+            "run.\n\n"
+            "WHAT IT IS FOR: one profile in a run is often not comparable "
+            "with the rest — it was made of a different paper, or with a "
+            "chart you no longer trust — and a single odd profile bends every "
+            "line in the graph. Take it out and the rest still make sense.\n\n"
+            "IT ONLY CHANGES THIS LIST. The file itself is untouched and "
+            "stays exactly where it is on your disk; add it again whenever "
+            "you like.\n\n"
+            "Pick a row in the list first — until you do, there is nothing "
+            "for this to remove.")
         self._remove_btn.clicked.connect(self._on_remove)
         self._clear_btn = QPushButton("Remove them all", self)
         self._clear_btn.setObjectName("secondary")
+        self._clear_btn.setToolTip(
+            "Empties this run completely: every profile in the list above, "
+            "the graph, and everything written under it.\n\n"
+            "WHAT IT IS FOR: starting a different device. A run is one "
+            "printer, scanner or screen followed through time, so the way to "
+            "look at a second device is to clear this one and add its "
+            "profiles.\n\n"
+            "THE BIG VIEW GOES BACK to whatever else you have open — the "
+            "files in What you are looking at, or the empty-window text if "
+            "there are none.\n\n"
+            "NO FILE IS DELETED. This forgets them; it does not touch your "
+            "disk.")
         self._clear_btn.clicked.connect(self._on_clear)
         for b in (add, self._remove_btn, self._clear_btn):
             buttons.addWidget(b)
@@ -3266,6 +3412,8 @@ class TimelineDialog(QDialog):
         self._table_btn.clicked.connect(self._on_table)
         buttons.addWidget(self._table_btn)
         buttons.addWidget(self._save_btn)
+        if self._hosted:
+            self._stack(buttons)
         outer.addLayout(buttons)
 
         # --- which picture, and of which pair ---------------------------------
@@ -3351,6 +3499,11 @@ class TimelineDialog(QDialog):
             "against each other.",
             self, title="Why only two profiles at a time"), 0,
             Qt.AlignmentFlag.AlignVCenter)
+        if self._hosted:
+            # The ⓘ goes with the chooser it explains -- "Show me", item 1,
+            # not "coloured by" -- and the second caption keeps its own
+            # chooser company.
+            self._stack(picture_row, groups=((1, 4), (2, 3)))
         outer.addLayout(picture_row)
 
         # --- ANY two of them, not only the ones next to each other -----------
@@ -3389,6 +3542,8 @@ class TimelineDialog(QDialog):
             "The LATER of the two — where those same colours have got to.")
         self._pair_to.activated.connect(lambda _i: self._pair_picked())
         pair_row.addWidget(self._pair_to, 1)
+        if self._hosted:
+            self._stack(pair_row, groups=((0, 1), (2, 3)))
         self._pair_row.setVisible(False)
         outer.addWidget(self._pair_row)
 
@@ -3522,8 +3677,8 @@ class TimelineDialog(QDialog):
             "so too.")
         self._cut.valueChanged.connect(self._cut_changed)
         cut_row.addWidget(self._cut, 1)
-        self._cut_says = QLabel("everything", self)
-        self._cut_says.setMinimumWidth(96)
+        self._cut_says = QLabel("nothing hidden", self)
+        self._cut_says.setMinimumWidth(116)
         cut_row.addWidget(self._cut_says, 0)
         cut_hint = Hint(
             "The picture keeps every colour by default. Sliding this to the "
@@ -3596,6 +3751,54 @@ class TimelineDialog(QDialog):
 
     # --- the list ----------------------------------------------------------
 
+
+    @staticmethod
+    def _stack(row, groups=()):
+        """Turn a row that runs across into one that runs down.
+
+        THE COLUMN IS 366 PX AND THIS WINDOW WAS 940. Four buttons side by
+        side become four 80 px buttons, and "Remove the selected one" is not a
+        thing that fits in eighty pixels -- it becomes "Remove the sel…", which
+        this project has shipped before and has an audit script to stop.
+
+        *groups* names which items stay side by side, by their position in the
+        row, e.g. ``((0,), (1, 4), (2, 3))``. Anything not named gets a line
+        of its own, in the order it was in.
+
+        AN ⓘ MUST TRAVEL WITH WHAT IT EXPLAINS, and that is why the grouping
+        is by index rather than "keep the next two together". The picture row
+        is caption, chooser, caption, chooser, icon -- the icon explains the
+        FIRST chooser, four places to its left. Stacked naively it landed
+        beside the second one, and the panel audit caught it at once: "'' under
+        'One device over time' has its own caption and no explanation on its
+        row".
+        """
+        items = [row.takeAt(0) for _ in range(row.count())]
+        widgets = [item.widget() for item in items]
+        row.setDirection(QBoxLayout.Direction.TopToBottom)
+        row.setSpacing(6)
+        named = {i for group in groups for i in group}
+        plan = list(groups) + [(i,) for i in range(len(items))
+                               if i not in named]
+        # In the order the row had them, judged by the first of each group.
+        for group in sorted(plan, key=lambda g: g[0]):
+            live = [widgets[i] for i in group if widgets[i] is not None]
+            if not live:
+                # A STRETCH IS DROPPED. Sideways it pushed the exports to the
+                # right; downwards it would push them off the bottom.
+                continue
+            if len(live) == 1:
+                row.addWidget(live[0])
+                continue
+            sub = QHBoxLayout()
+            sub.setContentsMargins(0, 0, 0, 0)
+            sub.setSpacing(6)
+            for widget in live:
+                stretch = 1 if isinstance(widget, (QComboBox, QSlider)) else 0
+                sub.addWidget(widget, stretch, Qt.AlignmentFlag.AlignVCenter)
+            row.addLayout(sub)
+        return row
+
     def _reordered(self, *_a) -> None:
         """Follow the rows the user dragged, rather than the order they came.
 
@@ -3644,6 +3847,11 @@ class TimelineDialog(QDialog):
     def _on_clear(self) -> None:
         self._paths = []
         self._rebuild()
+        # AND THE PICTURE GOES WITH THEM. _rebuild redraws, and a redraw with
+        # no run in it is the path that hands the view back -- but only if it
+        # is actually walked, which it was not: with the list already empty
+        # _refresh had nothing to say and the run's picture stayed on screen.
+        self._blank()
 
     def dragEnterEvent(self, event) -> None:       # noqa: N802  (Qt's name)
         if event.mimeData().hasUrls():
@@ -3687,6 +3895,11 @@ class TimelineDialog(QDialog):
             item = QListWidgetItem(text, self._list)
             item.setData(Qt.ItemDataRole.UserRole, str(entry.path))
             item.setToolTip(str(entry.path))
+        if self._hosted:
+            rows = max(1, min(6, self._list.count()))
+            step = max(18, self._list.sizeHintForRow(0)
+                       if self._list.count() else 18)
+            self._list.setMaximumHeight(rows * step + 2 * self._list.frameWidth() + 4)
         if not entries:
             for path in self._paths:
                 item = QListWidgetItem(Path(path).stem, self._list)
@@ -4005,6 +4218,22 @@ class TimelineDialog(QDialog):
         before, after = usable[a], usable[b]
         return before.path, after.path, f"{before.name} → {after.name}"
 
+    def figure_now(self):
+        """The picture this panel is asking for, or None if there is not
+        enough to draw one.
+
+        ONE SOURCE FOR BOTH ROUTES. The window drew it here and the host draws
+        it there; two calls with almost identical argument lists is exactly
+        how the save route came to be broken once before while the window
+        looked perfectly fine.
+        """
+        import drift_series
+
+        if not (self._run and self._run.since_first):
+            return None
+        return (self._cloud_figure()
+                or drift_series.figure(self._run, mode=self._appearance))
+
     def _draw(self) -> None:
         """Put the graph in the view, writing into the window's own folder.
 
@@ -4024,13 +4253,23 @@ class TimelineDialog(QDialog):
         # A shortcut fills them; "any two you choose" leaves them alone.
         self._sync_pair_boxes()
         self._say()
+        # HOSTED, THE PICTURE IS NOT THIS PANEL'S TO DRAW. It goes to the view
+        # the whole application is built around -- which is the reason for
+        # moving the panel into the column in the first place.
+        if getattr(self, "_hosted", False):
+            drawer = getattr(self._host, "_draw_the_run", None)
+            if drawer is not None:
+                drawer(self)
+            return
         if self._view is None:
             return
         if not (self._run and self._run.since_first):
             self._blank()
             return
-        figure = self._cloud_figure() or drift_series.figure(
-            self._run, mode=self._appearance)
+        figure = self.figure_now()
+        if figure is None:
+            self._blank()
+            return
         parent = self.parent()
         folder = getattr(parent, "_tmp", None) or Path(tempfile.gettempdir())
         target = Path(folder) / "timeline.html"
@@ -4048,10 +4287,19 @@ class TimelineDialog(QDialog):
         self._draw()
 
     def _cut_reads(self) -> str:
-        """What the slider is doing, in words that are true at both ends."""
+        """What the slider is doing, in words that are true at both ends.
+
+        AND IN WORDS THAT STILL MEAN SOMETHING ON THEIR OWN. This said
+        "everything", which is the object of the label to its left -- "Hide
+        anything under ... everything". Reported on the saved page, where a
+        narrow window wraps the two apart: "with nothing hidden there is the
+        word everything in the middle of nowhere". A readout beside a control
+        has to say what the state IS, not finish a sentence it may be
+        separated from.
+        """
         if not self._hiding_anything():
-            return "everything"
-        return f"under ΔE {self._cut.value() / 10:.1f}"
+            return "nothing hidden"
+        return f"ΔE {self._cut.value() / 10:.1f}"
 
     def _fit_cut_to(self, worst: float, smallest: float = 0.0) -> None:
         """Let the slider run across THIS pair, and no further at either end.
@@ -4194,6 +4442,16 @@ class TimelineDialog(QDialog):
         """
         if self._view is not None:
             self._view.setHtml("")
+        # HOSTED, THE PICTURE IS NOT OURS TO EMPTY -- it belongs to the window
+        # this panel sits in, and it must go back to whatever else is open
+        # rather than being wiped. Measured on the first drive: "Remove them
+        # all" left the run's picture on screen, the note still claiming the
+        # view was showing a run, and a file open behind it that nothing would
+        # draw.
+        if getattr(self, "_hosted", False):
+            release = getattr(self._host, "_release_the_picture", None)
+            if release is not None:
+                release()
         self._families.setText("")
         self._families_note.setText("")
 
@@ -4738,6 +4996,12 @@ class Hint(QToolButton):
     #: of each becomes a dict lookup instead of a repaint.
     _CACHE: "dict[tuple, QIcon]" = {}
 
+    def explanation(self) -> str:
+        """The full text behind the icon, so the control it sits beside can
+        answer for itself on hover with the same words rather than a second
+        set that would drift."""
+        return self._text
+
     def __init__(self, text: str, parent=None, *, title: str = "") -> None:
         super().__init__(parent)
         self._text = text
@@ -5180,6 +5444,11 @@ class GamutApp(QMainWindow):
                 ("hint_accent_hint", self._accent_label),
                 ("hint_volume_hint", self._volume)):
             self._pair_icon(_name, _control)
+        # AND EVERY CONTROL BESIDE AN ⓘ BORROWS ITS WORDS, so that hovering
+        # the thing itself answers as well as hovering the icon. Run after
+        # the icons have been placed, because it reads the rows they ended up
+        # in. See _lend_the_hint_words_to_the_control.
+        self._lend_the_hint_words_to_the_control(self.findChild(QScrollArea))
         # A hidden control must take its ⓘ with it. Anything already managed
         # by an explicit show/hide list keeps that behaviour; the attach pass
         # ties the rest to the control they were placed beside.
@@ -5240,7 +5509,20 @@ class GamutApp(QMainWindow):
         col = QWidget(self)
         col.setFixedWidth(346)
         v = QVBoxLayout(col)
-        v.setContentsMargins(0, 0, 0, 0)
+        # TWO PIXELS OF AIR EITHER SIDE OF EVERY SECTION. With no margin at
+        # all a section is exactly as wide as the column, so its own frame is
+        # drawn on the first and last pixel of the viewport -- hard against
+        # the scroll area on one side and the scrollbar's gutter on the other.
+        # Measured on the real platform: "How it looks" 372 px wide in a 372
+        # px viewport, its right border at x=371 with the last two pixels
+        # #333333. Reported from the window twice, the second time as "how it
+        # looks is still a little too wide. the frame is cut off".
+        #
+        # HERE RATHER THAN IN THE COLUMN'S WIDTH, which is where it was tried
+        # first and does not work: a section stretches to whatever width the
+        # column has, so widening the column widens the section with it and
+        # the frame lands on the last pixel again.
+        v.setContentsMargins(2, 0, 2, 0)
         v.setSpacing(12)
 
         # NO HEADING HERE. The window is already titled, the first group says
@@ -5634,58 +5916,64 @@ class GamutApp(QMainWindow):
         # answers with a list and a graph rather than a gamut.
         g_time = QGroupBox("One device over time", col)
         tv = QVBoxLayout(g_time)
-        self._timeline_btn = QPushButton("Follow one device over time…", g_time)
-        self._timeline_btn.setToolTip(
-            "Opens several ICC profiles of the SAME printer, scanner or "
-            "screen, made on different days, and shows how far it has moved "
-            "between them.\n\n"
-            "WHAT YOU NEED FIRST: at least two profiles of one device. Two is "
-            "enough to see a change; more of them, spread over months or "
-            "years, is what shows whether it is drifting steadily or wandering "
-            "and coming back.\n\n"
-            "WHAT YOU GET: a graph of how far each profile sits from the "
-            "first one, a list you can pick any two entries from to compare "
-            "them directly, and a short report naming which colour families "
-            "moved and which way.\n\n"
-            "This is a different question from the one this window answers. "
-            "Everything else here compares what is open right now; this "
-            "follows one device through time.")
-        self._timeline_btn.clicked.connect(self._on_timeline)
-        # THE ⓘ BESIDE THE BUTTON, like the other two ways in. It sat
-        # beside the sentence underneath instead, so the third opener
-        # was the only one whose help was not where the eye had just
-        # been. Basti spotted it: "does not have the tooltip icon
-        # right next to it like the other two loading buttons".
-        _b = QHBoxLayout()
-        _b.setContentsMargins(0, 0, 0, 0)
-        _b.setSpacing(6)
-        _b.addWidget(self._timeline_btn, 1)
+        # THE PANEL ITSELF, IN THE COLUMN, rather than a button that opens a
+        # window. Asked for twice: "i would like to load the profiles in the
+        # main window directly with the ability to close individual ones or
+        # all, then the options i can choose in what is at the moment still in
+        # its own window", and after seeing it still open a window, "clicking
+        # follow the device over time still opens the window with the same
+        # name instead of giving me all those options in the main window".
+        #
+        # THE REASON IT IS WORTH MOVING is the picture, not the controls. The
+        # window it lived in gave the graph 240 px in a 940 px dialog; here it
+        # draws into the view this whole application is built around, which is
+        # the size of the screen.
+        #
+        # THE SAME OBJECT, NOT A COPY: TimelineDialog told it is hosted builds
+        # its controls stacked for a 366 px column and hands its picture to
+        # this window. See TimelineDialog.__init__.
         time_hint = Hint(
             "Two profiles of one printer, made a year apart, tell you whether "
             "anything has changed. Several of them tell you the shape of the "
             "change — and that matters, because a device that has drifted the "
             "same way for three years and one that wanders back and forth "
             "need quite different answers.\n\n"
-            "The profiles are read here, so this needs nothing installed. "
-            "They must all be of the same kind of device: RGB profiles "
-            "together, or CMYK profiles together, because the comparison "
-            "works by asking every profile for the same ink or light amounts "
-            "and there is no such thing as the same amount across two "
-            "different kinds of device.", g_time)
+            "WHAT TO OPEN, with Add profiles… just below: at least two ICC "
+            "profiles (.icc or .icm) of the SAME device, made on different "
+            "days. They must all be of the same kind — RGB profiles together, "
+            "or CMYK profiles together — because the comparison works by "
+            "asking every profile for the same ink or light amounts, and "
+            "there is no such thing as the same amount across two different "
+            "kinds of device.\n\n"
+            "WHAT YOU GET: a graph of how far each profile sits from the "
+            "first one, any two of them comparable directly, a report naming "
+            "which colour families moved and which way, and the cloud of "
+            "colours drawn in the big view beside this column.\n\n"
+            "The profiles are read here, so this needs nothing installed and "
+            "no internet.", g_time)
         time_hint.setObjectName("hint_timeline")
-        # THE SAME SHAPE AS THE GROUP ABOVE IT: a line of plain text saying
-        # what this is for, with the ⓘ beside it for the longer answer. A
-        # group that carried only an ⓘ would be the odd one out in a column
-        # where every other one explains itself in a sentence first.
         time_note = WrappedLabel(
             "Several profiles of one printer, scanner or screen, made on "
             "different days: how far it has moved, and which colours moved "
             "most.", g_time)
         time_note.setObjectName("hint")
         _wrapped(time_note)
+        _b = QHBoxLayout()
+        _b.setContentsMargins(0, 0, 0, 0)
+        _b.setSpacing(6)
+        _b.addWidget(time_note, 1)
         _b.addWidget(time_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         tv.addLayout(_b)
-        tv.addWidget(time_note)
+        # WHICH QUESTION THE BIG VIEW IS ANSWERING, said only when both a run
+        # and other files are open and the picture could be either. Empty
+        # otherwise, and it hides itself when empty.
+        self._who_owns = WrappedLabel("", g_time, hide_when_empty=True)
+        self._who_owns.setObjectName("hint")
+        _wrapped(self._who_owns)
+        tv.addWidget(self._who_owns)
+        self._timeline = TimelineDialog(self, appearance=self._appearance,
+                                        preview=False, hosted=True)
+        tv.addWidget(self._timeline)
         v.addWidget(g_time)
 
         # --- how the chart's patches are drawn --------------------------------
@@ -6918,6 +7206,14 @@ class GamutApp(QMainWindow):
         _r.setSpacing(6)
         _r.addWidget(self._drift_worst, 1)
         _r.addWidget(drift_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        # AND IT LEAVES WHEN THE LINES IT EXPLAINS LEAVE. This readout hides
+        # itself when it is empty -- one file open, or two that agree exactly
+        # -- and the ⓘ beside it stayed, alone in the middle of the box with
+        # nothing to point at. Reported from the window: "has anything changed
+        # section has a tooltip icon without anything it belongs to
+        # sometimes". The icons the generic pass places are tied this way
+        # already; this row is built by hand and was never tied.
+        drift_hint.follow(self._drift_worst)
         dv.addLayout(_r)
         # UNDER THE NUMBERS, because it explains them rather than competing
         # with them: the reader has just been told how far the two moved
@@ -6993,7 +7289,17 @@ class GamutApp(QMainWindow):
             "naming, so they are their own group rather than being scattered "
             "among the six.")
         self._drift_split.stateChanged.connect(self._redraw)
-        dv.addWidget(self._drift_split)
+        # IN A ROW OF ITS OWN, exactly like the tick above it, and that is the
+        # whole reason for the row. Added straight to the column it began two
+        # pixels to the left of "Show me where, in the picture" -- measured,
+        # x=10 against x=12 -- because the other one sits inside a row that
+        # also holds an ⓘ. Two ticks under each other, off by two pixels, is
+        # the kind of thing that reads as sloppiness without being nameable.
+        # Reported from the window: "checkboxes are not aligned correctly".
+        _s = QHBoxLayout(); _s.setContentsMargins(0, 0, 0, 0)
+        _s.setSpacing(6)
+        _s.addWidget(self._drift_split, 1)
+        dv.addLayout(_s)
 
         cut_row = QHBoxLayout()
         cut_row.setContentsMargins(0, 0, 0, 0)
@@ -7028,8 +7334,8 @@ class GamutApp(QMainWindow):
             "picture says how many it left out, and so does a saved page.")
         self._drift_cut.valueChanged.connect(self._drift_cut_changed)
         cut_row.addWidget(self._drift_cut, 1)
-        self._drift_cut_says = QLabel("everything", self._drift_box)
-        self._drift_cut_says.setMinimumWidth(96)
+        self._drift_cut_says = QLabel("nothing hidden", self._drift_box)
+        self._drift_cut_says.setMinimumWidth(116)
         cut_row.addWidget(self._drift_cut_says, 0)
         dv.addLayout(cut_row)
         self._drift_cut_row = cut_row
@@ -7200,15 +7506,56 @@ class GamutApp(QMainWindow):
         self._reset_btn = QPushButton("Start again with standard settings",
                                       col)
         self._reset_btn.setObjectName("secondary")
+        self._reset_btn.setToolTip(
+            "Puts every setting in this column back to what it was the first "
+            "time you opened the application.\n\n"
+            "WHAT IT CHANGES: how the shape is drawn — its colours, its "
+            "opacity, the box and grid, the rings, the cross-section, the "
+            "lighting — and the choices under How it looks and This window. "
+            "It is the way back when you have changed a dozen things trying "
+            "to find one and the picture no longer looks like anybody "
+            "else's.\n\n"
+            "WHAT IT DOES NOT TOUCH: your files. Nothing you have open is "
+            "closed and nothing on disk is altered — the same measurements "
+            "and profiles stay loaded and are simply drawn the standard way "
+            "again.\n\n"
+            "It asks first, so a mis-click costs nothing.")
         self._reset_btn.clicked.connect(self._reset_defaults)
         v.addWidget(self._reset_btn)
         self._export_btn = QPushButton("Save the numbers as a table…", col)
         self._export_btn.setObjectName("secondary")
+        self._export_btn.setToolTip(
+            "Writes what this window is showing as a table of numbers you "
+            "can open in any spreadsheet.\n\n"
+            "WHAT IS IN IT: every reading the window has — how much colour "
+            "each file holds, how much they share, and where they differ — "
+            "with a row that says what each column is and what its units "
+            "are, so it still makes sense to somebody who was not here when "
+            "you saved it.\n\n"
+            "THIS IS THE THIRD WAY OF TAKING SOMETHING WITH YOU, and the "
+            "three answer different questions. A PICTURE is for showing "
+            "somebody. A WEB PAGE keeps the shape turnable, so whoever opens "
+            "it can look from any side. A TABLE is for doing arithmetic on — "
+            "putting the numbers in a report, or watching one figure across "
+            "twenty prints.\n\n"
+            "It needs something open to describe, so it waits until there "
+            "is.")
         self._export_btn.clicked.connect(self._on_export)
         self._export_btn.setEnabled(False)
         v.addWidget(self._export_btn)
         self._glossary_btn = QPushButton("What do these words mean?", col)
         self._glossary_btn.setObjectName("secondary")
+        self._glossary_btn.setToolTip(
+            "Every word this window uses, in plain language: gamut, ΔE, "
+            "CIELAB, chroma, hue, lightness, ink limit, rendering intent, "
+            "and the rest.\n\n"
+            "Written for somebody meeting colour management for the first "
+            "time rather than for somebody who already knows the terms — "
+            "each entry says what the thing IS, and then why anybody printing "
+            "would care.\n\n"
+            "It opens in a window of its own, so you can leave it beside this "
+            "one while you work, and you can search it.\n\n"
+            "Nothing you have open is affected in any way.")
         self._glossary_btn.clicked.connect(self._on_glossary)
         v.addWidget(self._glossary_btn)
         # ARGYLLCMS, MENTIONED BUT NEVER NAGGED ABOUT. Most people never need
@@ -7285,6 +7632,17 @@ class GamutApp(QMainWindow):
 
         self._update_btn = QPushButton("Check for a newer version…", col)
         self._update_btn.setObjectName("secondary")
+        self._update_btn.setToolTip(
+            "Asks the project's releases page whether a newer version has "
+            "been published, and tells you what it finds.\n\n"
+            "IT NEVER DOWNLOADS OR INSTALLS ANYTHING. The most it does is "
+            "show you the version number and offer you the link, which you "
+            "open yourself if you want to.\n\n"
+            "NOTHING ABOUT YOU IS SENT. No account, no identifier, nothing "
+            "about your computer, your printer or your measurements — and no "
+            "record of the question is kept here.\n\n"
+            "This is the only thing in the whole window that ever reaches the "
+            "internet. Everything else works with no connection at all.")
         self._update_btn.clicked.connect(lambda: self._check_updates(asked=True))
         v.addWidget(self._update_btn)
         self._auto_update = QCheckBox("Look for a newer version when the app starts", col)
@@ -7347,6 +7705,26 @@ class GamutApp(QMainWindow):
         v.addLayout(_r)
         self._save = QPushButton("Save this view as a web page…", col)
         self._save.setObjectName("secondary")
+        self._save.setToolTip(
+            "Writes what you are looking at as a web page that anybody can "
+            "open — and TURN. Not a picture of the shape: the shape itself, "
+            "which whoever opens it can spin, tip, zoom into and take apart "
+            "for themselves.\n\n"
+            "IT NEEDS NOTHING INSTALLED. It opens in any browser, on a phone "
+            "as well as a computer, with no internet connection and nothing "
+            "to set up — so it is the one to send to a customer, a paper "
+            "manufacturer, or a forum.\n\n"
+            "EVERYTHING THE WINDOW SAYS TRAVELS WITH IT: the readings, the "
+            "colour-family lines, the note about what the numbers do not "
+            "mean, and the reader's own controls for hiding families and "
+            "small differences. A page showing eleven dots would otherwise be "
+            "impossible to tell apart from a printer that is nearly "
+            "perfect.\n\n"
+            "You are asked whether the drawing engine travels inside the file "
+            "— about five megabytes, and then it works with no network at all "
+            "— or is fetched when it is opened, which makes the file tiny but "
+            "needs the internet the first time.\n\n"
+            "It needs something open to show, so it waits until there is.")
         self._save.clicked.connect(self._on_save)
         self._save.setEnabled(False)
         self._export_btn.setEnabled(False)
@@ -8199,8 +8577,11 @@ class GamutApp(QMainWindow):
         column = area.widget() if area is not None else None
         if column is None:
             return
+        # THE COLUMN'S OWN MARGINS ARE PART OF WHAT IT NEEDS, which is why
+        # this asks the column first and the sections second: a section that
+        # needs 372 needs 376 of column around it. See _build_controls.
         needs = max(346, column.minimumSizeHint().width(),
-                    *(box.minimumSizeHint().width()
+                    *(box.minimumSizeHint().width() + 4
                       for box in column.findChildren(QGroupBox)) or (0,))
         if needs > column.minimumWidth():
             column.setFixedWidth(needs)
@@ -8312,6 +8693,73 @@ class GamutApp(QMainWindow):
             if child is not None and child.layout() is not None:
                 yield from GamutApp._layouts_of(child.layout())
 
+    def _lend_the_hint_words_to_the_control(self, root) -> None:
+        """A control beside an ⓘ answers for itself when it is hovered too.
+
+        THE ⓘ IS NOT THE FIRST PLACE ANYBODY LOOKS. Hovering the thing itself
+        is, and eight buttons at the foot of the column answered that with
+        silence -- "some of the buttons at the bottom of the left sections
+        have no tooltip". Every one of them had a full explanation sitting an
+        inch to its right, behind an icon.
+
+        THE SAME WORDS, NOT A SECOND SET. Copying each explanation into a
+        shorter tooltip would make two texts about one control that nobody
+        would ever remember to keep in step -- and this file has been bitten
+        by exactly that, three times, by lists that had to be updated by hand.
+        So the control borrows the icon's own text.
+
+        ONLY WHERE THERE IS NOTHING ALREADY: a control that explains itself
+        keeps its own words, which are usually shorter and better aimed.
+        """
+        from PyQt6.QtWidgets import QAbstractButton
+
+        for row in self._layouts_of_window(root):
+            items = [row.itemAt(i).widget() for i in range(row.count())]
+            icons = [w for w in items if isinstance(w, Hint)]
+            others = [w for w in items
+                      if w is not None and not isinstance(w, Hint)]
+            if len(icons) != 1 or len(others) != 1:
+                continue
+            control = others[0]
+            if not isinstance(control, QAbstractButton):
+                continue
+            if control.toolTip().strip():
+                continue
+            control.setToolTip(icons[0].explanation())
+
+    @staticmethod
+    def _layouts_of_window(root):
+        """Every layout under *root*, rows and columns alike."""
+        from PyQt6.QtWidgets import QLayout
+
+        seen = []
+
+        def walk(layout):
+            if layout is None:
+                return
+            seen.append(layout)
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if item.layout() is not None:
+                    walk(item.layout())
+                elif item.widget() is not None:
+                    holder = getattr(item.widget(), "body", item.widget())
+                    if holder.layout() is not None:
+                        walk(holder.layout())
+
+        # THE SCROLL AREA HOLDS THE COLUMN; IT IS NOT THE COLUMN. Asked for
+        # its own layout it answers None, and the first version of this walked
+        # nothing at all and reported success -- five buttons stayed silent
+        # while the pass said it had run.
+        from PyQt6.QtWidgets import QScrollArea
+
+        if isinstance(root, QScrollArea):
+            root = root.widget()
+        if root is not None:
+            holder = getattr(root, "body", root)
+            walk(holder.layout() if hasattr(holder, "layout") else None)
+        return seen
+
     def _attach_hint_icons(self, root) -> None:
         """Move any ⓘ that ended up on a row of its own onto the row above.
 
@@ -8332,9 +8780,23 @@ class GamutApp(QMainWindow):
         """
         if root is None:
             return
+        # AND IT KEEPS OUT OF THE RUN PANEL. Every ⓘ in there was placed
+        # beside the thing it explains when that panel was a window, and this
+        # pass -- which pairs an icon with whatever widget is above it --
+        # re-pairs them by a rule that does not know about a readout which
+        # hides itself when empty. Driven with four profiles open, it left an
+        # icon alone in the middle of the readouts with nothing beside it.
+        panel = getattr(self, "_timeline", None)
+        if panel is not None:
+            for icon in panel.findChildren(Hint):
+                icon.setProperty("placed_by_hand", True)
         for box in root.findChildren(QGroupBox):
-            if box.layout() is not None:
-                self._attach_in_layout(box.layout(), box)
+            # THE FOLD MOVES A GROUP'S LAYOUT ONTO A BODY WIDGET, so asking
+            # the group for its layout now answers "one item: the body", and
+            # this pass would walk past every ⓘ in the window without a word.
+            holder = getattr(box, "body", box)
+            if holder.layout() is not None:
+                self._attach_in_layout(holder.layout(), box)
 
     def _attach_in_layout(self, layout, box) -> None:
         """One layout, and every layout nested inside it.
@@ -8359,6 +8821,9 @@ class GamutApp(QMainWindow):
                 i += 1
                 continue
             hint = item.widget()
+            if isinstance(hint, Hint) and hint.property("placed_by_hand"):
+                i += 1
+                continue
             if not isinstance(hint, Hint) or i == 0:
                 i += 1
                 continue
@@ -8805,9 +9270,10 @@ class GamutApp(QMainWindow):
         self._redraw()
 
     def _drift_cut_reads(self) -> str:
+        """The same words as the timeline's, and see _cut_reads for why."""
         if not self._drift_hiding():
-            return "everything"
-        return f"under ΔE {self._drift_cut.value() / 10:.1f}"
+            return "nothing hidden"
+        return f"ΔE {self._drift_cut.value() / 10:.1f}"
 
     def _drift_hiding(self) -> bool:
         return (self._drift_cut.isEnabled()
@@ -9031,32 +9497,25 @@ class GamutApp(QMainWindow):
         self._update_check.start()
 
     def _on_timeline(self) -> None:
-        """Open the timeline window, or bring the open one forward.
+        """Put what is already open into the run, and open the group.
 
-        ONE WINDOW, NOT ONE PER CLICK. Pressing the button twice should show
-        the run already being built, not a second empty list beside it -- and
-        a second window would keep its own list, so the user would have two
-        answers and no way to tell which was which.
+        THERE IS NO WINDOW TO OPEN ANY MORE -- the panel lives in the column.
+        What is left of this is the useful half of what the button did:
+        somebody with two profiles already open means those two.
         """
-        existing = getattr(self, "_timeline", None)
-        if existing is not None:
-            try:
-                existing.look(self._appearance)
-                existing.show()
-                existing.raise_()
-                existing.activateWindow()
-                return
-            except RuntimeError:
-                pass            # Qt deleted it; make a new one below
-        self._timeline = TimelineDialog(self, appearance=self._appearance)
-        # OPENED WITH WHAT IS ALREADY IN FRONT OF THEM. Somebody who has two
-        # profiles open and presses this means those two, and being handed an
-        # empty list would read as the button having done nothing.
+        panel = getattr(self, "_timeline", None)
+        if panel is None:
+            return
         already = [p for p, _g, m in self._slots
                    if m is None and p.suffix.lower() in (".icc", ".icm")]
         if already:
-            self._timeline.add(already)
-        self._timeline.show()
+            panel.add(already)
+        box = panel.parent()
+        while box is not None and not isinstance(box, QGroupBox):
+            box = box.parent()
+        if box is not None and hasattr(box, "_refold"):
+            box._fold_open = True
+            box._refold()
 
     def _on_glossary(self) -> None:
         """Explain every word this window uses, in plain language.
@@ -10372,6 +10831,10 @@ class GamutApp(QMainWindow):
         "How the two compare",
         "Has anything changed?",
         "Are the patches inside?",
+        # Following one device over time asks how far it has MOVED, in ΔE2000
+        # between two readings, and that question is the same whichever space
+        # the shape beside it happens to be drawn in.
+        "One device over time",
         "This window",
     })
 
@@ -11227,7 +11690,87 @@ class GamutApp(QMainWindow):
                 "with, and these can fade the part the two of them share, or "
                 "the parts only one of them reaches.")
 
+    def _draw_the_run(self, panel) -> None:
+        """Draw the run's picture in the big view, or give the view back.
+
+        WHO OWNS THE PICTURE, and it needs a rule rather than a race. Two
+        different things can be open at once: a PAIR of files, whose shapes
+        this window compares, and a RUN of profiles of one device, which asks
+        how far that device has moved. They are different questions and only
+        one picture can be on screen.
+
+        THE RUN WINS WHILE IT HAS SOMETHING TO SAY, because it is the more
+        specific answer: opening a second file is something people do while
+        browsing, and adding profiles to a run is a deliberate act with an
+        obvious subject. Take the run away -- Remove them all -- and the view
+        goes straight back to whatever else is open, with nothing to press.
+
+        AND THE WINDOW SAYS SO IN WORDS rather than leaving the reader to work
+        out which of two similar-looking pictures they are looking at; see
+        _say_who_owns_the_picture.
+        """
+        figure = panel.figure_now()
+        if figure is None:
+            self._release_the_picture()
+            return
+        self._run_drawn = True
+        self._say_who_owns_the_picture()
+        self._render_count += 1
+        out = self._tmp / f"run-{self._render_count}.html"
+        try:
+            figure.write_html(str(out), include_plotlyjs=True,
+                              config={"displayModeBar": False})
+        except OSError as exc:
+            _log().warning("could not draw the run: %s", exc)
+            return
+        self._view.setUrl(QUrl.fromLocalFile(str(out)))
+        self._drop_the_scene_before_last()
+
+    def _release_the_picture(self) -> None:
+        """The run has nothing to show: give the view back to what is open."""
+        was, self._run_drawn = getattr(self, "_run_drawn", False), False
+        self._say_who_owns_the_picture()
+        if not was:
+            return
+        if self._slots or self._reference is not None or self._chart_drawable():
+            self._redraw()
+        else:
+            self._show_placeholder()
+
+    def _say_who_owns_the_picture(self) -> None:
+        """One line, only when it is needed: which question the view answers.
+
+        NOTHING IS SAID WHEN THERE IS NOTHING TO CONFUSE. With only a run
+        open, or only files, the picture is the only thing it could be and a
+        line explaining that is noise.
+        """
+        note = getattr(self, "_who_owns", None)
+        if note is None:
+            return
+        others = len(self._slots) + (1 if self._reference is not None else 0)
+        if getattr(self, "_run_drawn", False) and others:
+            names = ", ".join(path.stem for path, _g, _m in self._slots)
+            note.setText(
+                f"The view is showing the run below. {names} "
+                f"{'is' if others == 1 else 'are'} still open — remove the "
+                f"run's profiles to go back to "
+                f"{'it' if others == 1 else 'them'}.")
+        else:
+            note.setText("")
+
     def _redraw(self) -> None:
+        # THE RUN OWNS THE VIEW WHILE IT HAS ONE. Opening a file, changing a
+        # colour or moving a slider still updates every reading and every
+        # option; what it must not do is quietly replace the run's picture
+        # with the pair's. See _draw_the_run for the rule and why.
+        if getattr(self, "_run_drawn", False):
+            self._refresh_style_controls()
+            self._apply_side_by_side_availability()
+            self._update_volume()
+            self._update_coverage()
+            self._update_drift()
+            self._say_who_owns_the_picture()
+            return
         # A PLACED CHART IS A PICTURE IN ITS OWN RIGHT. Returning early when
         # only a chart is open would leave somebody who opened a chart and a
         # profile looking at the empty-window text with no idea why.

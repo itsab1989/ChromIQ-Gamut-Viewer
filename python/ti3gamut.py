@@ -6415,7 +6415,7 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
         div = pio.to_html(fig, include_plotlyjs=(i == 0), full_html=False,
                           div_id=f"scene{i}",
                           config={"displaylogo": False, "responsive": True,
-                                  "scrollZoom": True})
+                                  "scrollZoom": True, **_MODEBAR_ONLY})
         ids.append(f"scene{i}")
         blocks.append(f'<div class="half"><div class="cap">{caption}</div>'
                       f'{div}</div>')
@@ -6765,9 +6765,19 @@ def _threshold_control(html: str, mode: str) -> str:
      color:__TEXT__">
   <label style="display:flex;align-items:center;gap:.8em;flex-wrap:wrap">
     <span>Hide anything under</span>
-    <input type="range" data-cq="cut" min="0" max="0" step="1" value="0"
-           style="flex:1 1 12em;min-width:9em;min-height:44px">
-    <span data-cq="cutsays" style="min-width:8em;opacity:.85">everything</span>
+    <!-- THE READING TRAVELS WITH THE SLIDER, in a box of their own that does
+         not wrap inside. Loose in the row, the reading was pushed onto a line
+         by itself whenever the row ran out of width -- which is how the word
+         it used to say ended up "in the middle of nowhere". Wrapping the pair
+         together means a narrow phone drops both under the words, and the
+         reading is never orphaned from the control it belongs to. -->
+    <span style="display:flex;align-items:center;gap:.8em;flex:1 1 18em">
+      <input type="range" data-cq="cut" min="0" max="0" step="1" value="0"
+             style="flex:1 1 8em;min-width:7em;min-height:44px;
+                    accent-color:__TEXT__">
+      <span data-cq="cutsays" style="flex:0 0 auto;white-space:nowrap;
+            opacity:.85">nothing hidden</span>
+    </span>
   </label>
   <p data-cq="cutnote" style="margin:.4em 0 0;opacity:.75"></p>
 </div>
@@ -6806,8 +6816,15 @@ def _threshold_control(html: str, mode: str) -> str:
       for (var q = 0; q < cd.length; q += 1) { de.push(cd[q][1]); }
       de.forEach(function (v) { if (v > most) most = v; });
       var marker = t.marker || {};
+      // THE NAME IS KEPT IN TWO HALVES because the count in it has to move
+      // with the threshold. "yellows — 134" beside a single drawn dot is the
+      // key telling the reader something that is no longer true, and it was
+      // doing exactly that: at ΔE 2.9 the key still read 134, 132 and 11
+      // above 1, 6 and 6 dots.
+      var base = (t.name || "").split(" — ")[0];
       kept.push({i: i, x: flat(t.x), y: flat(t.y), z: flat(t.z),
                  cd: Array.prototype.slice.call(cd), de: de,
+                 base: base, all: cd.length,
                  colour: flat(marker.color), size: flat(marker.size)});
     });
     if (!any) return;
@@ -6822,7 +6839,16 @@ def _threshold_control(html: str, mode: str) -> str:
     // THE SAME RULE AS THE WINDOW: from this pair's smallest difference to
     // its largest, in tenths. A slider whose ends do nothing teaches the
     // reader that the control is broken.
-    var lo = Math.floor(least * 10), hi = Math.ceil(most * 10);
+    //
+    // AND THE TOP END STOPS JUST BELOW THE BIGGEST, not just above it. With
+    // Math.ceil the last step emptied the picture completely -- "729 of 729
+    // colours ... are not drawn" over a bare set of axes, which reads as a
+    // page that has broken rather than a threshold nobody's colours reach.
+    // Rounding down leaves the biggest mover, or movers, standing: the far
+    // end of the slider now answers "which colour moved most", which is a
+    // question worth having an end of the travel for. The window has always
+    // truncated here; only this copy rounded up.
+    var lo = Math.floor(least * 10), hi = Math.floor(most * 10);
     if (hi <= lo) return;
     slider.min = lo; slider.max = hi; slider.value = lo;
     box.hidden = false;
@@ -6842,18 +6868,40 @@ def _threshold_control(html: str, mode: str) -> str:
         var up = {x: [x], y: [y], z: [z], customdata: [cd]};
         if (k.colour.length) up["marker.color"] = [col];
         if (k.size.length) up["marker.size"] = [sz];
+        // THE COUNT IN THE KEY IS THE DRAWN COUNT, not the family's size,
+        // whenever anything is being left out -- "greys \u2014 2 of 11" rather
+        // than a key still claiming eleven over two dots. With the threshold
+        // right down it goes back to the plain "greys \u2014 11", because then
+        // the two numbers are the same and saying it twice is noise.
+        if (k.base) {
+          up.name = [k.base + " \u2014 "
+                     + (x.length === k.all ? k.all
+                        : x.length + " of " + k.all)];
+        }
         window.Plotly.restyle(gd, up, [k.i]);
       });
       var hidden = total - shown;
-      says.textContent = hidden ? ("under \u0394E " + (cut).toFixed(1))
-                                : "everything";
+      // TRUE AT BOTH ENDS, AND ON A LINE OF ITS OWN IT STILL HAS TO MEAN
+      // SOMETHING. This read "everything" while nothing was hidden, which is
+      // the leading words' object -- "Hide anything under ... everything" --
+      // and on a narrow window it wrapped away from them and sat by itself:
+      // "with nothing hidden there is the word everything in the middle of
+      // nowhere". It now says what the state IS rather than finishing a
+      // sentence it may be separated from, and it is kept off a line of its
+      // own as well.
+      says.textContent = hidden ? ("\u0394E " + (cut).toFixed(1))
+                                : "nothing hidden";
       // THE PAGE SAYS WHAT IS MISSING FROM IT, for the same reason the
       // window does: a picture with eleven dots in it cannot otherwise be
-      // told apart from a printer that is nearly perfect.
+      // told apart from a printer that is nearly perfect. It says so at rest
+      // too -- an empty line here made the page jump by its own height on the
+      // first drag, and "all of them are drawn" is worth stating outright on
+      // a page somebody else sent you.
       note.textContent = hidden
         ? (hidden + " of " + total + " colours moved by less than \u0394E "
            + cut.toFixed(1) + " and are not drawn.")
-        : "";
+        : ("All " + total + " colours are drawn. Drag to leave out the ones "
+           + "that moved least.");
     }
     slider.addEventListener("input", apply);
     apply();
@@ -6863,6 +6911,32 @@ def _threshold_control(html: str, mode: str) -> str:
     js = js.replace("__TEXT__", c["text"])
     at = html.rfind("</body>")
     return html[:at] + js + html[at:] if at > 0 else html + js
+
+
+#: THE STRIP'S OWN RESET, AND ONLY THE ONE THAT GOES HOME. The viewer offers
+#: two: "Reset camera to last save", which returns to the camera this file
+#: wrote into the figure, and "Reset camera to default", which returns to the
+#: drawing library's own framing. Measured in a browser, by turning the shape
+#: with the mouse and pressing each:
+#:
+#:     Reset camera to last save   ->  eye 1.5, 1.5, 1.5   (where it opened)
+#:     Reset camera to default     ->  eye 1.25, 1.25, 1.25
+#:
+#: The second is exactly the framing build_figure pulls away from on purpose:
+#: it frames the data tightly, which on a wide flat gamut crops the corners
+#: and opens on a close-up of the middle. Two buttons a pixel apart, one of
+#: them named "default", and the inviting one is the worse view -- so the
+#: worse one is not offered. Nothing new is added: the reader already had the
+#: right button and now it is the only one.
+#:
+#: AND NOTHING ELSE IN THE CONFIGURATION IS TOUCHED, which cost a report
+#: within the hour. The first version of this handed the main page the whole
+#: config the two-room writer uses -- responsive, scrollZoom, the logo -- none
+#: of which that page had ever had. The picture behaved differently on a wheel
+#: and on a resize, and the report was "something is weird about the viewer
+#: now. i don't know what it shows and i can't really manipulate it". One
+#: button was being removed; one key changes.
+_MODEBAR_ONLY = {"modeBarButtonsToRemove": ["resetCameraDefault3d"]}
 
 
 def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
@@ -6881,7 +6955,8 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     # invents a random one otherwise, and nothing outside the figure can find
     # it afterwards.
     html = fig.to_html(include_plotlyjs="inline" if carry_viewer else "cdn",
-                       full_html=True, div_id="scene0")
+                       full_html=True, div_id="scene0",
+                       config=dict(_MODEBAR_ONLY))
     # A NAME FOR THE TAB, THE BOOKMARK AND THE PASTED LINK. Plotly writes a
     # document with no <title> at all, so a page saved for somebody else
     # arrived showing nothing but its file name — in the one feature that
@@ -7677,7 +7752,24 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         if families:
             # THE KEY BELONGS TO THE SCENE when the picture can be taken
             # apart, so no family can switch it off -- see colour_axis_for.
-            fig.update_layout(coloraxis=colour_axis_for(which))
+            #
+            # AND THE KEY IS ASKED FOR BY NAME, because the drawing library
+            # switches it off on its own as soon as only one family is left.
+            # Reported from the published page: "here are still two patches
+            # left but no more labels visible". Measured in a browser at
+            # ΔE 3.0 on that page -- six families emptied, greys still holding
+            # two dots, and the layout's own showlegend had flipped to false:
+            #
+            #     reds ... magentas   visible=False  n=0
+            #     greys — 11          visible=True   n=2      key: (nothing)
+            #
+            # The library marks an emptied trace not-visible, and its default
+            # is to draw no key for a single visible trace. That default is
+            # right for a picture of one thing and wrong for this one, where
+            # the last family standing is the whole answer: it is the reader's
+            # only way of knowing WHICH colours those two dots are.
+            fig.update_layout(coloraxis=colour_axis_for(which),
+                              showlegend=True)
         if True:
             # PIN THE BOX WHENEVER A DRIFT CLOUD IS DRAWN. NO EXCEPTIONS.
             #

@@ -728,3 +728,4 @@ def test_the_figure_draws_a_direction_when_asked_and_a_distance_otherwise(
                                   drift=(d.lab_a, d.moved, "which way", "L"))
     assert far.data[0].marker.cmin == 0.0, "a distance starts at nothing"
     assert which.data[0].marker.cmin < 0, "a direction runs both ways"
+

@@ -1915,3 +1915,41 @@ def test_every_drift_cloud_has_its_box_pinned(tmp_path):
         for axis in (scene.xaxis, scene.yaxis, scene.zaxis):
             assert axis.autorange is False
             assert axis.range is not None
+
+
+def test_only_the_reset_that_goes_home_is_offered(tmp_path):
+    """Two resets a pixel apart, and the inviting one is the worse view.
+
+    MEASURED IN A BROWSER, by turning the shape with the mouse and pressing
+    each button in the viewer's own strip:
+
+        Reset camera to last save   ->  eye 1.5, 1.5, 1.5   (where it opened)
+        Reset camera to default     ->  eye 1.25, 1.25, 1.25
+
+    The second is the framing build_figure pulls away from on purpose — it
+    frames the data tightly, so a wide flat gamut opens as a cropped close-up
+    of its middle. Nothing was added to fix this: the reader already had the
+    right button, and now it is the only one.
+
+    THE FIRST ATTEMPT AT THIS ADDED A BUTTON OF ITS OWN, floating in the
+    picture's corner — and it covered the strip. Reported within minutes: "in
+    the main window there already is a reset button and the new custom one
+    covers this and the other buttons the viewer offers."
+    """
+    import numpy as np
+
+    import ti3gamut
+
+    rng = np.random.default_rng(41)
+    lab = np.column_stack([rng.uniform(20, 92, 60), rng.uniform(-60, 60, 60),
+                           rng.uniform(-60, 60, 60)])
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, rng.uniform(0.6, 3, 60), "d"))
+    out = tmp_path / "one-reset.html"
+    ti3gamut._write_dark_html(fig, out, "dark", carry_viewer=False)
+    page = out.read_text(encoding="utf-8")
+    assert "resetCameraDefault3d" in page, (
+        "the strip offers the library's own framing again")
+    assert "modeBarButtonsToRemove" in page
+    # and the one that goes home is NOT taken away with it
+    assert "resetCameraLastSave3d" not in page

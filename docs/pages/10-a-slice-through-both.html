@@ -3890,9 +3890,19 @@ return Plotly;
      color:#e6e6e6">
   <label style="display:flex;align-items:center;gap:.8em;flex-wrap:wrap">
     <span>Hide anything under</span>
-    <input type="range" data-cq="cut" min="0" max="0" step="1" value="0"
-           style="flex:1 1 12em;min-width:9em;min-height:44px">
-    <span data-cq="cutsays" style="min-width:8em;opacity:.85">everything</span>
+    <!-- THE READING TRAVELS WITH THE SLIDER, in a box of their own that does
+         not wrap inside. Loose in the row, the reading was pushed onto a line
+         by itself whenever the row ran out of width -- which is how the word
+         it used to say ended up "in the middle of nowhere". Wrapping the pair
+         together means a narrow phone drops both under the words, and the
+         reading is never orphaned from the control it belongs to. -->
+    <span style="display:flex;align-items:center;gap:.8em;flex:1 1 18em">
+      <input type="range" data-cq="cut" min="0" max="0" step="1" value="0"
+             style="flex:1 1 8em;min-width:7em;min-height:44px;
+                    accent-color:#e6e6e6">
+      <span data-cq="cutsays" style="flex:0 0 auto;white-space:nowrap;
+            opacity:.85">nothing hidden</span>
+    </span>
   </label>
   <p data-cq="cutnote" style="margin:.4em 0 0;opacity:.75"></p>
 </div>
@@ -3931,8 +3941,15 @@ return Plotly;
       for (var q = 0; q < cd.length; q += 1) { de.push(cd[q][1]); }
       de.forEach(function (v) { if (v > most) most = v; });
       var marker = t.marker || {};
+      // THE NAME IS KEPT IN TWO HALVES because the count in it has to move
+      // with the threshold. "yellows — 134" beside a single drawn dot is the
+      // key telling the reader something that is no longer true, and it was
+      // doing exactly that: at ΔE 2.9 the key still read 134, 132 and 11
+      // above 1, 6 and 6 dots.
+      var base = (t.name || "").split(" — ")[0];
       kept.push({i: i, x: flat(t.x), y: flat(t.y), z: flat(t.z),
                  cd: Array.prototype.slice.call(cd), de: de,
+                 base: base, all: cd.length,
                  colour: flat(marker.color), size: flat(marker.size)});
     });
     if (!any) return;
@@ -3947,7 +3964,16 @@ return Plotly;
     // THE SAME RULE AS THE WINDOW: from this pair's smallest difference to
     // its largest, in tenths. A slider whose ends do nothing teaches the
     // reader that the control is broken.
-    var lo = Math.floor(least * 10), hi = Math.ceil(most * 10);
+    //
+    // AND THE TOP END STOPS JUST BELOW THE BIGGEST, not just above it. With
+    // Math.ceil the last step emptied the picture completely -- "729 of 729
+    // colours ... are not drawn" over a bare set of axes, which reads as a
+    // page that has broken rather than a threshold nobody's colours reach.
+    // Rounding down leaves the biggest mover, or movers, standing: the far
+    // end of the slider now answers "which colour moved most", which is a
+    // question worth having an end of the travel for. The window has always
+    // truncated here; only this copy rounded up.
+    var lo = Math.floor(least * 10), hi = Math.floor(most * 10);
     if (hi <= lo) return;
     slider.min = lo; slider.max = hi; slider.value = lo;
     box.hidden = false;
@@ -3967,21 +3993,66 @@ return Plotly;
         var up = {x: [x], y: [y], z: [z], customdata: [cd]};
         if (k.colour.length) up["marker.color"] = [col];
         if (k.size.length) up["marker.size"] = [sz];
+        // THE COUNT IN THE KEY IS THE DRAWN COUNT, not the family's size,
+        // whenever anything is being left out -- "greys — 2 of 11" rather
+        // than a key still claiming eleven over two dots. With the threshold
+        // right down it goes back to the plain "greys — 11", because then
+        // the two numbers are the same and saying it twice is noise.
+        if (k.base) {
+          up.name = [k.base + " — "
+                     + (x.length === k.all ? k.all
+                        : x.length + " of " + k.all)];
+        }
         window.Plotly.restyle(gd, up, [k.i]);
       });
       var hidden = total - shown;
+      // TRUE AT BOTH ENDS, AND ON A LINE OF ITS OWN IT STILL HAS TO MEAN
+      // SOMETHING. This read "everything" while nothing was hidden, which is
+      // the leading words' object -- "Hide anything under ... everything" --
+      // and on a narrow window it wrapped away from them and sat by itself:
+      // "with nothing hidden there is the word everything in the middle of
+      // nowhere". It now says what the state IS rather than finishing a
+      // sentence it may be separated from, and it is kept off a line of its
+      // own as well.
       says.textContent = hidden ? ("under ΔE " + (cut).toFixed(1))
-                                : "everything";
+                                : "nothing hidden";
       // THE PAGE SAYS WHAT IS MISSING FROM IT, for the same reason the
       // window does: a picture with eleven dots in it cannot otherwise be
-      // told apart from a printer that is nearly perfect.
+      // told apart from a printer that is nearly perfect. It says so at rest
+      // too -- an empty line here made the page jump by its own height on the
+      // first drag, and "all of them are drawn" is worth stating outright on
+      // a page somebody else sent you.
       note.textContent = hidden
         ? (hidden + " of " + total + " colours moved by less than ΔE "
            + cut.toFixed(1) + " and are not drawn.")
-        : "";
+        : ("All " + total + " colours are drawn. Drag to leave out the ones "
+           + "that moved least.");
     }
     slider.addEventListener("input", apply);
     apply();
+  });
+})();</script>
+
+<script>(function () {
+  function ready(fn) {
+    var gd = document.querySelector(".js-plotly-plot");
+    if (window.Plotly && gd && gd.on) return fn(gd);
+    window.setTimeout(function () { ready(fn); }, 250);
+  }
+  ready(function (gd) {
+    var waiting = false, sign = 1;
+    gd.on("plotly_hover", function () {
+      if (waiting) return;
+      waiting = true;
+      window.requestAnimationFrame(function () {
+        waiting = false;
+        var scene = gd._fullLayout && gd._fullLayout.scene;
+        if (!scene || !scene.camera || !scene.camera.eye) return;
+        sign = -sign;
+        window.Plotly.relayout(gd, {
+          "scene.camera.eye.x": scene.camera.eye.x + sign * 1e-6});
+      });
+    });
   });
 })();</script>
 <script>

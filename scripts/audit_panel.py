@@ -265,6 +265,46 @@ def audit_help(window, panel) -> list:
     return problems
 
 
+def audit_hover(panel) -> list:
+    """Every button says something when it is hovered, and the ticks line up.
+
+    THE ⓘ IS NOT THE FIRST PLACE ANYBODY LOOKS. Hovering the control itself
+    is, and eight buttons at the foot of the column answered that with
+    silence, every one of them with a full explanation an inch to its right
+    behind an icon. Reported from the window: "some of the buttons at the
+    bottom of the left sections have no tooltip".
+
+    THE RULE, NOT A LIST OF THE EIGHT: a button added tomorrow with nothing to
+    say shows up here the day it is written.
+
+    AND WHERE TICKS IN THE SAME BOX BEGIN. Two of them, under each other, two
+    pixels apart -- because one sat in a row that also held an ⓘ and the other
+    did not. It reads as sloppiness without being nameable: "checkboxes are
+    not aligned correctly".
+    """
+    problems = []
+    for button in panel.findChildren(QPushButton):
+        if button.text().strip() and not button.toolTip().strip():
+            problems.append(
+                f"[hover] SILENT  {button.text().strip()!r} says nothing when "
+                f"it is hovered")
+    for box in panel.findChildren(QGroupBox):
+        ticks = [t for t in box.findChildren(QCheckBox)
+                 if t.parent() is box and not t.isHidden()]
+        starts = {}
+        for tick in ticks:
+            starts.setdefault(
+                tick.mapTo(box, tick.rect().topLeft()).x(), []).append(
+                    tick.text().strip())
+        if len(starts) > 1:
+            where = ", ".join(f"x={x}: {', '.join(names)}"
+                              for x, names in sorted(starts.items()))
+            problems.append(
+                f"[hover] RAGGED  ticks in {box.title().strip()!r} start on "
+                f"different pixels — {where}")
+    return problems
+
+
 def audit_registry(window) -> list:
     """Every interactive control is either space-dependent or declared not.
 
@@ -334,6 +374,7 @@ def main() -> int:
     panel = window.findChild(QScrollArea).widget()
     problems = list(audit_registry(window))
     problems += audit_help(window, panel)
+    problems += audit_hover(panel)
 
     # A chart open, because half the panel only exists once there is one.
     chart = os.environ.get("AUDIT_CHART", "")

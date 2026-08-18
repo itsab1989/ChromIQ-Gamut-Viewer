@@ -1,5 +1,114 @@
 # Changelog
 
+## v2.30.0
+
+### 🎚 Hide the colours that barely moved
+
+A new slider under the picture: **Hide anything under ΔE …**. Everything that
+moved less than that is left out, so what remains is only the movement worth
+looking at.
+
+**Why it earns its place.** The family lines give an *average*, and an average
+hides the shape. "Blues: ΔE 1.7 (132 patches)" reads exactly the same whether
+all 132 moved 1.7, or 120 sat still and 12 moved a great deal — and those are
+very different problems. Pull the slider up and only the colours anybody could
+see are left.
+
+**It runs across this pair and no further, at both ends.** A fixed 0–5 would be
+mostly inert: on one step of the demo run, whose biggest difference is ΔE 1.07,
+**82%** of that travel would hide nothing. And it starts at the pair's
+*smallest* difference, because a slider that begins below it spends its first
+stretch reading "under ΔE 0.5" while hiding nothing at all — a control
+announcing an action it is not performing.
+
+**In steps of ΔE 0.1**, which is as fine as the numbers support: a hand-held
+spectrophotometer repeats to about ΔE 0.1 on white and two different
+instruments agree to about 0.4, so anything finer reads the instrument rather
+than the printing.
+
+**It changes the picture only.** Every number and sentence still describes all
+the colours, so two people with the slider in different places quote each other
+the same figures. The picture — and any saved page — says how many were left
+out, because a page showing eleven dots cannot otherwise be told apart from a
+printer that is nearly perfect.
+
+### 🌐 …and the slider is in the saved web page too
+
+Not baked in at save time. Whoever opens the page is usually not whoever made
+it, and the interesting threshold is not known in advance — on one chart the
+story is at ΔE 1, on another at 3. Everything needed was already in the file.
+
+### 🧩 The main window gets the options the timeline had
+
+The timeline could split its cloud into colour families and hide small
+movements; the main window drew the same kind of cloud and could do neither —
+and the main window is the only one that can show the **shapes** as well.
+
+### 🏷 The key keeps telling the truth while the threshold moves
+
+Three faults, all reported from the published page, all in the key or the
+control beside it:
+
+- **The last family standing had no name.** Push the threshold up until two
+  dots are left and every label vanished — so the two dots on screen could not
+  be identified at all. The drawing library marks an emptied group
+  not-visible, then drops the key entirely for a single visible group. Right
+  for a picture of one thing, wrong here, where the last family left *is* the
+  answer. The key is now asked for by name.
+- **The counts went stale.** `yellows — 134` stood over a single drawn dot. A
+  thinned family now reads `yellows — 1 of 134`, and goes back to the plain
+  count when nothing has been taken out of it.
+- **The far end emptied the picture.** The last step hid *729 of 729* colours
+  and left bare axes, which reads as a broken page. It now stops just below the
+  biggest difference, so the end of the travel answers "which colour moved
+  most".
+
+The reading beside the slider was also its label's missing object — the word
+"everything" — which on a narrow window wrapped away from the label and sat
+alone in the middle of the page. It now says what the state *is*
+(`nothing hidden`, or `ΔE 3.0`), cannot be separated from the slider, is drawn
+in the page's own colour rather than the browser's blue, and the line under it
+never goes empty.
+
+### 🖱 The pointing lines stopped leaving black streaks
+
+Point at the shape and three lines run out to the walls to say where you are.
+In WebKit they were written into the picture and not cleared, so they cut black
+slashes across the surface until something forced a redraw. Measured by
+hovering across the shape against a clean picture: **WebKit 614 pixels of
+streak, Chromium 0**. The lines are kept — they are what says where you are
+pointing — and the streaks are down to **51**.
+
+### 🔽 The left column folds, the way ChromIQ's own sections do
+
+Fourteen groups, 2681 px tall in a window that shows about 880 of it: two and a
+half screens before anybody had loaded a file. Every group's heading now folds
+it away, with the same filled triangle ChromIQ uses for its Expert sections —
+not a tick, which reads as "switch this off". Visible groups: **2042 px →
+672 px**. It hides controls and sets nothing, so folding can never change a
+picture; whether a group was open is remembered.
+
+### 🖼 A new example: the shape says nothing, the inside says plenty
+
+Two profiles of one printer five years apart hold **818,514** and **815,615**
+units of colour — **0.35% apart**, the same size by any measure. By volume,
+which is how most tools judge, that printer has not changed. Inside those two
+identical shells the colours have moved by up to **ΔE 3.03**.
+
+The generator *proves* that rather than repeating it: change the demo profiles
+so the shells are no longer the same size and the page fails to build instead
+of quietly making a claim its own data no longer supports.
+
+### Also
+
+- The saved page's threshold is now **run** by the test suite rather than read:
+  the script is lifted out of the page, given a stand-in page and drawing
+  library, and driven end to end. It had had five faults, every one of them
+  found by somebody looking at a published page. Each of those five was broken
+  back on purpose to prove the new tests catch it.
+- 800 tests (797 + 3 skipped without ArgyllCMS). 21 example pages, every claim
+  met, checked at 10 window sizes in two browser engines.
+
 ## v2.29.0
 
 ### 📋 Which colour families moved — now where you actually work
