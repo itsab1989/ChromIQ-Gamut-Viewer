@@ -2,6 +2,85 @@
 
 ## v2.30.0
 
+### 🕰 Follow one device over time, in the window rather than beside it
+
+The run of profiles now lives in the **left column**, and its picture fills the
+big view this whole application is built around. The window it used to open in
+gave the graph 240 px inside a 940 px dialog.
+
+It is the **same object**, not a copy: told it is hosted, it stacks its rows
+for a 366 px column, drops its own small view, and hands its picture to the
+window. A second panel that re-implemented the run, the ordering, the verdict
+or the threshold would have been the fourth thing in this file written twice.
+
+**Who owns the picture, written down once.** A pair of files and a run of
+profiles are different questions and only one picture fits. The run wins while
+it has something to say — adding profiles is deliberate, opening a second file
+is browsing — the window says so in a line when both are open, and *Remove
+them all* hands the view straight back.
+
+Four faults, all found by driving it: the dialog's 560 px window minimum came
+with it and dragged the column out to **596 px**, cutting every label;
+*Remove them all* left the run's picture frozen with a file open behind it that
+nothing would draw; the group and the panel both introduced themselves, giving
+two paragraphs and two ⓘ within sixty pixels; and the ⓘ explaining *Show me*
+was stacked beside *coloured by* instead — caught by the panel audit.
+
+### 🎨 Every colour painted with the family it is heading for
+
+A new entry in **coloured by**: *the colour it is heading for*. "How far it
+moved" is a distance and cannot say which way; the three axes say it in numbers
+— lighter, redder, warmer. Neither says the thing anybody reports out loud,
+which is *"my greys have gone warm"*.
+
+**What it will not say is most of the value.** A colour that moved less than
+ΔE 1 is heading nowhere — below that the direction is mostly the instrument, an
+i1Pro repeats to about ΔE 0.1 on white and two different ones agree to about
+0.4 — so those dots stay in the picture, quietly, in a group that says so.
+A grey is heading nowhere however far it moved: with no chroma there is no hue,
+so the angle it left at is noise even when the distance is real. And nothing is
+ever sent toward itself.
+
+The key's swatches are the families' own hues at one lightness, at as much
+chroma as sRGB will hold at each: a flat chroma put the reds at
+`rgb(215,110,147)` and the magentas at `rgb(196,117,185)`, which is two pinks
+to compare rather than six colours to recognise.
+
+### 🧭 One thing at two times, or two different things?
+
+**Has anything changed?** now asks. *"Moved"* is a claim about time: said of
+two papers measured on one afternoon it is simply false, and it is exactly the
+sort of false sentence somebody pastes into an email. The files cannot tell —
+two `.ti3` of one chart look identical whether they are one printer months
+apart or two papers in one session.
+
+It changes only the verbs. Every number is the same either way.
+
+*(ChromIQ itself would not need to ask: two `.ti3` in different runs of one
+target are one thing over time, two in different targets are different things.
+Recorded in `docs/PORTING-TO-CHROMIQ.md`.)*
+
+### 💾 One Save button, and it offers only what the page can do
+
+The run had a **Save as a web page** button of its own that asked nothing — so
+its page could never carry the reader's control strip, could never be saved
+without the viewer inside, and could not leave the numbers out. There is now
+one button, one dialog, whichever question the view is answering.
+
+And the dialog offers only what applies: a page of one shape was offering
+*fade where they agree*, which needs two; a cross-section was offering four
+ways to turn a camera it does not have; a line graph was offering all
+twenty-two. Switches that are not shown are answered **no** rather than left to
+a default — most of those defaults are "offer it".
+
+### 🔢 Three of the four arrangements were saving less than they said
+
+Found by writing every kind of page with everything offered and opening each in
+a browser to see which controls it actually builds: **two rooms, a
+cross-section and two cross-sections carried the styling for a block of figures
+and no figures**, from a button whose dialog had just asked whether the numbers
+should travel. Only the single 3D scene ever carried them.
+
 ### 🎚 Hide the colours that barely moved
 
 A new slider under the picture: **Hide anything under ΔE …**. Everything that
@@ -106,7 +185,10 @@ of quietly making a claim its own data no longer supports.
   library, and driven end to end. It had had five faults, every one of them
   found by somebody looking at a published page. Each of those five was broken
   back on purpose to prove the new tests catch it.
-- 800 tests (797 + 3 skipped without ArgyllCMS). 21 example pages, every claim
+- The panel audit asks two new questions: does every button say something when
+  it is hovered, and do the ticks in a box start on the same pixel. Both found
+  faults the day they were added.
+- 815 tests (812 + 3 skipped without ArgyllCMS). 21 example pages, every claim
   met, checked at 10 window sizes in two browser engines.
 
 ## v2.29.0
