@@ -940,7 +940,34 @@ def _lighting(depth: float, opacity: float = 1.0) -> dict:
     compare is one page with the switch thrown, which is what
     `window.cqOrder.farWall` exists for.
 
-    NOT DRAWING THE FAR WALL IS THE ONLY CURE, AND IT IS NOT YET SHIPPABLE.
+    AND THEN IT WAS BUILT PROPERLY AND MEASURED, AND IT CANNOT WORK. With the
+    orientation taken from the winding instead of the middle, the body comes
+    out clean -- the kites in the middle of the flank really do go. What is
+    left is the OUTLINE, where faces run nearly edge-on and flicker between
+    facing you and not, and dropping them shreds the rim into shards. Keeping
+    the nearly-edge-on ones closes it, and the amount of slack needed was
+    measured on ONE page with the switch thrown, which is the only fair
+    comparison:
+
+        slack (cosine)   faces kept   outline restored   flank roughness
+        0.10                696          93.0%   shreds       1.014
+        0.20                980          97.5%                0.897
+        0.35              1,468         100.0%                0.894
+        0.50              1,547         100.0%                0.892
+
+    THERE IS NO VALUE THAT DOES BOTH. By the time the outline is whole again
+    (0.35) it is keeping 1,468 of 1,824 faces -- barely culling at all -- and
+    the flank is back to 0.894 against the 0.891 of the shape drawn whole.
+    The kites ARE the far wall where it runs nearly edge-on, and that is
+    exactly the band that must be kept for the outline to survive. The two
+    requirements are the same faces.
+
+    So back-face culling is not the answer and no tolerance makes it one.
+    What is left to try is not geometry at all: the far wall is seen THROUGH
+    the near one, so anything that changes how the two are blended -- rather
+    than which of them exists -- is where to look next.
+
+    NOT DRAWING THE FAR WALL WAS THE ONLY CURE FOUND, AND IT IS NOT SHIPPABLE.
     It was built -- each face turned outward against the shape's own middle,
     the eye's position (not merely its direction) taken from the scene's
     `dataScale` and `glplot.bounds`, the pristine triangle list kept because
