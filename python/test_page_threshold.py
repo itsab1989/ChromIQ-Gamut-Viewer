@@ -27,6 +27,7 @@ Node is used because it is the only JavaScript engine that can be relied on
 here; where there is none, the file skips rather than pretending.
 """
 import json
+import pathlib
 import shutil
 import subprocess
 
@@ -126,8 +127,20 @@ POSITIONS.forEach(function (p) {
 });
 console.log(JSON.stringify(seen));
 """ % (json.dumps(traces), json.dumps(list(positions)), _script())
-    done = subprocess.run([NODE, "-e", stub], capture_output=True, text=True,
-                          timeout=120)
+    # THE SCRIPT GOES IN A FILE, NOT ON THE COMMAND LINE. Written with
+    # `node -e`, the whole harness AND the traces travel as one argument --
+    # about forty kilobytes of it -- and Windows caps a command line at
+    # 32,767 characters. Every one of these tests failed there, and only
+    # there, with "WinError 206: The filename or extension is too long".
+    # macOS and Linux allow a megabyte, so nothing local could have shown it;
+    # the Windows build of the release did, within the hour.
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="cq-threshold-") as folder:
+        script = pathlib.Path(folder) / "run.js"
+        script.write_text(stub, encoding="utf-8")
+        done = subprocess.run([NODE, str(script)], capture_output=True,
+                              text=True, timeout=120)
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout.strip().splitlines()[-1])
 
