@@ -16,9 +16,10 @@ counting lit pixels in the outermost six columns:
     every one    0 left    0 right      after
 
 The eye is pulled back by as much as the pane is out of shape and no further
-than twice, when the page opens and whenever the window changes shape. A pane
-wider than it is tall is untouched, which is every desktop window and every
-saved page opened normally.
+than twice, measured **from the view the page was written with** — when the
+page opens, and again whenever the window changes shape. A pane wider than it
+is tall gets that written view back, so a window dragged narrow and then wide
+again returns to where it started.
 
 **The conditions matter as much as the fit.** A page that re-fitted on every
 resize would overrule somebody who had turned the shape, so the fitting stops

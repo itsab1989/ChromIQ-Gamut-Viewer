@@ -2029,12 +2029,16 @@ def test_a_page_fits_itself_to_a_tall_narrow_pane():
 
     js = ti3gamut._SPIN_JS
     assert "function fitToPane" in js
-    # Landscape panes are left exactly as they were: every desktop window and
-    # every saved page opened normally.
-    assert "if (!w || !h || h <= w) return;" in js
-    # And no further than twice, or a very tall thin pane would push the
-    # shape into the distance.
-    assert "Math.min(2, h / w)" in js
+    # A pane wider than it is tall gets the view the page was written with,
+    # which is every desktop window and every saved page opened normally --
+    # and is also what a window dragged narrow and then wide again must get
+    # back.
+    assert "var pull = (h <= w) ? 1 : Math.min(2, h / w);" in js
+    # ALWAYS FROM THE WRITTEN VIEW. Fitting from wherever the camera happens
+    # to be compounds: two rooms in a window dragged narrower twice went
+    # 1.500 -> 2.007 -> 3.904, each pull applied to the one before it.
+    assert "if (!base[id]) base[id]" in js
+    assert "from.eye.x * pull" in js
     # The reader's own view wins, and pressing home hands it back.
     assert "function untouched(id) { return !touched[id]; }" in js
     assert "touched[ids[i]] = false;" in js

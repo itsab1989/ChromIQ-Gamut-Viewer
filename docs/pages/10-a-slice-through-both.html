@@ -4943,6 +4943,104 @@ window.cqSpin = (function () {
   }
   // A STILL PAGE NEVER STEPS, so it would never capture anything. Poll until
   // the drawing library has built each scene, then stop.
+  // A TALL NARROW PANE CROPS THE SHAPE, and the camera cannot know that on
+  // its own. The eye at 1.5 frames a printer's gamut for a pane wider than it
+  // is tall; put the same scene in a portrait pane -- which is what the
+  // application's own view becomes on a laptop, 424 wide by 833 tall at a
+  // 1000px window -- and the shape runs off both sides with the whole
+  // lightness axis outside the view. Photographed at that size before this
+  // was written: no L* axis, no numbers, the magenta side cut off.
+  //
+  // So the eye is pulled back by as much as the pane is out of shape, and no
+  // further than twice. A pane wider than it is tall is left exactly as it
+  // was, which is every desktop window and every saved page opened normally.
+  // Done BEFORE home is remembered, so "back to the start" comes back to a
+  // view that fits rather than to the one that did not.
+  // ALWAYS FROM THE VIEW THE PAGE WAS WRITTEN WITH, never from the last fit.
+  // Fitting from wherever the camera happens to be compounds: two rooms in a
+  // window dragged narrower twice went 1.500 -> 2.007 -> 3.904, each pull
+  // applied to the one before it, and the shape walked off into the distance.
+  // Caught by crossing two rooms with a resize rather than trying either on
+  // its own.
+  var base = {};
+  function fitToPane(id) {
+    var gd = scene(id);
+    if (!gd || !gd._fullLayout || !gd._fullLayout.scene) return;
+    var w = gd.clientWidth || gd.offsetWidth || 0;
+    var h = gd.clientHeight || gd.offsetHeight || 0;
+    var cam = liveCam(gd);
+    if (!cam || !cam.eye) return;
+    if (!base[id]) base[id] = {eye: {x: cam.eye.x, y: cam.eye.y, z: cam.eye.z},
+                               up: cam.up, center: cam.center};
+    var from = base[id];
+    if (!w || !h) return;
+    // A pane that is wider than it is tall wants the written view back --
+    // which matters when a window is dragged narrow and then wide again.
+    var pull = (h <= w) ? 1 : Math.min(2, h / w);
+    whileWeMoveIt(function () {
+      setCam(gd, {eye: {x: from.eye.x * pull, y: from.eye.y * pull,
+                        z: from.eye.z * pull},
+                  up: from.up, center: from.center});
+    });
+  }
+  // AND AGAIN WHEN THE PANE CHANGES SHAPE, which is how a person actually
+  // meets this: the window opens wide and gets dragged narrower, and fitting
+  // once at load would have been measured as "no change" -- as it was, before
+  // this was added.
+  //
+  // ONLY WHILE THE VIEW IS STILL THE ONE IT OPENED AT. Somebody who has
+  // turned the shape has said where they want to look from, and a window
+  // resize is no reason to overrule them. Compared against the remembered
+  // home, which is also updated so that "back to the start" keeps meaning a
+  // view that fits.
+  // WHETHER ANYBODY HAS TOUCHED IT, kept as a fact rather than worked out by
+  // comparing cameras. The comparison was tried first and it was wrong: a
+  // relayout updates layout.scene.camera immediately while the scene's own
+  // camera lags a frame behind, so a shape the reader had just turned still
+  // matched its remembered view -- and the next resize scaled THEIR angle
+  // instead of leaving it alone. Measured: turned to (-2.100, 0.400, 0.600),
+  // resized, and it became (-2.577, 0.491, 0.736).
+  var touched = {}, ourOwn = 0;
+  // OUR OWN CAMERA CHANGES ARE NOT SOMEBODY TAKING THE VIEW OVER. The fitting
+  // moves the camera with the same call a reader's drag ends in, so without
+  // this the very first fit marked the picture as "theirs" and every later
+  // one was skipped -- the page's own touchedYet() said True before anybody
+  // had touched anything.
+  function markTouched(id) { if (!ourOwn) touched[id] = true; }
+  function whileWeMoveIt(what) {
+    ourOwn += 1;
+    try { what(); } finally {
+      window.setTimeout(function () { ourOwn = Math.max(0, ourOwn - 1); }, 400);
+    }
+  }
+  function untouched(id) { return !touched[id]; }
+  var refitting = null;
+  function refit() {
+    if (refitting) window.clearTimeout(refitting);
+    refitting = window.setTimeout(function () {
+      refitting = null;
+      for (var i = 0; i < ids.length; i++) {
+        var id = ids[i], gd = scene(id);
+        if (!gd || isFlat(gd) || !untouched(id)) continue;
+        fitToPane(id);          // always measured from base[id]
+        var now = liveCam(gd);
+        if (now && now.eye) home[id] = {up: now.up, center: now.center,
+                                        eye: {x: now.eye.x, y: now.eye.y,
+                                              z: now.eye.z}};
+      }
+    }, 180);
+  }
+  if (window.addEventListener) window.addEventListener("resize", refit);
+  function fitAll(tries) {
+    var missing = false;
+    for (var i = 0; i < ids.length; i++) {
+      var gd = scene(ids[i]);
+      if (!gd) { missing = true; continue; }
+      if (!isFlat(gd)) fitToPane(ids[i]);
+    }
+    if (missing && (tries || 0) < 60)
+      window.setTimeout(function () { fitAll((tries || 0) + 1); }, 120);
+  }
   function remember(tries) {
     var missing = false;
     for (var i = 0; i < ids.length; i++) {
@@ -4950,6 +5048,12 @@ window.cqSpin = (function () {
       if (gd && isFlat(gd)) keepFlat(ids[i], ranges(gd));
       else if (gd) keep(ids[i], liveCam(gd));
       if (gd) gestures(gd);       // a finger works from the first frame
+      // AND THE WATCHER, from the first frame as well. It used to be attached
+      // only by step(), which runs while a picture is TURNING -- so on a page
+      // that is not moving, nothing was listening, and "has the reader taken
+      // this view over?" answered no however hard they dragged. Measured with
+      // the page's own touchedYet(): False after a turn.
+      if (gd) watch(gd);
       if (!home[ids[i]]) missing = true;
     }
     if (missing && (tries || 0) < 60)
@@ -4959,10 +5063,20 @@ window.cqSpin = (function () {
     rest();
     stopGlide();          // or the view would drift straight back off again
     for (var i = 0; i < ids.length; i++) {
+      // BACK TO THE START MEANS BACK TO THE START, so the pane's own fitting
+      // governs again from here: somebody who presses this is asking for the
+      // view the page chose, not for the one they had been holding.
+      touched[ids[i]] = false;
       var gd = scene(ids[i]), was = home[ids[i]];
       if (!gd || !was) continue;
-      if (was.eye) setCam(gd, was);
-      else setRanges(gd, was);
+      // OURS, not theirs -- putting the view back is not the reader taking it
+      // over, and without this the press that says "back to the start"
+      // immediately marked the picture as theirs again and the pane stopped
+      // fitting it.
+      whileWeMoveIt(function () {
+        if (was.eye) setCam(gd, was);
+        else setRanges(gd, was);
+      });
     }
   }
   // ANY GESTURE AT ALL ENDS A THROW. Touching the shape to stop it is what
@@ -4972,8 +5086,18 @@ window.cqSpin = (function () {
   function watch(gd) {
     if (gd._cqSpinWatched) return;
     gd._cqSpinWatched = true;
+    // ANYTHING A PERSON DOES TO THE SHAPE COUNTS, including the drag that the
+    // drawing library reports afterwards as a relayout. Registered once,
+    // inside the guard, or a page that watches twice marks twice.
+    try {
+      if (gd.on) gd.on("plotly_relayout", function (what) {
+        for (var k in what) if (String(k).indexOf("camera") >= 0)
+          markTouched(gd.id);
+      });
+    } catch (e) {}
     ["mousedown", "wheel", "touchstart", "touchmove"].forEach(function (ev) {
       gd.addEventListener(ev, hold, true);
+      gd.addEventListener(ev, function () { markTouched(gd.id); }, true);
     });
     // AFTER hold, so that clearing the old throw cannot clear the new grab.
     ["mousedown", "touchstart"].forEach(function (ev) {
@@ -5512,7 +5636,7 @@ window.cqSpin = (function () {
     for (var i = 0; i < ids.length; i++) step(ids[i], turn, tilt);
   }
   function set(o) {
-    if (o.ids !== undefined) { ids = o.ids; rest(); remember(0); }
+    if (o.ids !== undefined) { ids = o.ids; rest(); fitAll(0); remember(0); }
     ["turn", "tilt"].forEach(function (which) {
       var got = o[which]; if (!got) return;
       var a = axes[which];
@@ -5536,7 +5660,10 @@ window.cqSpin = (function () {
   }
   return {set: set, nudge: nudge, reset: reset, zoom: zoom, slide: slide,
           look: look, moving: function () { return on; },
-          glides: function () { return glideOn; }};
+          glides: function () { return glideOn; },
+          // For checking, from the outside, whether the pane's own fitting
+          // still governs this graph or whether a reader has taken it over.
+          touchedYet: function (id) { return !!touched[id]; }};
 })();
 
 

@@ -3523,19 +3523,31 @@ window.cqSpin = (function () {
   // was, which is every desktop window and every saved page opened normally.
   // Done BEFORE home is remembered, so "back to the start" comes back to a
   // view that fits rather than to the one that did not.
+  // ALWAYS FROM THE VIEW THE PAGE WAS WRITTEN WITH, never from the last fit.
+  // Fitting from wherever the camera happens to be compounds: two rooms in a
+  // window dragged narrower twice went 1.500 -> 2.007 -> 3.904, each pull
+  // applied to the one before it, and the shape walked off into the distance.
+  // Caught by crossing two rooms with a resize rather than trying either on
+  // its own.
+  var base = {};
   function fitToPane(id) {
     var gd = scene(id);
     if (!gd || !gd._fullLayout || !gd._fullLayout.scene) return;
     var w = gd.clientWidth || gd.offsetWidth || 0;
     var h = gd.clientHeight || gd.offsetHeight || 0;
-    if (!w || !h || h <= w) return;
-    var pull = Math.min(2, h / w);
     var cam = liveCam(gd);
     if (!cam || !cam.eye) return;
+    if (!base[id]) base[id] = {eye: {x: cam.eye.x, y: cam.eye.y, z: cam.eye.z},
+                               up: cam.up, center: cam.center};
+    var from = base[id];
+    if (!w || !h) return;
+    // A pane that is wider than it is tall wants the written view back --
+    // which matters when a window is dragged narrow and then wide again.
+    var pull = (h <= w) ? 1 : Math.min(2, h / w);
     whileWeMoveIt(function () {
-      setCam(gd, {eye: {x: cam.eye.x * pull, y: cam.eye.y * pull,
-                        z: cam.eye.z * pull},
-                  up: cam.up, center: cam.center});
+      setCam(gd, {eye: {x: from.eye.x * pull, y: from.eye.y * pull,
+                        z: from.eye.z * pull},
+                  up: from.up, center: from.center});
     });
   }
   // AND AGAIN WHEN THE PANE CHANGES SHAPE, which is how a person actually
@@ -3577,10 +3589,7 @@ window.cqSpin = (function () {
       for (var i = 0; i < ids.length; i++) {
         var id = ids[i], gd = scene(id);
         if (!gd || isFlat(gd) || !untouched(id)) continue;
-        // Back to the written view first, so the pull is applied to that
-        // rather than compounding on the last fit.
-        whileWeMoveIt(function () { setCam(gd, home[id]); });
-        fitToPane(id);
+        fitToPane(id);          // always measured from base[id]
         var now = liveCam(gd);
         if (now && now.eye) home[id] = {up: now.up, center: now.center,
                                         eye: {x: now.eye.x, y: now.eye.y,
