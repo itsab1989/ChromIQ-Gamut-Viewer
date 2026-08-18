@@ -869,21 +869,54 @@ def _lighting(depth: float, opacity: float = 1.0) -> dict:
     against 9.39), so they are not the shape's own dark inside showing
     through.
 
-    WHERE THE TRAIL LEADS NOW -- and this one is in our own geometry rather
-    than in the drawing library. The shell carries sliver triangles: of 1,824
-    faces, 26 are thinner than a fiftieth of their own longest edge squared,
-    and the very thinnest sit at the white point and in the saturated corners
-    --
+    THE SLIVERS IN OUR OWN SHELL WERE THE NEXT SUSPECT AND ARE NOT IT. Of
+    1,824 faces, 26 are thinner than a fiftieth of their own longest edge
+    squared, and the thinnest of them sit in the yellow-orange corner the
+    wedges were photographed in. Every one was collapsed away -- 26 down to
+    0, no holes, the shortest edge of each merged so the neighbours close
+    over it -- and the flank came back at 0.848 against 0.886: ONE needle
+    gone and every kite exactly where it was. Deleting those faces instead
+    made it worse (2.60) and gave the game away: the wedges turned into real
+    HOLES in the same places, so those faces are covering ground.
 
-        thin=0.00002  at L* 100, a* 0,   b* 1
-        thin=0.00277  at L* 63,  a* -63, b* -14
-        thin=0.00319  at L* 75,  a* 43,  b* 69
-        thin=0.00592  at L* 54,  a* 75,  b* 65
+    IT IS THE SHAPE'S OWN FAR WALL, SEEN THROUGH THE NEAR ONE. Every number
+    below is the roughness of one crop of that flank -- the mean step between
+    neighbouring pixels -- at one camera, on one shape at 68%:
 
-    -- which is the yellow-orange corner the wedges were photographed in. A
-    sliver blended see-through is exactly what a bite out of the surface
-    looks like. The next step is to clean the mesh (weld what is coincident,
-    drop what has no area) and measure the same picture again.
+        as it is drawn today               0.886   the kites
+        welding coincident corners         0.886   one corner of 914 merged
+        flipping the winding               0.886   all 1,824 faces are wound
+                                                   inward, consistently, and
+                                                   reversing every one of
+                                                   them redrew the picture
+                                                   pixel for pixel -- so the
+                                                   library lights both sides
+        flat facets                        0.965   worse
+        no lighting at all, live on the    0.822   AND THE KITES ARE STILL
+        page (ambient 1, diffuse 0,                THERE. So they are not
+        specular 0)                                shading of any kind
+        solid, nothing behind to show      0.808   not one of them
+        only the half facing you           0.562   not one of them
+
+    -- the last measured on the page itself and put back again to 0.886, so
+    the picture answers to this and not to the passing of time.
+
+    At 68% you are looking at both walls; near the outline the far one is
+    almost edge-on, so a whole triangle of it lands in a few pixels and its
+    facet edges read as wedges rather than as a gradient. It is its COLOURS
+    showing through and not its light, which is why no lighting change
+    touches it.
+
+    NOT DRAWING THE FAR WALL IS THE ONLY CURE, AND IT IS NOT YET SHIPPABLE.
+    It was built -- each face turned outward against the shape's own middle,
+    the eye's position (not merely its direction) taken from the scene's
+    `dataScale` and `glplot.bounds`, the pristine triangle list kept because
+    handing the surface a short list leaves the trace holding that short list
+    padded with zeros. At the settled camera it is right, and the count it
+    keeps matches an independent reckoning exactly, 724 and 494 at two
+    angles. Turned to a camera level with the top of the shape it TEARS: a
+    band goes missing where the surface runs edge-on to the eye. A shape that
+    comes apart as you turn it is worse than the wedges, so it is not in.
     """
     d = max(0.0, min(1.0, depth))
     return dict(ambient=0.95 - 0.45 * d, diffuse=0.10 + 0.75 * d,
