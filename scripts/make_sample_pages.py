@@ -1341,8 +1341,15 @@ def main() -> int:
     check("22", "and the two shapes are around it", panel.shows_two_shapes())
     figure = panel.figure_now()
     surfaces = [t for t in figure.data if t.type == "mesh3d"]
-    check("22", "both shapes are really drawn", len(surfaces) == 2,
-          f"{len(surfaces)} surface(s)")
+    # BOTH SHAPES ARE DRAWN, AND NOT NECESSARILY BOTH AS SURFACES. How it
+    # looks governs these two now, and its own default draws the SECOND shape
+    # as an outline so you can see through it to the first -- which is the
+    # right default for a pair and was settled long before this page existed.
+    # Counting surfaces alone called that a failure.
+    named = {str(t.name).split(" ")[0] for t in figure.data if t.name}
+    check("22", "both shapes are really drawn",
+          {"printer-2019", "printer-2024"} <= named,
+          f"{len(surfaces)} surface(s), names {sorted(named)}")
     # THE SHAPES ARE THE WINDOW'S OWN, not a coarser hull of the comparison
     # grid: the same call the window makes when a file is opened.
     own, _m = w._build_one(profiles_dir / "printer-2019.icc")
@@ -1353,7 +1360,7 @@ def main() -> int:
     # two. Opaque shells would hide the cloud, which is the subject.
     check("22", "you can see the cloud through them",
           all(t.opacity is not None and t.opacity < 0.9 for t in surfaces),
-          ", ".join(str(t.opacity) for t in surfaces))
+          ", ".join(str(t.opacity) for t in surfaces) or "no filled surface")
     p22 = page("22-a-run-with-its-shapes.html")
     # SAVED THE WAY A PERSON SAVES IT: the window's own Save this view as a
     # web page… button, with the options dialog answering for itself. Calling

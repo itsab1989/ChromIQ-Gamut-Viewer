@@ -1,5 +1,91 @@
 # Changelog
 
+## v2.31.0
+
+### 🫧 The two shapes around the run's cloud
+
+**Show the two shapes around it**, in *One device over time*. Off unless you
+ask, because two surfaces over a cloud hide dots — and worth asking for,
+because it is the most surprising picture this application draws: two profiles
+of one printer five years apart can hold almost exactly the same amount of
+colour, **0.35% apart**, while the colours inside those identical shells have
+moved by up to **ΔE 3.03**.
+
+They are **the window's own shapes**, built by the call the window makes when
+you open a file — measured, 914 vertices against 914 — and not a coarser hull
+of the comparison grid, which is what the first version did.
+
+### 🎛 *How it looks* governs them, and there is no second set of controls
+
+There were three controls for the shells in the run's own group for an
+afternoon. They are gone: the section that already governs every other shape
+in this window governs these two as well, and it offers far more — the outline
+colour, the rings, the shading depth, the lighting, a style per shape and both
+fade sliders.
+
+*Set this for* names **the run's own profiles** while they are what it
+governs, so nobody has to work out which is "the first shape".
+
+Five things had to be fixed for that to be true, and none of them showed from
+outside: the per-shape settings were read from the list of **open files**,
+which is empty when only a run is loaded; surface-vs-mesh is not part of the
+render options at all; the live fade asked whether a file was open; and the
+redraw stood aside for the run, so every one of those controls reached it and
+stopped.
+
+### 🔺 The missing triangles, for good this time
+
+The run's live picture went **around** the page writer, so it never got the
+script that puts see-through surfaces in draw order — the shells came apart
+into missing triangles the moment they were made fainter. It had been fixed
+for good, in the writer that one call was avoiding. The saved page was always
+right; only the screen was not.
+
+### 💾 One Save button, and the run's page carries everything
+
+The run's own *Save as a web page* button asked nothing, so its page could
+never carry the reader's control strip, could not be saved without the viewer
+inside, and could not leave the numbers out. There is now one button and one
+dialog, and it offers **only what the page can honour** — proved in both
+directions by writing every kind of page, opening it in a browser and reading
+which controls it actually built.
+
+That audit found two rules wrong, one each way: a cross-section was offered
+*fade where they agree*, which it does not build, and a drift cloud was
+refused *make a shape fainter*, which it builds perfectly well.
+
+### 📋 The readouts can be copied
+
+The family report has promised "paste it into an email or a report" since the
+day it was written, and a QLabel hands the mouse straight through: there was
+nothing to drag over and nothing for Ctrl+C to take. Every readout is now
+selectable by mouse and keyboard.
+
+### 💬 Hover short, ⓘ long
+
+31 of the column's 54 tooltips were over 300 characters and the longest was
+**2,139** — a wall of text wider than the screen, covering the control it was
+describing. None is over 200 now; the long version lives behind the ⓘ, and a
+control that had no icon is given one.
+
+### Also
+
+- The two threshold sliders no longer take the mouse wheel while the column is
+  scrolled past them.
+- A group opened this instant still answers with the width it had while it was
+  shut, so the column was sized from a stale number and the widest section was
+  cut. The same trap caused the theme-change fault; both now ask once the
+  layout has settled.
+- Four ⓘ collected on one row because the pass that places them treated a
+  hidden control as an absent one. The panel audit now asks whether any row
+  has collected icons.
+- A new example page: **22 — a run, its two shapes, and the cloud between
+  them**, saved through the window's own Save button rather than by calling
+  the writer.
+- 815 tests (812 + 3 skipped without ArgyllCMS), three audits clean:
+  `audit_panel.py`, `audit_offers.py` and a state sweep that drives the window
+  through the states a person moves between.
+
 ## v2.30.0
 
 ### 🕰 Follow one device over time, in the window rather than beside it
