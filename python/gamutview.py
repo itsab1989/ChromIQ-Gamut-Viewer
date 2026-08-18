@@ -1849,6 +1849,68 @@ def _which_way(from_lab, mean, mean_de, spread, *, is_grey=False,
     return candidates[0][0], second
 
 
+def heading_for(lab_a, lab_b, *, families=HUE_FAMILIES, quiet: float = None,
+                neutral: float = None):
+    """Which family each colour is HEADING FOR, dot by dot.
+
+    THE OTHER HALF OF THE PICTURE. "How far it moved" is a distance and has no
+    direction: a printer gone lighter and one gone darker by the same amount
+    draw the same cloud. Splitting the cloud by the family each colour is IN
+    says where the movement is; this says where it is GOING, which is the
+    question anybody holding two profiles actually asks -- "my greys have gone
+    warm" is a sentence about a destination.
+
+    NOT THE FAMILY IT LANDS IN, for the same reason the written report does not
+    use one: a blue that drifts a long way toward the greens is usually still a
+    blue when it arrives, and "the blues went to the blues" answers nothing.
+    What is named is the next family centre in the direction of travel -- see
+    :func:`_neighbour`, which this shares so the picture and the sentences can
+    never disagree.
+
+    A QUIET COLOUR IS NOT HEADING ANYWHERE, and this is the whole reason for
+    the threshold. Below about ΔE 1 the direction of a movement is mostly the
+    instrument: a hand-held spectrophotometer repeats to roughly ΔE 0.1 on
+    white and two different instruments agree to about 0.4, so a dot that has
+    moved 0.3 has a direction that is arithmetic on noise. Painting it a
+    confident red would be the single most misleading thing this application
+    could do -- it would make an unchanged printer look like it was marching
+    somewhere. Those dots are named "" and the caller draws them quietly.
+
+    A COLOUR TOO CLOSE TO NEUTRAL TO HAVE A HUE cannot be said to have set off
+    round the circle either: its own hue is noise, so the angle it leaves at is
+    noise as well. Those are named "" too, however far they moved -- the amount
+    is real, the direction is not.
+
+    Returns an (N,) array of family names, "" where nothing honest can be said.
+    """
+    if quiet is None:
+        quiet = QUIET_DE
+    if neutral is None:
+        neutral = NEUTRAL_CHROMA
+    a = np.asarray(lab_a, float)
+    b = np.asarray(lab_b, float)
+    if a.shape != b.shape or a.ndim != 2 or a.shape[1] != 3:
+        raise ValueError("this needs two matching (N, 3) L*a*b* sets")
+    moved = delta_e_2000(a, b)
+    chroma = np.hypot(a[:, 1], a[:, 2])
+    mine = which_family(a, families=families, neutral=neutral)
+    out = np.full(len(a), "", dtype=object)
+    for i in range(len(a)):
+        if not np.isfinite(moved[i]) or moved[i] < quiet:
+            continue
+        if chroma[i] < neutral:
+            continue
+        # WHICH WAY ROUND THE CIRCLE, from this colour's own hue: the sign of
+        # the movement across the hue direction. Positive is anticlockwise in
+        # a*/b*, which is the same convention _which_way uses for a family.
+        hue = np.arctan2(a[i, 2], a[i, 1])
+        across = (-np.sin(hue) * (b[i, 1] - a[i, 1])
+                  + np.cos(hue) * (b[i, 2] - a[i, 2]))
+        name = _neighbour(a[i], across, families, own=mine[i])
+        out[i] = name.removeprefix("toward the ")
+    return out
+
+
 def _neighbour(from_lab, sideways, families, own=""):
     """The family a colour is heading for, going the way it is going.
 

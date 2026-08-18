@@ -1796,6 +1796,28 @@ def drift_direction(lab, moved, name: str, axis: str = "L",
     import numpy as _np
     import plotly.graph_objects as go
 
+    # WHICH FAMILY EACH DOT IS HEADING FOR, which is not an axis at all. The
+    # three axes ask "how much lighter, redder, warmer"; this asks where the
+    # colour is going, and answers in the colour of the place. It rides in on
+    # the same argument because it takes the same input -- the movement of
+    # every point -- and because a reader picks between them in one chooser.
+    if axis == "toward":
+        lab = _np.asarray(lab, dtype=float)
+        moved = _np.asarray(moved, dtype=float)
+        de = (_np.asarray(deltas, float) if deltas is not None
+              else _np.linalg.norm(moved, axis=1))
+        if hide_below:
+            keep, _said = hidden_below(de, hide_below)
+            lab, moved, de = lab[keep], moved[keep], de[keep]
+        x, y, z = lab[:, 1], lab[:, 2], lab[:, 0]
+        if space == "rgb":
+            x, y, z = lab[:, 0], lab[:, 1], lab[:, 2]
+        # SIZED BY HOW FAR IT WENT, the same rule as every other drift view,
+        # so the eye is drawn to the colours that moved rather than to
+        # whichever destination happens to have the loudest swatch.
+        sizes = _np.where(de < 1.0, 2.0, 4.0 + 3.0 * _np.clip(
+            (de - 1.0) / max(limit - 1.0, 1e-9), 0.0, 1.0))
+        return _split_by_destination(lab, lab + moved, x, y, z, sizes, de)
     if axis not in DIRECTIONS:
         raise ValueError(
             f"{axis!r} is not one of the directions this can draw; "
@@ -2037,6 +2059,116 @@ def _split_by_family(lab, x, y, z, values, sizes, ceiling, hover, scale,
                 size=sizes[pick], color=values[pick],
                 coloraxis="coloraxis", opacity=0.85)))
         drawn_key = True
+    return out
+
+
+#: THE SWATCH FOR EACH DESTINATION, worked out rather than picked by eye.
+#: Every family centre is drawn at one lightness and converted through the
+#: same D50 path the shapes themselves use, so the yellow in the key is the
+#: hue the word "yellows" actually means in this application rather than a
+#: designer's idea of yellow.
+#:
+#: ONE LIGHTNESS FOR ALL SIX, because only the HUE is being shown. Letting
+#: each swatch keep its own natural lightness would make the yellows shout and
+#: the blues disappear, which is a fact about human vision and not about the
+#: printer being looked at.
+#:
+#: AND AS MUCH CHROMA AS sRGB WILL HOLD AT THAT HUE, found per family rather
+#: than fixed. A single chroma for all six is limited by the worst of them:
+#: measured, a flat C* 45 put the reds at rgb(215,110,147) and the magentas at
+#: rgb(196,117,185) -- two pinks a reader has to compare rather than
+#: recognise. Pushing each hue to the edge of what the screen can show keeps
+#: every one of them the true hue and as far from its neighbours as the screen
+#: allows. The lightness stays fixed, so nothing is traded away except the
+#: part that was never being shown.
+_DESTINATION_LIGHT = 60.0
+
+#: A colour that has not moved far enough for its direction to mean anything
+#: is drawn in this instead -- the same neutral the rest of the application
+#: uses for "nothing to see here". It must not read as a seventh family.
+_GOING_NOWHERE = "rgb(120,124,132)"
+
+
+def destination_colours(families=None):
+    """One sRGB swatch per family, by hue, for the "heading for" view."""
+    import numpy as np
+
+    from gamutview import HUE_FAMILIES, lab_to_xyz, xyz_to_srgb
+
+    families = families or HUE_FAMILIES
+    out = {}
+    for name, centre in families:
+        rad = np.radians(centre)
+
+        def at(chroma, rad=rad):
+            lab = np.array([[_DESTINATION_LIGHT,
+                             chroma * np.cos(rad), chroma * np.sin(rad)]])
+            return xyz_to_srgb(lab_to_xyz(lab), clip=False)[0]
+
+        # HOW MUCH CHROMA THIS HUE WILL TAKE, by halving. Twenty steps settles
+        # it to a hundredth of a unit, which is far finer than a screen can
+        # show and costs nothing worth measuring.
+        low, high = 0.0, 130.0
+        for _ in range(20):
+            mid = (low + high) / 2
+            rgb = at(mid)
+            if rgb.min() < 0.0 or rgb.max() > 1.0:
+                high = mid
+            else:
+                low = mid
+        rgb = np.clip(at(low), 0.0, 1.0)
+        out[name] = "rgb({},{},{})".format(*(int(round(v * 255)) for v in rgb))
+    return out
+
+
+def _split_by_destination(lab_a, lab_b, x, y, z, sizes, deltas):
+    """One trace per family the colours are HEADING FOR.
+
+    WHY THIS IS WORTH A VIEW OF ITS OWN. "How far it moved" is a distance and
+    cannot say which way; splitting by the family a colour is IN says where
+    the movement is. Neither answers the question somebody actually asks out
+    loud, which is "what are my greys going TO". This does, dot by dot, in the
+    colour of the place each one is heading.
+
+    THE QUIET ONES ARE DRAWN AND NOT COLOURED, in one group of their own that
+    says so. Leaving them out would put holes in the cloud and invite the
+    reading that something is missing there; colouring them would claim a
+    direction that is arithmetic on instrument noise. See
+    gamutview.heading_for, which decides which is which and is shared with the
+    written report so the picture and the sentences cannot disagree.
+    """
+    import numpy as np
+    import plotly.graph_objects as go
+
+    from gamutview import HUE_FAMILIES, heading_for
+
+    going = heading_for(lab_a, lab_b)
+    swatches = destination_colours()
+    out = []
+    for family, _centre in HUE_FAMILIES:
+        pick = np.array([g == family for g in going])
+        if not pick.any():
+            continue
+        out.append(go.Scatter3d(
+            x=x[pick], y=y[pick], z=z[pick], mode="markers",
+            name=f"toward the {family} — {int(pick.sum())}",
+            customdata=_pairs(deltas[pick], deltas[pick]),
+            hovertemplate=("heading for the " + family
+                           + ", ΔE %{customdata[0]:.2f}<extra></extra>"),
+            marker=dict(size=sizes[pick], color=swatches[family],
+                        opacity=0.9, line=dict(width=0)),
+            showlegend=True))
+    quiet = np.array([not g for g in going])
+    if quiet.any():
+        out.append(go.Scatter3d(
+            x=x[quiet], y=y[quiet], z=z[quiet], mode="markers",
+            name=f"not heading anywhere — {int(quiet.sum())}",
+            customdata=_pairs(deltas[quiet], deltas[quiet]),
+            hovertemplate=("moved ΔE %{customdata[0]:.2f}, too little to say "
+                           "where<extra></extra>"),
+            marker=dict(size=sizes[quiet], color=_GOING_NOWHERE,
+                        opacity=0.55, line=dict(width=0)),
+            showlegend=True))
     return out
 
 

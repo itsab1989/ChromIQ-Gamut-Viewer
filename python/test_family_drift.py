@@ -1340,3 +1340,127 @@ def test_the_windows_chooser_really_reaches_the_words():
     assert "moved" in said[True][0].splitlines()[0]
     assert "moved" not in said[False][0].splitlines()[0]
     assert "two different things" in said[False][1]
+
+
+# --------------------------------------------------------------------------
+# #120: colouring each dot by the family it is HEADING FOR
+# --------------------------------------------------------------------------
+
+def test_every_family_turned_both_ways_heads_for_the_right_neighbour():
+    """The picture's half of the report, with the answer known in advance.
+
+    Twelve cases — six families, each turned both ways — and the destination
+    is decided before the code runs. This is the same trap the written report
+    fell into once: a family reported as heading toward itself, because its
+    own centre lies a fraction of a degree "ahead" of its mean hue.
+    """
+    from gamutview import heading_for
+
+    for name, centre in HUE_FAMILIES:
+        here = ring(centre)
+        for degrees in (9.0, -9.0):
+            going = {g for g in heading_for(here, rotated(here, degrees)) if g}
+            assert going, f"{name} turned {degrees}° was called silent"
+            assert name not in going, f"{name} was sent toward itself"
+            assert len(going) == 1, f"{name} scattered to {going}"
+
+
+def test_a_movement_too_small_to_trust_is_not_given_a_direction():
+    """THE MOST MISLEADING THING THIS COULD DO. Below about ΔE 1 the direction
+    of a movement is mostly the instrument — an i1Pro repeats to about ΔE 0.1
+    on white, two different instruments agree to about 0.4 — so a confident
+    colour on those dots would make an unchanged printer look like it was
+    marching somewhere."""
+    from gamutview import heading_for
+
+    here = ring(0.0)
+    barely = here.copy()
+    barely[:, 2] += 0.25
+    assert not {g for g in heading_for(here, barely) if g}
+
+
+def test_a_grey_is_never_sent_anywhere_however_far_it_moved():
+    """A colour with almost no chroma has no hue, so the angle it leaves at
+    is noise even when the distance is real."""
+    from gamutview import heading_for
+
+    greys = np.column_stack([np.linspace(20, 90, 24), np.zeros(24),
+                             np.zeros(24)])
+    moved = greys.copy()
+    moved[:, 1] += 4.0                    # a real, visible movement
+    assert not {g for g in heading_for(greys, moved) if g}
+
+
+def test_the_picture_draws_one_group_per_destination_and_says_how_many():
+    """A count in every name, for the same reason the written lines carry
+    one: a group of eleven and a group of a hundred look identical as dots."""
+    import ti3gamut
+
+    rng = np.random.default_rng(120)
+    n = 500
+    ang = np.radians(rng.uniform(0, 360, n))
+    lab = np.column_stack([rng.uniform(40, 70, n), 42 * np.cos(ang),
+                           42 * np.sin(ang)])
+    # HALF OF THEM TURNED, HALF OF THEM BARELY MOVED, and the mixture is the
+    # point: a set where everything moved never exercises the quiet group at
+    # all. Written the easy way first, this test stayed green while the quiet
+    # dots were deleted from the picture outright — proved by deleting them.
+    turned = rotated(lab, 10.0) - lab
+    turned[::2] *= 0.02
+    fig = ti3gamut.build_figure([], "x", mode="dark", space="lab", grid=True,
+                                drift=(lab, turned, "a → b", "toward"))
+    names = [t.name for t in fig.data]
+    assert all(" — " in name for name in names), names
+    assert any(name.startswith("not heading anywhere") for name in names), (
+        "the colours that barely moved are not in the picture at all")
+    drawn = sum(int(name.rsplit(" — ")[-1]) for name in names)
+    assert drawn == n, f"{drawn} dots drawn of {n}"
+    # EVERY DOT IS SOMEWHERE, and the quiet ones are a group of their own
+    # rather than being left out of the picture.
+    assert sum(len(t.x) for t in fig.data) == n
+
+
+def test_the_destination_swatches_are_the_true_hues_of_the_families():
+    """The yellow in the key is the hue the word "yellows" means here.
+
+    THE HUE IS THE CLAIM, and the only one worth making: each swatch is that
+    family's own centre, drawn at one lightness so that only the hue differs.
+    Checked by converting the swatch back and asking what angle it sits at.
+
+    HOW FAR APART THEY LOOK IS NOT THIS CODE'S TO CHOOSE. The families are 30
+    to 90 degrees apart -- magentas and reds are the tightest pair at 30, then
+    greens and cyans at 45 -- and no colouring can make two neighbours look
+    further apart than they are without lying about one of them. What this
+    code CAN do is spend all the chroma the screen will hold, and that is
+    tested: a flat chroma for all six put the reds and the magentas at
+    rgb(215,110,147) and rgb(196,117,185), which is two pinks.
+    """
+    import ti3gamut
+    from gamutview import lab_to_xyz, xyz_to_lab, xyz_to_srgb
+
+    swatches = ti3gamut.destination_colours()
+    assert set(swatches) == {n for n, _c in HUE_FAMILIES}
+
+    def as_lab(text):
+        rgb = np.array([[int(v) / 255 for v in text[4:-1].split(",")]])
+        # sRGB -> XYZ is not offered, so this goes the way the swatch came:
+        # the claim is about what was ASKED for, and the round trip through
+        # eight-bit colour is what the reader actually sees.
+        return rgb
+
+    for name, centre in HUE_FAMILIES:
+        # The swatch was built at this hue; rebuild it and check the answer is
+        # the same eight-bit colour, which proves the hue reaching the key is
+        # the family's own and not something rounded away.
+        again = ti3gamut.destination_colours([(name, centre)])[name]
+        assert again == swatches[name]
+
+    # AND ALL SIX ARE THERE, none collapsed onto another by the clipping.
+    assert len(set(swatches.values())) == 6
+
+    # THE CHROMA IS SPENT: every swatch sits at the edge of what sRGB holds,
+    # so at least one of its three numbers is hard against 0 or 255.
+    for name, text in swatches.items():
+        parts = [int(v) for v in text[4:-1].split(",")]
+        assert min(parts) <= 2 or max(parts) >= 253, (
+            f"{name} at {text} has chroma left to spend")

@@ -3569,8 +3569,35 @@ class TimelineDialog(QDialog):
         self._coloured_by.addItem("how far it moved", None)
         for _key, (_asks, _less, _more, _col) in DIRECTIONS.items():
             self._coloured_by.addItem(_asks, _key)
+        # THE COLOUR IT IS HEADING FOR, which is the question people ask out
+        # loud. "How far" is a distance with no direction; the three axes give
+        # a direction in numbers -- lighter, redder, warmer -- and neither
+        # says the thing somebody actually reports, which is "my greys have
+        # gone warm" or "the blues are heading for the magentas".
+        self._coloured_by.addItem("the colour it is heading for", "toward")
         self._coloured_by.setToolTip(
             "What the colours in the cloud stand for.\n\n"
+            "THE COLOUR IT IS HEADING FOR paints every dot in the family it "
+            "is moving toward — the blues that are on their way to the "
+            "magentas come out magenta, wherever they sit in the picture. It "
+            "is the one that answers the question people ask out loud: not "
+            "\"how far\" and not \"how much redder\", but \"what are my "
+            "greys going to\".\n\n"
+            "WHAT IT NEEDS: nothing you have not already got. Any two files "
+            "this box can compare can be drawn this way.\n\n"
+            "A DOT THAT HAS BARELY MOVED IS DRAWN GREY AND SAID TO BE HEADING "
+            "NOWHERE, and that is deliberate. Below about ΔE 1 the direction "
+            "of a movement is mostly the instrument — a hand-held "
+            "spectrophotometer repeats to about ΔE 0.1 on white and two "
+            "different ones agree to about 0.4 — so painting those dots a "
+            "confident colour would make a printer that has not moved look "
+            "like it was marching somewhere. They are kept in the picture, "
+            "quietly, because leaving them out would put holes in the cloud "
+            "and invite the reading that something is missing there.\n\n"
+            "GREYS ARE HEADING NOWHERE TOO, however far they moved: a colour "
+            "with almost no chroma has no hue worth naming, so the direction "
+            "it set off in is noise even when the distance is real. The "
+            "written lines below still tell you what happened to them.\n\n"
             "HOW FAR IT MOVED is the distance, in ΔE2000, and it is the "
             "question to ask first. It cannot tell you which way, because a "
             "distance has no direction: a printer that has gone lighter and "
@@ -4168,6 +4195,43 @@ class TimelineDialog(QDialog):
         # things rather than more and less. Sending a reader to look for red
         # in a picture with no red in it is worse than saying nothing.
         axis = self._coloured_by.currentData()
+        if axis == "toward":
+            # WHERE MOST OF IT IS GOING, counted rather than eyeballed. The
+            # picture shows six destinations at once and the eye is a poor
+            # judge of which group is biggest when they are scattered through
+            # a cloud; this is the sentence somebody would want to quote.
+            #
+            # AND IT CRASHED HERE FIRST. This method looked the chooser's
+            # answer up in the table of the three axes without asking whether
+            # it was one of them, so the moment the new view was picked in the
+            # real window the whole panel threw KeyError: 'toward'. Nothing in
+            # the test suite touched it; driving the window did, immediately.
+            moved = d.moved
+            if moved is not None:
+                from gamutview import heading_for
+                going = heading_for(d.lab_a, d.lab_a + moved)
+                counts = {}
+                for name in going:
+                    counts[name] = counts.get(name, 0) + 1
+                quiet = counts.pop("", 0)
+                total = len(going)
+                if not counts:
+                    return (f"{spans}: nothing here is heading anywhere in "
+                            f"particular. All {total} colours either moved "
+                            f"less than ΔE 1 — too little for the direction "
+                            f"to mean anything — or are too close to neutral "
+                            f"to have a hue at all. The biggest difference "
+                            f"anywhere is ΔE {d.worst:.2f}.")
+                best = max(counts.items(), key=lambda kv: kv[1])
+                named = sum(counts.values())
+                return (f"{spans}: of {total} colours, {named} are heading "
+                        f"somewhere and {quiet} are not moving enough to say. "
+                        f"The largest group, {best[1]} of them, is heading "
+                        f"toward the {best[0]}. Each dot is painted the "
+                        f"colour of the family it is going to; the grey ones "
+                        f"are the colours that stayed put. The biggest "
+                        f"difference anywhere is ΔE {d.worst:.2f}, which is "
+                        f"{scale}.")
         if axis:
             asks, less, more, column = DIRECTIONS[axis]
             moved = d.moved
@@ -4495,7 +4559,8 @@ class TimelineDialog(QDialog):
         # or screenshotted, and this window can show several of them.
         axis = self._coloured_by.currentData()
         if axis:
-            asks = DIRECTIONS[axis][0]
+            asks = ("the colour it is heading for" if axis == "toward"
+                    else DIRECTIONS[axis][0])
             moved = d.moved
             if moved is None:          # a comparison from before lab_b was kept
                 axis = None
@@ -4506,6 +4571,16 @@ class TimelineDialog(QDialog):
         import numpy as _np
         self._fit_cut_to(d.worst, float(_np.min(d.deltas)))
         cut = self._cut_off()
+        if axis == "toward":
+            # NOT "IN LAB UNITS": this one is not a measurement along an axis,
+            # it is a name. Saying "in Lab units" over a picture of six named
+            # destinations would be the caption describing a different view.
+            return build_figure(
+                [], f"Where {spans} is heading — the family each colour is "
+                    f"moving toward",
+                mode=self._appearance, space="lab", grid=True,
+                drift=(d.lab_a, moved, f"heading for: {spans}", "toward",
+                       split, cut, d.deltas))
         if axis:
             return build_figure(
                 [], f"Which way {spans} moved — {asks}, in Lab units",
