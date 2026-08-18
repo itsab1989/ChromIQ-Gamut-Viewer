@@ -4173,12 +4173,19 @@ class TimelineDialog(QDialog):
 
     def add(self, paths) -> None:
         """Take on more profiles, ignoring any already in the run."""
+        # THE SET GROWS AS IT GOES, and that one line is the difference
+        # between "ignoring any already in the run" and doing it properly:
+        # worked out once before the loop, the same file named twice in ONE
+        # drop went in twice. Two identical profiles in a run draw a step of
+        # ΔE 0 and a flat piece of graph, which reads as a device that did not
+        # move rather than as a file added twice.
         here = {p.resolve() for p in self._paths}
         for raw in paths:
             path = Path(raw)
             try:
                 if path.resolve() in here:
                     continue
+                here.add(path.resolve())
             except OSError:
                 pass
             self._paths.append(path)
@@ -8624,6 +8631,13 @@ class GamutApp(QMainWindow):
         names = [path.stem for path, _g, _m in self._slots]
         if self._reference is not None:
             names.append(self._reference[0])
+        # AND A CHART, BUT ONLY ONE THAT WOULD BE DRAWN. A chart open with no
+        # profile to place it through is not in the picture either way, so
+        # naming it would promise the reader something back that was never
+        # there. Measured: _chart set, _chart_drawable False, and the right
+        # sentence is no sentence.
+        if self._chart is not None and self._chart_drawable():
+            names.append(Path(self._chart[0]).stem)
         if self._chart is not None and self._chart_placed is not None:
             names.append(self._chart[0].stem)
         return names
