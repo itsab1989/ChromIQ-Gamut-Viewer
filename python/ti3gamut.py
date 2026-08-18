@@ -4412,6 +4412,72 @@ def _spin_script(ids, spin, mode: str = "dark",
             f"window.cqSpinControls(s);}});</script>")
 
 
+
+#: The caption, kept inside the picture it belongs to.
+#:
+#: WHY IT IS NOT PART OF THE MOVEMENT SCRIPT, where it was written first: a
+#: cross-section has no camera, so the application's flat view carries no
+#: movement script at all -- measured by asking the page, which answered
+#: `cqSpin? False` -- and the flat view is exactly where the caption is
+#: longest and the trouble worst. This runs in every page, moving or still,
+#: flat or not.
+#:
+#: WHAT IT DOES. One line written for a wide pane runs off the right-hand
+#: edge of a narrow one: photographed in the application's cross-section at a
+#: 1000px window, "...from a D50 white * lightness L* = 50" stopped mid-word
+#: at the frame, and measured there at 512 pixels of text in a 424 pixel pane.
+#: The caption is built as clauses joined by a middle dot, so that is where a
+#: reader would break it, and that is where this breaks it. The one-line form
+#: is remembered, so widening the window puts it back.
+_CAPTION_JS = """
+window.cqCaption = (function () {
+  var oneLine = {}, asOneLine = {}, timer = null;
+  var JOIN = "  \u00b7  ";
+  function each(fn) {
+    var divs = document.getElementsByClassName("plotly-graph-div");
+    for (var i = 0; i < divs.length; i++) fn(divs[i]);
+  }
+  function fit(gd) {
+    if (!gd || !gd.layout || !gd.layout.title || !window.Plotly) return;
+    var now = String(gd.layout.title.text || "");
+    if (!now) return;
+    var key = gd.id || "one";
+    if (oneLine[key] === undefined) oneLine[key] = now.split("<br>").join(JOIN);
+    var full = oneLine[key];
+    var room = (gd.clientWidth || 0) - 28;
+    if (room <= 0 || full.indexOf(JOIN) < 0) return;
+    var el = gd.querySelector ? gd.querySelector(".gtitle") : null;
+    var wide = 0;
+    try { wide = el && el.getBBox ? el.getBBox().width : 0; } catch (e) {}
+    if (!wide) return;
+    var broken = full.split(JOIN).join("<br>");
+    var want = now;
+    // Wrapped or not, the measurement is of what is DRAWN -- so the decision
+    // is made from the state it is in: too wide on one line means break it,
+    // and comfortably narrow while broken means it will fit joined up again.
+    if (now.indexOf("<br>") < 0) {
+      // Remembered while it is still on one line, because that is the only
+      // moment its true width can be measured -- guessing it from the wrapped
+      // text (twice the longer line, and then some) kept a caption in two
+      // lines through a window half as wide again as it needed. Measured: it
+      // came back at 1900 where 1600 was plenty.
+      asOneLine[key] = wide;
+      if (wide > room) want = broken;
+    } else if (asOneLine[key] && asOneLine[key] <= room) {
+      want = full;
+    }
+    if (want !== now) Plotly.relayout(gd, {"title.text": want});
+  }
+  function soon() {
+    if (timer) window.clearTimeout(timer);
+    timer = window.setTimeout(function () { timer = null; each(fit); }, 160);
+  }
+  window.addEventListener("load", function () { window.setTimeout(soon, 300); });
+  window.addEventListener("resize", soon);
+  return {fit: function () { each(fit); }};
+})();
+"""
+
 #: The strip of controls the reader of a saved page gets.
 #:
 #: WHY IT IS BUILT IN JAVASCRIPT rather than written into the page's HTML: the
@@ -7278,6 +7344,10 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     # The pointing lines leave streaks in one engine; this clears them without
     # taking the lines away. See _clear_hover_streaks.
     html = _clear_hover_streaks(html)
+    # THE CAPTION FITS THE PANE IT IS IN, on every page this writes -- moving
+    # or still, flat or not. See _CAPTION_JS for why it is not part of the
+    # movement script.
+    html = html.replace("</body>", f"<script>{_CAPTION_JS}</script></body>", 1)
     if not carry_viewer:
         html = _say_if_the_viewer_never_arrives(html, mode)
     _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]

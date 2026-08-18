@@ -207,7 +207,54 @@ window.cqViewerCame = function () {
     });
   });
 })();</script>
-<div id="cq-noviewer" hidden style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#111111;color:#e6e6e6;z-index:9;font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><div style="max-width:34rem;padding:2rem;text-align:left"><p style="font-size:1.15rem;margin:0 0 .6rem"><b>The 3D viewer did not arrive.</b></p><p data-cq="why" style="margin:0 0 .6rem">It was saved <i>without</i> the 3D viewer inside it, which is what keeps it to a few dozen kilobytes instead of about five megabytes. The viewer is fetched when the page opens, and this time it could not be reached.</p><p style="margin:0 0 .6rem">Nothing is wrong with this file and no measurement is missing. <b>The commonest reason on a phone is that the download was interrupted</b> — switching to another app, or locking the screen, stops it, and it is about 5 MB. A network that filters or proxies downloads can stop it too. So this does not necessarily mean you are offline.</p><p style="margin:0 0 1rem">Try it again below — it keeps this page as it is. If it has to work with no connection at all, save it again from the application with <b>Put the 3D viewer inside the file</b> ticked; that makes a bigger file that never needs the internet.</p><button type="button" data-cq="retry" style="font:inherit;padding:.6rem 1.1rem;border-radius:8px;border:1px solid #e6e6e6;background:transparent;color:#e6e6e6;cursor:pointer;min-height:44px">Try to fetch the viewer again</button><span data-cq="tries" style="margin-left:.7rem;opacity:.75"></span></div></div>
+<script>
+window.cqCaption = (function () {
+  var oneLine = {}, asOneLine = {}, timer = null;
+  var JOIN = "  ·  ";
+  function each(fn) {
+    var divs = document.getElementsByClassName("plotly-graph-div");
+    for (var i = 0; i < divs.length; i++) fn(divs[i]);
+  }
+  function fit(gd) {
+    if (!gd || !gd.layout || !gd.layout.title || !window.Plotly) return;
+    var now = String(gd.layout.title.text || "");
+    if (!now) return;
+    var key = gd.id || "one";
+    if (oneLine[key] === undefined) oneLine[key] = now.split("<br>").join(JOIN);
+    var full = oneLine[key];
+    var room = (gd.clientWidth || 0) - 28;
+    if (room <= 0 || full.indexOf(JOIN) < 0) return;
+    var el = gd.querySelector ? gd.querySelector(".gtitle") : null;
+    var wide = 0;
+    try { wide = el && el.getBBox ? el.getBBox().width : 0; } catch (e) {}
+    if (!wide) return;
+    var broken = full.split(JOIN).join("<br>");
+    var want = now;
+    // Wrapped or not, the measurement is of what is DRAWN -- so the decision
+    // is made from the state it is in: too wide on one line means break it,
+    // and comfortably narrow while broken means it will fit joined up again.
+    if (now.indexOf("<br>") < 0) {
+      // Remembered while it is still on one line, because that is the only
+      // moment its true width can be measured -- guessing it from the wrapped
+      // text (twice the longer line, and then some) kept a caption in two
+      // lines through a window half as wide again as it needed. Measured: it
+      // came back at 1900 where 1600 was plenty.
+      asOneLine[key] = wide;
+      if (wide > room) want = broken;
+    } else if (asOneLine[key] && asOneLine[key] <= room) {
+      want = full;
+    }
+    if (want !== now) Plotly.relayout(gd, {"title.text": want});
+  }
+  function soon() {
+    if (timer) window.clearTimeout(timer);
+    timer = window.setTimeout(function () { timer = null; each(fit); }, 160);
+  }
+  window.addEventListener("load", function () { window.setTimeout(soon, 300); });
+  window.addEventListener("resize", soon);
+  return {fit: function () { each(fit); }};
+})();
+</script><div id="cq-noviewer" hidden style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#111111;color:#e6e6e6;z-index:9;font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><div style="max-width:34rem;padding:2rem;text-align:left"><p style="font-size:1.15rem;margin:0 0 .6rem"><b>The 3D viewer did not arrive.</b></p><p data-cq="why" style="margin:0 0 .6rem">It was saved <i>without</i> the 3D viewer inside it, which is what keeps it to a few dozen kilobytes instead of about five megabytes. The viewer is fetched when the page opens, and this time it could not be reached.</p><p style="margin:0 0 .6rem">Nothing is wrong with this file and no measurement is missing. <b>The commonest reason on a phone is that the download was interrupted</b> — switching to another app, or locking the screen, stops it, and it is about 5 MB. A network that filters or proxies downloads can stop it too. So this does not necessarily mean you are offline.</p><p style="margin:0 0 1rem">Try it again below — it keeps this page as it is. If it has to work with no connection at all, save it again from the application with <b>Put the 3D viewer inside the file</b> ticked; that makes a bigger file that never needs the internet.</p><button type="button" data-cq="retry" style="font:inherit;padding:.6rem 1.1rem;border-radius:8px;border:1px solid #e6e6e6;background:transparent;color:#e6e6e6;cursor:pointer;min-height:44px">Try to fetch the viewer again</button><span data-cq="tries" style="margin-left:.7rem;opacity:.75"></span></div></div>
 <script>(function () {
   // A FAILURE THAT HAPPENED BEFORE THIS EXISTED is acted on now.
   if (window.cqNoViewerWanted)

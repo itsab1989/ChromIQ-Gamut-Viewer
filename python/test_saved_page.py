@@ -2085,3 +2085,33 @@ def test_one_cross_section_gets_the_same_air_as_two():
     slidable = ti3gamut.build_slice_figure(gamuts, 50.0, "a cut",
                                            slidable=True)
     assert slidable.layout.xaxis.range is None
+
+
+def test_the_caption_fits_the_pane_it_is_in():
+    """One line written for a wide pane runs off a narrow one.
+
+    Photographed in the application's cross-section at a 1000px window:
+    "…measured from a D50 white · lightness L* = 50" stopped mid-word at the
+    frame, and measured there at 512 pixels of text in a 424 pixel pane.
+
+    NOT PART OF THE MOVEMENT SCRIPT, which is where it was written first: a
+    cross-section has no camera, so the flat view carries no movement script
+    at all — asked of the running page, which answered `cqSpin? False` — and
+    the flat view is exactly where the caption is longest.
+    """
+    import ti3gamut
+
+    js = ti3gamut._CAPTION_JS
+    # It breaks where the caption itself joins its clauses, which is where a
+    # reader would break it.
+    assert 'JOIN = "  \\u00b7  "' in js
+    # And it remembers the one-line form so widening puts it back — measured
+    # from the real width, not guessed from the wrapped one, which kept a
+    # caption in two lines through a window half as wide again as it needed.
+    assert "asOneLine[key] = wide;" in js
+    assert "asOneLine[key] <= room" in js
+    # Every page gets it: still or moving, flat or not.
+    import inspect
+
+    writer = inspect.getsource(ti3gamut._write_dark_html)
+    assert "_CAPTION_JS" in writer
