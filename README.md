@@ -1322,6 +1322,7 @@ python scripts/audit_routes.py            # every writing route carries what the
 python scripts/audit_offers.py            # the export dialog offers exactly what a page can do
 python scripts/audit_promises.py          # does the window do what its own words claim?
 python scripts/audit_width.py             # the column is sized once and never moves
+python scripts/audit_run_beside_the_rest.py  # a run open beside a file, a comparison and a chart
 ```
 
 Several of these were written after a fault got past everything else, and each

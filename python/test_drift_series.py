@@ -1103,7 +1103,54 @@ def _settle(app, seconds=0.4):
         time.sleep(0.002)
 
 
-def test_adding_a_run_scrolls_the_column_to_it():
+@pytest.fixture(scope="module")
+def column():
+    """ONE window for all three of these, and that is not tidiness.
+
+    Each of them wants a real main window -- what is under test is a chain
+    through the layout, not a calculation -- and building a third one in a
+    single process crashes: QWebEngineView's page is created per window, and
+    the third construction went down inside WebContentsAdapter with a stack
+    of QtWebEngineCore and no Python frame to blame. Two passed, three did
+    not, which is exactly the kind of thing that reads as a flaky test.
+
+    So the window is built once and each test puts back what it changed.
+    """
+    from PyQt6.QtWidgets import QApplication, QScrollArea
+
+    import gamut_app
+
+    app = QApplication.instance() or QApplication([])
+    win = gamut_app.GamutApp([])
+    win.resize(1280, 800)
+    win.show()
+    _settle(app, 1.5)
+    area = win.findChild(QScrollArea)
+    yield app, win, area, win._timeline
+    win.close()
+    _settle(app, 0.2)
+
+
+@pytest.fixture
+def fresh(column):
+    """The window handed back the way it was found."""
+    app, win, area, panel = column
+    was_paths = panel._paths
+    was_rebuild = panel._rebuild
+    was_bring = panel._bring_the_answer_into_view
+    win._who_owns.setText("")
+    area.verticalScrollBar().setValue(0)
+    _settle(app, 0.2)
+    yield app, win, area, panel
+    panel._paths = was_paths
+    panel._rebuild = was_rebuild
+    panel._bring_the_answer_into_view = was_bring
+    win._who_owns.setText("")
+    area.verticalScrollBar().setValue(0)
+    _settle(app, 0.1)
+
+
+def test_adding_a_run_scrolls_the_column_to_it(fresh):
     """A run's answer must not arrive below the fold with nothing going to it.
 
     MEASURED IN THE REAL WINDOW BEFORE THIS EXISTED, at 1280x800 with four
@@ -1120,54 +1167,38 @@ def test_adding_a_run_scrolls_the_column_to_it():
     """
     import pathlib
 
-    from PyQt6.QtWidgets import QApplication, QScrollArea
+    app, win, area, panel = fresh
+    bar = area.verticalScrollBar()
+    assert bar.value() == 0
 
-    import gamut_app
+    # A RUN WITHOUT READING ANY PROFILES. What is under test is the scroll,
+    # not the arithmetic, and four real profiles cost twelve seconds of a
+    # gate that runs in twenty.
+    panel._paths = [pathlib.Path("printer-2019.icc"),
+                    pathlib.Path("printer-2024.icc")]
+    panel._bring_the_answer_into_view()
+    _settle(app, 0.5)
 
-    app = QApplication.instance() or QApplication([])
-    win = gamut_app.GamutApp([])
-    win.resize(1280, 800)
-    win.show()
-    _settle(app, 1.5)
-    try:
-        area = win.findChild(QScrollArea)
-        panel = win._timeline
-        bar = area.verticalScrollBar()
-        bar.setValue(0)
-        _settle(app, 0.2)
-        assert bar.value() == 0
+    inner = area.widget()
+    top = panel.mapTo(inner, panel.rect().topLeft()).y()
+    assert bar.value() > 0, (
+        "adding a run left the column where it was, so the run's answer is "
+        "still below the fold")
+    assert abs(bar.value() - min(top, bar.maximum())) <= 2, (
+        f"the column stopped at {bar.value()} rather than at the panel's own "
+        f"top edge, {top}")
 
-        # A RUN WITHOUT READING ANY PROFILES. What is under test is the
-        # scroll, not the arithmetic, and four real profiles cost twelve
-        # seconds of a gate that runs in seventeen.
-        panel._paths = [pathlib.Path("printer-2019.icc"),
-                        pathlib.Path("printer-2024.icc")]
-        panel._bring_the_answer_into_view()
-        _settle(app, 0.5)
-
-        inner = area.widget()
-        top = panel.mapTo(inner, panel.rect().topLeft()).y()
-        assert bar.value() > 0, (
-            "adding a run left the column where it was, so the run's answer "
-            "is still below the fold")
-        assert abs(bar.value() - min(top, bar.maximum())) <= 2, (
-            f"the column stopped at {bar.value()} rather than at the panel's "
-            f"own top edge, {top}")
-
-        # AND IT IS `add` THAT ASKS. The method working is half of it; the
-        # user's own action reaching it is the other half, and that half is
-        # one line that could be deleted without a single test noticing.
-        asked = []
-        panel._bring_the_answer_into_view = lambda: asked.append(True)
-        panel._rebuild = lambda *a, **k: None
-        panel.add([pathlib.Path("printer-2025.icc")])
-        assert asked, "add() no longer brings the run's answer into view"
-    finally:
-        win.close()
-        _settle(app, 0.2)
+    # AND IT IS `add` THAT ASKS. The method working is half of it; the user's
+    # own action reaching it is the other half, and that half is one line
+    # that could be deleted without a single test noticing.
+    asked = []
+    panel._bring_the_answer_into_view = lambda: asked.append(True)
+    panel._rebuild = lambda *a, **k: None
+    panel.add([pathlib.Path("printer-2025.icc")])
+    assert asked, "add() no longer brings the run's answer into view"
 
 
-def test_an_empty_run_does_not_move_the_column():
+def test_an_empty_run_does_not_move_the_column(fresh):
     """Nothing added, nothing to go to.
 
     THE FIRST VERSION OF THIS TEST GUARDED NOTHING, and the mutation caught
@@ -1181,27 +1212,71 @@ def test_an_empty_run_does_not_move_the_column():
     must leave the reader where they are rather than jumping to a section
     that now says nothing.
     """
-    from PyQt6.QtWidgets import QApplication, QScrollArea
+    app, win, area, panel = fresh
+    bar = area.verticalScrollBar()
+    bar.setValue(120)
+    _settle(app, 0.2)
+    panel._paths = []
+    panel._bring_the_answer_into_view()
+    _settle(app, 0.4)
+    assert bar.value() == 120, (
+        "an empty run scrolled the column to a section with nothing in it")
 
-    import gamut_app
 
-    app = QApplication.instance() or QApplication([])
-    win = gamut_app.GamutApp([])
-    win.resize(1280, 800)
-    win.show()
-    _settle(app, 1.5)
-    try:
-        area = win.findChild(QScrollArea)
-        panel = win._timeline
-        bar = area.verticalScrollBar()
-        bar.setValue(120)
-        _settle(app, 0.2)
-        panel._paths = []
-        panel._bring_the_answer_into_view()
-        _settle(app, 0.4)
-        assert bar.value() == 120, (
-            "an empty run scrolled the column to a section with nothing in "
-            "it")
-    finally:
-        win.close()
-        _settle(app, 0.2)
+def test_the_landing_keeps_the_line_that_says_the_view_changed_hands(fresh):
+    """With a file also open, the run takes the big view -- and says so.
+
+    FOUND BY CROSSING, NOT BY DRIVING A RUN ALONE. A run on its own is the
+    only state in which landing on the panel is right: in six of the eight
+    states of {a file, a comparison, a chart}, the big view stops showing
+    them and starts showing the run, and the single line above this panel is
+    the only thing that says so. Landing on the panel's own top edge
+    scrolled straight past it in all six.
+
+    The line was visible before any of the scrolling was built -- because
+    nothing scrolled at all -- so a fix for one fault had quietly made
+    another. This pins the order: when there is something to explain, the
+    explanation is where the view starts.
+    """
+    app, win, area, panel = fresh
+    inner = area.widget()
+    bar = area.verticalScrollBar()
+
+    # THE STATE, NOT THE ARITHMETIC: the line has something to say, which in
+    # the window happens because a file is open behind the run. Set directly,
+    # so this costs no profile reading.
+    win._who_owns.setText(
+        "The big view is showing this run. printer-2019 is still open as "
+        "well, and it comes back as soon as you remove these profiles.")
+    panel._paths = ["printer-2019.icc", "printer-2024.icc"]
+    _settle(app, 0.3)
+    bar.setValue(0)
+    panel._bring_the_answer_into_view()
+    _settle(app, 0.5)
+
+    line_top = win._who_owns.mapTo(inner, win._who_owns.rect().topLeft()).y()
+    panel_top = panel.mapTo(inner, panel.rect().topLeft()).y()
+    assert line_top < panel_top, "the fixture no longer matches the layout"
+    assert abs(bar.value() - min(line_top, bar.maximum())) <= 2, (
+        f"the view starts at {bar.value()}; the line explaining that the big "
+        f"view changed hands is at {line_top} and the panel at {panel_top}, "
+        f"so the explanation was scrolled past")
+
+    # AND WITH NOTHING TO EXPLAIN it does not give the room away: an empty
+    # line is hidden, and the run is the only thing the picture could be.
+    win._who_owns.setText("")
+    _settle(app, 0.3)
+    bar.setValue(0)
+    panel._bring_the_answer_into_view()
+    _settle(app, 0.5)
+    # MEASURED AGAIN, AFTER THE LINE WENT. It is hidden when empty, so the
+    # whole column shrinks by its height and the panel moves up -- 474 to
+    # 436. Held against the position from before, this failed by exactly
+    # those 38 px and looked like a scrolling fault: a real measurement of
+    # the wrong pair.
+    panel_top_now = panel.mapTo(inner, panel.rect().topLeft()).y()
+    assert panel_top_now < panel_top, (
+        "the line is supposed to be hidden when it is empty")
+    assert abs(bar.value() - min(panel_top_now, bar.maximum())) <= 4, (
+        f"with nothing to explain the view should start at the panel, "
+        f"{panel_top_now}, and it started at {bar.value()}")

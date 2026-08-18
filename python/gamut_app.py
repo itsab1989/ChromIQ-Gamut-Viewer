@@ -4304,7 +4304,31 @@ class TimelineDialog(QDialog):
             inner = node.widget()
             if inner is None:
                 return
-            top = self.mapTo(inner, self.rect().topLeft()).y()
+            # THE SENTENCE THAT SAYS THE VIEW CHANGED HANDS COMES FIRST.
+            #
+            # Found by crossing what is open against a run rather than by
+            # driving a run on its own: with a file or a comparison also
+            # open, the big view stops showing them and starts showing the
+            # run, and one line above this panel is the only thing that says
+            # so -- "The big view is showing this run. printer-2019 is still
+            # open as well, and it comes back as soon as you remove these
+            # profiles."
+            #
+            # Landing on the panel's top edge scrolled straight past it, in
+            # all six of the eight states where it has anything to say. The
+            # line was VISIBLE before any of this was built, because nothing
+            # scrolled at all -- so a fix for one fault had quietly made
+            # another.
+            #
+            # It costs about forty pixels at the bottom of the view and it is
+            # the difference between a picture that changed and a picture
+            # that changed FOR A REASON.
+            start = self
+            owner = getattr(self._host, "_who_owns", None)
+            if (owner is not None and owner.text()
+                    and owner.isVisibleTo(inner)):
+                start = owner
+            top = start.mapTo(inner, start.rect().topLeft()).y()
             bar = node.verticalScrollBar()
             # EXACTLY THE PANEL'S TOP EDGE, and nothing clever. Stopping a
             # little short to catch the section's heading was tried and
