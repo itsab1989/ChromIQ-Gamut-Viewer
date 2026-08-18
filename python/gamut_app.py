@@ -7170,6 +7170,19 @@ class GamutApp(QMainWindow):
         # extent without anything hiding what is inside it.
         self._opacity.setRange(0, 100); self._opacity.setValue(100)
         self._opacity.valueChanged.connect(self._on_opacity_changed)
+        # RECORDED ON EVERY STEP, not only when the handle is let go. The
+        # slider writes its own value to the settings on every step already;
+        # the record the renderer reads was written on release alone, so the
+        # two copies of one number parted company the moment somebody dragged
+        # and quit -- and the settings are written eagerly precisely because
+        # quitting mid-anything is the case they are for.
+        #
+        # Measured before the fix, by opening a second window afterwards: the
+        # slider came back saying 0.64 beside a shape drawn at 0.37. A control
+        # that says something untrue about the picture beside it is the fault
+        # this window has been reported for twice.
+        self._opacity.valueChanged.connect(
+            lambda _v: self._remember_shape_setting("opacity"))
         self._opacity.sliderReleased.connect(
             lambda: self._after_shape_setting("opacity"))
         orow.addWidget(self._opacity, 1)
@@ -7322,6 +7335,10 @@ class GamutApp(QMainWindow):
         self._depth.setRange(0, 100)
         self._depth.setValue(35)
         self._depth.valueChanged.connect(self._on_depth_changed)
+        # Same reasoning as the solidity slider above: recorded as it moves,
+        # so a window opened later cannot disagree with its own control.
+        self._depth.valueChanged.connect(
+            lambda _v: self._remember_shape_setting("depth"))
         self._depth.sliderReleased.connect(
             lambda: self._after_shape_setting("depth"))
         drow.addWidget(self._depth, 1)

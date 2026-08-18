@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### 💾 A window opened later cannot disagree with its own slider
+
+*How solid it looks* and *how deep the shading is* wrote their value into the
+settings on every step of a drag, and into the record the picture is drawn
+from only when the handle was let go. Drag and quit — which is exactly the
+case those settings are written eagerly for — and the two parted company:
+
+    the slider says 0.64, the picture is drawn at 0.37
+
+Both are recorded as the handle moves now. A control that says something
+untrue about the picture beside it is the fault this window has been reported
+for twice, and this was a way to reach it that nobody had tried.
+
 ### 🪟 A live change reaches both rooms
 
 Every live path in this window began at *the first* graph in the page — and
