@@ -4072,7 +4072,54 @@ return Plotly;
     });
   });
 })();</script>
-<div class="cq-notes" style="font:13px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;color:#e6e6e6;background:#111111;padding:14px 22px 78px;white-space:pre-wrap">Colour held: 702,327  ·  543,689 cubic Lab units
+<script>
+window.cqCaption = (function () {
+  var oneLine = {}, asOneLine = {}, timer = null;
+  var JOIN = "  ·  ";
+  function each(fn) {
+    var divs = document.getElementsByClassName("plotly-graph-div");
+    for (var i = 0; i < divs.length; i++) fn(divs[i]);
+  }
+  function fit(gd) {
+    if (!gd || !gd.layout || !gd.layout.title || !window.Plotly) return;
+    var now = String(gd.layout.title.text || "");
+    if (!now) return;
+    var key = gd.id || "one";
+    if (oneLine[key] === undefined) oneLine[key] = now.split("<br>").join(JOIN);
+    var full = oneLine[key];
+    var room = (gd.clientWidth || 0) - 28;
+    if (room <= 0 || full.indexOf(JOIN) < 0) return;
+    var el = gd.querySelector ? gd.querySelector(".gtitle") : null;
+    var wide = 0;
+    try { wide = el && el.getBBox ? el.getBBox().width : 0; } catch (e) {}
+    if (!wide) return;
+    var broken = full.split(JOIN).join("<br>");
+    var want = now;
+    // Wrapped or not, the measurement is of what is DRAWN -- so the decision
+    // is made from the state it is in: too wide on one line means break it,
+    // and comfortably narrow while broken means it will fit joined up again.
+    if (now.indexOf("<br>") < 0) {
+      // Remembered while it is still on one line, because that is the only
+      // moment its true width can be measured -- guessing it from the wrapped
+      // text (twice the longer line, and then some) kept a caption in two
+      // lines through a window half as wide again as it needed. Measured: it
+      // came back at 1900 where 1600 was plenty.
+      asOneLine[key] = wide;
+      if (wide > room) want = broken;
+    } else if (asOneLine[key] && asOneLine[key] <= room) {
+      want = full;
+    }
+    if (want !== now) Plotly.relayout(gd, {"title.text": want});
+  }
+  function soon() {
+    if (timer) window.clearTimeout(timer);
+    timer = window.setTimeout(function () { timer = null; each(fit); }, 160);
+  }
+  window.addEventListener("load", function () { window.setTimeout(soon, 300); });
+  window.addEventListener("resize", soon);
+  return {fit: function () { each(fit); }};
+})();
+</script><div class="cq-notes" style="font:13px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;color:#e6e6e6;background:#111111;padding:14px 22px 78px;white-space:pre-wrap">Colour held: 702,327  ·  543,689 cubic Lab units
 
 77.4% of the colour Glossy-paper can print also fits inside Matte-paper.
 100.0% of Matte-paper fits inside Glossy-paper.

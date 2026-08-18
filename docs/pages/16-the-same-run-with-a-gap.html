@@ -3915,4 +3915,52 @@ that climbs steadily is just as consistent with charts ageing as with a device
 drifting, and no arithmetic can separate the two.</p>
 <p class="caveat">The numbers are ΔE2000. Below 1 nobody can see the
 difference; above 3 anybody can.</p>
-<p class="verdict">printer-2019 to printer-2024 — which colour families moved:</p><ul class="families"><li>reds: ΔE 1.1 more saturated, also toward the yellows (137 patches)</li><li>yellows: ΔE 1.3 more saturated, also toward the reds (134 patches)</li><li>greens: ΔE 1.4 toward the yellows (86 patches)</li><li>cyans: ΔE 1.3 toward grey (121 patches)</li><li>blues: ΔE 1.7 toward the magentas, also toward grey (132 patches)</li><li>magentas: ΔE 1.5 toward the reds (108 patches)</li><li>greys: ΔE 2.9 redder, also warmer (yellow) (11 patches)</li></ul><p class="caveat">These are two profiles, so this is how far apart the two DESCRIPTIONS are — not how far the printer moved. Each profile is one day's measurements of one chart, so a faded chart or a change in how they were built is inside these numbers too. Where one family stops and the next begins is a line this window draws, not one that exists in nature. The families are centred on reds around 0°, yellows around 90°, greens around 150°, cyans around 195°, blues around 270°, magentas around 330° of hue, and each one reaches half way to its neighbours. Anything less colourful than chroma 5 is called a grey instead, because below that a colour's hue is mostly noise and would put it in a family at random. Of these 729 colours, 123 sit within 5° of one of those lines and could honestly have been counted either side of it.</p></div></body></html>
+<p class="verdict">printer-2019 to printer-2024 — which colour families moved:</p><ul class="families"><li>reds: ΔE 1.1 more saturated, also toward the yellows (137 patches)</li><li>yellows: ΔE 1.3 more saturated, also toward the reds (134 patches)</li><li>greens: ΔE 1.4 toward the yellows (86 patches)</li><li>cyans: ΔE 1.3 toward grey (121 patches)</li><li>blues: ΔE 1.7 toward the magentas, also toward grey (132 patches)</li><li>magentas: ΔE 1.5 toward the reds (108 patches)</li><li>greys: ΔE 2.9 redder, also warmer (yellow) (11 patches)</li></ul><p class="caveat">These are two profiles, so this is how far apart the two DESCRIPTIONS are — not how far the printer moved. Each profile is one day's measurements of one chart, so a faded chart or a change in how they were built is inside these numbers too. Where one family stops and the next begins is a line this window draws, not one that exists in nature. The families are centred on reds around 0°, yellows around 90°, greens around 150°, cyans around 195°, blues around 270°, magentas around 330° of hue, and each one reaches half way to its neighbours. Anything less colourful than chroma 5 is called a grey instead, because below that a colour's hue is mostly noise and would put it in a family at random. Of these 729 colours, 123 sit within 5° of one of those lines and could honestly have been counted either side of it.</p></div>
+<script>
+window.cqCaption = (function () {
+  var oneLine = {}, asOneLine = {}, timer = null;
+  var JOIN = "  ·  ";
+  function each(fn) {
+    var divs = document.getElementsByClassName("plotly-graph-div");
+    for (var i = 0; i < divs.length; i++) fn(divs[i]);
+  }
+  function fit(gd) {
+    if (!gd || !gd.layout || !gd.layout.title || !window.Plotly) return;
+    var now = String(gd.layout.title.text || "");
+    if (!now) return;
+    var key = gd.id || "one";
+    if (oneLine[key] === undefined) oneLine[key] = now.split("<br>").join(JOIN);
+    var full = oneLine[key];
+    var room = (gd.clientWidth || 0) - 28;
+    if (room <= 0 || full.indexOf(JOIN) < 0) return;
+    var el = gd.querySelector ? gd.querySelector(".gtitle") : null;
+    var wide = 0;
+    try { wide = el && el.getBBox ? el.getBBox().width : 0; } catch (e) {}
+    if (!wide) return;
+    var broken = full.split(JOIN).join("<br>");
+    var want = now;
+    // Wrapped or not, the measurement is of what is DRAWN -- so the decision
+    // is made from the state it is in: too wide on one line means break it,
+    // and comfortably narrow while broken means it will fit joined up again.
+    if (now.indexOf("<br>") < 0) {
+      // Remembered while it is still on one line, because that is the only
+      // moment its true width can be measured -- guessing it from the wrapped
+      // text (twice the longer line, and then some) kept a caption in two
+      // lines through a window half as wide again as it needed. Measured: it
+      // came back at 1900 where 1600 was plenty.
+      asOneLine[key] = wide;
+      if (wide > room) want = broken;
+    } else if (asOneLine[key] && asOneLine[key] <= room) {
+      want = full;
+    }
+    if (want !== now) Plotly.relayout(gd, {"title.text": want});
+  }
+  function soon() {
+    if (timer) window.clearTimeout(timer);
+    timer = window.setTimeout(function () { timer = null; each(fit); }, 160);
+  }
+  window.addEventListener("load", function () { window.setTimeout(soon, 300); });
+  window.addEventListener("resize", soon);
+  return {fit: function () { each(fit); }};
+})();
+</script></body></html>

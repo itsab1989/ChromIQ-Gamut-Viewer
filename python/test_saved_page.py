@@ -2103,8 +2103,12 @@ def test_the_caption_fits_the_pane_it_is_in():
 
     js = ti3gamut._CAPTION_JS
     # It breaks where the caption itself joins its clauses, which is where a
-    # reader would break it.
-    assert 'JOIN = "  \\u00b7  "' in js
+    # reader would break it. Asserted as the character rather than as the
+    # escape: the script is an ordinary Python string, so \u00b7 in the source
+    # is already a middle dot by the time the page is written -- and a test
+    # that insisted on the escape would be testing how the source is spelled
+    # rather than what the page does.
+    assert 'JOIN = "  \u00b7  "' in js
     # And it remembers the one-line form so widening puts it back — measured
     # from the real width, not guessed from the wrapped one, which kept a
     # caption in two lines through a window half as wide again as it needed.

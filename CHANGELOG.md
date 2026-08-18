@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### 📝 The caption fits the pane it is in
+
+One line written for a wide pane ran off the edge of a narrow one — measured
+in the cross-section at a 1000-pixel window: **512 pixels of caption in a 424
+pixel pane**, stopping mid-word at the frame. It now breaks at the middle dot
+the caption itself uses to join its clauses, and goes back to one line when
+there is room again.
+
+It travels with **every** page — still or moving, flat or not, one room or
+two, and the run's own graph. It did not at first: it went into the movement
+script, and a cross-section has no movement script at all; then into the
+writer most pages go through, which left six; then the two-room writer, which
+left four. `audit_routes.py` watches for it now, and said "Clean" through the
+first two of those.
+
 ### ✂️ A single cross-section gets the same air as two
 
 Two cuts side by side have always had room around them; one cut was left to

@@ -5314,7 +5314,12 @@ class TimelineDialog(QDialog):
         """
         import drift_series
 
-        from ti3gamut import SCENE_COLOURS
+        # THE CAPTION SCRIPT TRAVELS WITH EVERY PAGE, and this one is written
+        # here by hand rather than by ti3gamut's writer -- which is how four
+        # published pages came to have no such script at all while the audit
+        # that watches for exactly this said "Clean". It watches for this one
+        # now too.
+        from ti3gamut import _CAPTION_JS, SCENE_COLOURS
         c = SCENE_COLOURS["light" if self._appearance == "light" else "dark"]
         # THE CAVEAT IS NOT OPTIONAL, and *words* does not reach it. Leaving
         # the numbers out is a reasonable thing to want -- a picture for a
@@ -5368,7 +5373,8 @@ that climbs steadily is just as consistent with charts ageing as with a device
 drifting, and no arithmetic can separate the two.</p>
 <p class="caveat">The numbers are ΔE2000. Below 1 nobody can see the
 difference; above 3 anybody can.</p>
-{self._families_html() if words else ''}</div></body></html>
+{self._families_html() if words else ''}</div>
+<script>{_CAPTION_JS}</script></body></html>
 """
 
     def _family_rows(self) -> list:

@@ -6813,7 +6813,7 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
           font-family:Menlo,Consolas,"Courier New",monospace;
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
  .half > div:last-child {{ flex:1 1 auto; min-height:0; }}
-</style></head><body><div class="row">{''.join(blocks)}</div>{written}{resize}{link}<script>{_ORDER_JS}</script>{_spin_script(ids, ({"flat": True, **(spin or {})} if flat else spin), mode, controls, offer)}</body></html>"""
+</style></head><body><div class="row">{''.join(blocks)}</div>{written}{resize}{link}<script>{_ORDER_JS}</script><script>{_CAPTION_JS}</script>{_spin_script(ids, ({"flat": True, **(spin or {})} if flat else spin), mode, controls, offer)}</body></html>"""
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
 

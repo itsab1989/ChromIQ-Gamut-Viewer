@@ -71,6 +71,12 @@ FEATURES = {
     "the page's own colours": (
         "paper_bgcolor",
         "or the picture is drawn on the library's default white"),
+    "a caption that fits its pane": (
+        "cqCaption",
+        "one line written for a wide pane runs off a narrow one, and this "
+        "audit said Clean while six pages had no such script at all -- it was "
+        "added to the writer most pages go through and not to the one that "
+        "builds two rooms"),
     "one reset, the one that goes home": (
         "resetCameraDefault3d",
         "the strip's other reset returns to the library's framing, which "
