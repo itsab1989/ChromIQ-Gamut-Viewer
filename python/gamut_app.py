@@ -11825,8 +11825,20 @@ class GamutApp(QMainWindow):
         if chart_mod.looks_like_chart(path):
             self._open_chart_file(path)
             return
-        if len(self._slots) >= 2:
-            self._slots.pop(0)                 # newest two win
+        # THE ROOM IS MADE AFTER THE FILE IS READ, NOT BEFORE.
+        #
+        # This dropped the oldest of the two open files first and read the new
+        # one second -- so a file that could NOT be read took a good one with
+        # it. Measured, with two profiles open and a .ti3 containing no
+        # patches picked by mistake:
+        #
+        #     open before   printer-2019.icc, printer-2021.icc
+        #     said          "This file could not be used"
+        #     open after    printer-2021.icc
+        #
+        # A message that says nothing worked, over a window that has quietly
+        # closed something, is the worst pair of facts to hand somebody: the
+        # one thing they are sure of is that they did not ask for that.
         try:
             g, m = self._build_patiently(path)
         except Stopped:
@@ -11849,6 +11861,8 @@ class GamutApp(QMainWindow):
                 "be printed rather than here. Drag one onto the window and it "
                 "goes to the right place by itself.")
             return
+        if len(self._slots) >= 2:
+            self._slots.pop(0)                 # newest two win
         self._slots.append((path, g, m))
         # A FILE MAY HAVE CHANGED ON DISK since it was last judged against.
         # The cache is keyed by path, so an edited measurement reopened under

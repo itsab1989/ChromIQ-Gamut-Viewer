@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### 🗂 A file that cannot be read no longer closes one that could
+
+The window keeps the newest two files, and it made room **before** reading the
+new one — so a file that turned out to be unreadable had already dropped the
+oldest. Measured, with two profiles open and a `.ti3` containing no patches
+picked by mistake:
+
+    open before   printer-2019.icc, printer-2021.icc
+    said          "This file could not be used"
+    open after    printer-2021.icc
+
+A message saying nothing worked, over a window that has quietly closed
+something, is the worst pair of facts to hand somebody. The room is made after
+the file is read now.
+
+Found by a new check that opens five files a person could plausibly pick by
+mistake — an empty one, a text file renamed `.icc`, a profile cut off part
+way, one with its numbers scrambled, a measurement with no patches — and asks
+of each: was anything said, is the picture untouched, and does the window
+still open the next file.
+
 ## v2.36.0
 
 ### 🌗 Every word in the window, measured in both appearances

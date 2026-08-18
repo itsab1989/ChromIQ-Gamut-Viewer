@@ -265,3 +265,30 @@ def test_a_switched_off_control_can_still_be_read():
         assert alive > against * 1.5, (
             f"{name}: {against:.2f}:1 against {alive:.2f}:1 is not a visible "
             f"difference between live and switched off")
+
+
+def test_a_file_that_cannot_be_read_takes_nothing_with_it():
+    """A refused file used to close a good one.
+
+    The window keeps the newest two files, and it made room BEFORE reading
+    the new one — so when the read failed, the oldest was already gone.
+    Measured, with two profiles open and a .ti3 containing no patches picked
+    by mistake:
+
+        open before   printer-2019.icc, printer-2021.icc
+        said          "This file could not be used"
+        open after    printer-2021.icc
+
+    A message saying nothing worked, over a window that has quietly closed
+    something, is the worst pair of facts to hand somebody.
+    """
+    import inspect
+
+    import gamut_app
+
+    text = inspect.getsource(gamut_app.GamutApp._load)
+    made_room = text.index("self._slots.pop(0)")
+    read_it = text.index("g, m = self._build_patiently(path)")
+    assert read_it < made_room, (
+        "the room is made before the file is read, so a file that cannot be "
+        "read still closes one that could")
