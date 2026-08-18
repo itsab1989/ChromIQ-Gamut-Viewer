@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.35.0
 
 ### 📝 The caption fits the pane it is in
 
