@@ -117,9 +117,34 @@ def phase_a():
         # be seen — see _legend_proxy. Counting it as data made every
         # position check fail at once, which is a harness fault and looked
         # exactly like a catastrophic one.
+        # A SKIN IS NOT ALWAYS A MESH, and this harness said it was.
+        #
+        # "A skin over the patches" is drawn as a surface for every style but
+        # one: OUTLINE draws it as lines, a scatter3d in mode="lines" (see
+        # _chart_skin). Counting only mesh3d therefore reported "no skin" for
+        # every outline combination, and counting every scatter3d as data
+        # counted those same lines as dots -- so the position check failed,
+        # and the dot size and opacity checks read the line trace's marker,
+        # which is None.
+        #
+        # TWENTY FAILURES, ALL FALSE, and they had been there at least since
+        # v2.29.0 -- confirmed by running this script at that tag. A harness
+        # that cries wolf is worse than no harness: it teaches whoever runs it
+        # to skim the output. Found while auditing something else entirely.
+        skinned = [t for t in fig.data
+                   if "a skin over the patches" in (t.name or "")]
         dots = [t for t in fig.data
-                if t.type == "scatter3d" and t.hoverinfo != "skip"]
-        meshes = [t for t in fig.data if t.type == "mesh3d"]
+                if t.type == "scatter3d" and t.hoverinfo != "skip"
+                and t not in skinned]
+        # A SKIN IS UP TO THREE TRACES. Every style draws the edges as a
+        # wireframe; the filled styles add a surface under them; and there is
+        # a legend proxy so the key beside the name carries a visible colour.
+        # Judging them all by one rule asked a line for an opacity it does not
+        # have and a surface for a mode it does not have.
+        surfaces = [t for t in fig.data if t.type == "mesh3d"]
+        edges = [t for t in skinned
+                 if t.type == "scatter3d" and t.mode == "lines"]
+        meshes = surfaces + edges
 
         # 1. No look setting may move a single dot. This is the invariant the
         #    whole feature rests on: the picture may be styled any way at all,
@@ -141,8 +166,14 @@ def phase_a():
         # 3. The skin never reaches past what survives. Drawing it over the
         #    lost patches would fill the picture — see _chart_skin.
         if meshes and survivors_hull is not None and space == "rgb":
-            sv = np.column_stack([meshes[0].x, meshes[0].y, meshes[0].z])
-            must(len(sv) <= len(survivors_hull) + 1e-9
+            # A WIREFRAME CARRIES GAPS. One trace draws every edge of the
+            # hull, with a None between each pair so the line lifts off --
+            # so its arrays are not all numbers, and asking numpy for the
+            # largest of them stopped this run dead. The gaps are dropped.
+            sv = np.column_stack([
+                np.array([v for v in axis if v is not None], float)
+                for axis in (meshes[0].x, meshes[0].y, meshes[0].z)])
+            must(len(sv) <= 3 * len(survivors_hull) + 1e-9
                  and sv.max() <= device[~outside].max() + 1e-6,
                  "the skin reached past the surviving patches", tag)
 
@@ -162,21 +193,32 @@ def phase_a():
                  f"{tag}: got {t.marker.size}")
             must(t.marker.opacity == o_op, "lost dot opacity not applied",
                  f"{tag}: got {t.marker.opacity}")
+        if skin == "outline":
+            # AN OUTLINE IS EDGES AND NOTHING ELSE. The check to make is that
+            # no surface was drawn at all, not that a surface was drawn
+            # faintly -- the old one read an opacity a line does not have.
+            must(not surfaces, "outline drew a filled surface",
+                 f"{tag}: {len(surfaces)} surface(s)")
+            must(bool(edges), "outline drew no edges", tag)
+        elif skin != "none":
+            must(bool(surfaces), "a filled skin drew no surface", tag)
+
+        for t in surfaces:
+            must(t.opacity == sk_op, "skin opacity not applied",
+                 f"{tag}: got {t.opacity}")
+        # WHERE THE COLOUR LIVES DEPENDS ON WHAT IT IS DRAWN AS: a surface
+        # carries `color` and `vertexcolor`, a line carries `line.color`.
         for t in meshes:
-            if skin == "outline":
-                must(t.opacity < 0.05, "outline drew a filled surface",
-                     f"{tag}: opacity {t.opacity}")
-            else:
-                must(t.opacity == sk_op, "skin opacity not applied",
-                     f"{tag}: got {t.opacity}")
+            painted = (t.line.color if t.type == "scatter3d" else t.color)
+            per_vertex = (None if t.type == "scatter3d" else t.vertexcolor)
             if colour == "grey":
-                must(t.vertexcolor is None and t.color == "#8b93a3",
-                     "grey skin was not grey", f"{tag}: {t.color}")
+                must(per_vertex is None and painted == "#8b93a3",
+                     "grey skin was not grey", f"{tag}: {painted}")
             elif colour == "accent":
-                must(t.vertexcolor is None and t.color == "#22d3aa",
-                     "accent skin ignored the accent", f"{tag}: {t.color}")
-            else:
-                must(t.vertexcolor is not None,
+                must(per_vertex is None and painted == "#22d3aa",
+                     "accent skin ignored the accent", f"{tag}: {painted}")
+            elif t.type != "scatter3d":
+                must(per_vertex is not None,
                      "patch-coloured skin has no vertex colours", tag)
 
         # 5. Nothing in the picture may be called a gamut. The skin is not
