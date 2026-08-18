@@ -15,6 +15,13 @@ The folder is what distinguishes them, so the folder is what is added — and
 only to the names that need it. A file whose name is already its own is left
 exactly as it was, in the picture, in the legend and in the list.
 
+**The same thing happens inside a run**, where it is even more natural: one
+printer profiled into a folder per month gives every profile the same file
+name. Both shells were called `the-printer`, *Set this for* offered the same
+words twice, and fading the first faded both. A run is one device over time,
+so there the **date** is what tells them apart — which is why the rows already
+carry it — and that is what the shells, the legend and the picker now say.
+
 ## v2.37.0
 
 ### 🗂 A file that cannot be read no longer closes one that could

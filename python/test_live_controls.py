@@ -329,3 +329,33 @@ def test_two_files_with_one_name_are_two_shapes():
 
     assert gamut_app.GamutApp._slot_names(Alone()) == ["Glossy-paper",
                                                        "Matte-paper"]
+
+
+def test_a_run_tells_two_profiles_of_one_name_apart():
+    """One printer profiled into a folder per month shares a file name.
+
+    A run is one device over time, so that is not a mistake — and both shells
+    were called the-printer, "Set this for" offered the same words twice, and
+    fading the first faded both:
+
+        surfaces   the-printer#0, the-printer#2
+        faded      the-printer#0, the-printer#2
+
+    The date is what tells them apart, which is why the rows carry it.
+    """
+    import inspect
+
+    import gamut_app
+
+    text = inspect.getsource(gamut_app.TimelineDialog._name_in_run)
+    assert "dated" in text
+    # Only where a name is shared: a run of plainly-named profiles must not
+    # grow a date on every legend key.
+    assert "if len(same) < 2:" in text
+
+    # AND EVERY PLACE THAT NAMES A SHELL USES IT, or the picture, the legend
+    # and the picker drift apart again.
+    for method in (gamut_app.TimelineDialog._shells_for,
+                   gamut_app.GamutApp._name_of_shape,
+                   gamut_app.GamutApp._name_the_shapes_being_styled):
+        assert "_name_in_run" in inspect.getsource(method), method.__name__

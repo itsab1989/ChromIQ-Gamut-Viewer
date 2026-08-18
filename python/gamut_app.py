@@ -4912,6 +4912,35 @@ class TimelineDialog(QDialog):
             look["styles"] = [box.currentData() for box in chosen]
         return look
 
+    def _name_in_run(self, path) -> str:
+        """What a profile in this run is CALLED, and never the same as another.
+
+        A RUN IS ONE DEVICE OVER TIME, so two of its profiles sharing a file
+        name is not a mistake -- it is what happens when the same printer is
+        profiled into a folder per month. Both shells were then called
+        the-printer, "Set this for" offered the same words twice, and fading
+        the first faded both:
+
+            surfaces   the-printer#0, the-printer#2
+            faded      the-printer#0, the-printer#2
+
+        The DATE is what tells them apart here, which is why the rows in the
+        list carry it, so the date is what is added -- and only where a name
+        is shared. Everywhere else the plain name stays.
+        """
+        path = Path(path)
+        stem = path.stem
+        run = getattr(self, "_run", None)
+        entries = list(getattr(run, "entries", []) or [])
+        same = [e for e in entries if Path(getattr(e, "path", "")).stem == stem]
+        if len(same) < 2:
+            return stem
+        for entry in entries:
+            if Path(getattr(entry, "path", "")) == path:
+                dated = getattr(entry, "dated", "")
+                return f"{stem} ({dated})" if dated else stem
+        return stem
+
     def _shells_for(self, path_a, path_b):
         """The two profiles as shapes, built the way the window builds shapes.
 
@@ -4978,7 +5007,7 @@ class TimelineDialog(QDialog):
                 if len(self._shell_cache) > 4:
                     self._shell_cache.clear()
                 self._shell_cache[key] = gamut
-            made.append((path.stem, self._shell_cache[key]))
+            made.append((self._name_in_run(path), self._shell_cache[key]))
         return made
 
     def _cloud_figure(self, split_for_fading: bool = False):
@@ -12901,7 +12930,7 @@ class GamutApp(QMainWindow):
         pair = panel._chosen_pair() if showing else None
         names = ("the first shape", "the second shape")
         if pair is not None:
-            names = (Path(pair[0]).stem, Path(pair[1]).stem)
+            names = (panel._name_in_run(pair[0]), panel._name_in_run(pair[1]))
         for at, name in zip((1, 2), names):
             if self._target.itemData(at) in (0, 1):
                 self._target.setItemText(at, name)
@@ -13207,7 +13236,7 @@ class GamutApp(QMainWindow):
                 and panel.shows_two_shapes():
             pair = panel._chosen_pair()
             if pair is not None and which in (0, 1):
-                return Path(pair[which]).stem
+                return panel._name_in_run(pair[which])
         if which == 2:
             return str(self._reference[0]) if self._reference else ""
         names = self._slot_names()
