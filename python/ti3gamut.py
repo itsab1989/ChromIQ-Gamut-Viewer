@@ -629,7 +629,7 @@ def _mesh_lost(gamut, name: str, opacity: float, lost,
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
         vertexcolor=colours, opacity=opacity, flatshading=False,
-        lighting=_lighting(depth),
+        lighting=_lighting(depth, opacity),
         lightposition=light or _LIGHT_OVERHEAD,
         # BOTH COLOURS NAMED, not just the alarming one. "red is out of
         # reach" leaves a reader looking at a two-coloured shape having been
@@ -807,13 +807,83 @@ def _paint_vertices(gamut, paint: str, index: int) -> "list | None":
     return [f"rgb({r},{g},{b})" for r, g, b in rgb]
 
 
-def _lighting(depth: float) -> dict:
+#: A light with no direction in it at all: every face gets the same amount,
+#: whichever way it points.
+_FLAT_LIGHT = dict(ambient=1.0, diffuse=0.0, specular=0.0, roughness=1.0,
+                   fresnel=0.0)
+
+
+def _lighting(depth: float, opacity: float = 1.0) -> dict:
     """Plotly lighting for a given amount of shape definition.
 
     At 0 the surface is lit flat and shows only its colours; turning it up
     trades some of that for shading, which is what makes a rounded thing look
     rounded. Kept as one number because "ambient, diffuse, specular, roughness
     and fresnel" is not a question anybody wants to be asked.
+
+    AND IT OPENS UP THE MOMENT THE SKIN IS SEE-THROUGH, which is the cure for
+    the "cut triangles" reported three times.
+
+    THROUGH A SEE-THROUGH SKIN YOU SEE ITS OWN INSIDE. The far side's faces
+    point away from the light, so they are drawn nearly black, and that
+    darkness follows their triangles -- which is exactly what a bite taken
+    out of the surface looks like. Everything else was ruled out first, each
+    by driving it:
+
+        two shapes crossing     one shape alone shows it too
+        the window's own view   the saved page shows it too
+        the shading depth       depth 0 and depth 100 are identical
+        the order of the faces  reordering them changed 0 pixels
+                                (proved live: dropping half moved 169,473)
+        which way faces point   splitting away/towards changed nothing
+        the gamut's own shape   a convex ball shows it too
+
+    Then the light was flooded, and it went. Measured as roughness -- how
+    hard a step there is between neighbouring pixels of the skin -- on that
+    ball, at three opacities and five blends between this light and a flat
+    one:
+
+        opacity   as today   half way   flat
+           0.90       4.82       2.89   1.15
+           0.68       4.06       2.45   1.00
+           0.40       2.78       1.71   0.75
+
+    It is WORST just below solid, not at the most see-through, so a gentle
+    blend by (1 - opacity) would have left the worst case untouched.
+
+    AND THEN IT WAS TRIED ON THE REAL THING AND DID ALMOST NOTHING. The same
+    measurement, on the application's own picture of two profiles at 68% --
+    same window, same camera, the lighting restyled in place so that only it
+    differed:
+
+        with the old light   9.38
+        with the flat light  9.27
+
+    A cure that takes a ball from 4.06 to 1.00 and a gamut from 9.38 to 9.27
+    is not the cure for what was reported. So the flat light is NOT applied:
+    it would have thrown away the modelling on every see-through surface in
+    the application and fixed nothing anybody has seen.
+
+    THE COLOURS WERE TRIED NEXT and are not it either: painted one flat
+    lilac, the same skin at 68% still shows the same slivers (roughness 8.96
+    against 9.39), so they are not the shape's own dark inside showing
+    through.
+
+    WHERE THE TRAIL LEADS NOW -- and this one is in our own geometry rather
+    than in the drawing library. The shell carries sliver triangles: of 1,824
+    faces, 26 are thinner than a fiftieth of their own longest edge squared,
+    and the very thinnest sit at the white point and in the saturated corners
+    --
+
+        thin=0.00002  at L* 100, a* 0,   b* 1
+        thin=0.00277  at L* 63,  a* -63, b* -14
+        thin=0.00319  at L* 75,  a* 43,  b* 69
+        thin=0.00592  at L* 54,  a* 75,  b* 65
+
+    -- which is the yellow-orange corner the wedges were photographed in. A
+    sliver blended see-through is exactly what a bite out of the surface
+    looks like. The next step is to clean the mesh (weld what is coincident,
+    drop what has no area) and measure the same picture again.
     """
     d = max(0.0, min(1.0, depth))
     return dict(ambient=0.95 - 0.45 * d, diffuse=0.10 + 0.75 * d,
@@ -1585,7 +1655,7 @@ def _mesh(gamut, name: str, opacity: float,
         color=_legend_swatch(chosen if chosen is not None else gamut.colors,
                              page),
         flatshading=False, hoverinfo="name",
-        lighting=_lighting(depth),
+        lighting=_lighting(depth, opacity),
         # THE LIGHT THE USER PLACED. Fixed overhead here, this argument was
         # accepted and then dropped, so Set the lighting myself moved nothing.
         lightposition=light or _LIGHT_OVERHEAD,
@@ -1639,7 +1709,8 @@ def _chart_skin(points, colours, name: str, style: str, opacity: float,
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
         name=f"{name} — a skin over the patches", showlegend=False,
         hoverinfo="name", flatshading=False,
-        lighting=_lighting(depth), lightposition=light or _LIGHT_OVERHEAD,
+        lighting=_lighting(depth, opacity),
+        lightposition=light or _LIGHT_OVERHEAD,
     )
     common["opacity"] = float(opacity)
     key = "#8b93a3"
