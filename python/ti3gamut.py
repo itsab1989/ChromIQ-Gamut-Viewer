@@ -3691,8 +3691,14 @@ window.cqOrder = (function () {
               surfaces += plots[q].meshes.length;
               if (plots[q].pool) pooled += plots[q].pool.count;
             }
+            // WHETHER THE PAGE ARRIVED WITH THE WALL ORDER ON, which is a
+            // different claim from whether it works. A check that throws the
+            // switch itself proves the mechanism and nothing about the
+            // default -- measured: switching the default off left the wall
+            // audit reporting "Clean", because it turns it on before it
+            // looks. So the default is reported, and asked for separately.
             return {fast: fast, plots: plots.length, faces: n,
-                    surfaces: surfaces, pooled: pooled};
+                    surfaces: surfaces, pooled: pooled, wall: wall};
           }};
 })();
 window.addEventListener('load', function () {

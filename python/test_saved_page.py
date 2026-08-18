@@ -2119,3 +2119,25 @@ def test_the_caption_fits_the_pane_it_is_in():
 
     writer = inspect.getsource(ti3gamut._write_dark_html)
     assert "_CAPTION_JS" in writer
+
+
+def test_a_page_arrives_with_the_far_wall_drawn_first():
+    """The mechanism working is not the same claim as it being switched on.
+
+    scripts/audit_the_wall_order.py measures the wall order by throwing the
+    switch itself, so it says nothing about what a reader actually gets --
+    proved by mutation: the default was switched off in the source and that
+    audit still reported "Clean", because it turns it on before it looks.
+
+    This is the other half, and it is the half a reader feels: a page must
+    ARRIVE with the far wall drawn before the near one.
+    """
+    import ti3gamut
+
+    js = ti3gamut._ORDER_JS
+    assert "var wall = true" in js, (
+        "pages are written with the wall order off, so the kite-shaped "
+        "wedges come back however well the switch works")
+    # AND THE ENGINE SAYS SO, which is what lets the audit ask.
+    assert "wall: wall" in js, (
+        "how() no longer reports the default, so nothing can check it")

@@ -1329,6 +1329,7 @@ python scripts/audit_cloud_colours.py     # all five ways the cloud can be paint
 python scripts/audit_two_groupings.py     # the split and the destination colouring, set together
 python scripts/audit_two_groupings_run.py  # and the same pair on the OTHER path, a run
 python scripts/audit_nothing_around_nothing.py  # no control on screen with nothing in it
+python scripts/audit_the_wall_order.py    # the far wall first: 6 cameras x 4 scenes, never worse
 ```
 
 An open fault, with everything measured about it so far, is written up in [docs/THE-SEE-THROUGH-TRIANGLES.md](docs/THE-SEE-THROUGH-TRIANGLES.md): the kite-shaped wedges that appear on a shape the moment it is made see-through.
