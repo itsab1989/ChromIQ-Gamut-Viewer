@@ -3353,6 +3353,8 @@ class TimelineDialog(QDialog):
         self._appearance = appearance
         self._paths: list = []
         self._run = None
+        #: Shapes already built, by file and the time it was written.
+        self._shell_cache: dict = {}
         if not self._hosted:
             self.resize(940, 720)
             # NOT WHEN IT IS A PANEL. A window's least size is a promise about
@@ -3649,6 +3651,24 @@ class TimelineDialog(QDialog):
             # not "coloured by" -- and the second caption keeps its own
             # chooser company.
             self._stack(picture_row, groups=((1, 4), (2, 3)))
+            # AND NO CHOOSER MAY DICTATE THE WIDTH OF THE COLUMN. These hold
+            # sentences -- "Where it moved — printer-2019 → printer-2024,
+            # altogether (ΔE 3.03)" -- and left to itself a combo asks for its
+            # longest item in full. Measured while switching the window to
+            # light: one of them went from a least width of 115 px to 483,
+            # which dragged the whole section to 547 in a 403 px space and cut
+            # its frame off on the right. Reported exactly that way: "it also
+            # makes the one device over time section wider and its frame cut
+            # off on the right".
+            #
+            # WHY IT ONLY SHOWED WHEN THE THEME CHANGED: re-applying the
+            # stylesheet is when Qt re-asks every widget how big it wants to
+            # be, so the demand was there all along and the answer had simply
+            # not been asked for again.
+            for box in (self._picture_of, self._coloured_by):
+                box.setSizeAdjustPolicy(
+                    QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+                box.setMinimumContentsLength(10)
         outer.addLayout(picture_row)
 
         # --- ANY two of them, not only the ones next to each other -----------
@@ -3689,6 +3709,13 @@ class TimelineDialog(QDialog):
         pair_row.addWidget(self._pair_to, 1)
         if self._hosted:
             self._stack(pair_row, groups=((0, 1), (2, 3)))
+            # THE SAME CAP AS THE TWO CHOOSERS ABOVE: these hold a profile
+            # name and a date, which is more than a column is willing to
+            # widen for. See the note on _picture_of.
+            for box in (self._pair_from, self._pair_to):
+                box.setSizeAdjustPolicy(
+                    QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+                box.setMinimumContentsLength(10)
         self._pair_row.setVisible(False)
         outer.addWidget(self._pair_row)
 
@@ -3715,6 +3742,11 @@ class TimelineDialog(QDialog):
         # Bounded and scrolling, the words can be as long as they need to be
         # and cost the picture nothing. The reader scrolls the words; the
         # picture stays the size it was.
+        # WHAT CHANGES THE PICTURE, gathered above what describes it.
+        controls = QVBoxLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(6)
+        outer.addLayout(controls)
         said_panel = QWidget(self)
         said = QVBoxLayout(said_panel)
         said.setContentsMargins(0, 0, 0, 0)
@@ -3769,7 +3801,76 @@ class TimelineDialog(QDialog):
             "naming. They are their own group rather than being scattered "
             "among the six.")
         self._by_family.stateChanged.connect(lambda _s: self._draw())
-        said.addWidget(self._by_family)
+        # THE CONTROLS ARE NOT READOUTS, and hosted they no longer sit among
+        # them. Basti, looking at the panel in the column: "maybe in this
+        # section the options to split into color families and hide anything
+        # under should be moved up over the info text above it and then all
+        # the info text in the section should be put in a collapsible
+        # subsection of its own".
+        #
+        # HE IS RIGHT, AND THE REASON IS NAMEABLE: everything that CHANGES the
+        # picture belongs together, and everything that DESCRIBES it belongs
+        # together. As built, the two switches sat between two blocks of
+        # prose, so the eye had to cross a paragraph to get from one control
+        # to the next -- and the prose was in a box with a scrollbar of its
+        # own, inside a column that already scrolls, which is a fault in its
+        # own right: nobody expects a second scrollbar.
+        (controls if self._hosted else said).addWidget(self._by_family)
+
+        # THE TWO SHAPES AROUND THE CLOUD, off unless it is asked for.
+        #
+        # WHY IT IS WORTH HAVING AT ALL, and it is the most surprising picture
+        # this application draws: two profiles of one printer five years apart
+        # hold 818,514 and 815,615 units of colour -- 0.35% apart, the same
+        # size by any measure anybody quotes. By VOLUME that printer has not
+        # changed. Inside those two identical shells the colours have moved by
+        # up to ΔE 3.03. The shells and the cloud together say that in one
+        # picture; either alone says half of it.
+        #
+        # OFF BY DEFAULT, because the cloud is the answer to the question that
+        # was asked and two surfaces over it hide dots. Asked for by Basti:
+        # "when comparing two runs in the heatmap view aren't there really any
+        # options to show the shapes / mesh with the applicable options? maybe
+        # not on by default there but as an option?"
+        self._with_shapes = QCheckBox("Show the two shapes around it", self)
+        self._with_shapes.setToolTip(
+            "Draws the outline of each profile's whole gamut around the "
+            "cloud, so you can see the colours moving inside the shapes they "
+            "came from.")
+        shapes_hint = Hint(
+            "Draws both profiles as SHAPES around the cloud of dots: the "
+            "outline of everything the earlier one can print, and the "
+            "outline of everything the later one can.\n\n"
+            "WHY IT IS WORTH LOOKING AT, and it is the most surprising thing "
+            "this window can show you. Two profiles of one printer five years "
+            "apart can hold almost exactly the same amount of colour — 0.35% "
+            "apart in one real example — so by VOLUME, which is how most "
+            "tools judge a printer, nothing has happened. Inside those two "
+            "nearly identical shells the colours had moved by up to ΔE 3.03, "
+            "which anybody can see on a print. The shells and the cloud "
+            "together say that in one picture.\n\n"
+            "WHAT YOU NEED FIRST: a pair chosen in Show me above, so that "
+            "there is a cloud to put them around. With the graph showing "
+            "there are no two shapes to draw.\n\n"
+            "IT IS OFF UNTIL YOU ASK, because two surfaces over a cloud hide "
+            "dots, and the dots are the answer to the question you came with. "
+            "Turn it on when you want the context, off when you want to read "
+            "the movement.\n\n"
+            "IT TRAVELS INTO A SAVED WEB PAGE with everything else, and "
+            "whoever opens that page gets the controls for the shapes too — "
+            "make one fainter, draw it as edges only, take the colour out of "
+            "it — so they can look inside them exactly as you can here.",
+            self, title="The shapes around the cloud")
+        shapes_hint.setObjectName("hint_with_shapes")
+        shapes_hint.follow(self._with_shapes)
+        self._with_shapes.setChecked(False)
+        self._with_shapes.stateChanged.connect(lambda *_a: self._draw())
+        _shapes_row = QHBoxLayout()
+        _shapes_row.setContentsMargins(0, 0, 0, 0)
+        _shapes_row.setSpacing(6)
+        _shapes_row.addWidget(self._with_shapes, 1)
+        _shapes_row.addWidget(shapes_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        (controls if self._hosted else said).addLayout(_shapes_row)
 
         # --- hide the colours that barely moved -------------------------------
         #
@@ -3837,8 +3938,9 @@ class TimelineDialog(QDialog):
             "colour returns.", self)
         cut_hint.setObjectName("hint_cut")
         cut_row.addWidget(cut_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        cut_hint.follow(self._cut)
         self._cut_row = cut_row
-        said.addLayout(cut_row)
+        (controls if self._hosted else said).addLayout(cut_row)
 
         # --- which colour families moved --------------------------------------
         #
@@ -3880,20 +3982,38 @@ class TimelineDialog(QDialog):
         said.addWidget(self._families_note)
 
 
-        said_area = FadeScrollArea(self)
-        said_area.setWidget(said_panel)
-        said_area.setWidgetResizable(True)
-        said_area.setFrameShape(QFrame.Shape.NoFrame)
-        said_area.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        # A CEILING, NOT A HEIGHT. Short readouts take the room they need and
-        # no more; long ones stop here and scroll, which is the only way the
-        # graph above keeps a usable share of a small window.
-        # SHORTER IN A COLUMN THAN IN A WINDOW. 300 px of words is a third of
-        # the column, and everything in this group is above the fold once it
-        # goes past that. The words scroll; the picture does not.
-        said_area.setMaximumHeight(220 if self._hosted else 300)
-        outer.addWidget(said_area, 0)
+        if self._hosted:
+            # IN THE COLUMN THE WORDS FOLD; THEY DO NOT SCROLL. A box with its
+            # own scrollbar inside a column that already scrolls gives the
+            # reader two of them a few pixels apart, and the inner one hides
+            # its own contents from any attempt to read the panel by scrolling
+            # the column. Folded away, the words take no room at all; opened,
+            # they take exactly as much as they need and the column carries
+            # them, which is what a column is for.
+            #
+            # OPEN TO BEGIN WITH, because the words ARE the answer: somebody
+            # who has just added four profiles is here to read "it has drifted
+            # steadily", and a heading they have to find first would hide the
+            # thing they came for.
+            words = QGroupBox("What this is telling you", self)
+            inside = QVBoxLayout(words)
+            inside.setContentsMargins(10, 4, 10, 6)
+            inside.addWidget(said_panel)
+            outer.addWidget(words, 0)
+            make_foldable(words, "run-words", True)
+        else:
+            said_area = FadeScrollArea(self)
+            said_area.setWidget(said_panel)
+            said_area.setWidgetResizable(True)
+            said_area.setFrameShape(QFrame.Shape.NoFrame)
+            said_area.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            # A CEILING, NOT A HEIGHT, in the window: short readouts take the
+            # room they need and no more; long ones stop here and scroll,
+            # which is the only way the graph above keeps a usable share of a
+            # small window. The column has no such fight to settle.
+            said_area.setMaximumHeight(300)
+            outer.addWidget(said_area, 0)
 
         self._refresh()
 
@@ -4043,6 +4163,7 @@ class TimelineDialog(QDialog):
             item = QListWidgetItem(text, self._list)
             item.setData(Qt.ItemDataRole.UserRole, str(entry.path))
             item.setToolTip(str(entry.path))
+        self._show_only_what_applies()
         if self._hosted:
             rows = max(1, min(6, self._list.count()))
             step = max(18, self._list.sizeHintForRow(0)
@@ -4102,11 +4223,7 @@ class TimelineDialog(QDialog):
         # it to split. A checkbox sitting there while the graph shows would
         # answer a click with nothing, which this window holds is worse than a
         # control that is not there at all.
-        self._by_family.setVisible(pair is not None)
-        # The threshold is a thing you do to a CLOUD; the graph has no
-        # colours to hide. Same rule as the split above it.
-        for part in (self._cut, self._cut_label, self._cut_says):
-            part.setVisible(pair is not None)
+        self._show_only_what_applies()
         if pair is None or self._run is None:
             self._verdict.setText(
                 drift_series.verdict(self._run) if self._run else "")
@@ -4122,6 +4239,33 @@ class TimelineDialog(QDialog):
                 "measurements of one chart, so chart fade and any change in "
                 "how you built them are inside these numbers too.")
         self._say_the_families(pair)
+
+    def _show_only_what_applies(self) -> None:
+        """Hide the controls that could do nothing where they stand.
+
+        THE SPLIT AND THE THRESHOLD ARE THINGS YOU DO TO A CLOUD. The graph
+        has no colours to split or to hide, and a control that answers a click
+        with nothing is worse than one that is not there -- this file's rule,
+        applied to its own panel.
+
+        CALLED FROM THE REFRESH AS WELL AS THE DRAW, which is what was missing:
+        with no run at all, nothing had drawn yet, so the rule had never run
+        and the column showed a tick and a slider over an empty list. The
+        panel audit saw the other half of it, an ⓘ left beside them: "ORPHAN
+        ⓘ hint_cut explains nothing on its row".
+        """
+        useful = self._chosen_pair() is not None
+        self._by_family.setVisible(useful)
+        self._with_shapes.setVisible(useful)
+        for part in (self._cut, self._cut_label, self._cut_says):
+            part.setVisible(useful)
+        # AND EVERY ⓘ GOES WITH THE CONTROL IT EXPLAINS. An icon follows its
+        # partner by listening for that partner being shown or hidden, and a
+        # control hidden before it was ever on screen sends no such event.
+        for icon in self.findChildren(Hint):
+            partner = getattr(icon, "_followed", None)
+            if partner is not None:
+                icon.setVisible(not partner.isHidden())
 
     def _say_the_families(self, pair) -> None:
         """The family-by-family report for whatever is on screen.
@@ -4203,6 +4347,11 @@ class TimelineDialog(QDialog):
         # things rather than more and less. Sending a reader to look for red
         # in a picture with no red in it is worse than saying nothing.
         axis = self._coloured_by.currentData()
+        # THE TWO SHAPES, BUILT FROM THE SAME NUMBERS THE CLOUD IS DRAWN
+        # FROM. compare_profiles already asked both profiles for the same grid
+        # of ink amounts and holds where each puts them, so the hull of those
+        # points IS that profile's gamut -- no second reading of the file, no
+        # second opinion about what its shape is, and nothing to keep in step.
         if axis == "toward":
             # WHERE MOST OF IT IS GOING, counted rather than eyeballed. The
             # picture shows six destinations at once and the eye is a poor
@@ -4530,7 +4679,99 @@ class TimelineDialog(QDialog):
         """The threshold in ΔE, or 0 when nothing is being left out."""
         return self._cut.value() / 10.0 if self._hiding_anything() else 0.0
 
-    def _cloud_figure(self):
+    def _how_the_window_draws_shapes(self) -> dict:
+        """The look the window uses for a shape, borrowed whole.
+
+        THE LIGHTING AND THE TRANSPARENCY ARE NOT MINE TO INVENT. Basti, when
+        this option went in: "we spent so much time to get the lighting and
+        transparency right. i don't want to do it again from the ground up."
+
+        So none of it is done again. The window keeps every render option in
+        one place -- _render_options, which its live view and its saved page
+        both call, for exactly this reason -- and this takes that dictionary
+        and drops the handful of entries that describe the OTHER picture: the
+        chart it may have open, its own drift cloud, the per-shape styles that
+        name shapes this panel does not have, and the space, which is settled
+        for a drift cloud and not up for choosing.
+
+        WHAT IT KEEPS is everything that decides how a surface looks: its
+        opacity, how the light falls on it, how deep the shading goes, how the
+        edges are drawn, the rings inside it, the proportions of the box and
+        whether the box is there at all.
+        """
+        host = self._host
+        options = getattr(host, "_render_options", None)
+        if options is None:
+            return {}
+        look = dict(options())
+        for named_elsewhere in ("chart", "chart_look", "drift", "space",
+                                "per_shape", "neutrals", "ideal_neutrals",
+                                "points"):
+            look.pop(named_elsewhere, None)
+        return look
+
+    def _shells_for(self, path_a, path_b):
+        """The two profiles as shapes, built the way the window builds shapes.
+
+        NOT A SECOND WAY OF MAKING A GAMUT, and that is the whole of this
+        method. Basti, on seeing the option go in: "we spent so much time to
+        get the lighting and transparency right. i don't want to do it again
+        from the ground up" -- and he was right to say it, because the first
+        version of this did exactly that: it took the 9x9x9 grid the
+        comparison already had and hulled it here.
+
+        TWO THINGS WERE WRONG WITH THAT, and both are invisible in a
+        screenshot:
+
+          * ACCURACY. The comparison samples 729 points because that is
+            plenty for asking how far two profiles disagree. The window builds
+            a SHAPE from ArgyllCMS where it can, and from a 17-step grid --
+            4,913 points -- where it cannot. A hull of 729 is a coarser
+            surface: the same shape with its corners rounded off.
+          * EVERYTHING ELSE THE WINDOW KNOWS. How the edge is followed, which
+            white point, which space: all of it is chosen in the column and
+            all of it was being ignored here.
+
+        So this asks the window for the shape, through the same call the
+        window uses when a file is opened.
+
+        AND IT IS REMEMBERED, keyed on the file and the time it was written,
+        because this runs on every redraw -- every drag of the threshold
+        slider -- and building a gamut from ArgyllCMS is the slowest thing
+        this application does.
+        """
+        host = self._host
+        builder = getattr(host, "_build_one", None)
+        if builder is None:
+            return []
+        made = []
+        for path in (Path(path_a), Path(path_b)):
+            try:
+                key = (str(path), path.stat().st_mtime_ns,
+                       host._white.currentData(), host._build_space(),
+                       host._mode.currentData())
+            except OSError:
+                return []
+            if key not in self._shell_cache:
+                try:
+                    gamut, _measured = builder(path)
+                except Exception as exc:   # noqa: BLE001 — a view must not fall
+                    _log().warning("could not build the shape of %s: %s",
+                                   path, exc)
+                    self._trouble(
+                        "The shapes could not be worked out for this pair, so "
+                        "only the colours are drawn.")
+                    return []
+                # ONE PAIR AT A TIME IS ALL THAT IS EVER WANTED, and a gamut
+                # is a few megabytes of triangles; a cache that grows with the
+                # run would hold a printer's whole history in memory.
+                if len(self._shell_cache) > 4:
+                    self._shell_cache.clear()
+                self._shell_cache[key] = gamut
+            made.append((path.stem, self._shell_cache[key]))
+        return made
+
+    def _cloud_figure(self, split_for_fading: bool = False):
         """The chosen step as a heat-map, or None while the graph is showing.
 
         NEVER RAISES, because it is on the redraw path: an unreadable pair
@@ -4573,32 +4814,60 @@ class TimelineDialog(QDialog):
             if moved is None:          # a comparison from before lab_b was kept
                 axis = None
         split = self._by_family.isChecked()
+        # THE TWO SHAPES, when they have been asked for. Built through the
+        # window's own builder and drawn with the window's own look; see
+        # _shells_for and _how_the_window_draws_shapes.
+        shells = self._shells_for(path_a, path_b) \
+            if self._with_shapes.isChecked() else []
         # THE SLIDER FOLLOWS THIS PAIR. Set before the picture is built, so a
         # reader who chose a step with a small worst difference is not handed
         # a control whose right-hand half does nothing.
         import numpy as _np
         self._fit_cut_to(d.worst, float(_np.min(d.deltas)))
         cut = self._cut_off()
+        look = self._how_the_window_draws_shapes() if shells else {}
+        # WHAT THIS PICTURE DECIDES FOR ITSELF is named here as well, and
+        # Python refuses the same argument twice. The appearance, the box and
+        # the space are settled for a drift cloud: it is always drawn in Lab,
+        # always with its box, and always in the window's own light or dark.
+        for mine in ("mode", "grid", "space"):
+            look.pop(mine, None)
+        # AND THE TRANSPARENCY IS THE ONE THE PICTURE'S OWN RULE CHOOSES, not
+        # the window's slider. That slider describes the window's OWN shapes;
+        # here there are none, so it sits wherever it was last left -- and at
+        # its ordinary 100% the two shells came out opaque and the cloud
+        # inside them, which is the entire subject of the picture, could not
+        # be seen at all. Measured on the first drive: opacity 1.0 on both.
+        #
+        # Left to itself, build_figure applies the rule this project settled
+        # on long ago -- solid for one shape, 0.55 for two, with the
+        # see-through surfaces put in draw order so they read as solids -- and
+        # that rule is exactly the learning worth inheriting. Whoever opens a
+        # saved page can still make either shape fainter or draw it as edges.
+        look.pop("opacity", None)
         if axis == "toward":
             # NOT "IN LAB UNITS": this one is not a measurement along an axis,
             # it is a name. Saying "in Lab units" over a picture of six named
             # destinations would be the caption describing a different view.
             return build_figure(
-                [], f"Where {spans} is heading — the family each colour is "
+                shells, f"Where {spans} is heading — the family each colour is "
                     f"moving toward",
-                mode=self._appearance, space="lab", grid=True,
+                mode=self._appearance, space="lab", grid=True, **look,
+                split=split_for_fading,
                 drift=(d.lab_a, moved, f"heading for: {spans}", "toward",
                        split, cut, d.deltas))
         if axis:
             return build_figure(
-                [], f"Which way {spans} moved — {asks}, in Lab units",
-                mode=self._appearance, space="lab", grid=True,
+                shells, f"Which way {spans} moved — {asks}, in Lab units",
+                mode=self._appearance, space="lab", grid=True, **look,
+                split=split_for_fading,
                 drift=(d.lab_a, moved, f"{asks}: {spans}", axis, split, cut,
                        d.deltas))
         return build_figure(
-            [], f"Where {spans} disagree — ΔE2000, biggest {d.worst:.2f}, "
+            shells, f"Where {spans} disagree — ΔE2000, biggest {d.worst:.2f}, "
                 f"average {d.average:.2f}",
-            mode=self._appearance, space="lab", grid=True,
+            mode=self._appearance, space="lab", grid=True, **look,
+            split=split_for_fading,
             drift=(d.lab_a, d.deltas, f"how far it moved: {spans}", None,
                    split, cut))
 
@@ -4695,19 +4964,57 @@ class TimelineDialog(QDialog):
                               encoding="utf-8")
             return ("the sentence explaining what the lines do and do not "
                     "mean is saved with it")
-        figure = self._cloud_figure()
+        # SPLIT WHEN THERE ARE TWO SHAPES IN IT, so the reader's "where they
+        # agree" and "where they differ" sliders have two halves to fade
+        # between. A trace that was never written into the page cannot be
+        # faded by anybody, which is why the main window's save does exactly
+        # this and for the same reason. It is a property of the FIGURE, not of
+        # the writer, so the picture is rebuilt for the page it is about to
+        # become rather than the screen it came from.
+        figure = self._cloud_figure(split_for_fading=self.shows_two_shapes())
         if figure is None:
             raise ValueError("that pair could not be compared")
         # THE SAME WRITER THE MAIN WINDOW USES, so a cloud saved from here
         # turns, zooms and carries its controls exactly like one saved from
         # there. Two writers for one kind of page is how the two come to
         # behave differently.
-        _write_dark_html(figure, target, self._appearance,
+        # SPLIT WHEN THERE ARE TWO SHAPES IN IT, so the reader's "where they
+        # agree" and "where they differ" sliders have two halves to fade
+        # between. A trace that was never written into the page cannot be
+        # faded by anybody, which is why the main window's save does the same
+        # thing for the same reason.
+        # AND THE READER'S WHOLE STRIP, which this page never had. The
+        # controls along the bottom -- turning, zooming, the four fixed
+        # views, the shape switches, the two fade sliders -- are built from
+        # the movement settings, and passing none meant building none. A page
+        # saved from here arrived with the ΔE threshold and nothing else,
+        # while the same picture saved from the window arrived with all of
+        # it. Found by opening both in a browser and listing what each built.
+        spin = None
+        asks = getattr(self._host, "_spin_options", None)
+        if asks is not None:
+            try:
+                spin = asks()
+            except Exception:             # noqa: BLE001 — a save must not fall
+                spin = None
+        _write_dark_html(figure, target, self._appearance, spin=spin,
                          notes=self._cloud_notes(pair) if numbers else "",
                          carry_viewer=carry_viewer, controls=controls,
                          offer=offer)
         return ("what the colours mean, and what the numbers do not tell you, "
                 "are saved with it")
+
+    def shows_two_shapes(self) -> bool:
+        """Whether the picture has both profiles drawn as shapes in it.
+
+        WHAT THE FADE NEEDS. "Where they agree" and "where they differ" fade
+        one shape against the other, so they mean something exactly when
+        there are two -- and the run's cloud has none unless the reader has
+        asked for them. Basti: "the learnings from the transparency, where
+        they agree, where they don't agree sliders should also be inherited
+        by this so those options can be offered by us safely".
+        """
+        return bool(self._with_shapes.isChecked() and self.shows_a_cloud())
 
     def shows_a_cloud(self) -> bool:
         """Whether the picture is a 3D cloud rather than the line graph.
@@ -5216,6 +5523,27 @@ class Notice(QDialog):
                       cancel=cancel).exec() == QDialog.DialogCode.Accepted
 
 
+#: HOW LONG A HOVER TOOLTIP MAY BE. Two hundred characters is about two
+#: lines at the width Qt wraps them to, which is what somebody reads on the
+#: way past a control. Anything longer belongs behind the ⓘ, which opens a
+#: window wide enough for it. Reported from the real window, of a tooltip that
+#: reached across the whole screen: "those hover tooltips should be short and
+#: the extended version would be behind the tooltip icons."
+_HOVER_LIMIT = 200
+
+
+def _one_sentence(text: str) -> str:
+    """The first sentence of an explanation, for a hover.
+
+    THE SAME RULE THE ⓘ ITSELF USES for what it shows on hover -- see
+    Hint._summary -- so a control that borrows an icon's words and one that
+    has its own end up the same length.
+    """
+    first = (text or "").strip().split("\n\n")[0]
+    cut = first.find(". ")
+    return (first[:cut + 1] if cut > 0 else first)[:_HOVER_LIMIT]
+
+
 class Hint(QToolButton):
     """The ⓘ beside a control: click it and the explanation opens.
 
@@ -5247,10 +5575,20 @@ class Hint(QToolButton):
     _CACHE: "dict[tuple, QIcon]" = {}
 
     def explanation(self) -> str:
-        """The full text behind the icon, so the control it sits beside can
-        answer for itself on hover with the same words rather than a second
-        set that would drift."""
+        """The full text behind the icon."""
         return self._text
+
+    def in_a_sentence(self) -> str:
+        """The short version, for a control that only has to answer a hover.
+
+        THE HOVER IS SHORT AND THE ICON IS LONG, and that is the rule for the
+        whole window: "some tooltips from hovering extend very far. those
+        hover tooltips should be short and the extended version would be
+        behind the tooltip icons." A hover tooltip is read on the way past --
+        a paragraph in one is a wall that covers the thing it is describing,
+        and one of them measured 2,139 characters, wider than the screen.
+        """
+        return self._summary()
 
     def __init__(self, text: str, parent=None, *, title: str = "") -> None:
         super().__init__(parent)
@@ -5325,7 +5663,13 @@ class Hint(QToolButton):
             return
         self._followed = control
         control.installEventFilter(self)
-        self.setVisible(control.isVisible())
+        # isHidden(), NOT isVisible(). Nothing is "visible" until every
+        # ancestor has been shown, and this is called while the window is
+        # still being built -- so an icon tied to a perfectly ordinary control
+        # was hidden at birth and never told to appear, because the Show event
+        # it waits for had already happened. Measured: of four icons added by
+        # the tooltip sweep, one was on screen.
+        self.setVisible(not control.isHidden())
 
     def eventFilter(self, watched, event):      # noqa: N802 (Qt naming)
         if watched is getattr(self, "_followed", None):
@@ -5699,6 +6043,9 @@ class GamutApp(QMainWindow):
         # the icons have been placed, because it reads the rows they ended up
         # in. See _lend_the_hint_words_to_the_control.
         self._lend_the_hint_words_to_the_control(self.findChild(QScrollArea))
+        # AND NOTHING IS EXPLAINED AT LENGTH ON A HOVER. Last, so it sees the
+        # words every earlier pass has handed out. See _shorten_the_hovers.
+        self._shorten_the_hovers(self.findChild(QScrollArea))
         # A hidden control must take its ⓘ with it. Anything already managed
         # by an explicit show/hide list keeps that behaviour; the attach pass
         # ties the rest to the control they were placed beside.
@@ -8175,9 +8522,16 @@ class GamutApp(QMainWindow):
         return names
 
     def _on_picture(self) -> None:
-        """Save what is on screen as a picture."""
+        """Save what is on screen as a picture.
+
+        WHAT IS ON SCREEN INCLUDES THE RUN, and this asked only about files.
+        The picture is re-rendered from the view itself -- whatever page it is
+        showing -- so the run needed nothing but to be counted as a picture
+        here; the guard was turning the button's own action away.
+        """
         if (not self._slots and self._reference is None
-                and not self._chart_drawable()):
+                and not self._chart_drawable()
+                and not getattr(self, "_run_drawn", False)):
             return
         dlg = PictureDialog(self)
         if not dlg.exec():
@@ -8837,8 +9191,31 @@ class GamutApp(QMainWindow):
         self._appearance = which
         self._store.setValue("appearance", which)
         self._apply_mode()
+        # THE RUN'S PICTURE IS DRAWN BY THE PANEL, so it has to be told too.
+        # Without this, switching between light and dark while following a
+        # device emptied the view and nothing brought it back: _redraw stands
+        # aside while the run owns the picture, and the panel had not been
+        # asked to draw a new one. Reported from the window: "when a run is
+        # active and changing the window appearance the viewer is cleared and
+        # i can't bring the view of the run back".
+        panel = getattr(self, "_timeline", None)
+        if panel is not None:
+            panel.look(which)
         if self._slots:
             self._redraw()          # the scene is repainted to match
+        # AND THE COLUMN IS ASKED ITS SIZE AGAIN, ONCE THE POLISH HAS LANDED.
+        # Re-polishing every widget is when Qt applies stylesheet padding, so
+        # the sections answer a different width after a theme change than
+        # before it, and the widest of them was then cut on the right --
+        # reported in the same breath as the emptied view: "it also makes the
+        # one device over time section wider and its frame cut off on the
+        # right".
+        #
+        # ASKED IMMEDIATELY, THE ANSWER IS STILL THE OLD ONE. Measured by
+        # driving the switch: the section reached 548 px in a 403 px viewport
+        # on the first change and was correct on every one after it, which is
+        # exactly what "asked one event too early" looks like.
+        QTimer.singleShot(0, self._widen_the_column_to_fit_it)
 
     def _ask_the_layouts_again(self) -> None:
         """Every layout asked how much room it needs, now the styling is on.
@@ -9002,6 +9379,118 @@ class GamutApp(QMainWindow):
             if child is not None and child.layout() is not None:
                 yield from GamutApp._layouts_of(child.layout())
 
+    def _shorten_the_hovers(self, root) -> None:
+        """No hover tooltip longer than a couple of lines, anywhere.
+
+        THE RULE, IN BASTI'S WORDS: "some tooltips from hovering extend very
+        far. those hover tooltips should be short and the extended version
+        would be behind the tooltip icons." Measured before this ran: 31 of
+        the column's 54 tooltips were over 300 characters and the longest was
+        2,139 -- a wall of text wider than the screen, covering the very
+        control it was describing.
+
+        THE LONG VERSION IS NEVER THROWN AWAY. A control that already has an ⓘ
+        beside it keeps its words there. A control that has none is GIVEN one,
+        carrying exactly the text its tooltip used to have, tied to its
+        visibility so it leaves when the control does. That is the window's
+        own idiom everywhere else, and it is what makes shortening the hover
+        safe rather than lossy.
+        """
+        from PyQt6.QtWidgets import QAbstractButton, QComboBox, QSlider
+
+        if root is None:
+            return
+        holder = root.widget() if hasattr(root, "widget") else root
+        if holder is None:
+            return
+        for control in holder.findChildren((QAbstractButton, QComboBox,
+                                            QSlider)):
+            if isinstance(control, Hint):
+                continue
+            tip = control.toolTip().strip()
+            if len(tip) <= _HOVER_LIMIT:
+                continue
+            if self._icon_beside(control) is None:
+                spot = self._row_of(control)
+                if spot is None:
+                    # NOWHERE TO PUT AN ICON IS A REASON TO LEAVE THE WORDS
+                    # ALONE. A long tooltip is a poor thing; a shortened one
+                    # whose full text now lives nowhere at all is worse.
+                    continue
+                row, at, sideways = spot
+                icon = Hint(tip, control.parentWidget(),
+                            title="About this setting")
+                icon.setObjectName("hint_from_tooltip")
+                if sideways:
+                    row.insertWidget(at + 1, icon, 0,
+                                     Qt.AlignmentFlag.AlignVCenter)
+                else:
+                    # A CONTROL STACKED IN A COLUMN GETS NO ICON, and both
+                    # ways of giving it one were tried and measured.
+                    #
+                    # Dropped into the column itself, the icon lands UNDER the
+                    # button rather than beside it -- the panel audit's own
+                    # definition of an orphan, and it reported exactly that.
+                    # Given a row of its own beside the button, the row then
+                    # asks for the button's full label PLUS the icon, and the
+                    # panel overflowed its column by 11 px at 760 -- which is
+                    # the fault this whole audit exists to prevent.
+                    #
+                    # So the words are shortened and the long version is not
+                    # rehoused. These are buttons whose labels already say
+                    # what they do ("Remove them all"), and the section they
+                    # sit in carries an ⓘ of its own.
+                    icon.deleteLater()
+                    control.setToolTip(_one_sentence(tip))
+                    continue
+                icon.follow(control)
+            control.setToolTip(_one_sentence(tip))
+
+    def _icon_beside(self, control):
+        """The ⓘ in this control's own row, if it has one.
+
+        ASKED OF THE LAYOUT, NOT OF THE PIXELS. The first version compared
+        the two widgets' centres, which is the right question at the wrong
+        moment: this runs while the window is still being built, every widget
+        is at y=0, and so every icon looked as though it were beside every
+        control. The effect was silent and exactly backwards -- the sweep
+        believed each control already had an explanation and added none.
+        """
+        spot = self._row_of(control)
+        if spot is None or not spot[2]:
+            return None
+        row = spot[0]
+        for i in range(row.count()):
+            found = row.itemAt(i).widget()
+            if isinstance(found, Hint):
+                return found
+        return None
+
+    def _row_of(self, control):
+        """(the layout holding this control, its place, does it run across).
+
+        THE CLASS IS NOT THE DIRECTION, and taking one for the other is what
+        produced the orphan. The run panel's rows are QHBoxLayouts turned
+        vertical -- _stack calls setDirection on them rather than building
+        new ones -- so a check of `isinstance(..., QHBoxLayout)` says "this
+        runs across" about a layout that plainly runs down.
+        """
+        from PyQt6.QtWidgets import QBoxLayout
+
+        parent = control.parentWidget()
+        if parent is None:
+            return None
+        holder = getattr(parent, "body", parent)
+        across = (QBoxLayout.Direction.LeftToRight,
+                  QBoxLayout.Direction.RightToLeft)
+        for layout in self._layouts_of_window(holder):
+            if not isinstance(layout, QBoxLayout):
+                continue
+            for i in range(layout.count()):
+                if layout.itemAt(i).widget() is control:
+                    return layout, i, layout.direction() in across
+        return None
+
     def _lend_the_hint_words_to_the_control(self, root) -> None:
         """A control beside an ⓘ answers for itself when it is hovered too.
 
@@ -9032,9 +9521,15 @@ class GamutApp(QMainWindow):
             control = others[0]
             if not isinstance(control, QAbstractButton):
                 continue
-            if control.toolTip().strip():
+            # AND A LONG TOOLTIP THE CONTROL ALREADY HAD IS SHORTENED, not
+            # left alone: the rule is about what a hover shows, not about
+            # where the words came from. The full text is behind the icon
+            # beside it either way.
+            mine = control.toolTip().strip()
+            if mine and len(mine) <= _HOVER_LIMIT:
                 continue
-            control.setToolTip(icons[0].explanation())
+            control.setToolTip(_one_sentence(mine)
+                               if mine else icons[0].in_a_sentence())
 
     @staticmethod
     def _layouts_of_window(root):
@@ -10828,7 +11323,11 @@ class GamutApp(QMainWindow):
         if panel is None:
             return
         cloud = panel.shows_a_cloud()
-        options = WebPageDialog(self, for_a_cloud=cloud)
+        pair_of_shapes = panel.shows_two_shapes()
+        options = WebPageDialog(
+            self, for_a_cloud=cloud,
+            shows={"two_shapes": pair_of_shapes, "surfaces": pair_of_shapes,
+                   "flat": False, "camera": cloud, "fade": pair_of_shapes})
         if not options.exec():
             return
         chosen = options.choices()
@@ -12081,6 +12580,7 @@ class GamutApp(QMainWindow):
             return
         self._run_drawn = True
         self._say_who_owns_the_picture()
+        self._let_the_exports_follow_the_picture()
         self._render_count += 1
         out = self._tmp / f"run-{self._render_count}.html"
         try:
@@ -12092,10 +12592,47 @@ class GamutApp(QMainWindow):
         self._view.setUrl(QUrl.fromLocalFile(str(out)))
         self._drop_the_scene_before_last()
 
+    def _let_the_exports_follow_the_picture(self) -> None:
+        """Whatever is on screen can be saved, whoever put it there.
+
+        THE THREE EXPORT BUTTONS ASKED THE WRONG QUESTION. They were switched
+        on when a FILE was opened, which was the same thing as "there is a
+        picture" until the run panel moved into the column -- and then it was
+        not: a run of four profiles drew a picture into the big view with both
+        Save buttons greyed out beside it. Reported within minutes of the
+        window being handed over: "currently both export buttons are not
+        working (as picture and web page)".
+
+        Asked here as "is there a picture", which is the thing they act on.
+        """
+        # THE PANEL IS BUILT BEFORE THE BUTTONS ARE. It settles itself while
+        # the column is still being made, and asking for a button that does
+        # not exist yet threw AttributeError out of the constructor.
+        buttons = [getattr(self, name, None)
+                   for name in ("_save", "_export_btn", "_picture")]
+        if not all(buttons):
+            return
+        page, table, still = buttons
+        files = bool(self._slots or self._reference is not None
+                     or self._chart_drawable())
+        drawn = files or bool(getattr(self, "_run_drawn", False))
+        # THE TWO THAT SAVE A PICTURE FOLLOW THE PICTURE. Both re-render or
+        # re-write whatever the view is showing, so a run counts.
+        page.setEnabled(drawn)
+        still.setEnabled(drawn)
+        # THE TABLE FOLLOWS THE READOUTS, WHICH ARE NOT THE SAME THING. It
+        # writes what this window says -- the volumes, the coverage, the drift
+        # between two readings -- and with only a run open there are none of
+        # those to write. The run has a table of its own, in its own group,
+        # naming what it holds: enabling this one would be a second button
+        # for a different table with nothing to put in it.
+        table.setEnabled(files)
+
     def _release_the_picture(self) -> None:
         """The run has nothing to show: give the view back to what is open."""
         was, self._run_drawn = getattr(self, "_run_drawn", False), False
         self._say_who_owns_the_picture()
+        self._let_the_exports_follow_the_picture()
         if not was:
             return
         if self._slots or self._reference is not None or self._chart_drawable():
@@ -12113,16 +12650,29 @@ class GamutApp(QMainWindow):
         note = getattr(self, "_who_owns", None)
         if note is None:
             return
-        others = len(self._slots) + (1 if self._reference is not None else 0)
-        if getattr(self, "_run_drawn", False) and others:
-            names = ", ".join(path.stem for path, _g, _m in self._slots)
-            note.setText(
-                f"The view is showing the run below. {names} "
-                f"{'is' if others == 1 else 'are'} still open — remove the "
-                f"run's profiles to go back to "
-                f"{'it' if others == 1 else 'them'}.")
-        else:
+        # EVERYTHING THAT IS OPEN, NOT JUST THE FILES. The first version built
+        # the names from the open files alone and then counted the comparison
+        # as well, so with only "Adobe RGB (1998)" chosen the sentence came
+        # out with a hole in it: "The view is showing the run below.  is still
+        # open". Reported exactly that way.
+        names = [path.stem for path, _g, _m in self._slots]
+        if self._reference is not None:
+            names.append(self._reference[0])
+        if not (getattr(self, "_run_drawn", False) and names):
             note.setText("")
+            return
+        # NO DASHES. They read as machine-written, and this is a sentence
+        # somebody has to trust. Two short sentences say it better anyway.
+        if len(names) == 1:
+            note.setText(
+                f"The big view is showing this run. {names[0]} is still open "
+                f"as well, and it comes back as soon as you remove these "
+                f"profiles.")
+        else:
+            note.setText(
+                f"The big view is showing this run. {_join_words(names)} are "
+                f"still open as well, and they come back as soon as you "
+                f"remove these profiles.")
 
     def _redraw(self) -> None:
         # THE RUN OWNS THE VIEW WHILE IT HAS ONE. Opening a file, changing a

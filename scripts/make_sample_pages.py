@@ -1307,6 +1307,75 @@ def main() -> int:
     # copy of what the failing page was built from.
     import shutil as _shutil
 
+    # ---------------------------------------------------------------- 22
+    # THE RUN'S OWN PICTURE, WITH THE SHELLS AROUND IT, saved from the panel
+    # that now lives in the column. This is the page a reader is handed when
+    # somebody follows a printer over time and wants to show what they found:
+    # the two shapes, the cloud between them, and every control the window
+    # itself has for taking it apart.
+    #
+    # WHY IT IS WORTH A PAGE OF ITS OWN, given page 21 already pairs shells
+    # with a cloud: page 21 is built from the MAIN WINDOW's two open files.
+    # This one comes out of the RUN, through a different save route, with a
+    # different set of options -- and that route had two faults nothing else
+    # would have found: it wrote no control strip at all, and its shells were
+    # hulled from a coarser grid than the window's own shapes.
+    print("\n22 — a run, its two shapes, and the cloud between them")
+    fresh()
+    panel = w._timeline
+    panel.add(sorted(profiles_dir.glob("printer-*.icc")))
+    pump(8.0)
+    check("22", "the run has all four profiles",
+          panel._run is not None and len(panel._run.usable) == 4,
+          f"{len(panel._run.usable) if panel._run else 0} usable")
+    for i in range(panel._picture_of.count()):
+        if panel._picture_of.itemData(i) == ("whole", 0):
+            panel._picture_of.setCurrentIndex(i)
+            break
+    panel._draw()
+    pump(3.0)
+    check("22", "the picture is the cloud rather than the graph",
+          panel.shows_a_cloud())
+    panel._with_shapes.setChecked(True)
+    pump(4.0)
+    check("22", "and the two shapes are around it", panel.shows_two_shapes())
+    figure = panel.figure_now()
+    surfaces = [t for t in figure.data if t.type == "mesh3d"]
+    check("22", "both shapes are really drawn", len(surfaces) == 2,
+          f"{len(surfaces)} surface(s)")
+    # THE SHAPES ARE THE WINDOW'S OWN, not a coarser hull of the comparison
+    # grid: the same call the window makes when a file is opened.
+    own, _m = w._build_one(profiles_dir / "printer-2019.icc")
+    check("22", "and they are the same shapes the window itself builds",
+          len(surfaces[0].x) == len(own.vertices),
+          f"{len(surfaces[0].x)} against {len(own.vertices)} vertices")
+    # SEE-THROUGH, BY THE RULE THIS PROJECT SETTLED ON: solid alone, 0.55 for
+    # two. Opaque shells would hide the cloud, which is the subject.
+    check("22", "you can see the cloud through them",
+          all(t.opacity is not None and t.opacity < 0.9 for t in surfaces),
+          ", ".join(str(t.opacity) for t in surfaces))
+    p22 = page("22-a-run-with-its-shapes.html")
+    # SAVED THE WAY A PERSON SAVES IT: the window's own Save this view as a
+    # web page… button, with the options dialog answering for itself. Calling
+    # the writer directly would prove the writer and skip the route -- which
+    # is exactly the shape of fault this page exists to catch, and this
+    # project has shipped that fault before.
+    save_to(p22, carry=True, numbers=True)
+    check("22", "it was written by the window's own Save button",
+          p22.is_file() and p22.stat().st_size > 200_000,
+          f"{p22.stat().st_size / 1024:.0f} kB" if p22.is_file() else "missing")
+    made.append(("22", p22))
+    body = p22.read_text(encoding="utf-8")
+    check("22", "the page carries both shapes",
+          "printer-2019" in body and "printer-2024" in body)
+    check("22", "and the reader's own ΔE threshold", 'data-cq="cut"' in body)
+    check("22", "and the sentences about what it does not mean",
+          "not how far the device drifted" in body
+          or "not how far the printer moved" in body)
+    panel._with_shapes.setChecked(False)
+    panel._on_clear()
+    pump(2.0)
+
     print("\n" + "=" * 68)
     if failures:
         print(f"{len(failures)} claim(s) not met:")
