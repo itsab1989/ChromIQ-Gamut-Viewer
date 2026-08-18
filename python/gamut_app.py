@@ -7280,6 +7280,8 @@ class GamutApp(QMainWindow):
         # this window has been reported for twice.
         self._opacity.valueChanged.connect(
             lambda _v: self._remember_shape_setting("opacity"))
+        self._opacity.valueChanged.connect(
+            lambda _v: self._say_if_two_solids_will_show_the_seam())
         self._opacity.sliderReleased.connect(
             lambda: self._after_shape_setting("opacity"))
         orow.addWidget(self._opacity, 1)
@@ -7379,6 +7381,24 @@ class GamutApp(QMainWindow):
         # An outer shape starts as a cage so whatever is inside stays visible.
         self._style_second.setCurrentIndex(2)
         self._style_other.setCurrentIndex(2)
+        # WHEN TWO SEE-THROUGH SOLIDS CUT THROUGH EACH OTHER, and only then.
+        #
+        # Measured on the run's two shells, in the state it was reported from:
+        #
+        #     both solid, 68%        wedges bitten out of the yellow flank
+        #     both solid, 100%       clean
+        #     one solid, one mesh    clean
+        #
+        # It is not the draw order -- that is sorted, and sorting cannot help
+        # two surfaces that pass through one another, because no single order
+        # is right for them. Nothing in the drawing library can: what is drawn
+        # is what a graphics card does with two transparent skins that
+        # intersect. So the window says so, in the one state where it happens,
+        # and names the two ways out.
+        self._two_solids_note = WrappedLabel("", g_look, hide_when_empty=True)
+        self._two_solids_note.setObjectName("hint")
+        _wrapped(self._two_solids_note)
+        lv.addWidget(self._two_solids_note)
         style_hint = Hint(
             "Each shape on screen is drawn its own way. A solid shape hides "
             "whatever is inside it, so the outer one starts as an outline — "
@@ -13486,16 +13506,69 @@ class GamutApp(QMainWindow):
         # second arrives -- and it says why rather than simply refusing to
         # move. Left live it would be a control that does nothing, which this
         # window treats as worse than a control that is not there.
+        #
+        # A RUN'S TWO SHELLS ARE TWO SHAPES. They are not open files and they
+        # are not the comparison, so counting only those left both sliders
+        # greyed over a picture with two shapes plainly in it -- reported from
+        # a screenshot of exactly that -- and the tooltip advised opening a
+        # second measurement, which is not what that picture needs.
+        #
+        # TWO ROOMS IS LEFT AS IT WAS: the run draws one scene, so a second
+        # room would be an arrangement it cannot honour.
+        panel = getattr(self, "_timeline", None)
+        two_shells = (getattr(self, "_run_drawn", False) and panel is not None
+                      and panel.shows_two_shapes())
+        can_fade = shapes and (pieces >= 2 or two_shells)
+        self._say_if_two_solids_will_show_the_seam(can_fade)
         for _slider, _label in ((self._agree, self._agree_lbl),
                                 (self._differ, self._differ_lbl)):
-            _slider.setEnabled(can_split)
-            _label.setEnabled(can_split)
+            _slider.setEnabled(can_fade)
+            _label.setEnabled(can_fade)
             _slider.setToolTip(
-                "" if can_split else
+                "" if can_fade else
                 self._why_not_in_this_space("shapes") if not shapes else
                 "Open a second measurement, or choose something under Compare "
                 "with, and these can fade the part the two of them share, or "
                 "the parts only one of them reaches.")
+
+    def _say_if_two_solids_will_show_the_seam(self, two_shapes=None) -> None:
+        """The one state where the picture shows something nobody chose.
+
+        Measured on the run's two shells, in the state it was reported from:
+
+            both solid, 68%        wedges bitten out of the yellow flank
+            both solid, 100%       clean
+            one solid, one mesh    clean
+
+        Not the draw order -- that is sorted, and sorting cannot help two
+        surfaces that pass through one another, because no single order is
+        right for them. So the window says so where it happens and names both
+        ways out.
+
+        CALLED FROM THE SOLIDITY SLIDER AS WELL as from the availability pass,
+        because that slider no longer redraws: taking it back to 100% left the
+        note standing over a picture that had just become clean.
+        """
+        note = getattr(self, "_two_solids_note", None)
+        if note is None:
+            return
+        if two_shapes is None:
+            panel = getattr(self, "_timeline", None)
+            two_shapes = (len(self._slots) + (1 if self._reference else 0) >= 2
+                          or (getattr(self, "_run_drawn", False)
+                              and panel is not None
+                              and panel.shows_two_shapes()))
+        solid = ("solid", "solid+mesh")
+        both_solid = (self._style_mine.currentData() in solid
+                      and self._style_second.currentData() in solid)
+        see_through = self._opacity.value() < 100
+        note.setText(
+            "Two solid shapes made see-through will show ragged edges where "
+            "they cut through each other — that is the graphics card blending "
+            "two skins that cross, and no order of drawing them fixes it. "
+            "Draw one of them as an outline, or take How solid it looks back "
+            "to 100%, and it goes."
+            if (two_shapes and both_solid and see_through) else "")
 
     def _draw_the_run(self, panel) -> None:
         """Draw the run's picture in the big view, or give the view back.
