@@ -4996,6 +4996,13 @@ class TimelineDialog(QDialog):
             host_grid = getattr(getattr(self, "_host", None), "_grid_on", None)
             look["grid"] = (host_grid.isChecked() if host_grid is not None
                             else True)
+        if "camera" not in look:
+            # WHERE THE READER IS LOOKING FROM, whether or not this picture
+            # has shapes in it. With no shells there is no look to inherit,
+            # and a cloud on its own is exactly the picture somebody turns to
+            # find an angle they like.
+            asks = getattr(getattr(self, "_host", None), "_camera_now", None)
+            look["camera"] = asks() if asks is not None else None
         # WHAT THIS PICTURE DECIDES FOR ITSELF is named below as well, and
         # Python refuses the same argument twice: a drift cloud is always
         # drawn in Lab and always in the window's own light or dark.
@@ -6091,6 +6098,7 @@ class GamutApp(QMainWindow):
         #: camera it was written with -- so every rebuild threw away the angle
         #: somebody had chosen. See _watch_the_camera.
         self._camera = None
+        self._camera_watch = None
         # Papers rebuilt in CIELAB for judging, keyed by everything that
         # changes the shape. See _in_lab.
         self._lab_gamuts: dict = {}
@@ -9588,6 +9596,19 @@ class GamutApp(QMainWindow):
         # measured. Measure them again now they are wearing it.
         self._align_names()
         self._ask_the_layouts_again()
+        # AND THE CAMERA IS WATCHED FROM HERE ON. It lives in the browser and
+        # moves when somebody drags the shape; nothing tells this side of the
+        # window that it has, so it is asked. Every page written from now on
+        # opens where the reader is looking instead of snapping back.
+        #
+        # A POLL, AND NOT A ONE-OFF READ BEFORE WRITING, because runJavaScript
+        # answers later: a page written in the same breath would be written
+        # with the answer to the question before it.
+        if getattr(self, "_camera_watch", None) is None:
+            self._camera_watch = QTimer(self)
+            self._camera_watch.setInterval(400)
+            self._camera_watch.timeout.connect(self._watch_the_camera)
+            self._camera_watch.start()
         if self._placed:
             return
         self._placed = True

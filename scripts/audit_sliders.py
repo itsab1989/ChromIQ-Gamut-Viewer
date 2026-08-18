@@ -91,8 +91,17 @@ ASK = """
                JSON.stringify(t.lighting || null), t.name,
                t.visible === undefined ? true : t.visible]);
   }
-  var l = d.layout || {}, s = l.scene || {};
-  seen.push(["layout", JSON.stringify(s.camera || null),
+  var l = d.layout || {}, s = l.scene || {}, cam = null;
+  // THE CAMERA THAT IS ACTUALLY IN USE. layout.scene.camera is only brought
+  // up to date when the library relayouts, so a picture asked while it is
+  // turning answers with where it USED to be -- and every movement slider
+  // read as dead.
+  try {
+    var sc = d._fullLayout && d._fullLayout.scene && d._fullLayout.scene._scene;
+    if (sc && sc.getCamera) cam = sc.getCamera();
+  } catch (e) {}
+  if (!cam) cam = s.camera || null;
+  seen.push(["layout", JSON.stringify(cam),
              JSON.stringify((s.xaxis || {}).visible)]);
   return JSON.stringify(seen);
 })()
@@ -156,8 +165,14 @@ def main() -> int:
     # WHAT EACH SLIDER NEEDS BEFORE IT CAN DO ANYTHING. Without this the
     # report is mostly noise: the light sliders are wired live and answer
     # "nothing happened" while the light is on automatic, and the chart
-    # sliders have no chart. A check that calls a correct control dead is a
-    # check nobody will read twice.
+    # sliders have no chart.
+    #
+    # AND ONE PICTURE CANNOT EXERCISE THEM ALL. While a run owns the view,
+    # the chart is not in the picture at all and neither are the two shapes
+    # the agreement sliders fade -- so the first version of this called five
+    # correct controls dead. Every slider is therefore judged in BOTH scenes
+    # and reported at its best: a slider is only at fault if it does nothing
+    # in the one place it belongs.
     demo = HERE.parent / "demo"
     for measured in ("Glossy-paper.ti3", "Glossy-paper-months-later.ti3"):
         win._load(demo / measured)
@@ -199,48 +214,73 @@ def main() -> int:
         if isinstance(thing, QSlider) and thing not in named:
             named[thing] = "the run's " + attr.lstrip("_")
 
-    rows = []
-    for slider in column.findChildren(QSlider):
-        if slider.isHidden():
-            continue
-        name = named.get(slider, "an unnamed slider")
-        group = slider
-        while group is not None and not isinstance(group, QGroupBox):
-            group = group.parentWidget()
-        where = group.title() if group is not None else "the column"
+    def sweep(scene_name):
+        found = []
+        for slider in column.findChildren(QSlider):
+            if slider.isHidden():
+                continue
+            name = named.get(slider, "an unnamed slider")
+            group = slider
+            while group is not None and not isinstance(group, QGroupBox):
+                group = group.parentWidget()
+            where = group.title() if group is not None else "the column"
 
-        lo, hi = slider.minimum(), slider.maximum()
-        was, url_was = slider.value(), win._view.url().toString()
-        before = drawing()
-        # THE DRAG. Qt sends valueChanged for every step under the hand and
-        # sliderReleased only when it is let go, so this is what dragging is.
-        steps = [lo + (hi - lo) * k // 4 for k in (1, 2, 3)]
-        moved_to = next((v for v in steps if v != was), hi if was != hi else lo)
-        slider.setValue(moved_to)
-        pump(2.5)
-        during, url_during = drawing(), win._view.url().toString()
-        slider.sliderReleased.emit()
-        pump(3.0)
-        after, url_after = drawing(), win._view.url().toString()
+            lo, hi = slider.minimum(), slider.maximum()
+            was, url_was = slider.value(), win._view.url().toString()
+            before = drawing()
+            # THE DRAG. Qt sends valueChanged for every step under the hand and
+            # sliderReleased only when it is let go, so this is what dragging is.
+            steps = [lo + (hi - lo) * k // 4 for k in (1, 2, 3)]
+            moved_to = next((v for v in steps if v != was), hi if was != hi else lo)
+            slider.setValue(moved_to)
+            pump(2.5)
+            during, url_during = drawing(), win._view.url().toString()
+            slider.sliderReleased.emit()
+            pump(3.0)
+            after, url_after = drawing(), win._view.url().toString()
 
-        live = during != before and url_during == url_was
-        woke = after != before
-        rebuilt = url_after != url_was or url_during != url_was
-        if live and not rebuilt:
-            verdict = "live"
-        elif live and rebuilt:
-            verdict = "live, then rebuilds"
-        elif woke and rebuilt:
-            verdict = "rebuilds"
-        elif woke:
-            verdict = "only on release"
-        else:
-            verdict = "nothing happened"
-        why = MUST_RECOMPUTE.get(name.replace("the run's ", ""), "")
-        rows.append((where, name, lo, hi, verdict, why))
-        slider.setValue(was)
-        slider.sliderReleased.emit()
-        pump(2.0)
+            live = during != before and url_during == url_was
+            woke = after != before
+            rebuilt = url_after != url_was or url_during != url_was
+            if live and not rebuilt:
+                verdict = "live"
+            elif live and rebuilt:
+                verdict = "live, then rebuilds"
+            elif woke and rebuilt:
+                verdict = "rebuilds"
+            elif woke:
+                verdict = "only on release"
+            else:
+                verdict = "nothing happened"
+            why = MUST_RECOMPUTE.get(name.replace("the run's ", ""), "")
+                found.append((where, name, lo, hi, verdict, why))
+            slider.setValue(was)
+            slider.sliderReleased.emit()
+            pump(2.0)
+        return found
+
+    # SCENE ONE: the run owns the picture -- its cloud, its two shells.
+    rows = sweep("a run of profiles")
+    # SCENE TWO: the run is put away, so the two measured papers and the
+    # chart are what is drawn. The chart sliders, the fineness and the two
+    # agreement sliders only mean anything here.
+    win._timeline._clear_btn.click()          # "Remove them all"
+    pump(6)
+    win._slice_on.setChecked(False)
+    pump(4)
+    rows += sweep("the papers and the chart")
+
+    # THE BEST ANSWER EACH SLIDER GAVE, in the scene where it belongs.
+    best, order = {}, []
+    rank = {"live": 0, "live, then rebuilds": 1, "rebuilds": 2,
+            "only on release": 3, "nothing happened": 4}
+    for row in rows:
+        key = (row[0], row[1])
+        if key not in best or rank[row[4]] < rank[best[key][4]]:
+            best[key] = row
+        if key not in order:
+            order.append(key)
+    rows = [best[key] for key in order]
 
     print("\n  WHAT EVERY SLIDER DOES WHILE IT IS BEING DRAGGED\n")
     wide = max(len(r[1]) for r in rows)
