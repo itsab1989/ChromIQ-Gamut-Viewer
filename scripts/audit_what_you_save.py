@@ -35,6 +35,13 @@ import sys
 import tempfile
 import time
 
+# OFFSCREEN FOR MOST OF IT, AND NOT FOR ALL OF IT. Saving a picture asks the
+# drawing library to render one itself, and without a compositor it answers
+# "error creating static canvas/context for image server" -- so that section
+# says it cannot be judged rather than reporting a fault that is the
+# platform's. Run this on screen (QT_QPA_PLATFORM= python scripts/...) to
+# have it checked.
+OFFSCREEN = os.environ.get("QT_QPA_PLATFORM", "offscreen") == "offscreen"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
@@ -276,6 +283,58 @@ def main() -> int:
         one("how many colours survive the threshold",
             should_draw, drawn_dots),
     ) if p]
+
+    # ---- AND THE PICTURE, which is the third way out of this window -------
+    # A still is re-rendered by the viewer at the size asked for, and its
+    # height comes from the PANE's aspect -- so a narrow window saves a tall
+    # picture. That is the shape the fitting exists for, and a picture framed
+    # like the cropped view would carry the fault out of the window and into
+    # somebody's document.
+    print("\n  AND THE PICTURE IT SAVES\n")
+    if OFFSCREEN:
+        print("      not judged: the drawing library cannot render a picture "
+              "without a screen. Run this with QT_QPA_PLATFORM= to include "
+              "it.")
+    from PIL import Image
+
+    def edges_of(png, band=8):
+        im = Image.open(png).convert("RGB")
+        wide, tall = im.size
+        px = im.load()
+
+        def lit(x, y):
+            r, g, b = px[x, y]
+            return max(abs(r - 17), abs(g - 17), abs(b - 17)) > 12
+
+        left = sum(1 for x in range(band) for y in range(tall) if lit(x, y))
+        right = sum(1 for x in range(wide - band, wide)
+                    for y in range(tall) if lit(x, y))
+        drawn = sum(1 for x in range(0, wide, 4) for y in range(0, tall, 4)
+                    if lit(x, y))
+        return wide, tall, left, right, drawn
+
+    win._timeline._clear_btn.click()
+    pump(5)
+    for label, size in (() if OFFSCREEN else (("a wide window", (1600, 1000)),
+                                              ("a narrow one", (1000, 700)))):
+        win.resize(*size)
+        pump(6)
+        shot = folder / f"still-{label.replace(' ', '-')}.png"
+        try:
+            win._save_still(shot, {"width": 1200, "format": "png",
+                                   "background": "as-shown", "walls": "same"})
+        except Exception as exc:                               # noqa: BLE001
+            problems.append(f"[picture] {label}: it could not be saved: {exc}")
+            continue
+        wide, tall, left, right, drawn = edges_of(shot)
+        print(f"      {label:14s} picture {wide}x{tall}   edges "
+              f"{left}/{right}   drawn {drawn}")
+        if not drawn:
+            problems.append(f"[picture] {label}: the picture is empty")
+        elif left or right:
+            problems.append(
+                f"[picture] {label}: the shape runs off the edge of the saved "
+                f"picture ({left} left, {right} right)")
 
     print()
     if problems:
