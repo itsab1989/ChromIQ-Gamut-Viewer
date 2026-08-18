@@ -1089,3 +1089,119 @@ def test_the_axis_title_is_short_enough_for_a_short_window(five_years):
     assert axis_title == "ΔE2000"
     # and what it MEANS has not simply been dropped
     assert "biggest difference" in fig.layout.title.text
+
+
+# --- the run panel in the column, and the answer being reachable ------------
+
+
+def _settle(app, seconds=0.4):
+    """Let Qt do its own work. This project does not use pytest-qt."""
+    import time
+    end = time.time() + seconds
+    while time.time() < end:
+        app.processEvents()
+        time.sleep(0.002)
+
+
+def test_adding_a_run_scrolls_the_column_to_it():
+    """A run's answer must not arrive below the fold with nothing going to it.
+
+    MEASURED IN THE REAL WINDOW BEFORE THIS EXISTED, at 1280x800 with four
+    profiles added: "What this is telling you" sits 925 px down the column,
+    the pane shows to 687, and adding the run moved the scroll from 0 to 0.
+    The reader clicks Add profiles…, a graph fills the big view, and the
+    sentence saying what it MEANS is 238 px below anything on screen.
+
+    This drives the real window rather than reading the source, because the
+    thing that can break is not a line of code but a chain: `add` has to call
+    it, it has to find the column, and the column has to have been laid out
+    by the time it asks. Any one of those going missing leaves the reader
+    exactly where they were, and only a window can tell you that.
+    """
+    import pathlib
+
+    from PyQt6.QtWidgets import QApplication, QScrollArea
+
+    import gamut_app
+
+    app = QApplication.instance() or QApplication([])
+    win = gamut_app.GamutApp([])
+    win.resize(1280, 800)
+    win.show()
+    _settle(app, 1.5)
+    try:
+        area = win.findChild(QScrollArea)
+        panel = win._timeline
+        bar = area.verticalScrollBar()
+        bar.setValue(0)
+        _settle(app, 0.2)
+        assert bar.value() == 0
+
+        # A RUN WITHOUT READING ANY PROFILES. What is under test is the
+        # scroll, not the arithmetic, and four real profiles cost twelve
+        # seconds of a gate that runs in seventeen.
+        panel._paths = [pathlib.Path("printer-2019.icc"),
+                        pathlib.Path("printer-2024.icc")]
+        panel._bring_the_answer_into_view()
+        _settle(app, 0.5)
+
+        inner = area.widget()
+        top = panel.mapTo(inner, panel.rect().topLeft()).y()
+        assert bar.value() > 0, (
+            "adding a run left the column where it was, so the run's answer "
+            "is still below the fold")
+        assert abs(bar.value() - min(top, bar.maximum())) <= 2, (
+            f"the column stopped at {bar.value()} rather than at the panel's "
+            f"own top edge, {top}")
+
+        # AND IT IS `add` THAT ASKS. The method working is half of it; the
+        # user's own action reaching it is the other half, and that half is
+        # one line that could be deleted without a single test noticing.
+        asked = []
+        panel._bring_the_answer_into_view = lambda: asked.append(True)
+        panel._rebuild = lambda *a, **k: None
+        panel.add([pathlib.Path("printer-2025.icc")])
+        assert asked, "add() no longer brings the run's answer into view"
+    finally:
+        win.close()
+        _settle(app, 0.2)
+
+
+def test_an_empty_run_does_not_move_the_column():
+    """Nothing added, nothing to go to.
+
+    THE FIRST VERSION OF THIS TEST GUARDED NOTHING, and the mutation caught
+    it rather than the other way round. It built the standalone dialog,
+    deleted the `_hosted` guard, and passed anyway -- because a dialog with
+    no parent leaves the search for a column empty and returns on the next
+    line regardless. A test whose subject cannot fail is not a test.
+
+    What can actually fail is the other half of the same guard: the panel is
+    rebuilt on every removal too, and a run emptied by "Remove them all"
+    must leave the reader where they are rather than jumping to a section
+    that now says nothing.
+    """
+    from PyQt6.QtWidgets import QApplication, QScrollArea
+
+    import gamut_app
+
+    app = QApplication.instance() or QApplication([])
+    win = gamut_app.GamutApp([])
+    win.resize(1280, 800)
+    win.show()
+    _settle(app, 1.5)
+    try:
+        area = win.findChild(QScrollArea)
+        panel = win._timeline
+        bar = area.verticalScrollBar()
+        bar.setValue(120)
+        _settle(app, 0.2)
+        panel._paths = []
+        panel._bring_the_answer_into_view()
+        _settle(app, 0.4)
+        assert bar.value() == 120, (
+            "an empty run scrolled the column to a section with nothing in "
+            "it")
+    finally:
+        win.close()
+        _settle(app, 0.2)

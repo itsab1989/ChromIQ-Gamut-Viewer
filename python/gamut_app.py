@@ -3364,15 +3364,24 @@ def family_report(lab_a, lab_b, spans: str, *, of: str = "profiles",
 class TimelineDialog(QDialog):
     """One device, several profiles of it, and how far it has moved.
 
-    WHY THIS IS NOT PART OF THE MAIN WINDOW. That window holds at most two
-    files and compares their SHAPES: how much colour each holds, how much they
-    share, which reaches further in which hues. Eighteen places in it depend on
-    there being one or two, and every one of them is right to. This asks a
+    TWO QUESTIONS, ONE WINDOW. The window around this holds at most two files
+    and compares their SHAPES: how much colour each holds, how much they
+    share, which reaches further in which hues. Eighteen places in it depend
+    on there being one or two, and every one of them is right to. This asks a
     different question — has one device moved, and how fast — of as many
     profiles as somebody has. A list and a graph, not a gamut.
 
-    Keeping them apart is what stops the reader having to work out which of
-    two similar-looking answers applies to them.
+    THIS USED TO BE A SEPARATE WINDOW, and that was the wrong answer. Nothing
+    told a reader it existed, and a second window is a second place to lose
+    what you were doing. Given *hosted*, the same object builds itself as a
+    PANEL for the main window's left column instead — stacked for its width,
+    handing its picture to the big view beside it — so the two questions live
+    together and the reader is never asked which window they should have
+    opened. The dialog form is still what a saved page and the tests use.
+
+    What keeps the two answers apart is now the section they sit in and the
+    line above the big view saying whose picture is being shown, rather than
+    a window boundary.
     """
 
     #: How finely each profile is sampled, per channel. The same grid the pair
@@ -3615,6 +3624,13 @@ class TimelineDialog(QDialog):
         else:
             buttons.addWidget(self._save_btn)
         if self._hosted:
+            # THE TWO REMOVALS SHARE A LINE, and only those two. Four buttons
+            # each on their own line came to 160 px of an 827 px panel --
+            # nearly a fifth of it spent on things a reader uses once -- and
+            # the two that belong together were the two furthest apart in
+            # meaning from the one above them. Add is the accent and keeps its
+            # own line; the table export keeps its own because its name is the
+            # longest thing here.
             self._stack(buttons)
         outer.addLayout(buttons)
 
@@ -4141,7 +4157,8 @@ class TimelineDialog(QDialog):
             # who has just added four profiles is here to read "it has drifted
             # steadily", and a heading they have to find first would hide the
             # thing they came for.
-            words = QGroupBox("What this is telling you", self)
+            words = self._words_box = QGroupBox(
+                "What this is telling you", self)
             inside = QVBoxLayout(words)
             inside.setContentsMargins(10, 4, 10, 6)
             inside.addWidget(said_panel)
@@ -4248,6 +4265,60 @@ class TimelineDialog(QDialog):
                 pass
             self._paths.append(path)
         self._rebuild()
+        self._bring_the_answer_into_view()
+
+    def _bring_the_answer_into_view(self) -> None:
+        """Scroll the column to this panel when a run is added to it.
+
+        THE ANSWER WAS BELOW THE FOLD AND NOTHING WENT TO IT. Measured on a
+        1280x800 window with four profiles added: "What this is telling you"
+        sits 925 px down the column, the pane shows to 687, and adding the
+        run moved the scroll from 0 to 0. So the reader clicks Add profiles…,
+        the big view fills with a graph, and the sentence saying what the
+        graph MEANS is 238 px below anything they can see, with no hint that
+        it is there.
+
+        SCROLLED TO THE PANEL'S TOP, NOT TO THE ANSWER. Asking
+        `ensureWidgetVisible` for the words themselves was tried first and
+        photographed: it scrolls far enough to fit the whole box, which is
+        tall, and the reader lands on a wall of text with the section
+        heading, the list and Add profiles… all off the top of the pane.
+        That is the opposite of "we need to keep a good overview".
+
+        The panel is 827 px against a 687 px pane -- only 140 px too tall --
+        so putting its top at the top of the pane shows the heading, the
+        list, every button, both choosers AND the first lines of the answer,
+        and leaves the rest one short scroll away.
+
+        Does nothing in the standalone window, which has no column to scroll.
+        """
+        if not self._hosted or not self._paths:
+            return
+        node = self.parentWidget()
+        while node is not None and not isinstance(node, QScrollArea):
+            node = node.parentWidget()
+        if node is None:
+            return
+
+        def settle():
+            inner = node.widget()
+            if inner is None:
+                return
+            top = self.mapTo(inner, self.rect().topLeft()).y()
+            bar = node.verticalScrollBar()
+            # EXACTLY THE PANEL'S TOP EDGE, and nothing clever. Stopping a
+            # little short to catch the section's heading was tried and
+            # photographed: the heading does not fit either, so the pane
+            # opens on a sentence cut through the middle, which reads as a
+            # drawing fault rather than as more text above. Landing on the
+            # list's own top edge is clean, and the heading is one small
+            # scroll up from a reader who just clicked a button inside it.
+            bar.setValue(max(bar.minimum(), min(bar.maximum(), top)))
+
+        # AFTER THE LAYOUT HAS SETTLED. Asked in the same breath as the
+        # rebuild, the panel has not yet grown to its new height and the
+        # scroll lands short of where it needs to be.
+        QTimer.singleShot(0, settle)
 
     def _on_add(self) -> None:
         parent = self.parent()
