@@ -7715,6 +7715,22 @@ def build_slice_figure(gamuts, lightness: float, title: str,
         legend=dict(orientation="h", y=-0.12, itemclick="toggle",
                     itemdoubleclick="toggleothers"), showlegend=legend,
         margin=dict(l=0, r=0, t=54, b=0))
+    if extent is None and not slidable:
+        # A LITTLE AIR ON ONE PANE AS WELL. Two panes side by side have always
+        # had it -- slice_extent pads its square by 8% -- while a single cut
+        # was left to the drawing library, which fits the axis exactly to the
+        # data. Measured in the application's own pane: the x range came back
+        # as -82.579..82.404 against a shape spanning -82.579..82.404, so the
+        # widest colours sat ON the frame with nothing between them and it,
+        # and in a narrow window that reads as a picture cut off.
+        #
+        # THE SAME FUNCTION AS THE TWO-PANE PATH, not a second rule that can
+        # drift from it.
+        #
+        # NOT WHEN THE PAGE CARRIES A SLIDER: those pages step through many
+        # heights, and a range worked out from the one being drawn would make
+        # the picture rescale under the reader's hand at every step.
+        extent = slice_extent(gamuts, lightness)
     if extent is not None:
         # BOTH PANES ON ONE RANGE, so their sizes mean something. autorange
         # has to be turned off by name: with an equal-units constraint in

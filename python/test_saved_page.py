@@ -2042,3 +2042,46 @@ def test_a_page_fits_itself_to_a_tall_narrow_pane():
     # The reader's own view wins, and pressing home hands it back.
     assert "function untouched(id) { return !touched[id]; }" in js
     assert "touched[ids[i]] = false;" in js
+
+
+def test_one_cross_section_gets_the_same_air_as_two():
+    """A single cut sat exactly on its own frame.
+
+    Two panes side by side have always had room around them — slice_extent
+    pads its square by 8% — while a single cut was left to the drawing
+    library, which fits the axis exactly to the data. Measured in the
+    application's own pane before this was fixed:
+
+        x range  -82.579 … 82.404
+        the data -82.579 … 82.404
+
+    so the widest colours sat ON the frame, and in a narrow window that reads
+    as a picture cut off.
+    """
+    import numpy as np
+
+    import ti3gamut
+    from gamutview import build_gamut
+
+    rng = np.random.default_rng(9)
+    points = rng.normal(size=(200, 3)) * np.array([12.0, 24.0, 24.0])
+    points[:, 0] += 50.0
+    gamuts = [("paper", build_gamut(points, input_space="lab", space="lab"))]
+
+    fig = ti3gamut.build_slice_figure(gamuts, 50.0, "a cut")
+    span = fig.layout.xaxis.range
+    assert span is not None, "a single cut still fits its axis to the data"
+    widest = max(abs(v) for v in span)
+    # The air is the same 8% the two-pane path uses, so the two cannot drift.
+    inside = ti3gamut.slice_extent(gamuts, 50.0)
+    assert inside is not None
+    assert round(span[0], 6) == round(inside[0][0], 6)
+    assert round(span[1], 6) == round(inside[0][1], 6)
+    assert widest > 0
+
+    # AND NOT ON A PAGE THAT CARRIES A SLIDER. Those step through many
+    # heights, and a range worked out from the one being drawn would rescale
+    # the picture under the reader's hand at every step.
+    slidable = ti3gamut.build_slice_figure(gamuts, 50.0, "a cut",
+                                           slidable=True)
+    assert slidable.layout.xaxis.range is None

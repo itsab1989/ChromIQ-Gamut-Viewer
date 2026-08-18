@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### ✂️ A single cross-section gets the same air as two
+
+Two cuts side by side have always had room around them; one cut was left to
+the drawing library, which fits the axis exactly to the data — so the widest
+colours sat **on** the frame:
+
+    the x range   -82.579 … 82.404
+    the data      -82.579 … 82.404
+
+In a narrow window that reads as a picture cut off. It now uses the same
+padded square the two-pane view has always used, so the two cannot drift
+apart — except on a page carrying a lightness slider, where a range worked out
+from the height being drawn would rescale the picture at every step.
+
 ## v2.34.0
 
 ### 📐 The picture fits a narrow window instead of running off the edge
