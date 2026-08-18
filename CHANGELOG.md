@@ -48,6 +48,22 @@ The window now keeps track of where you are looking and writes it into every
 page it makes, **saved pages included** — which is what the button offering to
 save *this view* has always said it would do.
 
+### 🙃 And the page is never written upside down
+
+Carrying the camera over turned up a second fault the moment it was looked at.
+A tilt that swings over the top of the shape leaves the scene's own *up*
+pointing **down** — caught in a saved page as `up = (-0.14, -0.37, -0.92)` —
+and a page opened that way is upside down and drags backwards in both
+directions. Which is exactly what was reported while this was being built:
+"when clicking and dragging the shape move in the opposite direction i would
+expect (both for up/down and left/right)", and then "now this works again for
+whatever reason" — the reason being a rebuild that threw the flipped camera
+away.
+
+Your viewpoint travels; which way is up stays up. A camera is not taken at all
+while the picture is turning by itself, so a page written twice comes out the
+same both times.
+
 ### 📐 The left column is sized once and never moves
 
 A folded section under-reports how wide it needs to be — *How it looks* says

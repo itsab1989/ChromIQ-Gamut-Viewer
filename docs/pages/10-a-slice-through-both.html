@@ -4029,6 +4029,23 @@ return Plotly;
            + "that moved least.");
     }
     slider.addEventListener("input", apply);
+    // AND THE WINDOW CAN ASK FOR THE SAME THING WITHOUT REBUILDING ANYTHING.
+    // The application's own threshold slider used to redraw the whole page on
+    // every step: the view went black, loaded again, and only settled when the
+    // drag ended -- "dragging the hide anything under slider also blacks out
+    // the whole viewer and then puts everything back at once instead of only
+    // granularly hiding what the slider promises".
+    //
+    // What the reader of a saved page gets is exactly what the window wants:
+    // the dots are already drawn, and hiding some of them is a restyle. So
+    // the same function is handed out under a name the window can call, and
+    // there is one implementation rather than two that would drift.
+    window.cqHideBelow = function (de) {
+      var tenths = Math.round(de * 10);
+      slider.value = Math.max(+slider.min, Math.min(+slider.max, tenths));
+      apply();
+      return slider.value / 10;
+    };
     apply();
   });
 })();</script>

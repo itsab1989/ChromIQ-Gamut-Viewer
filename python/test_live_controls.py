@@ -134,3 +134,45 @@ def test_the_chart_sliders_restyle_rather_than_rewrite(group, field):
     # the key along with the dots, which is the very fault those proxies were
     # added to cure.
     assert "hoverinfo!=='skip'" in body.replace(" ", "")
+
+
+def test_the_page_is_never_written_upside_down():
+    """The reader's viewpoint travels; which way is up does not.
+
+    A tilt that swings over the top of the shape leaves the scene's own "up"
+    pointing DOWN — caught in a saved page as
+
+        "up":{"x":-0.14,"y":-0.37,"z":-0.92}
+
+    and a page opened that way is upside down and drags backwards in both
+    directions. Reported, while this was being built, as exactly that: "when
+    clicking and dragging the shape move in the opposite direction i would
+    expect (both for up/down and left/right)".
+    """
+    import inspect
+
+    import gamut_app
+
+    text = inspect.getsource(gamut_app.GamutApp._watch_the_camera)
+    assert '"up": {"x": 0, "y": 0, "z": 1}' in text
+    # AND THE EYE IS STILL CARRIED, or the fix for one report would undo the
+    # fix for the other: without the eye, every rebuild goes home again.
+    assert '"eye": got["eye"]' in text
+
+
+def test_no_written_page_carries_an_upside_down_camera():
+    """The pages in docs/ are what somebody is actually sent."""
+    import json
+    import pathlib
+    import re
+
+    pages = sorted((ROOT.parent / "docs" / "pages").glob("*.html"))
+    assert pages, "no sample pages to check"
+    bad = []
+    for page in pages:
+        for found in re.findall(r'"camera":\{"up":\{"x":([-\d.eE]+),'
+                                r'"y":([-\d.eE]+),"z":([-\d.eE]+)\}',
+                                page.read_text(errors="ignore")):
+            if float(found[2]) <= 0:
+                bad.append(f"{page.name}: up={found}")
+    assert not bad, bad

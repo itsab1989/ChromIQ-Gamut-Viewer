@@ -12542,6 +12542,16 @@ class GamutApp(QMainWindow):
         page = self._view.page() if self._view is not None else None
         if page is None:
             return
+        # NOT WHILE THE PICTURE IS TURNING ITSELF. A camera caught mid-swing
+        # is not a viewpoint anybody chose, and writing it into the next page
+        # makes the same view come out at a different angle every time it is
+        # written -- which would have made every documentation page and every
+        # saved sample differ from run to run for no reason a reader could
+        # see. What a person drags to is theirs; what the animation is doing
+        # this second is not.
+        if getattr(self, "_spin_on", None) is not None \
+                and self._spin_on.isChecked():
+            return
 
         def keep(raw):
             if not raw:
@@ -12550,8 +12560,27 @@ class GamutApp(QMainWindow):
                 got = json.loads(raw)
             except (TypeError, ValueError):
                 return
-            if isinstance(got, dict) and got.get("eye"):
-                self._camera = got
+            if not (isinstance(got, dict) and got.get("eye")):
+                return
+            # WHICH WAY IS UP IS NOT THE READER'S VIEWPOINT, and carrying it
+            # over was a fault waiting to be seen. A tilt that swings over the
+            # top of the shape leaves the scene's "up" pointing DOWN -- caught
+            # in a saved page as up = (-0.14, -0.37, -0.92) -- and a page
+            # opened that way is upside down and drags backwards in both
+            # directions. Which is exactly what was reported while this was
+            # being built: "when clicking and dragging the shape move in the
+            # opposite direction i would expect ... both for up/down and
+            # left/right", and then "now this works again for whatever
+            # reason" -- the reason being a rebuild that threw the flipped
+            # camera away.
+            #
+            # The eye is what somebody chooses by dragging; up is world-up and
+            # stays world-up. Dragging never rolls the scene, so nothing a
+            # reader can do is lost by pinning it.
+            self._camera = {"eye": got["eye"],
+                            "center": got.get("center",
+                                              {"x": 0, "y": 0, "z": 0}),
+                            "up": {"x": 0, "y": 0, "z": 1}}
 
         page.runJavaScript(
             "(function(){var d=document.getElementsByClassName("
