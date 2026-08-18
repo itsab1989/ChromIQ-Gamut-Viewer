@@ -907,6 +907,39 @@ def _lighting(depth: float, opacity: float = 1.0) -> dict:
     showing through and not its light, which is why no lighting change
     touches it.
 
+    WHY IT TORE, FOUND LATER, AND IT WAS NOT THE IDEA. The culling turned
+    each face outward by asking whether it pointed away from the shape's
+    MIDDLE, which is only true of a convex shape. This one is not: measured
+    against the convex hull of its own corners, **7.4% of it is dents** --
+    `icc_gamut` says so in its own docstring, "it returns its own surface with
+    the profile's real dents in it", and I read past it. Inside every dent
+    that test gives the opposite answer, so FRONT faces were culled, and that
+    is the band that went missing.
+
+    NO ASSUMPTION IS NEEDED. The shell ArgyllCMS hands over is a closed,
+    consistently wound manifold and it survives the weld intact -- measured on
+    two profiles: all 5,472 directed edges walked exactly once in each
+    direction, none repeated, before and after `_weld`. The signed volume
+    names the convention outright, -818,514 for a shape whose volume is
+    818,514, so the faces are wound inward and the outward normal is simply
+    the negative of the cross product. No centroid, no convexity.
+
+    WHAT IS LEFT is a thin band right at the outline where faces are almost
+    exactly edge-on and flicker between facing you and not. Keeping the ones
+    within a small angle of edge-on closes it, and costs nothing to look at
+    because an edge-on face covers almost no pixels:
+
+        slack (cosine)   0.00    0.02    0.05    0.10
+        of the whole    98.3%   99.0%   99.5%   99.8%
+
+    AND ONE MEASUREMENT OF MINE THAT DOES NOT COUNT: the same comparison at
+    the settled camera sat at 92.7% whatever the slack, which looked like a
+    hole and is not. The two pictures are two separately loaded pages, and
+    `fitToPane` fits each one to ITS OWN content -- a smaller mesh is framed
+    differently, so the pixel counts were never comparable. The honest way to
+    compare is one page with the switch thrown, which is what
+    `window.cqOrder.farWall` exists for.
+
     NOT DRAWING THE FAR WALL IS THE ONLY CURE, AND IT IS NOT YET SHIPPABLE.
     It was built -- each face turned outward against the shape's own middle,
     the eye's position (not merely its direction) taken from the scene's
