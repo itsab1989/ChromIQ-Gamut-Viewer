@@ -1,5 +1,68 @@
 # Changelog
 
+## v2.32.0
+
+### 🎚 The sliders answer under your hand
+
+**How solid it looks** and **how deep the shading is** already changed the
+picture as you dragged them — and then rebuilt the whole page when you let
+go, which is the pause and the jump you saw a few seconds later. They now
+record the value and leave the picture alone.
+
+**The five sliders under *How the patches are drawn*** rebuilt the page on
+*every step* of a drag, so a slow drag across a thousand-patch chart wrote and
+loaded it dozens of times and the view went black between each. They restyle
+the dots and the skin where they stand. Measured, in one drag: dot size 3.2 →
+9.0, out-of-reach dots faded to 20%, **and no page loaded at all** — with the
+legend keys left the size they were, because a key is a key whatever the dots
+are doing.
+
+The live fade also **respects *Set this for***. It faded every shape and the
+rebuild afterwards quietly put the others back, so removing the rebuild would
+have turned one fix into the next bug.
+
+### 🧭 The view stays where you put it
+
+Anything this window cannot restyle in place is drawn by writing a new page
+and loading it — and a page opens at the camera it was *written* with, so
+every rebuild threw away the angle you had turned the shape to. Turned to a
+low angle from the left, then rebuilt:
+
+    before   -1.90, 0.35, 0.55  →  1.50, 1.50, 1.50
+    now      -1.90, 0.35, 0.55  →  -1.90, 0.35, 0.55
+
+The window now keeps track of where you are looking and writes it into every
+page it makes, **saved pages included** — which is what the button offering to
+save *this view* has always said it would do.
+
+### 📐 The left column is sized once and never moves
+
+A folded section under-reports how wide it needs to be — *How it looks* says
+320 while it is shut and 348 once shown, and polishing it does not cure it. So
+the column was sized from the small number and grew by exactly 28 pixels the
+next time anything asked. Each section is now measured once, honestly, with
+painting switched off, and the width does not move again for folding, opening
+a run, or changing the appearance.
+
+### 🖱 The pointer stops promising things
+
+Qt hands a widget's cursor down to its children, so a hand cursor set on a
+section applied to every label, readout and empty patch inside it. Only the
+two links at the foot, which really do open a browser, keep it.
+
+### ⚙️ The checks no longer write into your settings
+
+Every driver in `scripts/` began by clearing the application's real settings
+store — the one your own choices live in. It threw them away, and because the
+window writes its state back as it closes, whatever a check last set became
+your new default. The audit that switched the box off to see whether the
+control said so **left the box switched off**, and it came back as a bug
+report about the viewer: the walls behind the shape were missing, over a
+picture drawing exactly what the settings said.
+
+Settings now live behind one module, drivers send them somewhere throwaway,
+and a test fails if any of that is forgotten.
+
 ## v2.31.0
 
 ### 🫧 The two shapes around the run's cloud

@@ -39,7 +39,18 @@ import sys
 import tempfile
 import time
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# ON SCREEN, AND THAT IS NOT A PREFERENCE. Run offscreen, this audit called
+# every movement slider dead: with no compositor the browser throttles
+# requestAnimationFrame away, so the page reports itself as moving
+# (cqSpin.moving() === true) and the camera never advances. Measured, same
+# tree, same minute:
+#
+#     offscreen   camera 1.500,1.500 -> 1.500,1.500   "nothing happened"
+#     on screen   camera 0.550,2.049 -> 1.108,1.809   turning
+#
+# A real measurement of the wrong thing reads as coverage, which is how four
+# correct controls were nearly "fixed".
+OFFSCREEN = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
 sys.argv = ["audit_sliders"]
@@ -86,12 +97,20 @@ ASK = """
   for (var i = 0; i < d.data.length; i++) {
     var t = d.data[i], m = t.marker || {};
     seen.push([t.type, (t.x || []).length, t.opacity,
+               // MARKER OPACITY WAS MISSING FROM THIS LIST, and three chart
+               // sliders that change nothing else were therefore reported
+               // dead -- by a check that had simply not been told to look.
+               m.opacity === undefined ? null : m.opacity,
                JSON.stringify(m.size || null),
                JSON.stringify(m.color || null).slice(0, 60),
                JSON.stringify(t.lighting || null), t.name,
                t.visible === undefined ? true : t.visible]);
   }
   var l = d.layout || {}, s = l.scene || {}, cam = null;
+  // TWO ANSWERS, NOT ONE. See the note on THE RIGHT PAIR in the module
+  // docstring: with "turn it by itself" ticked the camera moves every frame,
+  // so a fingerprint that included it reported every slider in the window as
+  // live -- including five that plainly rebuild the page.
   // THE CAMERA THAT IS ACTUALLY IN USE. layout.scene.camera is only brought
   // up to date when the library relayouts, so a picture asked while it is
   // turning answers with where it USED to be -- and every movement slider
@@ -101,9 +120,8 @@ ASK = """
     if (sc && sc.getCamera) cam = sc.getCamera();
   } catch (e) {}
   if (!cam) cam = s.camera || null;
-  seen.push(["layout", JSON.stringify(cam),
-             JSON.stringify((s.xaxis || {}).visible)]);
-  return JSON.stringify(seen);
+  seen.push(["layout", JSON.stringify((s.xaxis || {}).visible)]);
+  return JSON.stringify({picture: seen, camera: JSON.stringify(cam)});
 })()
 """
 
@@ -174,12 +192,6 @@ def main() -> int:
     # and reported at its best: a slider is only at fault if it does nothing
     # in the one place it belongs.
     demo = HERE.parent / "demo"
-    for measured in ("Glossy-paper.ti3", "Glossy-paper-months-later.ti3"):
-        win._load(demo / measured)
-        pump(4)
-    if (demo / "verification-chart-480.ti1").exists():
-        win._open_chart_file(demo / "verification-chart-480.ti1")
-        pump(5)
     win._manual_light.setChecked(True)
     win._spin_on.setChecked(True)
     win._rings_on.setChecked(True)
@@ -239,6 +251,13 @@ def main() -> int:
             pump(3.0)
             after, url_after = drawing(), win._view.url().toString()
 
+            # A MOVEMENT SLIDER IS JUDGED ON THE CAMERA and everything else
+            # on the picture, which is the only way to ask each of them the
+            # question it is about.
+            moves_the_view = name.startswith(("turn_", "tilt_"))
+            part = "camera" if moves_the_view else "picture"
+            before, during, after = (json.loads(x)[part] if x.startswith("{")
+                                     else x for x in (before, during, after))
             live = during != before and url_during == url_was
             woke = after != before
             rebuilt = url_after != url_was or url_during != url_was
@@ -253,7 +272,7 @@ def main() -> int:
             else:
                 verdict = "nothing happened"
             why = MUST_RECOMPUTE.get(name.replace("the run's ", ""), "")
-                found.append((where, name, lo, hi, verdict, why))
+            found.append((where, name, lo, hi, verdict, why))
             slider.setValue(was)
             slider.sliderReleased.emit()
             pump(2.0)
@@ -261,14 +280,55 @@ def main() -> int:
 
     # SCENE ONE: the run owns the picture -- its cloud, its two shells.
     rows = sweep("a run of profiles")
-    # SCENE TWO: the run is put away, so the two measured papers and the
-    # chart are what is drawn. The chart sliders, the fineness and the two
-    # agreement sliders only mean anything here.
+
+    # SCENE TWO: two measurements of one paper, months apart. This is where
+    # "Has anything changed?" has something to say, and its threshold slider
+    # has a range wider than a single step.
     win._timeline._clear_btn.click()          # "Remove them all"
     pump(6)
+    # TWO PROFILES, NOT TWO MEASUREMENTS. "Has anything changed?" compares
+    # what two PROFILES do with the same colours -- see _drift_for_figure,
+    # which asks for a profile pair -- so with two .ti3 files open its
+    # threshold slider has no pair, no fitted range (0..1) and nothing to
+    # hide. Judged there, a working control reads as dead.
+    for profile in profiles[:2]:
+        win._load(profile)
+        pump(6)
+    if hasattr(win, "_drift_draw"):
+        win._drift_draw.setChecked(True)
+        pump(7)
+    rows += sweep("two profiles of one printer")
+
+    # SCENE THREE: a profile and a chart to be printed. A CHART IS PLACED BY
+    # A PROFILE -- with only measurements open it is not in the picture at
+    # all, which is why its five sliders read as dead in an earlier version
+    # of this and were nearly "fixed".
+    win._on_clear()
+    pump(5)
+    win._load(profiles[0])
+    pump(6)
+    if (demo / "verification-chart-480.ti1").exists():
+        win._open_chart_file(demo / "verification-chart-480.ti1")
+        pump(7)
+    # A SKIN OVER THE PATCHES, or "how solid the skin is" has nothing to be
+    # solid: the chart opens with no skin, so that slider was being asked
+    # about a thing that was not in the picture.
+    at = win._chart_skin.findData("mesh")
+    if at < 0:
+        at = 1 if win._chart_skin.count() > 1 else 0
+    win._chart_skin.setCurrentIndex(at)
+    win._chart_skin.activated.emit(at)
+    pump(6)
+    rows += sweep("a profile and a chart")
+
+    # SCENE FOUR: the cross-section, which is the only place the height
+    # slider means anything -- and a flat cut is a different picture, not a
+    # different setting, so it gets a scene of its own.
+    win._slice_on.setChecked(True)
+    pump(6)
+    rows += sweep("a cross-section")
     win._slice_on.setChecked(False)
     pump(4)
-    rows += sweep("the papers and the chart")
 
     # THE BEST ANSWER EACH SLIDER GAVE, in the scene where it belongs.
     best, order = {}, []
@@ -296,6 +356,10 @@ def main() -> int:
             continue
         if why and verdict in ("rebuilds", "only on release"):
             continue            # named, with a reason, on the record
+        if OFFSCREEN and name.startswith(("turn_", "tilt_")):
+            print("           ^ not answerable without a screen: the "
+                  "browser throttles its animation loop away")
+            continue
         faults.append(f"{name} in “{where}”: {verdict}")
 
     print()

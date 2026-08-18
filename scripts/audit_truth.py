@@ -122,7 +122,25 @@ def checks(win, panel):
         return bool(scene.xaxis.visible)
 
     def threshold_control():
-        return round(panel._cut_off(), 2)
+        return round(_read_the_slider(), 2)
+
+    def _read_the_slider():
+        """The threshold as the SLIDER has it, not as the window reads it.
+
+        THIS IS THE WHOLE POINT, AND THE FIRST VERSION GOT IT WRONG. It asked
+        panel._cut_off() -- the very method the window uses to draw -- so when
+        that method was made to lie, the expectation lied with it and the two
+        agreed perfectly. The mutation test found it: "the hide-anything-under
+        value never reaches the picture ... NOT NOTICED".
+        
+        A check phrased in terms of the thing it guards cannot catch that
+        thing being broken. So this reads the handle: the number a person can
+        see on screen, which is the only independent witness there is.
+        """
+        cut = panel._cut
+        if cut.value() <= cut.minimum():
+            return 0.0             # the far left is "nothing hidden"
+        return cut.value() / 10.0
 
     def threshold_picture():
         """How many dots are drawn, against how many moved at least that far."""
@@ -133,7 +151,7 @@ def checks(win, panel):
             return None
         from ti3gamut import compare_profiles
         d = compare_profiles(pair[0], pair[1], steps=panel.GRID)
-        cut = panel._cut_off()
+        cut = _read_the_slider()
         want = int(np.sum(np.asarray(d.deltas) >= cut)) if cut else len(d.deltas)
         return want
 

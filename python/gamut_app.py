@@ -10417,8 +10417,35 @@ class GamutApp(QMainWindow):
             "row says what it is and what the units are.")
 
     def _drift_cut_changed(self, _value=None) -> None:
+        """Hide the colours that barely moved — under the hand, not after it.
+
+        THE SAME CONTROL THE TIMELINE HAS, and it was the only one of the two
+        still rebuilding the page on every step: the view went black and came
+        back on each notch instead of thinning out as it moved. See
+        TimelineDialog._cut_changed for the reasoning and for where the
+        working half of this lives (window.cqHideBelow, handed out by the page
+        that carries a drift cloud).
+
+        AND IT PUTS ITSELF RIGHT WHEN THE PAGE CANNOT DO IT. A picture with no
+        drift cloud in it has no such function, and a slider that silently did
+        nothing there would be worse than one that rebuilds: the answer comes
+        back from the page, and a "no" falls through to the redraw that always
+        worked.
+        """
         self._drift_cut_says.setText(self._drift_cut_reads())
-        self._redraw()
+        page = self._view.page() if self._view is not None else None
+        if page is None:
+            self._redraw()
+            return
+
+        def fell_back(did_it):
+            if not did_it:
+                self._redraw()
+
+        page.runJavaScript(
+            "(function(){if(window.cqHideBelow){window.cqHideBelow("
+            f"{self._drift_cut.value() / 10.0:.2f});return true;}}"
+            "return false;})();", fell_back)
 
     def _drift_cut_reads(self) -> str:
         """The same words as the timeline's, and see _cut_reads for why."""
