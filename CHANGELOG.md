@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### 🏷 Two files with one name are two shapes
+
+`Glossy-paper.ti3` from January and `Glossy-paper.ti3` from June — which is
+how somebody keeps a paper measured twice — put two shapes with **one name**
+into the picture, two identical rows in the list, and two identical keys in
+the legend. Neither the reader nor the window could tell them apart: *Set this
+for: the first shape* faded **both**, because the live change finds its shape
+by name.
+
+The folder is what distinguishes them, so the folder is what is added — and
+only to the names that need it. A file whose name is already its own is left
+exactly as it was, in the picture, in the legend and in the list.
+
 ## v2.37.0
 
 ### 🗂 A file that cannot be read no longer closes one that could

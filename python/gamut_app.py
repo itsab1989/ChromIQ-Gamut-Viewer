@@ -13006,8 +13006,12 @@ class GamutApp(QMainWindow):
                 # Measure against the column, not against the label: asked
                 # during the first layout a label reports a width it has not
                 # been given yet, which shortened names that had ample room.
+                # THE NAME THE PICTURE USES, so the row, the legend and
+                # "Set this for" all say the same thing about the same file.
+                names = self._slot_names()
                 shown = QFontMetrics(lab.font()).elidedText(
-                    path.stem, Qt.TextElideMode.ElideMiddle, _TEXT_WIDTH - 34)
+                    names[i] if i < len(names) else path.stem,
+                    Qt.TextElideMode.ElideMiddle, _TEXT_WIDTH - 34)
                 lab.setText(f"● {shown}\n   {patches}{measured}")
                 lab.setToolTip(str(path))
             else:
@@ -13167,6 +13171,31 @@ class GamutApp(QMainWindow):
             f"if(idx.length){{Plotly.restyle(el,{{{_json.dumps(field)}:"
             f"{_json.dumps(value)}}},idx);did++;}}"))
 
+    def _slot_names(self) -> list:
+        """What the open files are CALLED, and never the same thing twice.
+
+        TWO FILES CAN SHARE A NAME. Opening Glossy-paper.ti3 from January and
+        Glossy-paper.ti3 from June -- which is exactly how somebody keeps a
+        paper measured twice -- put two shapes called Glossy-paper in the
+        picture, two identical rows in the list, and two identical keys in the
+        legend. Neither the reader nor the window could tell them apart:
+        "Set this for: the first shape" faded BOTH, because the live change
+        finds its shape by name.
+
+        The folder is what distinguishes them, so the folder is what is added,
+        and only to the ones that need it: a name that is already unique is
+        left exactly as it was.
+        """
+        stems = [Path(path).stem for path, _g, _m in self._slots]
+        names = []
+        for path, _g, _m in self._slots:
+            stem = Path(path).stem
+            if stems.count(stem) > 1:
+                names.append(f"{stem} ({Path(path).parent.name})")
+            else:
+                names.append(stem)
+        return names
+
     def _name_of_shape(self, which: int) -> str:
         """What the shape at this position is CALLED in the picture.
 
@@ -13181,8 +13210,9 @@ class GamutApp(QMainWindow):
                 return Path(pair[which]).stem
         if which == 2:
             return str(self._reference[0]) if self._reference else ""
-        if which < len(self._slots):
-            return Path(self._slots[which][0]).stem
+        names = self._slot_names()
+        if which < len(names):
+            return names[which]
         return ""
 
     def _which_meshes_js(self) -> str:
@@ -13988,7 +14018,8 @@ class GamutApp(QMainWindow):
         # empty scene to be read as a fault.
         if self._drawing_in_ink():
             return [], [], [], None
-        gamuts = [(p.stem, g) for p, g, _m in self._slots]
+        gamuts = list(zip(self._slot_names(),
+                          (g for _p, g, _m in self._slots)))
         # None where the file was a profile: there are no measured patches to
         # show, and inventing some would be exactly the claim this application
         # exists to avoid making.

@@ -292,3 +292,40 @@ def test_a_file_that_cannot_be_read_takes_nothing_with_it():
     assert read_it < made_room, (
         "the room is made before the file is read, so a file that cannot be "
         "read still closes one that could")
+
+
+def test_two_files_with_one_name_are_two_shapes():
+    """Glossy-paper.ti3 from January and Glossy-paper.ti3 from June.
+
+    That is how somebody keeps a paper measured twice, and it put two shapes
+    called Glossy-paper in the picture, two identical rows in the list and two
+    identical keys in the legend. Neither the reader nor the window could tell
+    them apart: "Set this for: the first shape" faded BOTH, because the live
+    change finds its shape by name.
+
+    Measured before the fix:
+
+        surfaces   printer-2019#0, printer-2019#2
+        faded      printer-2019#0, printer-2019#2   ← one shape too many
+    """
+    import pathlib
+
+    import gamut_app
+
+    class Stub:
+        _slots = [(pathlib.Path("/a/January/Glossy-paper.ti3"), None, None),
+                  (pathlib.Path("/a/June/Glossy-paper.ti3"), None, None)]
+
+    names = gamut_app.GamutApp._slot_names(Stub())
+    assert names == ["Glossy-paper (January)", "Glossy-paper (June)"]
+    assert len(set(names)) == 2
+
+    # AND A NAME THAT IS ALREADY ITS OWN IS LEFT ALONE: adding a folder to
+    # every name would put clutter on every legend in the application to cure
+    # a case that is rare.
+    class Alone:
+        _slots = [(pathlib.Path("/a/January/Glossy-paper.ti3"), None, None),
+                  (pathlib.Path("/a/June/Matte-paper.ti3"), None, None)]
+
+    assert gamut_app.GamutApp._slot_names(Alone()) == ["Glossy-paper",
+                                                       "Matte-paper"]
