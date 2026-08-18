@@ -6,6 +6,14 @@ a switched-off control came to be written at 2.26:1 on a light window: every
 judgement about the greying had been made in dark mode, where the same key
 gives 5.51:1.
 
+THE MEASUREMENT IS THE FRAGILE PART, and it has been wrong four times --
+each time reporting a fault in perfectly readable text, each time found by a
+case whose answer was known before it was asked. They are written into the
+code at the place each one happened: which pixel counts as "the ink", the
+one-pixel border of a small button, the tick at the start of a row, and the
+ground a widget is actually drawn on. A number that repeats to the second
+decimal across two different widgets is a measurement, not a fault.
+
 WHAT THIS DOES, AND WHY IT IS NOT A LIST OF COLOURS. A stylesheet says what a
 colour should be; a screenshot says what was drawn. This builds the window in
 each appearance, photographs it, and then, for every piece of text on screen,
@@ -71,8 +79,16 @@ def contrast(one, other) -> float:
     return (max(a, b) + 0.05) / (min(a, b) + 0.05)
 
 
-def ink_and_paper(image, rect):
-    """The colour of the writing and the colour behind it, from the pixels."""
+def ink_and_paper(image, rect, skip_left: int = 0):
+    """The colour of the writing and the colour behind it, from the pixels.
+
+    *skip_left* leaves out the tick or the radio at the start of a row. A
+    checkbox's indicator is further from the panel than its letters are -- an
+    unchecked one is a bordered box, a checked one is the accent -- so it, and
+    not the words, was being measured: two switches in the export dialog came
+    back at 3.86:1 while their text is #22211f on #f7f4ef, which is 14.66:1.
+    """
+
     left, top, wide, tall = rect
     if wide < 8 or tall < 6:
         return None
@@ -85,6 +101,8 @@ def ink_and_paper(image, rect):
     if wide > 2 * inset + 4 and tall > 2 * inset + 4:
         left, top, wide, tall = (left + inset, top + inset,
                                  wide - 2 * inset, tall - 2 * inset)
+    if skip_left and wide > skip_left + 12:
+        left, wide = left + skip_left, wide - skip_left
     patch = image.crop((left, top, left + wide, top + tall)).convert("RGB")
     pixels = list(patch.getdata())
     if not pixels:
@@ -111,8 +129,11 @@ def ink_and_paper(image, rect):
 
 
 def main() -> int:
+    from PyQt6.QtCore import QPoint
+    from PyQt6.QtGui import QImage, QPainter
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QGroupBox, QLabel,
-                                 QPushButton, QRadioButton, QScrollArea)
+                                 QPushButton, QRadioButton, QScrollArea,
+                                 QWidget)
     from PIL import Image
 
     import gamut_app
@@ -167,7 +188,9 @@ def main() -> int:
             spot = widget.mapTo(column, widget.rect().topLeft())
             rect = (int(spot.x() * scale), int(spot.y() * scale),
                     int(widget.width() * scale), int(widget.height() * scale))
-            found = ink_and_paper(image, rect)
+            ticked = isinstance(widget, (QCheckBox, QRadioButton))
+            found = ink_and_paper(image, rect,
+                                  skip_left=int(22 * scale) if ticked else 0)
             if found is None:
                 continue
             ink, paper = found
@@ -189,6 +212,93 @@ def main() -> int:
         worst.sort()
         for ratio, kind, text in worst[:6]:
             print(f"      {ratio:>6.2f}:1  {kind:<5}  {text}")
+
+    # ---- AND THE WINDOWS THAT OPEN ON TOP OF IT --------------------------
+    # The column is where most of the words are and not where all of them
+    # are: the two save dialogs and the message box carry sentences somebody
+    # has to read before pressing anything, and they were never in this.
+    #
+    # SHOWN RATHER THAN EXECUTED, because exec() waits for a person and a
+    # check has none. Everything about how they are painted is the same
+    # either way -- the stylesheet is the window's, applied at polish.
+    for appearance in ("dark", "light"):
+        win._set_appearance(appearance)
+        pump(3)
+        for name, make in (
+                ("the picture dialog", lambda: gamut_app.PictureDialog(win)),
+                ("the web page dialog", lambda: gamut_app.WebPageDialog(win)),
+                ("a message", lambda: gamut_app.Notice(
+                    win, "Two profiles were not read",
+                    "Both of these were made on the same day, which is not "
+                    "what this view is for. Open profiles of one device made "
+                    "on different days.", cancel="Cancel"))):
+            dialog = make()
+            dialog.show()
+            pump(2.0)
+            # EACH WIDGET RENDERED ONTO THE DIALOG'S OWN GROUND, rather than
+            # cropped out of a photograph of the dialog. Cropping needs the
+            # widget's position to agree with the picture, and offscreen it
+            # does not: measured, a checkbox reported itself 10 points tall
+            # at half the y it was drawn at, so every rectangle landed on the
+            # explanation line above and two switches came back at 3.86:1 --
+            # which is the contrast of THAT line, in both appearances,
+            # identical to the second decimal. A number that repeats exactly
+            # across two different widgets is a measurement, not a fault.
+            ground = dialog.palette().color(dialog.backgroundRole())
+            for widget in dialog.findChildren((QLabel, QCheckBox, QRadioButton,
+                                               QPushButton)):
+                if not widget.isVisibleTo(dialog) or not widget.text().strip():
+                    continue
+                if isinstance(widget, gamut_app.Hint):
+                    continue
+                if widget.width() < 24 or widget.height() < 10:
+                    continue
+                # THE PARENT IS RENDERED, AND THE WIDGET FOUND INSIDE IT.
+                # Filling with the dialog's own background colour was wrong
+                # wherever something paints a card of its own: the message
+                # box draws one, so its title came back at 1.31:1 -- pale
+                # text on the dialog's ground rather than on the card it is
+                # actually written on. A parent renders its background AND
+                # its children, and the mapping to it is one hop.
+                parent = widget.parentWidget() or dialog
+                picture = QImage(parent.size() * 2,
+                                 QImage.Format.Format_RGB32)
+                picture.fill(ground)
+                painter = QPainter(picture)
+                painter.scale(2, 2)
+                parent.render(painter, QPoint(0, 0),
+                              flags=QWidget.RenderFlag.DrawChildren)
+                painter.end()
+                shot = folder / "one.png"
+                picture.save(str(shot))
+                spot = widget.mapTo(parent, widget.rect().topLeft())
+                ticked = isinstance(widget, (QCheckBox, QRadioButton))
+                found = ink_and_paper(Image.open(shot),
+                                      (spot.x() * 2, spot.y() * 2,
+                                       widget.width() * 2,
+                                       widget.height() * 2),
+                                      skip_left=44 if ticked else 0)
+                if found is None:
+                    continue
+                ink, paper = found
+                ratio = contrast(ink, paper)
+                counted += 1
+                words = widget.text().strip()
+                accent = contrast(paper, (255, 69, 115)) < 1.6
+                kind = ("off" if not widget.isEnabled()
+                        else "glyph" if len(words) <= 2
+                        else "large" if accent
+                        else "quiet" if widget.objectName() in ("hint", "slot",
+                                                               "noticeBody")
+                        else "body")
+                if ratio < FLOORS[kind]:
+                    problems.append(
+                        f"[readable] {appearance}, {name}: “{words[:40]}” is "
+                        f"{ratio:.2f}:1 against what it is drawn on, and a "
+                        f"{kind} one has to reach {FLOORS[kind]}:1")
+            dialog.close()
+            dialog.deleteLater()
+            pump(0.4)
 
     # ---- AND THE PAGES SOMEBODY IS SENT ----------------------------------
     # A saved page carries four grounds a reader can switch between, and the
