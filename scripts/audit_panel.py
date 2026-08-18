@@ -282,12 +282,55 @@ def audit_hover(panel) -> list:
     did not. It reads as sloppiness without being nameable: "checkboxes are
     not aligned correctly".
     """
-    problems = []
+    problems: list = []
     for button in panel.findChildren(QPushButton):
         if button.text().strip() and not button.toolTip().strip():
             problems.append(
                 f"[hover] SILENT  {button.text().strip()!r} says nothing when "
                 f"it is hovered")
+    # TWO ⓘ ON ONE ROW IS ONE OF THEM POINTING AT THE WRONG THING. Every
+    # icon belongs to exactly one control; a row with several has collected
+    # the icons of controls that were hidden when they were placed. Four of
+    # them ended up beside "…and a perfectly neutral line" that way, with the
+    # three checkboxes below it left with none, and nothing in this audit
+    # asked the question until now.
+    from PyQt6.QtWidgets import QBoxLayout
+
+    def rows_of(root):
+        stack = [root.layout()] if root.layout() is not None else []
+        while stack:
+            lay = stack.pop()
+            if lay is None:
+                continue
+            yield lay
+            for i in range(lay.count()):
+                item = lay.itemAt(i)
+                if item.layout() is not None:
+                    stack.append(item.layout())
+                elif (item.widget() is not None
+                      and item.widget().layout() is not None):
+                    stack.append(item.widget().layout())
+
+    import gamut_app as _app
+    across = (QBoxLayout.Direction.LeftToRight,
+              QBoxLayout.Direction.RightToLeft)
+    seen_rows = set()
+    for holder in [panel] + panel.findChildren(QWidget):
+        for row in rows_of(holder):
+            if id(row) in seen_rows or not isinstance(row, QBoxLayout):
+                continue
+            seen_rows.add(id(row))
+            if row.direction() not in across:
+                continue
+            here = [row.itemAt(i).widget() for i in range(row.count())]
+            icons = [x for x in here if isinstance(x, _app.Hint)]
+            if len(icons) > 1:
+                named = [getattr(x, "text", lambda: "")() for x in here
+                         if x is not None and not isinstance(x, _app.Hint)]
+                problems.append(
+                    f"[hover] CROWDED  {len(icons)} ⓘ on one row, beside "
+                    f"{[n for n in named if n]}")
+
     for box in panel.findChildren(QGroupBox):
         ticks = [t for t in box.findChildren(QCheckBox)
                  if t.parent() is box and not t.isHidden()]

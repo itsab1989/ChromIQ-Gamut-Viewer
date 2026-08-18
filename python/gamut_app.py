@@ -1218,7 +1218,14 @@ def make_foldable(box, key: str, start_open: bool = True):
         if open_up:
             widen = getattr(box.window(), "_widen_the_column_to_fit_it", None)
             if widen is not None:
-                widen()
+                # ASKED AFTER THE LAYOUT HAS SETTLED, not in the same breath.
+                # A group opened this instant still answers with the width it
+                # had while it was shut, so the column is sized for the old
+                # answer -- measured: the column stayed at 346 while "How it
+                # looks" had grown to 366, and its frame was cut. Asking again
+                # one event later gets the honest number, and the same trap
+                # cost a report on the theme change an hour earlier.
+                QTimer.singleShot(0, widen)
         if remember:
             QSettings("MeasuredGamutViewer", "MeasuredGamutViewer").setValue(
                 f"fold/{key}", bool(open_up))
@@ -3893,76 +3900,28 @@ class TimelineDialog(QDialog):
         self._with_shapes.setChecked(False)
         self._with_shapes.stateChanged.connect(lambda *_a: self._draw())
 
-        # AND THE CONTROLS FOR THEM, because otherwise the person who MAKES
-        # the picture has fewer than the person who receives it. Basti, on
-        # seeing the shapes go in: "when the shapes are drawn around how can i
-        # then adjust their transparency / movement / mesh / color or grey and
-        # so on?" -- and the honest answer was: in the saved page, and nowhere
-        # in the window.
+        # THE CONTROLS FOR THEM ARE THE ONES THE COLUMN ALREADY HAS.
         #
-        # THE SAME THREE THE SAVED PAGE HANDS THE READER, and no more: how
-        # solid they are, drawn as edges instead of a surface, and with the
-        # colour taken out. Everything else about how a shape is drawn --
-        # the lighting, the shading depth, the rings, the proportions -- is
-        # already inherited from How it looks, because these shells are drawn
-        # by the same code as every other shape in this application.
-        self._shape_solid = NoScrollSlider(Qt.Orientation.Horizontal, self)
-        self._shape_solid.setRange(5, 100)
-        self._shape_solid.setValue(55)
-        self._shape_solid.setToolTip(
-            "How solid the two shapes are, from almost invisible to opaque.")
-        self._shape_solid.valueChanged.connect(lambda *_a: self._draw())
-        self._shape_wires = QCheckBox("as edges", self)
-        self._shape_wires.setToolTip(
-            "Draws the two shapes as their edges instead of as surfaces, so "
-            "nothing can hide the cloud inside them.")
-        self._shape_wires.stateChanged.connect(lambda *_a: self._draw())
-        self._shape_grey = QCheckBox("in grey", self)
-        self._shape_grey.setToolTip(
-            "Takes the colour out of the two shapes so the cloud inside is "
-            "the only coloured thing in the picture.")
-        self._shape_grey.stateChanged.connect(lambda *_a: self._draw())
-        shape_look = Hint(
-            "How the two shapes around the cloud are drawn.\n\n"
-            "HOW SOLID THEY ARE is the one to reach for first. They start "
-            "just over half solid, which is enough to read them as shapes "
-            "and still see the dots through them. Drag it down when the "
-            "cloud is what you are studying, up when the shapes are.\n\n"
-            "AS EDGES draws each shape as a cage of lines instead of a "
-            "surface. Two see-through surfaces over a cloud of dots is the "
-            "one arrangement in this application that can genuinely be hard "
-            "to read; two cages never are, and nothing is hidden behind "
-            "them.\n\n"
-            "IN GREY takes the colour out of both shapes and keeps their "
-            "light and dark exactly. The usual reason to want it: the cloud "
-            "is already telling you something with colour, and two "
-            "full-colour shapes around it are competing for the same "
-            "attention.\n\n"
-            "EVERYTHING ELSE ABOUT THEM comes from How it looks further down "
-            "this column — the lighting, how deep the shading goes, the rings "
-            "inside them, the proportions of the box. These shells are drawn "
-            "by the same code as every other shape here, so anything you set "
-            "there reaches them too.\n\n"
-            "AND ALL OF IT TRAVELS into a saved web page, where whoever opens "
-            "it gets the same three controls for themselves.",
-            self, title="How the two shapes are drawn")
-        shape_look.setObjectName("hint_shape_look")
-        shape_look.follow(self._shape_solid)
-        self._shape_look_row = QHBoxLayout()
-        self._shape_look_row.setContentsMargins(0, 0, 0, 0)
-        self._shape_look_row.setSpacing(6)
-        self._shape_look_row.addWidget(self._shape_solid, 1)
-        self._shape_look_row.addWidget(self._shape_wires, 0)
-        self._shape_look_row.addWidget(self._shape_grey, 0)
-        self._shape_look_row.addWidget(shape_look, 0,
-                                       Qt.AlignmentFlag.AlignVCenter)
+        # There were three here for a while -- how solid, as edges, in grey --
+        # and Basti was right to take them out again: "i'd still rather use
+        # the controls (also for mesh / grey / color / opacity) from the how
+        # it looks section instead of the device over time section. they seem
+        # redundant there and are not as many as in the other section where i
+        # can make a mesh colorful for example and should also be able to
+        # manipulate transparency of agreeing and disagreeing areas which we
+        # have tweaked to perfection already".
+        #
+        # HOW IT LOOKS ALREADY GOVERNS THESE SHAPES, because they are drawn by
+        # the same code as every other shape in this window and every one of
+        # its settings is handed over -- see _how_the_window_draws_shapes. Set
+        # this for now names the run's two profiles while the run owns the
+        # picture, so each of them can be styled on its own.
         _shapes_row = QHBoxLayout()
         _shapes_row.setContentsMargins(0, 0, 0, 0)
         _shapes_row.setSpacing(6)
         _shapes_row.addWidget(self._with_shapes, 1)
         _shapes_row.addWidget(shapes_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         (controls if self._hosted else said).addLayout(_shapes_row)
-        (controls if self._hosted else said).addLayout(self._shape_look_row)
 
         # --- hide the colours that barely moved -------------------------------
         #
@@ -3980,7 +3939,7 @@ class TimelineDialog(QDialog):
         cut_row.setSpacing(8)
         self._cut_label = QLabel("Hide anything under", self)
         cut_row.addWidget(self._cut_label, 0)
-        self._cut = QSlider(Qt.Orientation.Horizontal, self)
+        self._cut = NoScrollSlider(Qt.Orientation.Horizontal, self)
         # TENTHS, because that is as fine as the data supports and as fine as
         # the instrument does. An i1Pro repeats to about ΔE 0.1 on white and
         # two different instruments agree to about 0.4, so a hundredth would
@@ -4386,12 +4345,6 @@ class TimelineDialog(QDialog):
         useful = self._chosen_pair() is not None
         self._by_family.setVisible(useful)
         self._with_shapes.setVisible(useful)
-        # THE CONTROLS FOR THE SHAPES ONLY WHILE THERE ARE SHAPES. A slider
-        # that moves nothing is this file's own definition of worse than
-        # nothing.
-        drawn = useful and self._with_shapes.isChecked()
-        for part in (self._shape_solid, self._shape_wires, self._shape_grey):
-            part.setVisible(drawn)
         for part in (self._cut, self._cut_label, self._cut_says):
             part.setVisible(useful)
         # AND EVERY ⓘ GOES WITH THE CONTROL IT EXPLAINS. An icon follows its
@@ -4840,9 +4793,41 @@ class TimelineDialog(QDialog):
             return {}
         look = dict(options())
         for named_elsewhere in ("chart", "chart_look", "drift", "space",
-                                "per_shape", "neutrals", "ideal_neutrals",
-                                "points"):
+                                "neutrals", "ideal_neutrals", "points"):
             look.pop(named_elsewhere, None)
+        # PER-SHAPE SETTINGS ARE KEPT, and this is the whole of Basti's point:
+        # "How it looks" can already make one shape fainter, draw it as a
+        # coloured mesh, take the colour out of it, and fade where the two
+        # agree or differ -- all of it tweaked over months. Dropping those
+        # entries meant the run's two shells could not be styled at all, which
+        # is what put three poorer controls in the run's own group for a
+        # while.
+        #
+        # THE FIRST TWO ENTRIES ARE THE TWO SHELLS, in the order they are
+        # drawn: the earlier profile, then the later one. That is exactly what
+        # "the first shape" and "the second shape" mean in Set this for while
+        # a run owns the picture, and the window renames those entries to the
+        # profiles' own names so nobody has to guess.
+        # READ FROM THE WINDOW'S OWN TABLE, not from the list it builds for
+        # its open files. That list has one entry per FILE, so with a run and
+        # nothing else open it is empty -- and every per-shape setting landed
+        # in a dictionary nobody read. Measured: "printer-2019 at 85%" left
+        # both shells at 0.2.
+        #
+        # Entry 0 and entry 1 are what "Set this for" calls the first and the
+        # second shape, which is what those two entries are renamed to while a
+        # run owns the picture.
+        own = getattr(host, "_per_shape", {}) or {}
+        look["per_shape"] = [dict(own.get(0, {})), dict(own.get(1, {}))]
+        # AND WHETHER EACH IS A SURFACE OR A MESH, which is not part of the
+        # render options at all: the window works its styles out beside the
+        # shapes themselves, in _scene_contents. Without them the two shells
+        # were solid whatever the choosers said -- "printer-2019 as a mesh"
+        # changed nothing at all.
+        chosen = (getattr(host, "_style_mine", None),
+                  getattr(host, "_style_second", None))
+        if all(chosen):
+            look["styles"] = [box.currentData() for box in chosen]
         return look
 
     def _shells_for(self, path_a, path_b):
@@ -4961,54 +4946,12 @@ class TimelineDialog(QDialog):
         self._fit_cut_to(d.worst, float(_np.min(d.deltas)))
         cut = self._cut_off()
         look = self._how_the_window_draws_shapes() if shells else {}
-        if shells:
-            # THE THREE THE READER OF A SAVED PAGE GETS, said the same way:
-            # per-shape overrides, which is how this application has always
-            # described "this one shape, drawn differently".
-            each = {"opacity": self._shape_solid.value() / 100.0}
-            if self._shape_wires.isChecked():
-                # EDGES ARE A STYLE, NOT A PAINTING. Which of the two a shape
-                # is drawn as comes from `styles`, one entry per shape; the
-                # per-shape dictionary only says how the thing that IS drawn
-                # is coloured. Set in the wrong place it was accepted in
-                # silence and changed nothing, which is exactly the fault the
-                # combination audit exists for -- and it took a driven picture
-                # to notice: "as edges" left two surfaces and no wires.
-                # "mesh" IS THE NAME FOR EDGES HERE. The three a shape can
-                # be drawn as are mesh, solid and solid+mesh -- "outline" is
-                # the CHART SKIN's name for the same idea, and the two
-                # vocabularies live a few hundred lines apart. Asking for the
-                # wrong one raises rather than drawing something unintended,
-                # which is why this cost a minute and not a release.
-                look["styles"] = ["mesh", "mesh"]
-            if self._shape_grey.isChecked():
-                # "lightness" IS the grey this application means: it keeps
-                # each vertex's light and dark exactly and drops the hue, so
-                # the shape stays as readable as it was and simply stops
-                # competing with the cloud. There is no "grey" painting --
-                # asking for one raises, which is how this was found rather
-                # than shipped.
-                each["paint"] = "lightness"
-            look["per_shape"] = [dict(each), dict(each)]
-        # WHAT THIS PICTURE DECIDES FOR ITSELF is named here as well, and
-        # Python refuses the same argument twice. The appearance, the box and
-        # the space are settled for a drift cloud: it is always drawn in Lab,
-        # always with its box, and always in the window's own light or dark.
+        # WHAT THIS PICTURE DECIDES FOR ITSELF is named below as well, and
+        # Python refuses the same argument twice: a drift cloud is always
+        # drawn in Lab, always with its box, and always in the window's own
+        # light or dark.
         for mine in ("mode", "grid", "space"):
             look.pop(mine, None)
-        # AND THE TRANSPARENCY IS THE ONE THE PICTURE'S OWN RULE CHOOSES, not
-        # the window's slider. That slider describes the window's OWN shapes;
-        # here there are none, so it sits wherever it was last left -- and at
-        # its ordinary 100% the two shells came out opaque and the cloud
-        # inside them, which is the entire subject of the picture, could not
-        # be seen at all. Measured on the first drive: opacity 1.0 on both.
-        #
-        # Left to itself, build_figure applies the rule this project settled
-        # on long ago -- solid for one shape, 0.55 for two, with the
-        # see-through surfaces put in draw order so they read as solids -- and
-        # that rule is exactly the learning worth inheriting. Whoever opens a
-        # saved page can still make either shape fainter or draw it as edges.
-        look.pop("opacity", None)
         if axis == "toward":
             # NOT "IN LAB UNITS": this one is not a measurement along an axis,
             # it is a name. Saying "in Lab units" over a picture of six named
@@ -8126,7 +8069,7 @@ class GamutApp(QMainWindow):
         cut_row.setSpacing(8)
         self._drift_cut_label = QLabel("Hide anything under", self._drift_box)
         cut_row.addWidget(self._drift_cut_label, 0)
-        self._drift_cut = QSlider(Qt.Orientation.Horizontal, self._drift_box)
+        self._drift_cut = NoScrollSlider(Qt.Orientation.Horizontal, self._drift_box)
         self._drift_cut.setMinimum(0)
         self._drift_cut.setMaximum(1)
         self._drift_cut.setSingleStep(1)
@@ -9805,7 +9748,20 @@ class GamutApp(QMainWindow):
                 widget = candidate.widget()
                 if candidate.layout() is not None:
                     break
-                if widget is not None and widget.isVisibleTo(box):
+                # HIDDEN IS NOT THE SAME AS ABSENT, and treating it as the
+                # same is what put four icons on one row. This pass runs
+                # while the window is being built, when every control that
+                # depends on a file being open is hidden -- so each of their
+                # icons walked past its own partner and landed on the last
+                # row that happened to be showing. Basti photographed the
+                # result: "…and a perfectly neutral line" with four ⓘ beside
+                # it, and three controls below it with none.
+                #
+                # An icon belongs to the control it was written for, whether
+                # or not that control is on screen at this instant; going
+                # with it when it appears and disappears is what follow() is
+                # for.
+                if widget is not None:
                     # A heading is not something an icon can point at; a
                     # readout showing a number is.
                     if not (isinstance(widget, QLabel)
@@ -12471,6 +12427,32 @@ class GamutApp(QMainWindow):
         for label in self._name_column:
             label.setMinimumWidth(widest)
 
+    def _name_the_shapes_being_styled(self) -> None:
+        """Say WHICH shapes "Set this for" is talking about.
+
+        The entries are written for the window's own two files -- "the first
+        shape", "the second shape" -- and while a run owns the picture those
+        are the run's two profiles instead. Nobody should have to work out
+        that "the first shape" now means printer-2019.
+        """
+        panel = getattr(self, "_timeline", None)
+        showing = (getattr(self, "_run_drawn", False) and panel is not None
+                   and panel.shows_two_shapes())
+        pair = panel._chosen_pair() if showing else None
+        names = ("the first shape", "the second shape")
+        if pair is not None:
+            names = (Path(pair[0]).stem, Path(pair[1]).stem)
+        for at, name in zip((1, 2), names):
+            if self._target.itemData(at) in (0, 1):
+                self._target.setItemText(at, name)
+        # THE COMPARISON'S OWN ENTRY IS NOT A RUN'S SHAPE, so it says so
+        # rather than sitting there meaning nothing.
+        third = self._target.findData(2)
+        if third >= 0:
+            self._target.setItemText(
+                third, "the comparison" if not showing
+                else "the comparison (not in this picture)")
+
     def _refresh_style_controls(self) -> None:
         """Show a style control only when the shape it governs is on screen.
 
@@ -12478,7 +12460,12 @@ class GamutApp(QMainWindow):
         it invites a change that does nothing and leaves somebody wondering
         what they did wrong.
         """
-        have = (len(self._slots) >= 1, len(self._slots) >= 2,
+        self._name_the_shapes_being_styled()
+        panel = getattr(self, "_timeline", None)
+        two_shells = (getattr(self, "_run_drawn", False) and panel is not None
+                      and panel.shows_two_shapes())
+        have = (len(self._slots) >= 1 or two_shells,
+                len(self._slots) >= 2 or two_shells,
                 self._reference is not None)
         for (combo, _label), name, show in zip(self._style_combos,
                                                self._style_labels, have):
@@ -12633,7 +12620,12 @@ class GamutApp(QMainWindow):
     def _push_lighting(self, values: dict) -> None:
         """Send a lighting dictionary into the scene already on screen."""
         page = self._view.page()
-        if page is None or not self._slots:
+        # THE RUN'S SHELLS COUNT AS SHAPES ON SCREEN. This asked whether any
+        # FILE was open, which was the same question until the run panel began
+        # drawing shapes of its own -- and then the live fade stopped happening
+        # for exactly the picture that has two shapes in it.
+        if page is None or not (self._slots
+                                or getattr(self, "_run_drawn", False)):
             return
         body = ",".join(f"'{k}':{v}" for k, v in values.items())
         page.runJavaScript(
@@ -12749,11 +12741,31 @@ class GamutApp(QMainWindow):
         self._run_drawn = True
         self._say_who_owns_the_picture()
         self._let_the_exports_follow_the_picture()
+        self._match_the_opacity_to_the_shells(panel)
+        # AND "SET THIS FOR" NAMES THE RUN'S PROFILES while they are what it
+        # governs. _redraw stands aside when the run owns the picture, and it
+        # was the only thing that refreshed those names.
+        self._refresh_style_controls()
         self._render_count += 1
         out = self._tmp / f"run-{self._render_count}.html"
         try:
-            figure.write_html(str(out), include_plotlyjs=True,
-                              config={"displayModeBar": False})
+            # THE SAME WRITER AS EVERY OTHER PICTURE IN THIS APPLICATION, and
+            # this is not tidiness. Writing the figure straight out skips
+            # everything _write_dark_html adds, and one of those things is the
+            # script that puts see-through surfaces in DRAW ORDER. Without it
+            # a shape at anything under full opacity comes apart on screen:
+            # holes, missing triangles, a slice taken out of the side.
+            # Reported, with a photograph, the moment the shapes could be made
+            # fainter: "this is no transparency but missing triangles and
+            # stuff again which we should have fixed for good already".
+            #
+            # It HAD been fixed for good -- in the writer this one call was
+            # going around. The picture that gets SAVED went through it and
+            # was fine; the picture on screen did not.
+            from ti3gamut import _write_dark_html
+            _write_dark_html(figure, out, self._appearance,
+                             spin=self._spin_options(),
+                             carry_viewer=True, controls=False)
         except OSError as exc:
             _log().warning("could not draw the run: %s", exc)
             return
@@ -12795,6 +12807,38 @@ class GamutApp(QMainWindow):
         # naming what it holds: enabling this one would be a second button
         # for a different table with nothing to put in it.
         table.setEnabled(files)
+
+    def _match_the_opacity_to_the_shells(self, panel) -> None:
+        """Put the opacity slider where the picture actually is, once.
+
+        THE SLIDER AND THE PICTURE HAVE TO AGREE. Two shapes drawn by this
+        application are 0.55 solid unless somebody says otherwise -- the rule
+        that keeps a pair readable -- while the slider in the column reads
+        100% because nothing has ever told it different. Handing the run's
+        shells the slider's value makes them opaque and hides the cloud they
+        are drawn around; ignoring the slider leaves a control that does
+        nothing, which is what put three poorer controls in the run's group
+        for an afternoon.
+
+        So the first time a pair of shells appears with none of the window's
+        own shapes open, the slider is moved to what the rule would have
+        chosen. After that it is the reader's, and it governs these shells
+        exactly as it governs any other.
+        """
+        if getattr(self, "_matched_the_shell_opacity", False):
+            return
+        if self._slots or not panel.shows_two_shapes():
+            return
+        self._matched_the_shell_opacity = True
+        self._opacity.blockSignals(True)
+        self._opacity.setValue(55)
+        self._opacity.blockSignals(False)
+        self._shared["opacity"] = 0.55
+        # THE READING BESIDE THE SLIDER FOLLOWS IT, through the window's own
+        # handler rather than a second copy of what that handler does.
+        handler = getattr(self, "_on_opacity_changed", None)
+        if handler is not None:
+            handler(55)
 
     def _release_the_picture(self) -> None:
         """The run has nothing to show: give the view back to what is open."""
@@ -12854,6 +12898,18 @@ class GamutApp(QMainWindow):
             self._update_coverage()
             self._update_drift()
             self._say_who_owns_the_picture()
+            # AND THE RUN'S PICTURE IS REDRAWN, because it is the picture.
+            # Standing aside was right when the run drew itself and nothing
+            # here could touch it; now that How it looks governs its shells,
+            # every one of those controls came through here and stopped. The
+            # opacity slider moved and the shapes did not.
+            panel = getattr(self, "_timeline", None)
+            if panel is not None and not getattr(self, "_redrawing_run", False):
+                self._redrawing_run = True
+                try:
+                    panel._draw()
+                finally:
+                    self._redrawing_run = False
             return
         # A PLACED CHART IS A PICTURE IN ITS OWN RIGHT. Returning early when
         # only a chart is open would leave somebody who opened a chart and a
