@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.34.0
 
 ### 📐 The picture fits a narrow window instead of running off the edge
 
