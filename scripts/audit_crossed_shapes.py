@@ -162,6 +162,64 @@ def main() -> int:
                 win._opacity.setValue(100)
                 pump(2)
 
+    # ---- AND THE SAME CHANGE IN TWO ROOMS -------------------------------
+    # TWO ROOMS ARE TWO GRAPHS, and every live path in this window used to
+    # start at the FIRST one. Measured before it was fixed, with the solidity
+    # dragged to 30%:
+    #
+    #     room0 surfaces=0.3 | room1 surfaces=1
+    #
+    # -- two rooms disagreeing about how solid the shapes are, which is the
+    # one thing that arrangement exists to make comparable.
+    print("\n  AND THE SAME CHANGE IN TWO ROOMS\n")
+    at = win._target.findData("all")
+    if at >= 0:
+        win._target.setCurrentIndex(at)
+        win._target.activated.emit(at)
+    for box in (win._style_mine, win._style_second):
+        where = box.findData("solid")
+        if where >= 0:
+            box.setCurrentIndex(where)
+            box.activated.emit(where)
+    pump(4)
+    win._side_by_side.setChecked(True)
+    pump(9)
+    per_room = """(function(){var divs=document.getElementsByClassName(
+     'plotly-graph-div');var out=[];
+     for(var i=0;i<divs.length;i++){var d=divs[i];
+       var data=d._fullData||d.data||[];var op=[];
+       for(var j=0;j<data.length;j++) if(data[j].type==='mesh3d')
+         op.push(data[j].opacity);
+       out.push(op);}
+     return JSON.stringify(out);})();"""
+
+    def rooms():
+        got = []
+        win._view.page().runJavaScript(per_room, got.append)
+        end = time.time() + 6
+        while not got and time.time() < end:
+            app.processEvents()
+            time.sleep(0.005)
+        try:
+            return json.loads(got[0]) if got else []
+        except (TypeError, ValueError):
+            return []
+
+    win._opacity.setValue(28)
+    pump(3)
+    seen = rooms()
+    print(f"      rooms: {seen}")
+    done += 1
+    faded = [r for r in seen if r and all(abs(o - 0.28) < 0.001 for o in r)]
+    if len(seen) < 2:
+        print("      (only one room was drawn, so this proves nothing)")
+    elif len(faded) != len(seen):
+        problems.append(
+            f"[crossed] two rooms: the solidity reached {len(faded)} of "
+            f"{len(seen)} rooms — {seen}")
+    win._side_by_side.setChecked(False)
+    pump(5)
+
     print(f"\n  {done} crossing(s) driven.")
     if problems:
         for line in problems:

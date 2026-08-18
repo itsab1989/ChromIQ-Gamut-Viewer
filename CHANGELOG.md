@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### 🪟 A live change reaches both rooms
+
+Every live path in this window began at *the first* graph in the page — and
+**two rooms are two graphs**. Measured, two papers side by side, solidity
+dragged to 30%:
+
+    before   room0 surfaces=0.3 | room1 surfaces=1
+    now      room0 surfaces=0.3 | room1 surfaces=0.3
+
+Two rooms disagreeing about how solid the shapes are is the one thing that
+arrangement exists to rule out. It survived unnoticed because it used to
+correct itself: anything that rebuilt the page drew both rooms from the same
+recorded value. Now that the controls people drag no longer rebuild, it would
+have stayed on the screen. The background chosen for a saved film had the same
+fault, one room styled and one not.
+
 ### 🧱 The box and its grid stops rewriting the page
 
 The reader's own copy of a page has always switched the walls with a relayout;

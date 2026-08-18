@@ -8953,10 +8953,13 @@ class GamutApp(QMainWindow):
         if not changes:
             return
         want = {k: None for k in changes} if restore else changes
+        # EVERY GRAPH IN THE PAGE, for the same reason the live restyles now
+        # do: two rooms are two graphs, and a background put on one of them is
+        # a saved film with one room styled and one not.
         self._run_js_now(
-            "(function(){var d=document.getElementsByClassName("
-            "'plotly-graph-div')[0];"
-            f"if(d)Plotly.relayout(d,{json.dumps(want)});}})()")
+            "(function(){var divs=document.getElementsByClassName("
+            "'plotly-graph-div');for(var r=0;r<divs.length;r++)"
+            f"Plotly.relayout(divs[r],{json.dumps(want)});}})()")
 
     def look_choices(self) -> dict:
         """The styling chosen in the left-hand column, for saving a picture."""
@@ -12964,16 +12967,12 @@ class GamutApp(QMainWindow):
             return
         where = self._light_position()
         body = ",".join(f"'{k}':{float(v)}" for k, v in where.items())
-        page.runJavaScript(
-            "(function(){var el=document.getElementsByClassName("
-            "'plotly-graph-div')[0];"
-            "if(!el||!window.Plotly||!el.data)return;"
+        page.runJavaScript(self._in_every_room(
             "var idx=[];for(var i=0;i<el.data.length;i++)"
             "if(el.data[i].type==='mesh3d')idx.push(i);"
             f"var which={self._which_meshes_js()};"
-            f"if(which.length)Plotly.restyle(el,"
-            f"{{lightposition:{{{body}}}}},which);"
-            "})();")
+            f"if(which.length){{Plotly.restyle(el,"
+            f"{{lightposition:{{{body}}}}},which);did++;}}"))
 
     def _on_light_changed(self, key: str, value: float, label) -> None:
         label.setText(f"{value:.2f}")
@@ -12983,6 +12982,33 @@ class GamutApp(QMainWindow):
             self._push_light_position()
         else:
             self._push_lighting(self._manual_lighting())
+
+    def _in_every_room(self, body: str) -> str:
+        """Wrap a live change so it reaches EVERY graph in the page.
+
+        TWO ROOMS ARE TWO GRAPHS, and every live path in this window began
+
+            document.getElementsByClassName('plotly-graph-div')[0]
+
+        which is the left one. Measured, with two papers side by side and the
+        solidity dragged to 30%:
+
+            room0 surfaces=0.3 | room1 surfaces=1
+
+        -- two rooms disagreeing about how solid the shapes are, which is the
+        one thing that arrangement exists to make comparable. It survived
+        because it corrects itself: anything that rebuilds the page draws both
+        rooms from the same recorded value. Now that the controls people drag
+        no longer rebuild, it would have stayed on screen.
+
+        *body* is written against `el`, one graph at a time.
+        """
+        return ("(function(){var divs=document.getElementsByClassName("
+                "'plotly-graph-div');var did=0;"
+                "for(var r=0;r<divs.length;r++){var el=divs[r];"
+                "if(!el||!window.Plotly||!el.data)continue;"
+                + body +
+                "}return did>0;})();")
 
     def _restyle_the_chart(self, group: str, field: str, value) -> None:
         """Change how the chart's patches are drawn, in the picture on screen.
@@ -13003,16 +13029,12 @@ class GamutApp(QMainWindow):
         if page is None:
             return
         import json as _json
-        page.runJavaScript(
-            "(function(){var el=document.getElementsByClassName("
-            "'plotly-graph-div')[0];"
-            "if(!el||!window.Plotly||!el.data)return;"
+        page.runJavaScript(self._in_every_room(
             "var idx=[];for(var i=0;i<el.data.length;i++){var t=el.data[i];"
             f"if(String(t.legendgroup||'').slice(-{len(group) + 1})==='-{group}'"
             "&&t.hoverinfo!=='skip')idx.push(i);}"
-            f"if(idx.length)Plotly.restyle(el,{{{_json.dumps(field)}:"
-            f"{_json.dumps(value)}}},idx);"
-            "})();")
+            f"if(idx.length){{Plotly.restyle(el,{{{_json.dumps(field)}:"
+            f"{_json.dumps(value)}}},idx);did++;}}"))
 
     def _name_of_shape(self, which: int) -> str:
         """What the shape at this position is CALLED in the picture.
@@ -13076,15 +13098,12 @@ class GamutApp(QMainWindow):
                                 or getattr(self, "_run_drawn", False)):
             return
         body = ",".join(f"'{k}':{v}" for k, v in values.items())
-        page.runJavaScript(
-            "(function(){var el=document.getElementsByClassName("
-            "'plotly-graph-div')[0];"
-            "if(!el||!window.Plotly||!el.data)return;"
+        page.runJavaScript(self._in_every_room(
             "var idx=[];for(var i=0;i<el.data.length;i++)"
             "if(el.data[i].type==='mesh3d')idx.push(i);"
             f"var which={self._which_meshes_js()};"
-            f"if(which.length)Plotly.restyle(el,{{lighting:{{{body}}}}},which);"
-            "})();")
+            f"if(which.length){{Plotly.restyle(el,"
+            f"{{lighting:{{{body}}}}},which);did++;}}"))
 
     def _on_depth_changed(self, value: int) -> None:
         """Change the shading live, without rebuilding the picture.
@@ -13116,16 +13135,12 @@ class GamutApp(QMainWindow):
         if page is None or not (self._slots
                                 or getattr(self, "_run_drawn", False)):
             return
-        page.runJavaScript(
-            "(function(){var el=document.getElementsByClassName("
-            "'plotly-graph-div')[0];"
-            "if(!el||!window.Plotly||!el.data)return;"
+        page.runJavaScript(self._in_every_room(
             "var idx=[];for(var i=0;i<el.data.length;i++)"
             "if(el.data[i].type==='mesh3d')idx.push(i);"
             f"var which={self._which_meshes_js()};"
-            f"if(which.length)Plotly.restyle(el,"
-            f"{{opacity:{value / 100.0}}},which);"
-            "})();")
+            f"if(which.length){{Plotly.restyle(el,"
+            f"{{opacity:{value / 100.0}}},which);did++;}}"))
 
     def _on_grid_changed(self, *_args) -> None:
         """Show or hide the box, in the picture already on screen.
@@ -13151,17 +13166,14 @@ class GamutApp(QMainWindow):
             if not did_it:
                 self._redraw()
 
-        page.runJavaScript(
-            "(function(){var el=document.getElementsByClassName("
-            "'plotly-graph-div')[0];"
-            "if(!el||!window.Plotly||!el._fullLayout)return false;"
+        page.runJavaScript(self._in_every_room(
             f"var on={on};"
-            "if(el._fullLayout.scene){Plotly.relayout(el,{"
+            "if(el._fullLayout&&el._fullLayout.scene){Plotly.relayout(el,{"
             "'scene.xaxis.visible':on,'scene.yaxis.visible':on,"
-            "'scene.zaxis.visible':on});return true;}"
-            "if(el._fullLayout.xaxis){Plotly.relayout(el,{"
-            "'xaxis.visible':on,'yaxis.visible':on});return true;}"
-            "return false;})();", fell_back)
+            "'scene.zaxis.visible':on});did++;}"
+            "else if(el._fullLayout&&el._fullLayout.xaxis){"
+            "Plotly.relayout(el,{'xaxis.visible':on,'yaxis.visible':on});"
+            "did++;}"), fell_back)
 
     def _on_side_by_side(self) -> None:
         """Side by side changes which other controls make sense."""
