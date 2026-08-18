@@ -2860,11 +2860,19 @@ window.cqOrder = (function () {
   //: it is how the tests compare the two ways of drawing the same page
   //: without editing the page, which is the only comparison that is fair.
   var pooling = true;
-  //: EXPERIMENT SWITCH (see docs/THE-SEE-THROUGH-TRIANGLES.md): when on, the
-  //: whole away-facing wall is drawn before the whole toward-facing wall,
-  //: each half still farthest-first. wallSign -1 inverts the two walls -- the
-  //: mutation test that proves the switch reaches the drawn picture.
-  var wall = false, wallSign = 1;
+  //: THE FAR WALL IS DRAWN WHOLLY BEFORE THE NEAR WALL (see
+  //: docs/THE-SEE-THROUGH-TRIANGLES.md). A depth sort of triangle middles is
+  //: right about which TRIANGLE is farther and still wrong about pixels
+  //: where the rim's foreshortened far-wall facets and the near wall overlap
+  //: in depth -- the kite-shaped wedges. Splitting the order by which way a
+  //: face points settles those pixels for every triangle at once: at any
+  //: pixel of a closed shell the near wall is nearer than the far wall, so
+  //: far-wall-first is right PER PIXEL, which no depth ordering can promise.
+  //: Within each wall the depth sort stays. The switch below exists so a
+  //: test can throw it and measure both ways on one page; wallSign -1
+  //: inverts the two walls, which is the mutation that proves the switch
+  //: reaches the drawn picture.
+  var wall = true, wallSign = 1;
   var BUCKETS = 4096, tally = new Int32Array(2 * BUCKETS + 1);
 
   function graphs() {

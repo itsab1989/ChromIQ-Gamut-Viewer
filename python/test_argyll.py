@@ -463,32 +463,34 @@ def test_the_surface_resolution_is_asked_for_and_not_left_to_argyll():
         per profile   0.15s   0.36s    0.71s    3.16s
 
     6 is where the two doors into one profile agree exactly, and 4 overshoots
-    the other way -- but 6 is not what ships. Every triangle of every
-    see-through surface is put in depth order on every frame of a drag, and
-    finer means more of them. Timed in the page, two shapes at 68%:
+    the other way.
 
-        -d      triangles   median   worst      (a frame has 16.7 ms)
-        10          3,666    4.6ms   12.6ms
-         8          5,958    8.8ms   12.5ms
-         6          8,876   12.4ms   20.5ms   over a frame
+    AND IT COSTS NOTHING TO TURN, which took two measurements because the
+    first was of the wrong thing. Twenty FORCED passes back to back said 6
+    was over a frame and 8 was not, and 8 shipped on that. The application
+    never does that: the engine skips a pass when the camera has barely
+    turned, spaces itself to three times its own cost, stops when the picture
+    settles, and never touches a solid surface. Dragged for real -- mouse
+    events at the canvas, three seconds each:
 
-    So 8: the worst pass stays inside a frame, the disagreement still falls
-    from 0.73% to 0.19%, and the facets from 4.50 degrees to 3.55. A drag
-    that stutters is felt by everybody who makes a shape see-through; the
-    0.16% left on the table is a figure nobody can act on.
+        -d   triangles   median    90th   frames over 16.7 ms
+        10       3,666   16.9ms  23.1ms   99 of 179
+         8       5,958   16.5ms  26.2ms   81 of 178
+         6       8,876   16.0ms  29.4ms   77 of 172
+         4      18,180   16.1ms  38.1ms   64 of 173
 
-    Solid costs nothing at all -- 0.0 ms, because the engine leaves a solid
-    surface alone -- so this is paid only when somebody asks to see through
-    something.
+    Five times the triangles does not slow the drag, and Argyll's own default
+    has the MOST frames over budget. So there is nothing to trade.
+
     """
     import inspect
 
     import references
 
-    assert references.SURFACE_DETAIL == 8, (
-        "the surface resolution changed; 8 was chosen because it keeps even "
-        "the worst ordering pass inside a frame while still cutting the two "
-        "readers' disagreement from 0.73% to 0.19%")
+    assert references.SURFACE_DETAIL == 6, (
+        "the surface resolution changed; 6 is where the two readers agree, "
+        "and a real drag was measured to cost no more at 6 than at Argyll's "
+        "own default")
     src = inspect.getsource(references.icc_gamut)
     assert '"-d", str(SURFACE_DETAIL)' in src, (
         "iccgamut is asked for no surface resolution again, so Argyll's "

@@ -175,35 +175,42 @@ def gam_gamut(path, *, white_point: str = "D50", space: str = "lab",
 #:     per profile   0.15s   0.36s    0.71s    3.16s
 #:
 #: 6 is where the two doors into the same profile agree exactly, and 4
-#: overshoots the other way. IT IS NOT THE VALUE THAT SHIPPED, because
-#: accuracy is not the only thing being paid for: every triangle of every
-#: SEE-THROUGH surface is put in depth order on every frame of a drag, and
-#: this multiplies them. Timed in the page, two shapes at 68%, twenty passes:
+#: overshoots the other way.
 #:
-#:     -d      triangles   median   worst    a frame has 16.7 ms
-#:     10          3,666    4.6ms   12.6ms
-#:      8          5,958    8.8ms   12.5ms
-#:      6          8,876   12.4ms   20.5ms   <- over a frame
+#: AND IT COSTS NOTHING TO TURN, which took two measurements to establish
+#: because the first one was of the wrong thing. Timing twenty FORCED passes
+#: back to back said 6 was over a frame's budget and 8 was not, and 8 shipped
+#: on the strength of it. But the application never does that: the engine
+#: skips a pass when the camera has barely turned, spaces itself out to three
+#: times its own cost, stops when the picture settles, and never touches a
+#: solid surface at all.
 #:
-#: At 6 the worst pass misses a frame, with only two shapes open; a chart's
-#: skin beside them would be worse. At 8 even the worst pass stays inside
-#: one, and the disagreement between the two readers still falls from 0.73%
-#: to 0.19%. The remaining 0.16% is a figure nobody can act on; a drag that
-#: stutters is felt by everybody who makes a shape see-through.
+#: Dragged for real instead -- mouse events at the canvas, so the scene's own
+#: handler turns the camera the way a hand does, three seconds each:
 #:
-#: SOLID COSTS NOTHING AT ALL -- measured, 0.0 ms, because a solid surface
-#: hides its own far side and the engine leaves it alone. So this is paid
-#: only by a reader who has asked to see through something.
+#:     -d   triangles   median    90th    worst   frames over 16.7 ms
+#:     10       3,666   16.9ms  23.1ms   27.6ms   99 of 179
+#:      8       5,958   16.5ms  26.2ms   69.5ms   81 of 178
+#:      6       8,876   16.0ms  29.4ms   57.6ms   77 of 172
+#:      4      18,180   16.1ms  38.1ms   66.9ms   64 of 173
+#:
+#: FIVE TIMES THE TRIANGLES DOES NOT SLOW THE DRAG. The count over budget
+#: goes the other way, and Argyll's own default has the most of them. So the
+#: triangle count is not what governs a drag, and there is nothing to trade:
+#: 6 is both the most accurate and no dearer to turn.
+#:
+#: SOLID COSTS NOTHING AT ALL -- measured, 0.0 ms per pass, because a solid
+#: surface hides its own far side and the engine leaves it alone.
 #:
 #: IT IS ALSO WHAT THE SHAPE LOOKS LIKE. The facets a reader can see at the
-#: outline are 4.50 degrees across at the default and 3.55 at 8, measured as
+#: outline are 4.50 degrees across at the default and 2.91 at 6, measured as
 #: the angle a face covers seen from the middle of the shape. Reported from
 #: the window: "at the edges of the shape there still seem to be hints of
 #: triangles instead of a smooth surface".
 #:
 #: WHAT IT COSTS is half a second per profile, once, and the result is kept:
 #: shapes are cached on the file and the time it was written.
-SURFACE_DETAIL = 8
+SURFACE_DETAIL = 6
 
 #: How long to let ``iccgamut`` work before reading the profile here instead.
 #:

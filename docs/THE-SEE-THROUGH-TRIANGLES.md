@@ -140,7 +140,57 @@ worst just below solid. That is also why an exact sort changes nothing —
 sorting **triangles** cannot fix blending that interleaves at the **pixel**
 level wherever triangles overlap in depth.
 
-## Where to go next
+## THE ANSWER, and it was the blend after all
+
+**Draw the whole away-facing wall first, then the whole toward-facing wall,
+each half still sorted farthest-first.** A pure reordering: nothing is
+culled, nothing is dropped.
+
+Why it works where a depth sort cannot. A sort of triangle *middles* is right
+about which TRIANGLE is farther and still wrong at pixels where the rim's
+foreshortened far-wall facets and the near wall overlap in depth — those
+pixels are the kites. Splitting the order by which way a face points settles
+all of them at once: at any pixel of a closed shell the near wall is nearer
+than the far wall, so far-wall-first is correct **per pixel**, which no
+ordering of triangles can promise.
+
+Measured on one page with the switch thrown, and checked independently
+afterwards:
+
+| state | lit pixels | flank |
+|---|---|---|
+| wall order off | 60,918 | 0.912 |
+| **wall order ON** | **60,918** | **0.704** |
+| off again | 60,918 | 0.912 |
+| ON again | 60,918 | 0.704 |
+| the two walls inverted (mutation) | 60,914 | 0.759 |
+
+**The lit pixels are identical** — that is the line every culling variant
+failed. Nothing is removed, so the outline cannot shred.
+
+It costs one dot product per triangle: a forced pass went 5.82 → 6.82 ms at
+5,966 faces, which the engine's own throttle absorbs.
+
+AND A SECOND FAULT WAS FOUND ON THE WAY: after any camera relayout,
+`_fullLayout.scene.*.range` turns to junk (`[-88..92, …]` becomes
+`[-1..6, …]`), so `lineOfSight` bent from (0.577, 0.577, 0.577) to
+(0.468, 0.286, 0.836) and **every frame after a drag was sorted for the wrong
+direction**. The scene's `dataScale` is bit-identical across relayouts and is
+now what is read, with the ranges kept only as a fallback.
+
+Known residual: rays passing through two shells *disjointly* — one wholly
+behind the other — get one swapped pair. No camera in a sixteen-angle sweep
+showed it above noise; it is the place to look if a two-shape angle ever
+regresses.
+
+## Where this came from
+
+The direction below was written before the fix existed and is kept because it
+was right: the answer was in the blend, not in which faces exist.
+
+## What was tried before
+
+
 
 Three honest answers, and only the first two are ours:
 
