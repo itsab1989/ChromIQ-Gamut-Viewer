@@ -135,6 +135,38 @@ def main() -> int:
     def showing() -> str:
         return win._view.url().toString()
 
+    #: AND WHERE THE READER IS LOOKING FROM. Asked for from the window: "i
+    #: would like them to simply appear / disappear without the viewer
+    #: flashing / reloading and the camera resetting". Those are two
+    #: questions, and only the first was ever measured here. A rebuild that
+    #: carries the angle over is a blink; a rebuild that loses it puts the
+    #: reader back at the beginning, which is the one that really costs.
+    def angle():
+        got = []
+        page = win._view.page()
+        if page is None:
+            return None
+        page.runJavaScript(
+            "(function(){var d=document.getElementsByClassName("
+            "'plotly-graph-div')[0];var s=d&&d._fullLayout&&d._fullLayout.scene;"
+            "var c=s&&((s._scene&&s._scene.getCamera())||s.camera);"
+            "return c&&c.eye?[Math.round(c.eye.x*100)/100,"
+            "Math.round(c.eye.y*100)/100,Math.round(c.eye.z*100)/100].join():"
+            "'';})()", got.append)
+        end = time.time() + 6
+        while not got and time.time() < end:
+            app.processEvents()
+            time.sleep(0.005)
+        return got[0] if got else None
+
+    # THE READER'S OWN ANGLE, turned away from the default so that losing it
+    # shows as a difference rather than as a coincidence.
+    win._view.page().runJavaScript(
+        "(function(){var d=document.getElementsByClassName("
+        "'plotly-graph-div')[0];return Plotly.relayout(d,"
+        "{'scene.camera.eye':{x:2.1,y:0.4,z:0.8}})&&'ok';})()")
+    pump(3)
+
     rows, sliders = [], []
     for kind in (QCheckBox, QRadioButton, QComboBox, QSlider):
         for control in column.findChildren(kind):
@@ -151,6 +183,7 @@ def main() -> int:
             where = group.title() if group is not None else "the column"
 
             was = showing()
+            turned = angle()
             before = None
             try:
                 if isinstance(control, QSlider):
@@ -175,8 +208,11 @@ def main() -> int:
                 continue
             pump(2.5)
             now = showing()
+            still = angle()
+            kept = (turned is None or still is None or still == turned)
             rows.append((where, name or type(control).__name__,
-                         "REBUILDS" if now != was else "in place"))
+                         ("REBUILDS" if now != was else "in place")
+                         + ("" if kept else "  AND LOSES THE ANGLE")))
             # PUT IT BACK, so the next control is judged from the same state.
             try:
                 if isinstance(control, QSlider):

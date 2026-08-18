@@ -9940,15 +9940,35 @@ class GamutApp(QMainWindow):
             return max(getattr(box, "_widest_body", 0),
                        body.minimumSizeHint().width())
 
-        edge = 22
-        for box in column.findChildren(QGroupBox):
+        # EACH GROUP IS ALLOWED ITS OWN FRAME, not the widest frame in the
+        # window. This was one number -- the largest gap between any group's
+        # least width and its body's -- added to EVERY group, so one group
+        # with a wide frame widened all of them.
+        #
+        # MEASURED, with everything open: that number was 80 px, and it was
+        # set by "Are the patches inside?" -- a group whose TITLE is long and
+        # whose body is tiny, which is not a frame at all. The column took
+        # 443 px because of it, while the widest group's own least width was
+        # 381. Allowed its own frame, the column asks for 385.
+        #
+        # A LONG TITLE IS ALREADY PAID FOR. The line below takes the wider of
+        # "what fits inside" and "what this group itself says it needs", and
+        # the second of those is what a title drives -- so a title has never
+        # needed to widen anything but its own group, and doing it through
+        # `edge` charged it to every group in the column.
+        #
+        # Reported three times, most recently: "i still think the whole left
+        # panel /column is wider than it needs to be".
+        def frame_of(box):
             body = getattr(box, "body", None)
-            if body is not None and getattr(box, "_fold_open", False):
-                edge = max(edge, box.minimumSizeHint().width()
-                           - body.minimumSizeHint().width())
+            if body is None or not getattr(box, "_fold_open", False):
+                return 22
+            return max(22, box.minimumSizeHint().width()
+                       - body.minimumSizeHint().width())
+
         wants = []
         for box in column.findChildren(QGroupBox):
-            frame = edge
+            frame = frame_of(box)
             inside = inside_of(box)
             # THE WIDER OF THE TWO ANSWERS, because each is right about a
             # different thing: a shut group knows its heading, an open one
