@@ -8345,6 +8345,8 @@ class GamutApp(QMainWindow):
             "Paint every colour into the picture, coloured by how far the two "
             "profiles disagree about it.")
         self._drift_draw.stateChanged.connect(self._redraw)
+        self._drift_draw.stateChanged.connect(
+            lambda _s: self._refresh_drift_controls())
         _d = QHBoxLayout(); _d.setContentsMargins(0, 0, 0, 0)
         _d.setSpacing(6)
         _d.addWidget(self._drift_draw, 1)
@@ -8371,6 +8373,82 @@ class GamutApp(QMainWindow):
             self._drift_box, title="Showing the drift in the picture"),
             0, Qt.AlignmentFlag.AlignVCenter)
         dv.addLayout(_d)
+
+        # --- and WHAT the colours in that cloud stand for ---------------------
+        #
+        # THE THIRD OPTION THAT EXISTED IN ONE WINDOW ONLY. The two below this
+        # were brought over for the reason written there; this one was left,
+        # and it is the one that answers the question people ask out loud.
+        # The main window's cloud could only ever be painted by DISTANCE --
+        # `_drift_for_figure` returned its axis as a hard-coded None -- while
+        # the run panel three sections up offered five ways to paint the same
+        # kind of cloud. The main window is where somebody with two profiles
+        # of one printer actually works.
+        by_row = QHBoxLayout()
+        by_row.setContentsMargins(0, 0, 0, 0)
+        by_row.setSpacing(8)
+        self._drift_by_label = QLabel("coloured by", self._drift_box)
+        by_row.addWidget(self._drift_by_label, 0)
+        self._drift_by = NoScrollComboBox(self._drift_box)
+        self._drift_by.addItem("how far it moved", None)
+        for _key, (_asks, _less, _more, _col) in DIRECTIONS.items():
+            self._drift_by.addItem(_asks, _key)
+        self._drift_by.addItem("the colour it is heading for", "toward")
+        self._drift_by.setToolTip(
+            "What the colours in the cloud stand for. It changes the picture "
+            "under \"Show me where, in the picture\" and nothing else — no "
+            "number above it moves.\n\n"
+            "HOW FAR IT MOVED is the plain answer and the one to start with: "
+            "quiet grey where the two agree, amber where a careful eye would "
+            "see it, red where anybody would. It says how much, and nothing "
+            "about which way.\n\n"
+            "LIGHTER OR DARKER, REDDER OR GREENER, WARMER OR COOLER each ask "
+            "one direction. This is what ΔE cannot tell you: a printer going "
+            "lighter and one going darker by the same amount give an "
+            "identical number and an identical cloud, and they want different "
+            "cures.\n\n"
+            "THE COLOUR IT IS HEADING FOR paints every dot in the family it "
+            "is moving toward — blues on their way to the magentas come out "
+            "magenta, wherever they sit in the picture. It answers what "
+            "somebody actually reports: not \"how far\" and not \"how much "
+            "redder\", but \"what are my greys going to\".\n\n"
+            "WHAT IT NEEDS: two profiles open and \"Show me where, in the "
+            "picture\" ticked. Without that tick there is no cloud for this "
+            "to paint, and this box is greyed out until there is.\n\n"
+            "IF YOU CANNOT SEE THE CLOUD, the two shapes are drawn over it: "
+            "the colours sit INSIDE the gamut, which is where they belong. "
+            "Turn \"How solid it looks\" down, under How it looks, and they "
+            "come through. Photographed at full solidity only the rim of the "
+            "cloud shows, which reads as a picture with hardly anything in "
+            "it.\n\n"
+            "A DOT THAT HAS BARELY MOVED IS DRAWN GREY and said to be heading "
+            "nowhere. Below about ΔE 1 the direction of a movement is mostly "
+            "the instrument — a hand-held spectrophotometer repeats to about "
+            "ΔE 0.1 and two different ones agree to about 0.4 — so painting "
+            "those a confident colour would be inventing a direction out of "
+            "noise.")
+        self._drift_by.activated.connect(lambda _i: self._redraw())
+        by_row.addWidget(self._drift_by, 1)
+        by_row.addWidget(Hint(
+            "One cloud, five questions, and the numbers above answer none of "
+            "them.\n\n"
+            "\"Average ΔE 2\" is the same figure whether every colour drifted "
+            "a little — which points at calibration — or the deep blues "
+            "drifted a lot and nothing else moved, which is a different "
+            "problem with a different cure. Painting the cloud by how far it "
+            "moved separates those two at a glance.\n\n"
+            "The three directions go further. A number cannot tell lighter "
+            "from darker, and a print that has gone light and one that has "
+            "gone dark are not the same fault. Pick the direction you "
+            "suspect and the cloud says whether you are right.\n\n"
+            "And the last one answers in names rather than numbers: this "
+            "family is heading for that one. It is the sentence people use "
+            "when they describe the problem to somebody else.\n\n"
+            "Everything here is only about the picture. Nothing you choose "
+            "changes a measurement.",
+            self._drift_box, title="What the cloud's colours mean"),
+            0, Qt.AlignmentFlag.AlignVCenter)
+        dv.addLayout(by_row)
 
         # --- the same two options the timeline window offers ------------------
         #
@@ -10293,6 +10371,7 @@ class GamutApp(QMainWindow):
             ("chart_skin_colour", self._chart_skin_colour, "combo", "grey"),
             ("chart_skin_opacity", self._chart_skin_opacity, "slider", 30),
             ("outline_paint", self._outline_paint, "combo", "plain"),
+            ("drift_by", self._drift_by, "combo", None),
             ("rings_on", self._rings_on, "check", False),
             ("neutral", self._neutral, "check", False),
             ("ideal_neutral", self._ideal_neutral, "check", False),
@@ -10414,6 +10493,13 @@ class GamutApp(QMainWindow):
                 pass
         self._sync_slider_labels()
         self._on_manual_light()
+        # AND THE CLOUD'S OWN CONTROLS MATCH THE TICK THEY DEPEND ON FROM THE
+        # FIRST FRAME. Wired only to the tick's own signal, a window that
+        # opens with the cloud off -- which is how it opens -- showed three
+        # lit controls with nothing to act on until somebody happened to
+        # touch it. Found by driving: "before the tick: coloured-by enabled =
+        # True", where the whole point of the greying is that it is False.
+        self._refresh_drift_controls()
 
     def _carry_over_the_old_outline_tick(self) -> None:
         """Bring a setting written by the version that had a tick, not a list.
@@ -10790,9 +10876,59 @@ class GamutApp(QMainWindow):
             # it looks like evidence. The box says why in words.
             return None
         self._fit_drift_cut(d.deltas)
-        return (d.lab_a, d.deltas, "how far it moved", None,
-                self._drift_split.isChecked(),
-                self._drift_cut.value() / 10.0 if self._drift_hiding() else 0.0)
+        split = self._drift_split.isChecked()
+        cut = (self._drift_cut.value() / 10.0 if self._drift_hiding() else 0.0)
+        axis = self._drift_colouring()
+        # WHERE EACH COLOUR WENT, not merely how far. The named directions and
+        # the destination family are drawn from the MOVEMENT of every point;
+        # only the plain "how far" view can be drawn from the distances alone.
+        # A comparison made before lab_b was kept has no movements, and asking
+        # for one of these of such a pair would draw an empty cloud rather
+        # than say so -- so it falls back to the distances, which are always
+        # there.
+        moved = getattr(d, "moved", None)
+        if axis is not None and moved is None:
+            axis = None
+        if axis == "toward":
+            return (d.lab_a, moved, "heading for", "toward", split, cut,
+                    d.deltas)
+        if axis is not None:
+            return (d.lab_a, moved, DIRECTIONS[axis][0], axis, split, cut,
+                    d.deltas)
+        return (d.lab_a, d.deltas, "how far it moved", None, split, cut)
+
+    def _refresh_drift_controls(self) -> None:
+        """Grey out the three that only act on the cloud, when there is none.
+
+        ALL THREE DEPEND ON ONE TICK. "Split it into colour families", "Hide
+        anything under" and "coloured by" describe a cloud that is only drawn
+        when "Show me where, in the picture" is ticked -- `_drift_for_figure`
+        returns None before it reads any of them -- and until now all three
+        stayed lit and inviting with nothing to act on.
+
+        It came up while writing the tooltip for the new one: it says the box
+        is greyed out until there is a cloud to paint, and a tooltip that
+        promises something nothing does is worse than no tooltip. Rather than
+        make the newcomer the odd one out, the two beside it were brought to
+        the same rule.
+        """
+        drawing = bool(getattr(self, "_drift_draw", None)
+                       and self._drift_draw.isChecked())
+        for name in ("_drift_by", "_drift_by_label", "_drift_split",
+                     "_drift_cut", "_drift_cut_label", "_drift_cut_says"):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.setEnabled(drawing)
+
+    def _drift_colouring(self):
+        """Which question the cloud's colours answer, or None for how far.
+
+        Read through one method because three places need it -- the picture,
+        the control's own availability, and the tests' stand-in window -- and
+        because a window built before this control existed must still answer.
+        """
+        box = getattr(self, "_drift_by", None)
+        return None if box is None else box.currentData()
 
     def _profile_drift_rows(self) -> list:
         """The two-profile comparison as table rows, for the spreadsheet.

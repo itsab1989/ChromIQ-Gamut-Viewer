@@ -275,7 +275,11 @@ def window_with(paths):
     # window asks reaches these tests instead of passing them by.
     for name in ("_fit_drift_cut", "_drift_hiding", "_drift_cut_reads",
                  "_drift_cut_changed", "_one_thing_over_time",
-                 "_the_ones_that", "_profile_drift_rows"):
+                 "_the_ones_that", "_profile_drift_rows",
+                 # What the cloud's colours stand for. No chooser is set on
+                 # the stand-in, so this gives its no-chooser answer -- how
+                 # far it moved -- which is what these tests describe.
+                 "_drift_colouring"):
         method = getattr(gamut_app.GamutApp, name)
         setattr(win, name,
                 (lambda m: lambda *a, **k: m(win, *a, **k))(method))
@@ -735,3 +739,76 @@ def test_the_figure_draws_a_direction_when_asked_and_a_distance_otherwise(
     assert far.data[0].marker.cmin == 0.0, "a distance starts at nothing"
     assert which.data[0].marker.cmin < 0, "a direction runs both ways"
 
+
+
+def test_the_main_windows_cloud_can_be_coloured_five_ways():
+    """#120's remaining half: the main window could only paint by distance.
+
+    THE CHOOSER EXISTED IN ONE WINDOW ONLY, which is the third time that has
+    been true of a cloud control -- the two beside it were brought over for
+    the reason written in the source. `_drift_for_figure` returned its axis
+    as a hard-coded None, so the main window's cloud could only ever say HOW
+    FAR, while the run panel three sections up offered five ways to paint the
+    same kind of cloud. The main window is where somebody with two profiles
+    of one printer actually works.
+
+    Driven on screen by scripts/audit_cloud_colours.py, which checks the kind
+    of answer each one gives -- a scale gets one colour bar, the destination
+    families get a key and no bar. This pins the wiring, cheaply.
+    """
+    import inspect
+
+    import gamut_app
+
+    src = inspect.getsource(gamut_app.GamutApp._drift_for_figure)
+    assert "_drift_colouring()" in src, (
+        "the main window's cloud no longer asks what it should be coloured "
+        "by, so it is painted by distance whatever the reader chose")
+    assert '"toward"' in src, "the destination-family view is not reachable"
+    assert "DIRECTIONS[axis][0]" in src, (
+        "the three named directions are not reachable")
+    # AND THE MOVEMENTS, not the distances, for anything but "how far": a
+    # direction cannot be drawn from a magnitude.
+    assert 'getattr(d, "moved", None)' in src
+
+    build = inspect.getsource(gamut_app.GamutApp._build_controls)
+    assert 'self._drift_by.addItem("the colour it is heading for", "toward")' \
+        in build, "the destination-family option is not offered"
+    assert "for _key, (_asks, _less, _more, _col) in DIRECTIONS.items()" \
+        in build.split("self._drift_by = ")[1].split("dv.addLayout(by_row)")[0], (
+            "the three named directions are not offered, or are listed by "
+            "hand instead of coming from DIRECTIONS")
+
+    # AND IT IS REMEMBERED. A control that resets on every start is one the
+    # reader has to find again each time, and this one changes the picture.
+    kept = inspect.getsource(gamut_app.GamutApp._persisted)
+    assert '("drift_by", self._drift_by, "combo", None)' in kept
+
+
+def test_the_clouds_controls_grey_out_with_the_cloud():
+    """Three controls act on a cloud that is only drawn when a tick is on.
+
+    Found while writing the new one's tooltip: it says the box is greyed out
+    until there is a cloud to paint, and a tooltip promising something
+    nothing does is worse than no tooltip. The two beside it -- "Split it
+    into colour families" and "Hide anything under" -- were in the same
+    position and were brought to the same rule rather than left as the odd
+    ones out.
+
+    AND FROM THE FIRST FRAME. Wired only to the tick's own signal, a window
+    that opens with the cloud off -- which is how it opens -- showed three
+    lit controls with nothing to act on until somebody happened to touch it.
+    Found by driving: "before the tick: coloured-by enabled = True".
+    """
+    import inspect
+
+    import gamut_app
+
+    body = inspect.getsource(gamut_app.GamutApp._refresh_drift_controls)
+    for name in ("_drift_by", "_drift_split", "_drift_cut"):
+        assert name in body, f"{name} is not greyed out with the cloud"
+    assert "_drift_draw" in body and "isChecked()" in body
+
+    restore = inspect.getsource(gamut_app.GamutApp._restore_everything)
+    assert "_refresh_drift_controls()" in restore, (
+        "the window opens with three lit controls and nothing to act on")

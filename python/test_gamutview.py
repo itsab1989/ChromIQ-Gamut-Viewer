@@ -533,7 +533,11 @@ class _FakeApp:
                      "_chart_skin_colour", "_chart_skin_opacity",
                      # The outline's colour is a list of its own, not the
                      # tick it used to be.
-                     "_outline_paint"):
+                     "_outline_paint",
+                     # What the drift cloud's colours stand for: how far, one
+                     # of the three directions, or the family each colour is
+                     # heading for.
+                     "_drift_by"):
             setattr(self, name, None)
         self._light_sliders = {k: (None,) for k, *_ in gamut_app.LIGHT_CONTROLS}
         # The movement controls are read, not just listed, so these answer.

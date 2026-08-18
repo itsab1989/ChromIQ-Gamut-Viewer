@@ -5068,6 +5068,7 @@ window.cqSpin = (function () {
       refitting = null;
       for (var i = 0; i < ids.length; i++) {
         var id = ids[i], gd = scene(id);
+        if (alreadyPlaced) continue;
         if (!gd || isFlat(gd) || !untouched(id)) continue;
         fitToPane(id);          // always measured from base[id]
         var now = liveCam(gd);
@@ -5078,7 +5079,22 @@ window.cqSpin = (function () {
     }, 180);
   }
   if (window.addEventListener) window.addEventListener("resize", refit);
+  // A CAMERA THAT WAS HANDED TO US IS ALREADY WHERE IT BELONGS.
+  //
+  // The application rewrites this page for anything it cannot restyle, and
+  // writes the camera the reader is looking from into the new one. If the
+  // fitting then runs, it pulls that camera back AGAIN -- and since every
+  // rebuild starts a new page, the "measure from the written view" rule that
+  // stops one page compounding cannot see the previous one. Reported as
+  // exactly that: "the shape jumped around after i moved it. when i let go it
+  // seemed like it snapped back while zooming out a touch".
+  //
+  // A saved page has no such history: it is opened fresh, in a window whose
+  // shape nobody knew when it was written, and there the fitting is the whole
+  // point. So the window says which kind of page this is.
+  var alreadyPlaced = false;
   function fitAll(tries) {
+    if (alreadyPlaced) return;
     var missing = false;
     for (var i = 0; i < ids.length; i++) {
       var gd = scene(ids[i]);
@@ -5683,6 +5699,7 @@ window.cqSpin = (function () {
     for (var i = 0; i < ids.length; i++) step(ids[i], turn, tilt);
   }
   function set(o) {
+    if (o.placed !== undefined) alreadyPlaced = !!o.placed;
     if (o.ids !== undefined) { ids = o.ids; rest(); fitAll(0); remember(0); }
     ["turn", "tilt"].forEach(function (which) {
       var got = o[which]; if (!got) return;
