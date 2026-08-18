@@ -1246,3 +1246,97 @@ def test_the_key_flows_across_rather_than_down():
                                 drift=(lab, rng.uniform(0, 5, n), "d", None,
                                        True))
     assert fig.layout.legend.orientation == "h"
+
+
+def test_the_window_asks_which_question_and_the_words_follow(tmp_path):
+    """#123: the same arithmetic answers two questions, in different verbs.
+
+    "Moved" is a claim about TIME. Said of two papers measured on one
+    afternoon it is simply false — and it is exactly the sort of false
+    sentence somebody pastes into an email. The files cannot say which case
+    they are: two .ti3 of one chart look identical whether they are one
+    printer months apart or two papers in one session.
+
+    THE NUMBERS MUST NOT MOVE WITH THE WORDS, which is the half of this worth
+    a test of its own: switching the chooser is a statement about what the
+    files ARE, not a different measurement.
+    """
+    rng = np.random.default_rng(52)
+    n = 240
+    lab_a = np.column_stack([rng.uniform(25, 90, n), rng.uniform(-55, 55, n),
+                             rng.uniform(-55, 55, n)])
+    lab_b = lab_a + rng.normal(0.8, 0.3, (n, 3))
+
+    from gamut_app import family_report
+
+    over, _note_a = family_report(lab_a, lab_b, "A → B",
+                                  of="measurements", over_time=True)
+    apart, note_b = family_report(lab_a, lab_b, "A → B",
+                                  of="measurements", over_time=False)
+
+    assert "moved" in over.splitlines()[0]
+    assert "moved" not in apart.splitlines()[0], (
+        f"two different things cannot have moved: {apart.splitlines()[0]!r}")
+    assert "drifted" in note_b or "different things" in note_b
+
+    # THE SAME NUMBERS IN BOTH, to the last decimal.
+    import re
+    numbers = lambda text: re.findall(r"\d+\.\d+|\(\d+ patches\)", text)
+    assert numbers(over) == numbers(apart), (
+        "the reading changed when only the question was named")
+
+
+def test_the_windows_chooser_really_reaches_the_words():
+    """AND THIS IS THE TEST THAT MATTERS, because the one above does not.
+
+    The first version of this checked family_report(over_time=False) against
+    family_report(over_time=True) and passed with flying colours — while the
+    window called family_report without the argument at all. Proved by
+    deleting `over_time=over_time` from _say_drift_families: sixty-six tests,
+    all green. A check phrased in terms of the thing it guards cannot catch
+    that thing being disconnected, which is the fourth time this project has
+    learned it.
+
+    So this drives the window's own path, through a stand-in that carries the
+    chooser, and asks what ends up in the label a reader would read.
+    """
+    import gamut_app
+
+    class Label:
+        def __init__(self):
+            self._t = ""
+
+        def setText(self, text):                      # noqa: N802 (Qt)
+            self._t = text
+
+        def text(self):
+            return self._t
+
+    class Picker:
+        def __init__(self, answer):
+            self._answer = answer
+
+        def currentData(self):                        # noqa: N802 (Qt)
+            return self._answer
+
+    rng = np.random.default_rng(53)
+    n = 200
+    lab = np.column_stack([rng.uniform(25, 90, n), rng.uniform(-55, 55, n),
+                           rng.uniform(-55, 55, n)])
+    moved = lab + rng.normal(0.9, 0.25, (n, 3))
+
+    said = {}
+    for answer in (True, False):
+        win = SimpleNamespace(_drift_families=Label(),
+                              _drift_families_note=Label(),
+                              _same_thing=Picker(answer))
+        gamut_app.GamutApp._say_drift_families(win, lab, moved, "A → B",
+                                               of="measurements")
+        said[answer] = (win._drift_families.text(),
+                        win._drift_families_note.text())
+
+    assert said[True] != said[False], (
+        "the chooser is not reaching the report at all")
+    assert "moved" in said[True][0].splitlines()[0]
+    assert "moved" not in said[False][0].splitlines()[0]
+    assert "two different things" in said[False][1]

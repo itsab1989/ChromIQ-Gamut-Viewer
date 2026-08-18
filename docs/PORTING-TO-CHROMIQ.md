@@ -435,6 +435,25 @@ So the port should take the answer as an argument, the way the viewer's
 project structure rather than from a question. The viewer asks because it has
 nothing but two loose files; ChromIQ has a project, and a project knows.
 
+**What shipped in the viewer, and what it looks like.** A chooser sits in
+*Has anything changed?*, directly above the family lines it governs:
+
+> These two are  [ one thing at two times ▾ ]  ⓘ
+> &nbsp;&nbsp;&nbsp;&nbsp;· one thing at two times — the same printer, measured again later
+> &nbsp;&nbsp;&nbsp;&nbsp;· two different things — two papers, two printers, two inks
+
+It changes only the verbs. Every number is identical either way — the same ΔE,
+the same families, the same patch counts — which is worth stating in the
+tooltip, because a control that appears to change a measurement will be left
+alone by anybody careful.
+
+**The concrete port**: `family_report(lab_a, lab_b, spans, of=…,
+over_time=…)` in `python/gamut_app.py` takes the answer as an argument and
+never guesses. ChromIQ fills that argument from the table above instead of
+showing the chooser at all — `Run.for_dir(...)` and the target folder already
+answer it. The one case where ChromIQ would still ask is two files opened from
+outside any project.
+
 **`meta.json` carries the dates**, so ChromIQ can also say *how far apart* the
 two are — which the viewer can only do when the profiles happen to carry a
 creation date. "Printed again 7 months later" is a better sentence than

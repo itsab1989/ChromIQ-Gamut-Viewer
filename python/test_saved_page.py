@@ -1953,3 +1953,54 @@ def test_only_the_reset_that_goes_home_is_offered(tmp_path):
     assert "modeBarButtonsToRemove" in page
     # and the one that goes home is NOT taken away with it
     assert "resetCameraLastSave3d" not in page
+
+
+def test_every_arrangement_carries_the_numbers(tmp_path):
+    """ONE OF THE FOUR SAVED LESS THAN THE OTHERS, IN SILENCE.
+
+    This window can show four arrangements — one scene, two rooms, a
+    cross-section, two cross-sections — and the Save dialog asks, for all
+    four, whether the numbers should travel with the picture. Only the single
+    3D scene ever carried them. The other three arrived with the styling for a
+    block of figures, five rules of it, and no figures.
+
+    FOUND BY ASKING EACH PAGE WHICH CONTROLS IT BUILDS: the cross-section
+    would not build "put the numbers away", because there was nothing to put
+    away. Neither a screenshot nor a reading of one page could have shown it —
+    it needed all four written and compared.
+    """
+    import numpy as np
+
+    import ti3gamut
+
+    rng = np.random.default_rng(61)
+
+    def blob(scale):
+        pts = rng.normal(size=(60, 3)) * np.array([12.0, 20.0, 20.0]) * scale
+        pts[:, 0] += 50.0
+        return ti3gamut.build_gamut(pts, input_space="lab", space="lab")
+
+    two = [("paper-1", blob(1.0)), ("paper-2", blob(0.7))]
+    NOTES = "Matte-paper holds 812,144 units of colour."
+
+    made = {}
+    ti3gamut.write_html(two[:1], tmp_path / "one.html", "one", notes=NOTES,
+                        carry_viewer=False)
+    made["one scene"] = tmp_path / "one.html"
+    ti3gamut.write_slice_html(two, tmp_path / "cut.html", 50.0, "a cut",
+                              notes=NOTES, carry_viewer=False)
+    made["a cross-section"] = tmp_path / "cut.html"
+    pages = [(name, ti3gamut.build_figure([(name, g)], name))
+             for name, g in two]
+    ti3gamut.write_side_by_side_html(pages, tmp_path / "rooms.html",
+                                     notes=NOTES)
+    made["two rooms"] = tmp_path / "rooms.html"
+    flat = [(name, ti3gamut.build_slice_figure([(name, g)], 50.0, name))
+            for name, g in two]
+    ti3gamut.write_side_by_side_html(flat, tmp_path / "cuts.html",
+                                     notes=NOTES)
+    made["two cross-sections"] = tmp_path / "cuts.html"
+
+    missing = [where for where, path in made.items()
+               if NOTES not in path.read_text(encoding="utf-8")]
+    assert not missing, f"these arrangements dropped the numbers: {missing}"

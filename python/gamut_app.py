@@ -60,9 +60,9 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order
 from PyQt6.QtCore import (QEvent, QRect, QSettings, QSize, QStandardPaths, Qt,
                           QTimer, QUrl, pyqtSignal)
 from PyQt6.QtGui import (QColor, QDesktopServices, QFont, QFontMetrics,
-                         QIcon, QImage, QLinearGradient,
+                         QIcon, QImage, QKeySequence, QLinearGradient,
                          QPainter, QPalette,
-                         QPen, QPixmap)
+                         QPen, QPixmap, QShortcut)
 from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QComboBox,
                              QFileDialog,
                              QFrame, QGroupBox, QHBoxLayout, QLabel, QLayout,
@@ -2424,8 +2424,54 @@ class WebPageDialog(QDialog):
     what it is.
     """
 
-    def __init__(self, parent) -> None:
+    #: WHICH SWITCHES DEPEND ON WHAT IS IN THE PAGE, and what has to be true
+    #: for each. Everything not named here applies to any page there is.
+    #:
+    #: Asked for in as many words: "the export dialog should only allow to
+    #: choose control options for the webviewer navigation of the exported
+    #: variant that are applicable for what is exported". It does make sense,
+    #: and more than the one case that prompted it: a page of one shape was
+    #: offering "fade where they agree", which needs two; a cross-section was
+    #: offering four ways to turn a camera it does not have; and a page with
+    #: nothing but a cloud of dots in it was offering to draw the surfaces as
+    #: wires.
+    #:
+    #: A SWITCH THAT CANNOT ACT IS WORSE THAN A MISSING ONE -- this file's own
+    #: rule, applied to the dialog that hands them out.
+    NEEDS = {
+        "agree": "two_shapes",       # fading one against the other
+        "opacity": "surfaces",       # a cloud of dots has none
+        "wires": "surfaces",
+        "grey": "surfaces",
+        "cut": "flat",               # the cross-section's own slider
+        "play": "camera",            # a flat page has no camera at all
+        "speed": "camera",
+        "speed_each": "camera",
+        "sweep": "camera",
+        "lr": "camera",
+        "ud": "camera",
+        "glide": "camera",
+        "views": "camera",
+    }
+
+    def __init__(self, parent, for_a_cloud: bool = True, shows=None) -> None:
+        """*for_a_cloud* False when the view is a flat line graph.
+
+        A LINE CHART HAS NO CAMERA TO TURN AND NO FAMILIES TO HIDE, so the
+        questions about what the reader may do with the shape are put away
+        rather than asked and quietly ignored. Offering a control that cannot
+        exist is the same fault as a button that cannot act, which this file
+        holds is worse than a missing one.
+
+        *shows* says what is actually in the page being written --
+        ``{"two_shapes": bool, "surfaces": bool, "flat": bool,
+        "camera": bool}`` -- and switches that need something absent are left
+        out. Absent, everything is offered, which is what every caller that
+        has not been taught to describe its page gets.
+        """
         super().__init__(parent)
+        self._for_a_cloud = bool(for_a_cloud)
+        self._shows = dict(shows or {})
         self.setWindowTitle("Save this view as a web page")
         self.setModal(True)
         outer = QVBoxLayout(self)
@@ -2926,6 +2972,9 @@ class WebPageDialog(QDialog):
         strip.setChecked(True)
         self._strip = strip
         rows.addWidget(strip, 3, 0, 1, 2)
+        if not self._for_a_cloud:
+            strip.setChecked(False)
+            strip.hide()
         strip_hint = Hint(
             "Whether the page carries the row of controls along the bottom "
             "at all.\n\n"
@@ -2962,7 +3011,14 @@ class WebPageDialog(QDialog):
             grid.setHorizontalSpacing(8)
             grid.setVerticalSpacing(6)
             grid.setColumnStretch(0, 1)
-            for i, (name, label, default, why) in enumerate(items):
+            at = 0
+            for name, label, default, why in items:
+                need = self.NEEDS.get(name)
+                if need is not None and shows is not None \
+                        and not self._shows.get(need, False):
+                    continue
+                i = at
+                at += 1
                 check = QCheckBox(label, box)
                 check.setChecked(default)
                 self._offer[name] = check
@@ -2971,11 +3027,21 @@ class WebPageDialog(QDialog):
                 hint.setObjectName(f"hint_offer_{name}")
                 grid.addWidget(hint, i, 1, Qt.AlignmentFlag.AlignVCenter)
                 hint.follow(check)
+            if not at:
+                # A GROUP WITH NOTHING LEFT IN IT is a heading over a gap.
+                box.deleteLater()
+                continue
             stack.addWidget(box)
             self._offer_groups.append(box)
             strip.toggled.connect(box.setEnabled)
         stack.addStretch(1)
 
+        if not self._for_a_cloud:
+            # AND THE WHOLE LIST GOES WITH IT. Twenty-two switches about
+            # turning, hiding families and fading a comparison, offered over a
+            # line chart with two lines on it, would be a page of promises the
+            # file cannot keep.
+            held.hide()
         area = FadingScrollArea(self)
         area.setWidget(held)
         area.setWidgetResizable(True)
@@ -3089,8 +3155,14 @@ class WebPageDialog(QDialog):
                 # BEHAVES before they touch anything, and it applies just as
                 # much to a page saved with no controls at all.
                 "glide": self._glide.isChecked(),
-                "offer": {name: box.isChecked()
-                          for name, box in self._offer.items()}}
+                # EVERY SWITCH ANSWERED, INCLUDING THE ONES NOT SHOWN. A
+                # name missing from this dict falls to whatever default the
+                # writer has, and for most of them that default is "offer it"
+                # -- so leaving a switch out of the dialog would have HANDED
+                # IT OUT instead of withholding it.
+                "offer": {**{name: False for name in self.NEEDS},
+                          **{name: box.isChecked()
+                             for name, box in self._offer.items()}}}
 
 
 def family_report(lab_a, lab_b, spans: str, *, of: str = "profiles",
@@ -3352,8 +3424,28 @@ class TimelineDialog(QDialog):
         self._list.setDragDropMode(
             QAbstractItemView.DragDropMode.InternalMove)
         self._list.setToolTip(
-            "The profiles in this run, oldest first. Drag a row to move it.")
+            "Every profile in this run, oldest first, with the date inside "
+            "each one.\n\n"
+            "TO REORDER: drag a row. That is only worth doing when the "
+            "profiles carry no usable date and the list has kept the order "
+            "you added them in — with dates, they are already in the right "
+            "order and moving one would tell the graph a time that is not "
+            "true.\n\n"
+            "TO REMOVE ONE: pick it and press the Delete key, or use Remove "
+            "the selected one below. The file itself is never touched.\n\n"
+            "A row saying \u2014 could not be read is a file this cannot "
+            "open: not an ICC profile, or one of a different kind of device "
+            "from the rest. It is kept in the list, and left out of the "
+            "graph, so it is obvious which one is the problem.")
         self._list.model().rowsMoved.connect(self._reordered)
+        # THE KEY EVERYBODY TRIES FIRST. The button below does the same thing
+        # and says so; this is for the hand that is already on the list.
+        _gone = QShortcut(QKeySequence(Qt.Key.Key_Backspace), self._list)
+        _gone.setContext(Qt.ShortcutContext.WidgetShortcut)
+        _gone.activated.connect(self._on_remove)
+        _gone2 = QShortcut(QKeySequence(Qt.Key.Key_Delete), self._list)
+        _gone2.setContext(Qt.ShortcutContext.WidgetShortcut)
+        _gone2.activated.connect(self._on_remove)
         outer.addWidget(self._list)
 
         buttons = QHBoxLayout()
@@ -3394,7 +3486,14 @@ class TimelineDialog(QDialog):
         for b in (add, self._remove_btn, self._clear_btn):
             buttons.addWidget(b)
         buttons.addStretch(1)
-        self._save_btn = QPushButton("Save this as a web page…", self)
+        # NAMED FOR WHAT IT SAVES, because in the column it is no longer
+        # alone: the window's own "Save this view as a web page…" is eight
+        # inches below it, and two buttons with the same words meaning two
+        # different files is the kind of thing somebody discovers by sending
+        # the wrong one to a customer.
+        self._save_btn = QPushButton(
+            "Save this run as a web page…" if hosted
+            else "Save this as a web page…", self)
         # SECONDARY, like every other export in this application. Adding
         # profiles is the one thing this window is for until there are some,
         # so it keeps the accent; two accent buttons side by side is two
@@ -3404,14 +3503,25 @@ class TimelineDialog(QDialog):
             "One file that opens in any browser, with the graph in it. "
             "Nothing needs installing to read it.")
         self._save_btn.clicked.connect(self._on_save)
-        self._table_btn = QPushButton("Save the numbers as a table…", self)
+        self._table_btn = QPushButton(
+            "Save the run's numbers as a table…" if hosted
+            else "Save the numbers as a table…", self)
         self._table_btn.setObjectName("secondary")
         self._table_btn.setToolTip(
             "Every step as a row, for a spreadsheet — with what the numbers "
             "do and do not mean written beside them.")
         self._table_btn.clicked.connect(self._on_table)
         buttons.addWidget(self._table_btn)
-        buttons.addWidget(self._save_btn)
+        # ONE SAVE-AS-A-WEB-PAGE BUTTON IN THE WINDOW, NOT TWO. Hosted, the
+        # window's own "Save this view as a web page…" saves whatever is on
+        # screen -- and while a run is showing, that IS this panel's picture.
+        # Two buttons with the same words and different files is how somebody
+        # sends the wrong one; and this one, until now, could not offer the
+        # reader any controls at all.
+        if self._hosted:
+            self._save_btn.hide()
+        else:
+            buttons.addWidget(self._save_btn)
         if self._hosted:
             self._stack(buttons)
         outer.addLayout(buttons)
@@ -3744,7 +3854,10 @@ class TimelineDialog(QDialog):
         # A CEILING, NOT A HEIGHT. Short readouts take the room they need and
         # no more; long ones stop here and scroll, which is the only way the
         # graph above keeps a usable share of a small window.
-        said_area.setMaximumHeight(300)
+        # SHORTER IN A COLUMN THAN IN A WINDOW. 300 px of words is a third of
+        # the column, and everything in this group is above the fold once it
+        # goes past that. The words scroll; the picture does not.
+        said_area.setMaximumHeight(220 if self._hosted else 300)
         outer.addWidget(said_area, 0)
 
         self._refresh()
@@ -4464,6 +4577,63 @@ class TimelineDialog(QDialog):
 
     # --- taking it away ----------------------------------------------------
 
+    def write_page(self, target, *, carry_viewer: bool = True,
+                   controls: bool = True, offer=None,
+                   numbers: bool = True) -> str:
+        """Write whatever this panel is showing as a page, and say what it is.
+
+        ONE WRITER, TWO CALLERS. This panel's own Save button used to write
+        the page itself, and the main window's Save wrote a different kind
+        entirely -- so the same words on two buttons produced two files with
+        different capabilities, and the run's had no reader controls at all.
+        Reported: "can those save as a webpage buttons not be unified? one for
+        both? and if i am correct the one for the run until now did not allow
+        to choose the controls the user would have on the webpage".
+
+        WHAT THE OPTIONS MEAN HERE. A drift cloud is a 3D scene and takes all
+        of them -- the viewer travelling inside, the reader's control strip,
+        which controls are offered. THE GRAPH IS A LINE CHART and takes only
+        two: whether the viewer travels, and whether the words go with it. The
+        rest are not silently ignored; the caller is told which page it is
+        getting, see `shows_a_cloud`.
+        """
+        import drift_series
+        from ti3gamut import _write_dark_html
+
+        target = Path(target)
+        pair = self._chosen_pair()
+        if pair is None:
+            first = self._run.usable[0].name if self._run.usable else "device"
+            figure = drift_series.figure(
+                self._run, mode=self._appearance,
+                title=f"How far {first} has moved")
+            target.write_text(self.page_html(figure, carry=carry_viewer,
+                                             words=numbers),
+                              encoding="utf-8")
+            return ("the sentence explaining what the lines do and do not "
+                    "mean is saved with it")
+        figure = self._cloud_figure()
+        if figure is None:
+            raise ValueError("that pair could not be compared")
+        # THE SAME WRITER THE MAIN WINDOW USES, so a cloud saved from here
+        # turns, zooms and carries its controls exactly like one saved from
+        # there. Two writers for one kind of page is how the two come to
+        # behave differently.
+        _write_dark_html(figure, target, self._appearance,
+                         notes=self._cloud_notes(pair) if numbers else "",
+                         carry_viewer=carry_viewer, controls=controls,
+                         offer=offer)
+        return ("what the colours mean, and what the numbers do not tell you, "
+                "are saved with it")
+
+    def shows_a_cloud(self) -> bool:
+        """Whether the picture is a 3D cloud rather than the line graph.
+
+        The saved page's options are not the same for the two, and a dialog
+        offering controls that cannot exist is worse than one that says so.
+        """
+        return self._chosen_pair() is not None
+
     def _on_save(self) -> None:
         """Save WHATEVER IS SHOWING, which is the only honest thing it can do.
 
@@ -4487,29 +4657,12 @@ class TimelineDialog(QDialog):
             return
         target = Path(chooser.selectedFiles()[0])
         try:
-            if pair is None:
-                figure = drift_series.figure(
-                    self._run, mode=self._appearance,
-                    title=f"How far {first} has moved")
-                target.write_text(self.page_html(figure), encoding="utf-8")
-                said = ("the sentence explaining what the lines do and do not "
-                        "mean is saved with it")
-            else:
-                from ti3gamut import _write_dark_html
-                figure = self._cloud_figure()
-                if figure is None:
-                    Notice.warn(self, "There is nothing to save",
-                                "That pair could not be compared, so there is "
-                                "no picture to write.")
-                    return
-                # THE SAME WRITER THE MAIN WINDOW USES, so a cloud saved from
-                # here turns, zooms and carries its controls exactly like one
-                # saved from there. Two writers for one kind of page is how
-                # the two come to behave differently.
-                _write_dark_html(figure, target, self._appearance,
-                                 notes=self._cloud_notes(pair))
-                said = ("what the colours mean, and what the numbers do not "
-                        "tell you, are saved with it")
+            said = self.write_page(target)
+        except ValueError:
+            Notice.warn(self, "There is nothing to save",
+                        "That pair could not be compared, so there is no "
+                        "picture to write.")
+            return
         except OSError as exc:
             Notice.warn(self, "That could not be saved", str(exc))
             return
@@ -4565,7 +4718,8 @@ class TimelineDialog(QDialog):
             return
         Notice.say(self, "Saved", f"Written to\n{target}")
 
-    def page_html(self, figure) -> str:
+    def page_html(self, figure, *, carry: bool = True,
+                  words: bool = True) -> str:
         """The saved page: the graph, then the words, both on the first screen.
 
         WRITTEN HERE RATHER THAN LEFT TO THE DRAWING LIBRARY, and the reason is
@@ -4585,7 +4739,20 @@ class TimelineDialog(QDialog):
 
         from ti3gamut import SCENE_COLOURS
         c = SCENE_COLOURS["light" if self._appearance == "light" else "dark"]
-        body = figure.to_html(full_html=False, include_plotlyjs=True,
+        # THE CAVEAT IS NOT OPTIONAL, and *words* does not reach it. Leaving
+        # the numbers out is a reasonable thing to want -- a picture for a
+        # slide. Leaving out the sentence that says a rising line is just as
+        # consistent with charts ageing as with a device failing is not: that
+        # sentence exists because this is the picture in the whole application
+        # most likely to be believed too readily.
+        #
+        # THE VIEWER TRAVELS OR IT DOES NOT, and that is the reader's
+        # choice on the way out, exactly as it is for every other page this
+        # application writes: about five megabytes and it works with no
+        # network at all, or forty kilobytes and it fetches the viewer the
+        # first time it is opened.
+        body = figure.to_html(full_html=False,
+                              include_plotlyjs=True if carry else "cdn",
                               config={"displayModeBar": False},
                               default_height="100%", div_id="timeline")
         first = self._run.usable[0].name if self._run.usable else "this device"
@@ -4615,7 +4782,7 @@ class TimelineDialog(QDialog):
 </style></head><body>
 <div class="picture">{body}</div>
 <div class="words">
-<p class="verdict">{_escape(drift_series.verdict(self._run))}</p>
+{f'<p class="verdict">{_escape(drift_series.verdict(self._run))}</p>' if words else ''}
 <p class="caveat"><b>What this does not tell you.</b> These lines show how far
 apart the <b>profiles</b> are, not how far the device drifted. Each profile
 records one day's measurements of one chart, so if the charts faded between
@@ -4624,7 +4791,7 @@ that climbs steadily is just as consistent with charts ageing as with a device
 drifting, and no arithmetic can separate the two.</p>
 <p class="caveat">The numbers are ΔE2000. Below 1 nobody can see the
 difference; above 3 anybody can.</p>
-{self._families_html()}</div></body></html>
+{self._families_html() if words else ''}</div></body></html>
 """
 
     def _family_rows(self) -> list:
@@ -7215,6 +7382,65 @@ class GamutApp(QMainWindow):
         # already; this row is built by hand and was never tied.
         drift_hint.follow(self._drift_worst)
         dv.addLayout(_r)
+        # WHICH QUESTION IS BEING ASKED, because the same arithmetic answers
+        # two and the words are not interchangeable.
+        #
+        # IT CANNOT BE INFERRED FROM THE FILES, and this is the whole reason
+        # for asking. Two .ti3 of one chart could be one printer months apart
+        # -- the verification case -- or two papers on one afternoon, and the
+        # file names are not evidence. "Moved" is a claim about TIME: said of
+        # two papers it is simply false, and it is exactly the sort of false
+        # sentence somebody pastes into an email.
+        #
+        # THE MAIN CHROMIQ APPLICATION WOULD NOT NEED TO ASK. Its folder model
+        # already knows: two .ti3 in different runs of one target are one
+        # thing over time, and two in different targets are different things.
+        # See docs/PORTING-TO-CHROMIQ.md.
+        same_row = QHBoxLayout()
+        same_row.setContentsMargins(0, 0, 0, 0)
+        same_row.setSpacing(6)
+        same_label = QLabel("These two are", self._drift_box)
+        same_row.addWidget(same_label, 0)
+        self._same_thing = NoScrollComboBox(self._drift_box)
+        self._same_thing.addItem("one thing at two times", True)
+        self._same_thing.addItem("two different things", False)
+        self._same_thing.setToolTip(
+            "Says what the two open files are to each other, which decides "
+            "the words the lines below are written in.\n\n"
+            "ONE THING AT TWO TIMES — the same printer on the same paper, "
+            "measured again weeks or months later, or two profiles of one "
+            "device. The lines then say what MOVED, and in which direction, "
+            "because there is a before and an after.\n\n"
+            "TWO DIFFERENT THINGS — two papers, two printers, two inks, "
+            "measured from the same chart. Nothing has \"drifted\" here: the "
+            "lines say how the second DIFFERS from the first in each colour "
+            "family, which is what you want when you are choosing between two "
+            "papers or asking whether two machines agree.\n\n"
+            "WHY YOU ARE ASKED: the files cannot say. Two measurements of one "
+            "chart look identical whether they are one printer months apart "
+            "or two papers on one afternoon, and a file name is not evidence. "
+            "Guessing would put \"the reds drifted\" into a report about two "
+            "papers, which is not true of either of them.\n\n"
+            "IT CHANGES ONLY THE WORDS. Every number is the same either way — "
+            "the same ΔE, the same families, the same patch counts.")
+        self._same_thing.activated.connect(lambda _i: self._update_drift())
+        same_row.addWidget(self._same_thing, 1)
+        same_hint = Hint(
+            "The same arithmetic answers two quite different questions, and "
+            "only you know which one you are asking.\n\n"
+            "\"Has my printer drifted since March?\" is one thing at two "
+            "times. \"Which of these two papers holds the blues better?\" is "
+            "two different things, measured on one afternoon, and nothing in "
+            "it has moved anywhere.\n\n"
+            "Both are worth asking and this window answers both. What it "
+            "must not do is describe the second as though it were the first: "
+            "\"the blues drifted toward the magentas\" said of two papers "
+            "reads as a fault in a printer that is behaving perfectly.\n\n"
+            "The numbers do not change when you switch this. The verbs do.",
+            self._drift_box, title="One thing at two times, or two things?")
+        same_hint.setObjectName("hint_same_thing")
+        same_row.addWidget(same_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        dv.addLayout(same_row)
         # UNDER THE NUMBERS, because it explains them rather than competing
         # with them: the reader has just been told how far the two moved
         # apart, and this says which colours did the moving.
@@ -10428,7 +10654,15 @@ class GamutApp(QMainWindow):
         Saved beside the first measurement by default, because that is where
         the user will look for it, and it carries its own viewer so it still
         opens with no network and no ChromIQ.
+
+        AND IT SAVES WHATEVER IS ON SCREEN, which since the run panel moved
+        into the column includes the run's own picture. One button, one set of
+        options, whichever question the view is answering -- see
+        _save_the_run_page.
         """
+        if getattr(self, "_run_drawn", False):
+            self._save_the_run_page()
+            return
         if not self._slots and self._chart_placed is None:
             return
         options = WebPageDialog(self)
@@ -10491,6 +10725,55 @@ class GamutApp(QMainWindow):
             "going somewhere with a reliable connection you can save it again "
             "without the viewer inside — the same page at about a sixtieth of "
             "the size, which fetches the viewer instead.")
+
+    def _save_the_run_page(self) -> None:
+        """The run's picture, saved through the window's own Save button.
+
+        THE OPTIONS ARE THE SAME ONES, and that is the whole point of routing
+        it here: until now the run's page was written by a button of its own
+        that asked nothing, so it never carried the reader's control strip,
+        never offered the light version without the viewer inside, and could
+        not leave the numbers out. Reported: "the one for the run until now did
+        not allow to choose the controls the user would have on the webpage".
+
+        WHAT THE GRAPH CANNOT USE IT IS NOT ASKED. A line chart has no camera
+        to turn and no families to hide, so the control questions are put away
+        when the view is showing the graph rather than a cloud -- offering
+        controls that cannot exist is worse than not offering them.
+        """
+        panel = getattr(self, "_timeline", None)
+        if panel is None:
+            return
+        cloud = panel.shows_a_cloud()
+        options = WebPageDialog(self, for_a_cloud=cloud)
+        if not options.exec():
+            return
+        chosen = options.choices()
+        first = panel._run.usable[0].name if panel._run.usable else "device"
+        default = Path.home() / f"{_clean_stem(first)}-over-time.html"
+        dlg = self._file_dialog("Save this view as a web page",
+                                QFileDialog.FileMode.AnyFile,
+                                "Web page (*.html)", str(default),
+                                profiles=False)
+        dlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dlg.setDefaultSuffix("html")
+        if not dlg.exec():
+            return
+        target = picture.next_free(Path(dlg.selectedFiles()[0]))
+        try:
+            said = panel.write_page(
+                target, carry_viewer=chosen["carry_viewer"],
+                controls=chosen.get("controls", True) if cloud else False,
+                offer=chosen.get("offer") if cloud else None,
+                numbers=chosen["numbers"])
+        except (OSError, ValueError) as exc:
+            Notice.warn(self, "That could not be saved", str(exc))
+            return
+        Notice.say(
+            self, "Saved",
+            f"Written to\n{target}\n\n"
+            f"{picture.human_size(target.stat().st_size)}. It opens in any "
+            f"browser by double-clicking it, and {said}.")
 
     def _load(self, path: Path) -> None:
         # ONE RULE: OPENING A FILE SHOWS YOU THAT FILE. A profile opened here
@@ -11862,17 +12145,25 @@ class GamutApp(QMainWindow):
             # cut as on a shape, and on a phone the drawing library's own
             # toolbar is hidden, so without one there was no way back from a
             # zoom at all.
+            # AND THE NUMBERS GO WITH IT. They were not passed here at all,
+            # so a cross-section saved as a web page arrived carrying the
+            # styling for a block of figures and no figures -- while the same
+            # button, on the same numbers, in 3D, carried them. One of the
+            # four arrangements quietly saved less than the other three.
             if self._side_by_side.isChecked() and len(gamuts) >= 2:
                 self._write_two_slices(gamuts, out, controls=controls,
-                                       offer=offer)
+                                       offer=offer, notes=notes,
+                                       carry_viewer=carry_viewer)
             else:
                 write_slice_html(gamuts, out, float(self._slice_at.value()),
                                  self._scene_title(), mode=self._appearance,
-                                 controls=controls, offer=offer)
+                                 controls=controls, offer=offer, notes=notes,
+                                 carry_viewer=carry_viewer)
             return True
         if self._side_by_side.isChecked() and len(gamuts) >= 2:
             self._write_two_rooms(gamuts, out, clouds, lost,
-                                  controls=controls, offer=offer, glide=glide)
+                                  controls=controls, offer=offer, glide=glide,
+                                  notes=notes)
         else:
             write_html(gamuts, out, self._scene_title(),
                        # SPLIT WHETHER OR NOT IT IS FADED RIGHT NOW. The
@@ -11896,7 +12187,8 @@ class GamutApp(QMainWindow):
         return False
 
     def _write_two_slices(self, gamuts, out, controls: bool = False,
-                          offer=None) -> None:
+                          offer=None, notes: str = "",
+                          carry_viewer: bool = True) -> None:
         """Two cross-sections, side by side, on one range.
 
         The same question as two rooms in 3D -- what does each of these look
@@ -11931,11 +12223,11 @@ class GamutApp(QMainWindow):
         write_side_by_side_html(pages, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked(),
                                 spin={"cuts": cuts} if cuts else None,
-                                controls=controls, offer=offer)
+                                controls=controls, offer=offer, notes=notes)
 
     def _write_two_rooms(self, gamuts, out, clouds, lost,
                          controls: bool = False, offer=None,
-                         glide: bool = False) -> None:
+                         glide: bool = False, notes: str = "") -> None:
         """One page, two scenes, each holding a single shape.
 
         Each is built by the same code that builds the single view, so the two
@@ -11986,7 +12278,7 @@ class GamutApp(QMainWindow):
         write_side_by_side_html(figures, out, mode=self._appearance,
                                 linked=self._link_cameras.isChecked(),
                                 spin=self._spin_options(glide),
-                                controls=controls, offer=offer)
+                                controls=controls, offer=offer, notes=notes)
 
     #: The controls that can belong to one shape rather than all of them, as
     #: key → (widget, how to read it). Anything not here is window-wide by
@@ -12492,7 +12784,10 @@ class GamutApp(QMainWindow):
         """
         said = None
         if lab_a is not None and lab_b is not None:
-            said = family_report(lab_a, lab_b, spans, of=of)
+            picker = getattr(self, "_same_thing", None)
+            over_time = True if picker is None else bool(picker.currentData())
+            said = family_report(lab_a, lab_b, spans, of=of,
+                                 over_time=over_time)
         self._drift_families.setText("" if said is None else said[0])
         self._drift_families_note.setText("" if said is None else said[1])
 

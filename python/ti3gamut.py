@@ -6380,7 +6380,8 @@ window.cqSpinControls = function (settings) {
 
 def write_side_by_side_html(pages, out: Path, mode: str = "dark",
                             linked: bool = True, spin=None,
-                            controls: bool = True, offer=None) -> Path:
+                            controls: bool = True, offer=None,
+                            notes: str = "") -> Path:
     """Two scenes in one page, each with its own shape, side by side.
 
     Overlaying two gamuts is the right way to see where one reaches past the
@@ -6443,6 +6444,19 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
         link = (f"<script>{body}\n"
                 f"window.addEventListener('load', function() {{"
                 f"{joiner}('{ids[0]}', '{ids[1]}');}});</script>")
+    # THE NUMBERS TRAVEL WITH THIS PAGE TOO, and until now they did not.
+    # Measured by writing all four arrangements and asking each which controls
+    # it built: only the single 3D scene carried a block of figures. The other
+    # three -- two rooms, a cross-section, two cross-sections -- arrived with
+    # the styling for one and nothing in it, from a button whose dialog had
+    # just asked whether the numbers should travel.
+    written = ""
+    if notes:
+        written = ("<div class=\"cq-notes\" style=\"font:13px/1.6 "
+                   "-apple-system,Segoe UI,Roboto,sans-serif;color:"
+                   f"{colours['text']};background:{colours['page']};"
+                   "padding:14px 22px 78px;white-space:pre-wrap\">"
+                   f"{notes}</div>")
     _t = _escape_title(" and ".join(n for n, _f in pages) or "Measured gamut")
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">\
 <title>{_t} — ChromIQ Gamut Viewer</title><style>
@@ -6474,7 +6488,7 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
           font-family:Menlo,Consolas,"Courier New",monospace;
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
  .half > div:last-child {{ flex:1 1 auto; min-height:0; }}
-</style></head><body><div class="row">{''.join(blocks)}</div>{resize}{link}<script>{_ORDER_JS}</script>{_spin_script(ids, ({"flat": True, **(spin or {})} if flat else spin), mode, controls, offer)}</body></html>"""
+</style></head><body><div class="row">{''.join(blocks)}</div>{written}{resize}{link}<script>{_ORDER_JS}</script>{_spin_script(ids, ({"flat": True, **(spin or {})} if flat else spin), mode, controls, offer)}</body></html>"""
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
 
@@ -7422,12 +7436,23 @@ def build_slice_figure(gamuts, lightness: float, title: str,
 
 def write_slice_html(gamuts, out: Path, lightness: float, title: str,
                      mode: str = "dark", controls: bool = False,
-                     offer=None) -> Path:
+                     offer=None, notes: str = "",
+                     carry_viewer: bool = True) -> Path:
     """One page holding one flat cross-section. See :func:`build_slice_figure`.
 
     *controls* is the reader's strip. There is nothing to turn on a flat cut,
     so it carries only what still means something -- zoom, move, back to where
     it opened, and the slider that moves the cut up and down.
+
+    *notes* ARE THE NUMBERS, AND THEY USED TO BE DROPPED IN SILENCE. This took
+    the argument and did nothing with it, and the window never passed one
+    anyway -- so a cross-section saved as a web page arrived with the styling
+    for a block of numbers, five rules of it, and no numbers. Every other page
+    this application writes carries them.
+
+    Found by asking each kind of page which controls it builds, and noticing
+    that the cut alone would not build "put the numbers away": there was
+    nothing to put away.
     """
     cuts = None
     if controls and (offer is None or offer.get("cut", True)):
@@ -7447,7 +7472,8 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str,
         build_slice_figure(gamuts, lightness, title, mode,
                            extent=cuts["extent"] if cuts else None,
                            slidable=cuts is not None),
-        out, mode, spin=spin, controls=controls, offer=offer)
+        out, mode, spin=spin, controls=controls, offer=offer,
+        notes=notes, carry_viewer=carry_viewer)
     return out
 
 
