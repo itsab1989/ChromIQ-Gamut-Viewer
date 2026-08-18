@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.38.0
 
 ### 🏷 Two files with one name are two shapes
 

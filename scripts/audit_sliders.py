@@ -140,6 +140,7 @@ ASK = """
 
 
 def main() -> int:
+    from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import (QApplication, QGroupBox, QScrollArea,
                                  QSlider)
 
@@ -148,7 +149,20 @@ def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     win = gamut_app.GamutApp([])
     win.resize(1500, 950)
+    # ON SCREEN, AND OUT OF THE WAY. This check cannot run offscreen -- the
+    # browser throttles its animation loop away without a compositor -- so it
+    # has to put a window up on somebody's machine. It does not have to STEAL
+    # anything: shown without activating, it never takes the keyboard from
+    # whatever is being typed into.
+    #
+    # Prompted by a photograph of a stray window over the real one and the
+    # question "how do you reach this window at this point?" -- that one was
+    # the test suite's, which draws offscreen now; this one is a driver that
+    # genuinely needs a screen, so it announces itself instead.
+    win.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
     win.show()
+    print("  a window is on screen for this check: it needs a compositor, "
+          "and it will close itself.")
     gamut_app.Notice.warn = staticmethod(lambda *a, **k: None)
     gamut_app.Notice.say = staticmethod(lambda *a, **k: None)
 
