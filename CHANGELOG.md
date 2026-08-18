@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### 🌗 Every word in the window, measured in both appearances
+
+The switched-off controls were only the first thing a light window was hiding.
+A new check photographs the whole column in each appearance and measures the
+ink against the paper it was drawn on — 157 pieces of text — rather than
+trusting what a stylesheet says a colour should be. It found three more:
+
+* **every explanatory paragraph** — the friendly text under each section —
+  at **2.03:1** on a light window, because it was written in the faintest key
+  the palette has. 4.16:1 now, unchanged in dark.
+* **the two links at the foot**, in the accent, at **2.80:1** on light. The
+  same hue at #c81f4a gives 4.75:1 and still reads as the same pink; dark
+  keeps the accent, which is 5.37:1 there and needed nothing.
+* **the small × that closes a file**, at 2.10:1 on light.
+
 ### 🌗 A switched-off control can still be read on a light window
 
 The cross-section greys out three controls it cannot use, and on a light

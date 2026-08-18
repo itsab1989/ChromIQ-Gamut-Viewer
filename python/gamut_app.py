@@ -111,6 +111,9 @@ PALETTES = {
         # it sits on: text 15.25:1, this 5.51:1 -- plainly secondary, plainly
         # legible.
         disabled="#8a8a8a",
+        # THE TWO LINKS AT THE FOOT, in the accent -- which on this dark
+        # window comes to 5.37:1 and needs nothing done to it.
+        link="#ff4573",
         accent="#ff4573", accent_hot="#ff6b90", on_accent="#ffffff",
         second="#262626",        # BG_WIDGET    — default button fill
         second_hover="#3a3a3a",
@@ -134,6 +137,12 @@ PALETTES = {
         # barely there -- a disabled control ought to look unavailable, not
         # nearly invisible. LM_TEXT_DIM gives 4.16:1 against text at 14.66:1.
         disabled="#7a7570",      # LM_TEXT_DIM
+        # THE SAME ACCENT ON A LIGHT WINDOW IS 2.80:1, which is under the
+        # floor for text somebody is meant to read and click. Measured across
+        # the same hue: #e02a58 gives 3.83, #c81f4a gives 4.75, #b81a45 gives
+        # 5.44 and starts to look brown beside the accent it belongs to. The
+        # middle one clears 4.5 and still reads as the same pink.
+        link="#c81f4a",
         accent="#ff4573", accent_hot="#e02a58", on_accent="#ffffff",
         second="#edebe6",        # LM_BG_WIDGET
         second_hover="#e0ded8",
@@ -298,7 +307,7 @@ QPushButton#glyph {{ background: {c["second"]}; color: {c["text"]};
                     border: 1px solid {c["line_soft"]};
                     padding: 0; min-width: 26px; font-weight: 600; }}
 QPushButton#glyph:hover {{ background: {c["second_hover"]}; }}
-QPushButton#closer {{ background: transparent; color: {c["faint"]};
+QPushButton#closer {{ background: transparent; color: {c["dim"]};
                      border: none; border-radius: 11px; padding: 0;
                      font-size: 17px; font-weight: 500; min-height: 0; }}
 QPushButton#closer:hover {{ background: {c["second_hover"]};
@@ -407,7 +416,16 @@ QLabel#noticeBody {{ font-size: 12px; font-weight: 400; color: {c["dim"]};
                      background: transparent; }}
 QFrame#noticeCard QScrollArea {{ background: transparent; }}
 QFrame#noticeCard QScrollArea > QWidget > QWidget {{ background: transparent; }}
-QLabel#hint {{ color: {c["faint"]}; font-size: 11px; }}
+/* THE EXPLANATIONS ARE TEXT SOMEBODY READS, and they were written in the
+   faintest colour the palette has. Measured from a screenshot of the real
+   window, ink against the paper it was drawn on:
+
+       dark   5.44:1     light   2.03:1
+
+   Every explanatory paragraph in this window, at two to one, on a light
+   window. TEXT_DIM instead: 4.16:1 there, unchanged in dark, where the two
+   keys are the same colour anyway. */
+QLabel#hint {{ color: {c["dim"]}; font-size: 11px; }}
 /* The two links at the foot of the column. Not buttons competing with the
    controls above: quiet text that takes the accent when pointed at, the way
    a link does. */
@@ -415,7 +433,7 @@ QLabel#hint {{ color: {c["faint"]}; font-size: 11px; }}
    findable, and brighter when pointed at. Grey text that only turns
    colourful under the pointer is a link nobody knows is there. */
 QPushButton#footLink {{ background: transparent; border: none; padding: 2px 0;
-                        color: {c["accent"]}; font-size: 11px;
+                        color: {c["link"]}; font-size: 11px;
                         text-align: left; min-height: 0; }}
 QPushButton#footLink:hover {{ color: {c["accent_hot"]};
                               text-decoration: underline; }}
@@ -433,7 +451,7 @@ QToolButton#hintIcon::menu-indicator {{ image: none; width: 0; }}
 /* The line that unfolds an explanation. Quiet enough that it never competes
    with the control it belongs to, but it takes the accent colour on hover so
    it is visibly something you can click rather than another caption. */
-QToolButton#hintToggle {{ color: {c["faint"]}; font-size: 11px;
+QToolButton#hintToggle {{ color: {c["dim"]}; font-size: 11px;
                           border: none; background: transparent;
                           padding: 1px 0; text-align: left; }}
 QToolButton#hintToggle:hover {{ color: {c["accent"]}; }}
