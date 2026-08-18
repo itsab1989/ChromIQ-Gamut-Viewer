@@ -13532,43 +13532,37 @@ class GamutApp(QMainWindow):
                 "the parts only one of them reaches.")
 
     def _say_if_two_solids_will_show_the_seam(self, two_shapes=None) -> None:
-        """The one state where the picture shows something nobody chose.
+        """DELIBERATELY SILENT, and the reason is worth more than the note.
 
-        Measured on the run's two shells, in the state it was reported from:
+        This said that two see-through solids show ragged edges where they
+        cut through each other, and named two ways out. The first half was
+        wrong. Measured afterwards, with the second shell hidden and nothing
+        else changed:
 
-            both solid, 68%        wedges bitten out of the yellow flank
-            both solid, 100%       clean
-            one solid, one mesh    clean
+            two shells, 68%     wedges
+            ONE shell, 68%      the same wedges
+            both solid, 100%    clean
+            the saved page      the same wedges
 
-        Not the draw order -- that is sorted, and sorting cannot help two
-        surfaces that pass through one another, because no single order is
-        right for them. So the window says so where it happens and names both
-        ways out.
+        So it is one closed surface blending with itself, not two surfaces
+        crossing -- and it is in the written page as well, so it is not the
+        window's own view either. Flattening the shading changes nothing
+        (depth 0 and depth 100 are identical), which rules out the far side
+        being lit from behind.
 
-        CALLED FROM THE SOLIDITY SLIDER AS WELL as from the availability pass,
-        because that slider no longer redraws: taking it back to 100% left the
-        note standing over a picture that had just become clean.
+        What is left is the order the mesh's own triangles are drawn in: the
+        wedges are triangle-shaped, and a see-through mesh whose faces are
+        drawn in buffer order blends them in whatever order they happen to
+        sit. That is fixable the way the traces already are -- sorted back to
+        front from the camera -- and it is the next piece of work rather than
+        a sentence in the panel.
+
+        A note that misnames a fault is worse than no note: somebody follows
+        its advice, the fault stays, and now the window has lied to them.
         """
         note = getattr(self, "_two_solids_note", None)
-        if note is None:
-            return
-        if two_shapes is None:
-            panel = getattr(self, "_timeline", None)
-            two_shapes = (len(self._slots) + (1 if self._reference else 0) >= 2
-                          or (getattr(self, "_run_drawn", False)
-                              and panel is not None
-                              and panel.shows_two_shapes()))
-        solid = ("solid", "solid+mesh")
-        both_solid = (self._style_mine.currentData() in solid
-                      and self._style_second.currentData() in solid)
-        see_through = self._opacity.value() < 100
-        note.setText(
-            "Two solid shapes made see-through will show ragged edges where "
-            "they cut through each other — that is the graphics card blending "
-            "two skins that cross, and no order of drawing them fixes it. "
-            "Draw one of them as an outline, or take How solid it looks back "
-            "to 100%, and it goes."
-            if (two_shapes and both_solid and see_through) else "")
+        if note is not None:
+            note.setText("")
 
     def _draw_the_run(self, panel) -> None:
         """Draw the run's picture in the big view, or give the view back.
