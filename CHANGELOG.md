@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.33.0
 
 ### 🏷 Two files whose names start alike are two shapes
 
