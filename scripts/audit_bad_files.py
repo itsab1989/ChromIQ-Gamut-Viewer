@@ -182,6 +182,74 @@ def main() -> int:
                 problems.append(
                     f"[bad file] {what} opened silently and did not appear as "
                     f"a file ({opened} added)")
+        # ---- THE OTHER THREE WAYS A FILE GETS IN --------------------------
+        # The list of open files is one of four routes, and the fault found
+        # above -- room made before the file was read -- could live in any of
+        # them. Crossed rather than assumed: a chart, a comparison, and a run
+        # of profiles, each given something unreadable while a good one is
+        # already in place.
+        print("\n  the other ways a file gets in")
+        demo = HERE.parent / "demo"
+        chart = demo / "verification-chart-480.ti1"
+        if chart.exists():
+            win._open_chart_file(chart)
+            pump(6)
+            was = None if win._chart is None else pathlib.Path(win._chart[0]).name
+            nonsense = folder / "not-a-chart.ti1"
+            nonsense.write_text("CTI1\nthis file is nonsense\n",
+                                encoding="utf-8")
+            said.clear()
+            win._open_chart_file(nonsense)
+            pump(5)
+            now = None if win._chart is None else pathlib.Path(win._chart[0]).name
+            print(f"      a bad chart: the good one is {'kept' if now == was else 'GONE'}"
+                  f", said {[t for t, _b in said] or 'nothing'}")
+            if now != was:
+                problems.append("[bad file] a bad chart closed the good one")
+            if not said:
+                problems.append("[bad file] a bad chart was refused in silence")
+
+        win._load_profile_as_comparison(good)
+        pump(6)
+        was = win._reference[0] if win._reference else None
+        bad_icc = folder / "not-a-profile.icc"
+        bad_icc.write_text("nor is this\n", encoding="utf-8")
+        said.clear()
+        win._load_profile_as_comparison(bad_icc)
+        pump(5)
+        now = win._reference[0] if win._reference else None
+        print(f"      a bad comparison: the good one is "
+              f"{'kept' if now == was else 'GONE'}, said "
+              f"{[t for t, _b in said] or 'nothing'}")
+        if now != was:
+            problems.append("[bad file] a bad comparison closed the good one")
+        if not said:
+            problems.append("[bad file] a bad comparison was refused in silence")
+
+        # A RUN SAYS IT DIFFERENTLY, on purpose: a drop of twenty profiles
+        # must not raise twenty message boxes, so the row itself carries the
+        # answer and the panel writes the reason underneath.
+        panel = win._timeline
+        broken = folder / "printer-2022.icc"
+        broken.write_text("not a profile at all\n", encoding="utf-8")
+        panel.add(list(profiles[:2]) + [broken])
+        pump(9)
+        rows = [panel._list.item(i).text() for i in range(panel._list.count())]
+        named = any("could not be read" in row and "printer-2022" in row
+                    for row in rows)
+        usable = [getattr(u, "name", u) for u in getattr(panel._run, "usable", [])]
+        print(f"      a run with one bad profile: the row says so "
+              f"{'yes' if named else 'NO'}, and {len(usable)} of "
+              f"{len(rows)} are usable")
+        if not named:
+            problems.append(
+                "[bad file] a run took a profile it cannot read without "
+                "marking the row")
+        if len(usable) != 2:
+            problems.append(
+                f"[bad file] a run with one bad profile among two good ones "
+                f"found {len(usable)} usable")
+
         # AND THE WINDOW STILL WORKS. A message is no good if what it leaves
         # behind cannot open the next file.
         said.clear()

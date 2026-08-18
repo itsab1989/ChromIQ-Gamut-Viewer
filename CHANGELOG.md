@@ -17,6 +17,12 @@ A message saying nothing worked, over a window that has quietly closed
 something, is the worst pair of facts to hand somebody. The room is made after
 the file is read now.
 
+The other three ways a file gets in — a chart, a comparison, and a run of
+profiles — were crossed against the same question and all three were already
+right: the good one stays, the refusal says so, and a run marks the row
+("printer-2022 — could not be read") and goes on drawing from the profiles it
+can read, rather than raising a message box per file.
+
 Found by a new check that opens five files a person could plausibly pick by
 mistake — an empty one, a text file renamed `.icc`, a profile cut off part
 way, one with its numbers scrambled, a measurement with no patches — and asks
