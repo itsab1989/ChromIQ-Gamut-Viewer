@@ -7,6 +7,7 @@ installing.
 import struct
 
 import pytest
+from PyQt6.QtCore import Qt
 
 from test_chart import write_matrix_profile
 
@@ -419,7 +420,7 @@ def test_the_window_lists_every_profile_with_its_date(app, five_years):
     dialog.add(five_years)
     app.processEvents()
     assert dialog._list.count() == 5
-    rows = [dialog._list.item(i).text() for i in range(5)]
+    rows = [dialog._list.item(i).data(Qt.ItemDataRole.AccessibleTextRole) for i in range(5)]
     assert all("20" in r for r in rows), rows
     assert "scan-2019" in rows[0] and "scan-2023" in rows[4]
     dialog.close()
@@ -445,7 +446,7 @@ def test_removing_one_leaves_the_rest(app, five_years):
     dialog._on_remove()
     app.processEvents()
     assert dialog._list.count() == 4
-    assert all(five_years[2].stem not in dialog._list.item(i).text()
+    assert all(five_years[2].stem not in dialog._list.item(i).data(Qt.ItemDataRole.AccessibleTextRole)
                for i in range(4))
     dialog.close()
 
@@ -491,7 +492,7 @@ def test_a_bad_file_is_shown_in_the_list_rather_than_silently_dropped(
     dialog = gamut_app.TimelineDialog(None, preview=False)
     dialog.add(five_years + [bad])
     app.processEvents()
-    rows = [dialog._list.item(i).text() for i in range(dialog._list.count())]
+    rows = [dialog._list.item(i).data(Qt.ItemDataRole.AccessibleTextRole) for i in range(dialog._list.count())]
     assert any("broken" in r and "could not be read" in r for r in rows), rows
     dialog.close()
 

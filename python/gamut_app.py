@@ -3554,7 +3554,12 @@ class TimelineDialog(QDialog):
         add = QPushButton("Add profiles…", self)
         add.setToolTip("Choose one or more ICC profiles of the same device.")
         add.clicked.connect(self._on_add)
+        # KEPT AS AN OBJECT, NEVER SHOWN. Every row now carries its own ×,
+        # which is the whole of what this did; it stays here unparented so
+        # that the settings, the tests and the panel audits that name it keep
+        # working, and so that nothing has to guess what happened to it.
         self._remove_btn = QPushButton("Remove the selected one", self)
+        self._remove_btn.setVisible(False)
         self._remove_btn.setObjectName("secondary")
         self._remove_btn.setToolTip(
             "Takes the profile you have picked in the list above out of this "
@@ -3584,7 +3589,7 @@ class TimelineDialog(QDialog):
             "NO FILE IS DELETED. This forgets them; it does not touch your "
             "disk.")
         self._clear_btn.clicked.connect(self._on_clear)
-        for b in (add, self._remove_btn, self._clear_btn):
+        for b in (add, self._clear_btn):
             buttons.addWidget(b)
         buttons.addStretch(1)
         # NAMED FOR WHAT IT SAVES, because in the column it is no longer
@@ -4357,6 +4362,21 @@ class TimelineDialog(QDialog):
         if chooser.exec():
             self.add(chooser.selectedFiles())
 
+    def _drop_one(self, path: str) -> None:
+        """Take one profile out of the run, named by its own path.
+
+        Named rather than numbered because the rows reorder by dragging: a
+        button that remembered which POSITION it was born at would take
+        somebody else's profile out after a drag, and it would look like the
+        list had simply lost track.
+        """
+        keep = [p for p in self._paths if str(p) != str(path)]
+        if len(keep) != len(self._paths):
+            self._paths = keep
+            self._rebuild()
+            if not self._paths:
+                self._blank()
+
     def _on_remove(self) -> None:
         row = self._list.currentRow()
         if 0 <= row < len(self._paths):
@@ -4413,9 +4433,49 @@ class TimelineDialog(QDialog):
                 text = f"{entry.name}    {entry.dated}"
             else:
                 text = f"{entry.name}    — could not be read"
-            item = QListWidgetItem(text, self._list)
+            # THE ROW CARRIES ITS OWN × , like the files above it. Asked for
+            # from the window: "in the other section ... there is an X next to
+            # each one to close it. but in the section for the runs this is
+            # different. you would have to select them there and click the
+            # close selected button. what do you think is better? with the X
+            # we would not need the close selected button".
+            #
+            # Better, and for three reasons beyond matching: it is one click
+            # where selecting-then-clicking is three; it cannot act on the
+            # wrong thing, because an × means the row it sits on and nothing
+            # else, where "the selected one" with nothing selected means
+            # whatever the list last remembered; and it gives the crowded
+            # column a row of its height back by removing a button.
+            item = QListWidgetItem("", self._list)
             item.setData(Qt.ItemDataRole.UserRole, str(entry.path))
+            # THE WORDS STAY ON THE ROW ITSELF as well as on the widget that
+            # draws them. A row drawn by a widget of its own has no text of
+            # its own, and everything that reads the list rather than looks
+            # at it -- a screen reader, a test, the panel audits -- was
+            # handed a list of six empty strings. The widget paints; this is
+            # what the row IS.
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, text)
             item.setToolTip(str(entry.path))
+            row = QWidget(self._list)
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(4, 0, 2, 0)
+            rl.setSpacing(6)
+            said = QLabel(text, row)
+            said.setObjectName("slot")
+            rl.addWidget(said, 1)
+            shut = QPushButton("×", row)
+            shut.setObjectName("closer")
+            shut.setFixedSize(22, 22)
+            shut.setToolTip("Take this profile out of the run")
+            # BY PATH, NOT BY POSITION. The rows can be dragged into another
+            # order, and a row that remembered "I am the third" would then
+            # remove somebody else's profile.
+            shut.clicked.connect(
+                lambda _checked=False, which=str(entry.path):
+                self._drop_one(which))
+            rl.addWidget(shut, 0)
+            item.setSizeHint(row.sizeHint())
+            self._list.setItemWidget(item, row)
         # AN EMPTY LIST IS A FRAME AROUND NOTHING, and in the column it is a
         # framed 52 px of nothing sitting on top of the button that fills it.
         # Reported from the window exactly that way: "one device over time
