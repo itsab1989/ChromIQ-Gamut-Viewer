@@ -4605,8 +4605,7 @@ class TimelineDialog(QDialog):
 
         if self._run is None:
             self._verdict.setText("")
-            self._complaints.setText(
-                "Nothing open yet. Add two or more profiles of one device.")
+            self._complaints.setText(self.NOTHING_OPEN)
             self._blank()
             return
 
@@ -4618,6 +4617,12 @@ class TimelineDialog(QDialog):
                 "profile carries a usable date. Drag a row to move it.")
         self._grumbles = said
         self._draw()
+
+    #: What the answer box says before there is anything to answer about.
+    #: ONE PLACE, because it is written by two: the pass that fills the panel
+    #: and the pass that draws it. Kept apart, they went out of step at once
+    #: -- the second wrote an empty string over the first.
+    NOTHING_OPEN = "Nothing open yet. Add two or more profiles of one device."
 
     def _say(self) -> None:
         """Put the words that belong to whichever picture is about to be drawn.
@@ -4637,7 +4642,22 @@ class TimelineDialog(QDialog):
         """
         import drift_series
 
-        self._complaints.setText("\n\n".join(getattr(self, "_grumbles", [])))
+        # AND WITH NOTHING OPEN IT STILL SAYS SO. This line wrote the list
+        # of complaints straight over whatever was in the box, and with no
+        # run there are no complaints -- so it wrote nothing, and the box
+        # went empty. _refresh had put "Nothing open yet..." there when the
+        # panel was built, and this wiped it the first time anything redrew.
+        #
+        # WHICH LOOKED LIKE A THEME BUG, because the first thing that redraws
+        # a freshly opened window is usually the appearance switch: the line
+        # was there when the window opened and gone once you had been to the
+        # other appearance and back, and nothing brought it back. Found by
+        # driving that round trip and comparing what the window SAYS before
+        # and after -- a switch may change how the window looks and must
+        # never change what it tells you.
+        self._complaints.setText(
+            "\n\n".join(getattr(self, "_grumbles", []))
+            or (self.NOTHING_OPEN if self._run is None else ""))
         pair = self._chosen_pair()
         # THE FAMILY SPLIT ONLY WHERE IT CAN DO SOMETHING. Splitting into
         # families is a thing you do to the CLOUD; the graph has no colours in
