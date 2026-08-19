@@ -67,6 +67,12 @@ sys.path.insert(0, str(HERE.parent / "python"))
 import prefs  # noqa: E402
 
 prefs.use_a_scratch_store()
+
+# THE ARGUMENTS ARE TAKEN BEFORE QT IS GIVEN A TIDY sys.argv. Overwriting it
+# first throws them away, and a run asked to stand in another font then
+# audits the default one and reports Clean about the wrong thing -- which is
+# exactly what happened here, and in audit_the_page_at_any_size before it.
+ASKED = list(sys.argv[1:])
 sys.argv = ["audit_panel"]
 
 from PyQt6.QtCore import QSettings, Qt                      # noqa: E402
@@ -521,9 +527,46 @@ def _ancestor(widget, kind):
 
 
 def main() -> int:
-    shots = "--shots" in sys.argv
+    shots = "--shots" in ASKED
+    # THE WINDOW IN A FONT IT WAS NOT DRAWN IN.
+    #
+    # gamut_app styles the whole window `font-family: "Inter"`, and the
+    # application does not ship it: nothing bundles a face and nothing calls
+    # QFontDatabase.addApplicationFont. It happens to be installed on the
+    # machine this was written on, so every run of every audit has measured a
+    # window drawn in the intended font -- and anybody without Inter gets
+    # whatever Qt substitutes, with different metrics for every label in the
+    # column.
+    #
+    # Measured when that was noticed: the layout does not care. Helvetica,
+    # Times New Roman and Courier New -- the last far wider -- each pass all
+    # 24 states with nothing cut and nothing overflowing, because the column
+    # is sized from what is inside it rather than from a number somebody
+    # typed. This keeps that true: a width pinned to Inter's metrics would
+    # pass here and clip on somebody else's machine.
+    #
+    #     python scripts/audit_panel.py --font "Courier New"
+    font = None
+    if "--font" in ASKED:
+        at = ASKED.index("--font")
+        if at + 1 < len(ASKED):
+            font = ASKED[at + 1]
     import gamut_app
 
+    if font:
+        # WRAPPED, NOT REWRITTEN. The sheet is built per appearance and per
+        # accent by gamut_app.stylesheet(), so the substitution has to happen
+        # every time it is asked for, not once on a string.
+        import re as _re
+
+        _real = gamut_app.stylesheet
+
+        def _in_another_font(*a, **k):
+            return _re.sub(r'font-family: "[^"]+"',
+                           f'font-family: "{font}"', _real(*a, **k), count=1)
+
+        gamut_app.stylesheet = _in_another_font
+        print(f"  standing in {font!r} for the window's own font")
     app = QApplication(sys.argv)
     window = gamut_app.GamutApp([])
     window.show()
