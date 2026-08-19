@@ -77,7 +77,7 @@ from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QComboBox,
                              QVBoxLayout,
                              QWidget)
 
-from version import APP_NAME, __version__
+from version import APP_NAME, UPSTREAM, __version__
 from gamutview import SPACES, build_gamut, coverage, outside_of
 from gamutview import xyz_to_lab
 from references import (REFERENCE_SPACES, Stopped, gam_gamut,
@@ -437,6 +437,12 @@ QPushButton#footLink {{ background: transparent; border: none; padding: 2px 0;
                         text-align: left; min-height: 0; }}
 QPushButton#footLink:hover {{ color: {c["accent_hot"]};
                               text-decoration: underline; }}
+/* Who wrote it, and what it was built on. The very last thing in the column
+   and the quietest: dimmer and smaller than the links above it, in the same
+   dim key every explanatory paragraph uses, so it is there for anybody who
+   looks for it and competes with nothing. */
+QLabel#footCredit {{ color: {c["dim"]}; font-size: 10px;
+                     padding: 6px 0 2px 0; }}
 QLabel#eyebrow {{ color: {c["dim"]}; font-size: 10px; font-weight: 600;
                   letter-spacing: 1.4px; }}
 QFrame#mastheadRule {{ background: {c["accent"]}; border: none; }}
@@ -8815,183 +8821,40 @@ class GamutApp(QMainWindow):
         self._looks_panel = LookSection(col, self._on_look_changed)
         v.addWidget(self._looks_panel)
 
-        self._reset_btn = QPushButton("Start again with standard settings",
-                                      col)
-        self._reset_btn.setObjectName("secondary")
-        self._reset_btn.setToolTip(
-            "Puts every setting in this column back to what it was the first "
-            "time you opened the application.\n\n"
-            "WHAT IT CHANGES: how the shape is drawn — its colours, its "
-            "opacity, the box and grid, the rings, the cross-section, the "
-            "lighting — and the choices under How it looks and This window. "
-            "It is the way back when you have changed a dozen things trying "
-            "to find one and the picture no longer looks like anybody "
-            "else's.\n\n"
-            "WHAT IT DOES NOT TOUCH: your files. Nothing you have open is "
-            "closed and nothing on disk is altered — the same measurements "
-            "and profiles stay loaded and are simply drawn the standard way "
-            "again.\n\n"
-            "It asks first, so a mis-click costs nothing.")
-        self._reset_btn.clicked.connect(self._reset_defaults)
-        v.addWidget(self._reset_btn)
-        self._export_btn = QPushButton("Save the numbers as a table…", col)
-        self._export_btn.setObjectName("secondary")
-        self._export_btn.setToolTip(
-            "Writes what this window is showing as a table of numbers you "
-            "can open in any spreadsheet.\n\n"
-            "WHAT IS IN IT: every reading the window has — how much colour "
-            "each file holds, how much they share, and where they differ — "
-            "with a row that says what each column is and what its units "
-            "are, so it still makes sense to somebody who was not here when "
-            "you saved it.\n\n"
-            "THIS IS THE THIRD WAY OF TAKING SOMETHING WITH YOU, and the "
-            "three answer different questions. A PICTURE is for showing "
-            "somebody. A WEB PAGE keeps the shape turnable, so whoever opens "
-            "it can look from any side. A TABLE is for doing arithmetic on — "
-            "putting the numbers in a report, or watching one figure across "
-            "twenty prints.\n\n"
-            "It needs something open to describe, so it waits until there "
-            "is.")
-        self._export_btn.clicked.connect(self._on_export)
-        self._export_btn.setEnabled(False)
-        v.addWidget(self._export_btn)
-        self._glossary_btn = QPushButton("What do these words mean?", col)
-        self._glossary_btn.setObjectName("secondary")
-        self._glossary_btn.setToolTip(
-            "Every word this window uses, in plain language: gamut, ΔE, "
-            "CIELAB, chroma, hue, lightness, ink limit, rendering intent, "
-            "and the rest.\n\n"
-            "Written for somebody meeting colour management for the first "
-            "time rather than for somebody who already knows the terms — "
-            "each entry says what the thing IS, and then why anybody printing "
-            "would care.\n\n"
-            "It opens in a window of its own, so you can leave it beside this "
-            "one while you work, and you can search it.\n\n"
-            "Nothing you have open is affected in any way.")
-        self._glossary_btn.clicked.connect(self._on_glossary)
-        v.addWidget(self._glossary_btn)
-        # ARGYLLCMS, MENTIONED BUT NEVER NAGGED ABOUT. Most people never need
-        # it: measurements, gamut files and profiles all open without it, and
-        # only .cxf, .mxf and .txt are converted by it. So there is no warning
-        # on startup and no badge -- just a quiet line for anybody who wonders,
-        # and a way to point at it when the search cannot find it.
-        self._argyll_label = WrappedLabel("", col)
-        self._argyll_label.setObjectName("argyllStatus")
-        v.addWidget(self._argyll_label)
-        argyll_row = QHBoxLayout()
-        argyll_row.setContentsMargins(0, 0, 0, 0)
-        argyll_row.setSpacing(6)
-        self._argyll_btn = QPushButton("Where ArgyllCMS is…", col)
-        self._argyll_btn.setObjectName("secondary")
-        self._argyll_btn.clicked.connect(self._on_choose_argyll)
-        argyll_row.addWidget(self._argyll_btn, 1)
-        argyll_hint = Hint(
-            "ArgyllCMS is the free toolkit that measures printed charts in "
-            "the first place. This viewer uses it for two things, and needs "
-            "it for only one of them.\n\n"
-            "It is NEEDED to open a .cxf, .mxf or .txt measurement, which it "
-            "converts to the .ti3 form everything else uses. If you only ever "
-            "open .ti3 files, gamut files or ICC profiles, you never need it "
-            "at all and can ignore this.\n\n"
-            "It is PREFERRED for ICC profiles, where it works the surface out "
-            "in full precision. Without it, profiles are still read here — "
-            "the two answers agree to well under one per cent.\n\n"
-            "It is looked for automatically in all the usual places, so this "
-            "button is only for when it lives somewhere unusual: press it and "
-            "choose the folder holding the tools, which is normally the bin "
-            "folder inside the ArgyllCMS one. If you do not have it, the "
-            "button offers the download page — it is free.", col)
-        argyll_hint.setObjectName("hint_argyll_hint")
-        argyll_row.addWidget(argyll_hint, 0, Qt.AlignmentFlag.AlignVCenter)
-        v.addLayout(argyll_row)
-
-        # THE ENCODER, ON THE SAME FOOTING AS ARGYLLCMS: mentioned quietly for
-        # anybody who wonders, never nagged about. One copy travels with the
-        # application, so for most people this line only ever says so.
-        self._ffmpeg_label = WrappedLabel("", col)
-        self._ffmpeg_label.setObjectName("argyllStatus")
-        v.addWidget(self._ffmpeg_label)
-        ffmpeg_row = QHBoxLayout()
-        ffmpeg_row.setContentsMargins(0, 0, 0, 0)
-        ffmpeg_row.setSpacing(6)
-        self._ffmpeg_btn = QPushButton("Where ffmpeg is…", col)
-        self._ffmpeg_btn.setObjectName("secondary")
-        self._ffmpeg_btn.clicked.connect(self._on_choose_ffmpeg)
-        ffmpeg_row.addWidget(self._ffmpeg_btn, 1)
-        ffmpeg_hint = Hint(
-            "ffmpeg is the free program that writes films. It is used for "
-            "exactly one thing here: saving the turning view as an MP4 or a "
-            "WebM.\n\n"
-            "You almost certainly do not need to do anything. A copy travels "
-            "with this application, so the films work straight out of the box, "
-            "and the line above says which one is being used.\n\n"
-            "Nothing else needs it. Every file still opens, every still "
-            "picture is still saved, and WebP, GIF and APNG moving pictures "
-            "are made here without it — so if it is missing, nothing is broken "
-            "and the two film formats are simply greyed out.\n\n"
-            "This button is for two cases. If you keep your own build and "
-            "would rather it were used, point at it. And if the copy that "
-            "came with the application is not there — some ways of installing "
-            "leave it out, and a few Linux builds are made without H.265 — "
-            "point at one that has what you want. Press it and choose the "
-            "ffmpeg program itself, not a folder.\n\n"
-            "It runs on your computer and nothing is ever sent anywhere. If "
-            "you do not have one, the button offers the download page — it is "
-            "free, and there is a build for every system.", col)
-        ffmpeg_hint.setObjectName("hint_ffmpeg_hint")
-        ffmpeg_row.addWidget(ffmpeg_hint, 0, Qt.AlignmentFlag.AlignVCenter)
-        v.addLayout(ffmpeg_row)
-
-        self._update_btn = QPushButton("Check for a newer version…", col)
-        self._update_btn.setObjectName("secondary")
-        self._update_btn.setToolTip(
-            "Asks the project's releases page whether a newer version has "
-            "been published, and tells you what it finds.\n\n"
-            "IT NEVER DOWNLOADS OR INSTALLS ANYTHING. The most it does is "
-            "show you the version number and offer you the link, which you "
-            "open yourself if you want to.\n\n"
-            "NOTHING ABOUT YOU IS SENT. No account, no identifier, nothing "
-            "about your computer, your printer or your measurements — and no "
-            "record of the question is kept here.\n\n"
-            "This is the only thing in the whole window that ever reaches the "
-            "internet. Everything else works with no connection at all.")
-        self._update_btn.clicked.connect(lambda: self._check_updates(asked=True))
-        v.addWidget(self._update_btn)
-        self._auto_update = QCheckBox("Look for a newer version when the app starts", col)
-        # ON by default, and deliberately. It is the one thing here that
-        # reaches the network, so it is named plainly, it is one click to turn
-        # off, and it asks the releases page for a version number and nothing
-        # else -- no account, no identifier, nothing about the machine, the
-        # printer or the measurements. It never downloads or installs
-        # anything. The README and the release notes say so in those words,
-        # and they have to keep saying it while this is on.
-        self._auto_update.setChecked(True)
-        update_hint = Hint(
-            "Looks at the project's releases page and tells you whether a "
-            "newer version has been published. It never downloads or installs "
-            "anything by itself — the most it does is show you the version "
-            "number and offer the link.\n\n"
-            "Nothing about you, your printer or your measurements is sent. "
-            "The request carries no account and no identifier, and there is "
-            "no record kept of it here.\n\n"
-            "Everything else in this window works with no internet connection "
-            "at all.\n\nThis starts switched on, because a colour tool "
-            "quietly running a year out of date helps nobody — and it is the "
-            "only thing in this window that ever reaches the internet. Untick "
-            "it and it will never look again; everything else here works with "
-            "no network whatever. You can still ask whenever you like, with "
-            "the button just above.", col)
-        update_hint.setObjectName("hint_update_hint")
-        # THE ONLY TICKBOX IN A COLUMN OF BUTTONS, so it goes at the end
-        # rather than in the middle of them: sitting between two buttons it
-        # read as a stray control that had lost its group.
-        self._auto_update_row = QHBoxLayout()
-        self._auto_update_row.setContentsMargins(0, 0, 0, 0)
-        self._auto_update_row.setSpacing(6)
-        self._auto_update_row.addWidget(self._auto_update, 1)
-        self._auto_update_row.addWidget(update_hint, 0,
-                                        Qt.AlignmentFlag.AlignVCenter)
-        self._picture = QPushButton("Save this view as a picture…", col)
+        # ==================================================================
+        # THE FOOT OF THE COLUMN, IN TWO NAMED SECTIONS RATHER THAN NINE
+        # LOOSE BUTTONS.
+        #
+        # Reported from the window: "those buttons at the bottom of the column
+        # stand out a bit. could they be placed in another collapsible section
+        # called something like app settings". They did stand out, and for a
+        # reason worth writing down. Everything above them is a group with a
+        # heading that says what its controls are about; these nine were the
+        # only things in the whole column with no heading over them — a
+        # picture saver, a page saver, a table saver, a glossary, two "where
+        # is it" pickers, an update check, a tickbox and a reset, in one
+        # undifferentiated stack that a reader has to sort out for themselves.
+        #
+        # THEY ARE NOT ONE THING, SO THEY ARE NOT ONE SECTION. There are two
+        # intents here, and the tooltips had already noticed: each of the
+        # three save buttons calls itself one of "THE THREE WAYS OF TAKING
+        # SOMETHING WITH YOU" — a grouping the text was asserting with no
+        # layout behind it, and the three were not even next to each other
+        # (the table sat five controls above the picture). The rest is
+        # housekeeping about the application itself: what it can find, whether
+        # it is current, what the words mean, and the way back to standard
+        # settings.
+        #
+        # WHICH ONE STARTS OPEN. Saving is why somebody came; it stays open.
+        # The housekeeping is set once or never, so it starts folded — which
+        # is the whole point of the exercise, since folded it is one line
+        # instead of eight controls and two paragraphs.
+        # ==================================================================
+        g_take = QGroupBox("Take it away with you", col)
+        tk = QVBoxLayout(g_take)
+        tk.setSpacing(6)
+        tk.setContentsMargins(8, 6, 8, 8)
+        self._picture = QPushButton("Save this view as a picture…", g_take)
         self._picture.setObjectName("secondary")
         self._picture.clicked.connect(self._on_picture)
         self._picture.setEnabled(False)
@@ -9009,13 +8872,13 @@ class GamutApp(QMainWindow):
             "that turns and repeats, which shows the shape from every side in "
             "the space of one still.\n\n"
             "Nothing is written until you have chosen where it goes, and a "
-            "file that is already there is never written over.", col)
+            "file that is already there is never written over.", g_take)
         picture_hint.setObjectName("hint_picture_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0); _r.setSpacing(6)
         _r.addWidget(self._picture, 1)
         _r.addWidget(picture_hint, 0, Qt.AlignmentFlag.AlignVCenter)
-        v.addLayout(_r)
-        self._save = QPushButton("Save this view as a web page…", col)
+        tk.addLayout(_r)
+        self._save = QPushButton("Save this view as a web page…", g_take)
         self._save.setObjectName("secondary")
         self._save.setToolTip(
             "Writes what you are looking at as a web page that anybody can "
@@ -9039,8 +8902,317 @@ class GamutApp(QMainWindow):
             "It needs something open to show, so it waits until there is.")
         self._save.clicked.connect(self._on_save)
         self._save.setEnabled(False)
+        # AN ⓘ OF ITS OWN, LIKE THE PICTURE ABOVE IT. Reported the moment the
+        # three were finally sitting together, which is the point of putting
+        # them together: "some of the save buttons lack a tooltip icon". They
+        # each had the full paragraph, but only as a hover, where the window's
+        # own rule says a hover is one sentence and the paragraph lives behind
+        # the icon. _shorten_long_hovers does the second half automatically
+        # once the icon is on the row.
+        save_hint = Hint(
+            "Writes what you are looking at as a web page that anybody can "
+            "open — and TURN. Not a picture of the shape: the shape itself, "
+            "which whoever opens it can spin, tip, zoom into and take apart "
+            "for themselves.\n\n"
+            "IT NEEDS NOTHING INSTALLED. It opens in any browser, on a phone "
+            "as well as a computer, with no internet connection and nothing "
+            "to set up — so it is the one to send to a customer, a paper "
+            "manufacturer, or a forum.\n\n"
+            "EVERYTHING THE WINDOW SAYS TRAVELS WITH IT: the readings, the "
+            "colour-family lines, the note about what the numbers do not "
+            "mean, and the reader's own controls for hiding families and "
+            "small differences. A page showing eleven dots would otherwise be "
+            "impossible to tell apart from a printer that is nearly "
+            "perfect.\n\n"
+            "You are asked whether the drawing engine travels inside the file "
+            "— about five megabytes, and then it works with no network at all "
+            "— or is fetched when it is opened, which makes the file tiny but "
+            "needs the internet the first time.\n\n"
+            "IT WAITS UNTIL THERE IS SOMETHING TO SHOW. With nothing open the "
+            "button is greyed out; open a profile, a measurement or a chart "
+            "and it comes alive.", g_take)
+        save_hint.setObjectName("hint_save_hint")
+        _sr = QHBoxLayout(); _sr.setContentsMargins(0, 0, 0, 0)
+        _sr.setSpacing(6)
+        _sr.addWidget(self._save, 1)
+        _sr.addWidget(save_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        tk.addLayout(_sr)
+        self._export_btn = QPushButton("Save the numbers as a table…", g_take)
+        self._export_btn.setObjectName("secondary")
+        self._export_btn.setToolTip(
+            "Writes what this window is showing as a table of numbers you "
+            "can open in any spreadsheet.\n\n"
+            "WHAT IS IN IT: every reading the window has — how much colour "
+            "each file holds, how much they share, and where they differ — "
+            "with a row that says what each column is and what its units "
+            "are, so it still makes sense to somebody who was not here when "
+            "you saved it.\n\n"
+            "THIS IS THE THIRD WAY OF TAKING SOMETHING WITH YOU, and the "
+            "three answer different questions. A PICTURE is for showing "
+            "somebody. A WEB PAGE keeps the shape turnable, so whoever opens "
+            "it can look from any side. A TABLE is for doing arithmetic on — "
+            "putting the numbers in a report, or watching one figure across "
+            "twenty prints.\n\n"
+            "It needs something open to describe, so it waits until there "
+            "is.")
+        self._export_btn.clicked.connect(self._on_export)
         self._export_btn.setEnabled(False)
-        v.addWidget(self._save)
+        export_hint = Hint(
+            "Writes what this window is showing as a table of numbers you can "
+            "open in any spreadsheet — Excel, Numbers, LibreOffice, or "
+            "anything that reads a comma-separated file.\n\n"
+            "WHAT IS IN IT: every reading the window has — how much colour "
+            "each file holds, how much they share, where they differ, and the "
+            "colour-family lines — with a row that says what each column is "
+            "and what its units are, so it still makes sense to somebody who "
+            "was not here when you saved it.\n\n"
+            "THIS IS THE THIRD WAY OF TAKING SOMETHING WITH YOU, and the "
+            "three answer different questions. A PICTURE is for showing "
+            "somebody. A WEB PAGE keeps the shape turnable, so whoever opens "
+            "it can look from any side. A TABLE is for doing arithmetic on — "
+            "putting the numbers in a report, or watching one figure across "
+            "twenty prints.\n\n"
+            "IT WAITS UNTIL THERE IS SOMETHING TO DESCRIBE. With nothing open "
+            "the button is greyed out; open a profile, a measurement or a "
+            "chart and it comes alive.", g_take)
+        export_hint.setObjectName("hint_export_hint")
+        _er = QHBoxLayout(); _er.setContentsMargins(0, 0, 0, 0)
+        _er.setSpacing(6)
+        _er.addWidget(self._export_btn, 1)
+        _er.addWidget(export_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        tk.addLayout(_er)
+        v.addWidget(g_take)
+
+        g_app = QGroupBox("The application itself", col)
+        ap = QVBoxLayout(g_app)
+        ap.setSpacing(6)
+        ap.setContentsMargins(8, 6, 8, 8)
+        self._glossary_btn = QPushButton("What do these words mean?", g_app)
+        self._glossary_btn.setObjectName("secondary")
+        self._glossary_btn.setToolTip(
+            "Every word this window uses, in plain language: gamut, ΔE, "
+            "CIELAB, chroma, hue, lightness, ink limit, rendering intent, "
+            "and the rest.\n\n"
+            "Written for somebody meeting colour management for the first "
+            "time rather than for somebody who already knows the terms — "
+            "each entry says what the thing IS, and then why anybody printing "
+            "would care.\n\n"
+            "It opens in a window of its own, so you can leave it beside this "
+            "one while you work, and you can search it.\n\n"
+            "Nothing you have open is affected in any way.")
+        self._glossary_btn.clicked.connect(self._on_glossary)
+        glossary_hint = Hint(
+            "Every word this window uses, in plain language: gamut, ΔE, "
+            "CIELAB, chroma, hue, lightness, ink limit, rendering intent, "
+            "and the rest.\n\n"
+            "Written for somebody meeting colour management for the first "
+            "time rather than for somebody who already knows the terms — each "
+            "entry says what the thing IS, and then why anybody printing "
+            "would care about it.\n\n"
+            "It opens in a window of its own, so you can leave it beside this "
+            "one while you work, and you can search it for a word you have "
+            "just met on a button or in a reading.\n\n"
+            "Nothing you have open is affected in any way, and it needs no "
+            "internet connection: the whole glossary travels with the "
+            "application.", g_app)
+        glossary_hint.setObjectName("hint_glossary_hint")
+        _gr = QHBoxLayout(); _gr.setContentsMargins(0, 0, 0, 0)
+        _gr.setSpacing(6)
+        _gr.addWidget(self._glossary_btn, 1)
+        _gr.addWidget(glossary_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        ap.addLayout(_gr)
+        # ARGYLLCMS, MENTIONED BUT NEVER NAGGED ABOUT. Most people never need
+        # it: measurements, gamut files and profiles all open without it, and
+        # only .cxf, .mxf and .txt are converted by it. So there is no warning
+        # on startup and no badge -- just a quiet line for anybody who wonders,
+        # and a way to point at it when the search cannot find it.
+        self._argyll_label = WrappedLabel("", g_app)
+        self._argyll_label.setObjectName("argyllStatus")
+        ap.addWidget(self._argyll_label)
+        argyll_row = QHBoxLayout()
+        argyll_row.setContentsMargins(0, 0, 0, 0)
+        argyll_row.setSpacing(6)
+        self._argyll_btn = QPushButton("Where ArgyllCMS is…", g_app)
+        self._argyll_btn.setObjectName("secondary")
+        self._argyll_btn.clicked.connect(self._on_choose_argyll)
+        argyll_row.addWidget(self._argyll_btn, 1)
+        argyll_hint = Hint(
+            "ArgyllCMS is the free toolkit that measures printed charts in "
+            "the first place. This viewer uses it for two things, and needs "
+            "it for only one of them.\n\n"
+            "It is NEEDED to open a .cxf, .mxf or .txt measurement, which it "
+            "converts to the .ti3 form everything else uses. If you only ever "
+            "open .ti3 files, gamut files or ICC profiles, you never need it "
+            "at all and can ignore this.\n\n"
+            "It is PREFERRED for ICC profiles, where it works the surface out "
+            "in full precision. Without it, profiles are still read here — "
+            "the two answers agree to well under one per cent.\n\n"
+            "It is looked for automatically in all the usual places, so this "
+            "button is only for when it lives somewhere unusual: press it and "
+            "choose the folder holding the tools, which is normally the bin "
+            "folder inside the ArgyllCMS one. If you do not have it, the "
+            "button offers the download page — it is free.", g_app)
+        argyll_hint.setObjectName("hint_argyll_hint")
+        argyll_row.addWidget(argyll_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        ap.addLayout(argyll_row)
+
+        # THE ENCODER, ON THE SAME FOOTING AS ARGYLLCMS: mentioned quietly for
+        # anybody who wonders, never nagged about. One copy travels with the
+        # application, so for most people this line only ever says so.
+        self._ffmpeg_label = WrappedLabel("", g_app)
+        self._ffmpeg_label.setObjectName("argyllStatus")
+        ap.addWidget(self._ffmpeg_label)
+        ffmpeg_row = QHBoxLayout()
+        ffmpeg_row.setContentsMargins(0, 0, 0, 0)
+        ffmpeg_row.setSpacing(6)
+        self._ffmpeg_btn = QPushButton("Where ffmpeg is…", g_app)
+        self._ffmpeg_btn.setObjectName("secondary")
+        self._ffmpeg_btn.clicked.connect(self._on_choose_ffmpeg)
+        ffmpeg_row.addWidget(self._ffmpeg_btn, 1)
+        ffmpeg_hint = Hint(
+            "ffmpeg is the free program that writes films. It is used for "
+            "exactly one thing here: saving the turning view as an MP4 or a "
+            "WebM.\n\n"
+            "You almost certainly do not need to do anything. A copy travels "
+            "with this application, so the films work straight out of the box, "
+            "and the line above says which one is being used.\n\n"
+            "Nothing else needs it. Every file still opens, every still "
+            "picture is still saved, and WebP, GIF and APNG moving pictures "
+            "are made here without it — so if it is missing, nothing is broken "
+            "and the two film formats are simply greyed out.\n\n"
+            "This button is for two cases. If you keep your own build and "
+            "would rather it were used, point at it. And if the copy that "
+            "came with the application is not there — some ways of installing "
+            "leave it out, and a few Linux builds are made without H.265 — "
+            "point at one that has what you want. Press it and choose the "
+            "ffmpeg program itself, not a folder.\n\n"
+            "It runs on your computer and nothing is ever sent anywhere. If "
+            "you do not have one, the button offers the download page — it is "
+            "free, and there is a build for every system.", g_app)
+        ffmpeg_hint.setObjectName("hint_ffmpeg_hint")
+        ffmpeg_row.addWidget(ffmpeg_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        ap.addLayout(ffmpeg_row)
+
+        self._update_btn = QPushButton("Check for a newer version…", g_app)
+        self._update_btn.setObjectName("secondary")
+        self._update_btn.setToolTip(
+            "Asks the project's releases page whether a newer version has "
+            "been published, and tells you what it finds.\n\n"
+            "IT NEVER DOWNLOADS OR INSTALLS ANYTHING. The most it does is "
+            "show you the version number and offer you the link, which you "
+            "open yourself if you want to.\n\n"
+            "NOTHING ABOUT YOU IS SENT. No account, no identifier, nothing "
+            "about your computer, your printer or your measurements — and no "
+            "record of the question is kept here.\n\n"
+            "This is the only thing in the whole window that ever reaches the "
+            "internet. Everything else works with no connection at all.")
+        self._update_btn.clicked.connect(lambda: self._check_updates(asked=True))
+        # ITS OWN ⓘ, EVEN THOUGH THE TICKBOX BELOW HAS ONE. They are two
+        # different questions -- "ask now" and "ask every time" -- and the
+        # icon belonging to the second explained the first only by accident
+        # of being nearby.
+        ask_hint = Hint(
+            "Asks the project's releases page whether a newer version has "
+            "been published, right now, and tells you what it finds either "
+            "way.\n\n"
+            "IT NEVER DOWNLOADS OR INSTALLS ANYTHING. The most it does is "
+            "show you the version number and offer you the link, which you "
+            "open yourself if you want to. Nothing is replaced behind your "
+            "back and the copy you are running is untouched.\n\n"
+            "NOTHING ABOUT YOU IS SENT. No account, no identifier, nothing "
+            "about your computer, your printer or your measurements — and no "
+            "record of the question is kept here.\n\n"
+            "This and the tickbox below are the only things in the whole "
+            "window that ever reach the internet. Everything else — opening "
+            "files, drawing, measuring, saving a picture or a page — works "
+            "with no connection at all.", g_app)
+        ask_hint.setObjectName("hint_ask_update_hint")
+        _ur = QHBoxLayout(); _ur.setContentsMargins(0, 0, 0, 0)
+        _ur.setSpacing(6)
+        _ur.addWidget(self._update_btn, 1)
+        _ur.addWidget(ask_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        ap.addLayout(_ur)
+        self._auto_update = QCheckBox("Look for a newer version when the app starts", g_app)
+        # ON by default, and deliberately. It is the one thing here that
+        # reaches the network, so it is named plainly, it is one click to turn
+        # off, and it asks the releases page for a version number and nothing
+        # else -- no account, no identifier, nothing about the machine, the
+        # printer or the measurements. It never downloads or installs
+        # anything. The README and the release notes say so in those words,
+        # and they have to keep saying it while this is on.
+        self._auto_update.setChecked(True)
+        update_hint = Hint(
+            "Looks at the project's releases page and tells you whether a "
+            "newer version has been published. It never downloads or installs "
+            "anything by itself — the most it does is show you the version "
+            "number and offer the link.\n\n"
+            "Nothing about you, your printer or your measurements is sent. "
+            "The request carries no account and no identifier, and there is "
+            "no record kept of it here.\n\n"
+            "Everything else in this window works with no internet connection "
+            "at all.\n\nThis starts switched on, because a colour tool "
+            "quietly running a year out of date helps nobody — and it is the "
+            "only thing in this window that ever reaches the internet. Untick "
+            "it and it will never look again; everything else here works with "
+            "no network whatever. You can still ask whenever you like, with "
+            "the button just above.", g_app)
+        update_hint.setObjectName("hint_update_hint")
+        # THE TICKBOX BELONGS UNDER THE BUTTON IT REPEATS, and now it can be:
+        # while these controls were loose in the column it was added last of
+        # all, AFTER the ♥ links at the very foot, so the only tickbox in the
+        # column sat below the two link words with nothing around it. Inside a
+        # section it goes where it reads -- immediately under "Check for a
+        # newer version…", which is the same question asked automatically.
+        self._auto_update_row = QHBoxLayout()
+        self._auto_update_row.setContentsMargins(0, 0, 0, 0)
+        self._auto_update_row.setSpacing(6)
+        self._auto_update_row.addWidget(self._auto_update, 1)
+        self._auto_update_row.addWidget(update_hint, 0,
+                                        Qt.AlignmentFlag.AlignVCenter)
+        ap.addLayout(self._auto_update_row)
+
+        # LAST IN THE SECTION, because it is the one thing here that undoes
+        # work. It asks first, and it touches no file.
+        self._reset_btn = QPushButton("Start again with standard settings",
+                                      g_app)
+        self._reset_btn.setObjectName("secondary")
+        self._reset_btn.setToolTip(
+            "Puts every setting in this column back to what it was the first "
+            "time you opened the application.\n\n"
+            "WHAT IT CHANGES: how the shape is drawn — its colours, its "
+            "opacity, the box and grid, the rings, the cross-section, the "
+            "lighting — and the choices under How it looks and This window. "
+            "It is the way back when you have changed a dozen things trying "
+            "to find one and the picture no longer looks like anybody "
+            "else's.\n\n"
+            "WHAT IT DOES NOT TOUCH: your files. Nothing you have open is "
+            "closed and nothing on disk is altered — the same measurements "
+            "and profiles stay loaded and are simply drawn the standard way "
+            "again.\n\n"
+            "It asks first, so a mis-click costs nothing.")
+        self._reset_btn.clicked.connect(self._reset_defaults)
+        reset_hint = Hint(
+            "Puts every setting in this column back to what it was the first "
+            "time you opened the application.\n\n"
+            "WHAT IT CHANGES: how the shape is drawn — its colours, its "
+            "opacity, the box and grid, the rings, the cross-section, the "
+            "lighting — and the choices under How it looks and This window. "
+            "It is the way back when you have changed a dozen things trying "
+            "to find one and the picture no longer looks like anybody "
+            "else's.\n\n"
+            "WHAT IT DOES NOT TOUCH: your files. Nothing you have open is "
+            "closed and nothing on disk is altered — the same measurements "
+            "and profiles stay loaded and are simply drawn the standard way "
+            "again. No picture, page or table you have already saved is "
+            "changed either.\n\n"
+            "It asks first, so a mis-click costs nothing.", g_app)
+        reset_hint.setObjectName("hint_reset_hint")
+        _rr = QHBoxLayout(); _rr.setContentsMargins(0, 0, 0, 0)
+        _rr.setSpacing(6)
+        _rr.addWidget(self._reset_btn, 1)
+        _rr.addWidget(reset_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        ap.addLayout(_rr)
+        v.addWidget(g_app)
 
         # THE VERY FOOT OF THE COLUMN: where to find the project, and where to
         # say thanks. Quiet, and the last thing met on the way down rather
@@ -9072,6 +9244,39 @@ class GamutApp(QMainWindow):
         links.addWidget(website, 0)
         links.addStretch(1)
         v.addLayout(links)
+
+        # WHO WROTE IT, AND WHAT IT WAS BUILT ON. Asked for in these words:
+        # "can you find a good spot at the bottom to add my name Sebastian
+        # Reiprich as the author of this gui or whatever would be the correct
+        # attribution".
+        #
+        # The correct attribution is two sentences rather than one, and the
+        # second was owed anyway. This window -- every control in the column,
+        # every reading, the exported page -- was written for ChromIQ; the
+        # drawing underneath began as Qiu Jueqin's MIT-licensed visualizer,
+        # which the LICENSE and the README already credit and which the
+        # application itself did NOT, because version.UPSTREAM was written
+        # down and then never shown to anybody. Both lines belong at the foot
+        # of the column, where somebody looking for who made a thing looks.
+        #
+        # QUIET, AND LAST. It is smaller than the links above it, it takes no
+        # accent colour, and nothing about it can be pressed -- a credit that
+        # competes with the controls is an advertisement.
+        # AND IT IS NAMED AS AN APPLICATION, not as a window. The first draft
+        # of this line read "This window by …", which is how the column's
+        # preferences group is headed, and it was wrong here for a reason
+        # worth keeping: "calling our app 'this window' is a bit of an
+        # understatement after all of this work". A heading over two radio
+        # buttons can afford to mean the literal window; a credit is naming
+        # the whole thing, and the whole thing is an application.
+        credit = WrappedLabel(
+            f"{APP_NAME} {__version__} — designed and written by "
+            "Sebastian Reiprich.\n"
+            "Built on Yet Another Color Gamut Visualizer by Qiu Jueqin (MIT).",
+            col)
+        credit.setObjectName("footCredit")
+        credit.setToolTip(UPSTREAM)
+        v.addWidget(credit)
         # LAST, once every group exists. Run partway down the column it tidied
         # the groups built so far and left the rest as they were, which looks
         # exactly like a bug in the ones it missed.
@@ -9095,10 +9300,13 @@ class GamutApp(QMainWindow):
                 (self._drift_box, "drift", True),
                 (self._chart_box, "chart-inside", True),
                 (g_prefs, "window", False),
+                # Saving is why somebody came, so it is open; the
+                # housekeeping is set once or never, so it is folded.
+                (g_take, "take-away", True),
+                (g_app, "application", False),
         ):
             make_foldable(_box, _key, _open)
 
-        v.addLayout(self._auto_update_row)
         # AT LEAST AS WIDE AS WHAT IS IN IT.
         #
         # This column was pinned at 346 px, and one section outgrew it:
@@ -12674,6 +12882,11 @@ class GamutApp(QMainWindow):
         # the shape beside it happens to be drawn in.
         "One device over time",
         "This window",
+        # Neither section has anything to do with the space the shape is
+        # drawn in: one writes the picture, the page and the table, the
+        # other is housekeeping about the application.
+        "Take it away with you",
+        "The application itself",
     })
 
     #: Controls inside a space-dependent section that are nonetheless the same

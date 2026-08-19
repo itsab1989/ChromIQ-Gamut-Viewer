@@ -2,6 +2,89 @@
 
 ## v2.39.0
 
+### 🧰 The loose buttons at the foot of the column are two named sections
+
+Nine controls sat at the bottom of the column with no heading over them —
+a picture saver, a page saver, a table saver, a glossary, two "where is it"
+pickers, an update check, a tickbox and a reset — while everything above them
+was in a named, foldable group. Reported plainly: *"those buttons at the
+bottom of the column stand out a bit. could they be placed in another
+collapsible section"*.
+
+They are two intents, so they are two sections, and the tooltips had already
+noticed: each save button calls itself one of "the three ways of taking
+something with you", and the three were not even next to each other.
+
+* **Take it away with you** — the picture, the web page and the table,
+  together at last, and open by default because saving is why anybody came.
+* **The application itself** — the glossary, ArgyllCMS, ffmpeg, the update
+  check and its tickbox, and the way back to standard settings. Folded by
+  default: eight controls and two paragraphs become one line.
+
+**Every button in both sections now has its own ⓘ**, after *"some of the save
+buttons lack a tooltip icon"* — the web page, the table, the glossary, the
+update check and the reset each had their full explanation only as a hover,
+where this window's rule is that a hover is one sentence and the paragraph
+lives behind the icon.
+
+The auto-update tickbox also moves to where it reads. It used to be added
+last of all, **after the ♥ links at the very foot of the column**, so the only
+tickbox in the column sat under the two link words with nothing around it.
+
+### ✍️ The application says who wrote it
+
+*"can you find a good spot at the bottom to add my name Sebastian Reiprich as
+the author of this gui"* — at the foot of the column, quiet and last:
+
+> ChromIQ Gamut Viewer 2.39.0 — designed and written by Sebastian Reiprich.
+> Built on Yet Another Color Gamut Visualizer by Qiu Jueqin (MIT).
+
+The second line was owed anyway: the upstream credit was written down in
+`version.py` and then shown to nobody.
+
+### 🔢 Finder said this was version 1.0.0, and it has for every release
+
+`CFBundleShortVersionString` was typed into the build spec by hand when the
+spec was written, and never touched again — so **macOS Get Info reported
+1.0.0** for an application that says 2.39.0 in its own title bar, its
+`--version` flag and its update check. Found by the question *"is the app
+version also shown in macos finder when asking for infos? and other operating
+systems?"*
+
+* **macOS** now takes the version, the name and a copyright line from
+  `version.py`, so Get Info cannot disagree with the window again.
+* **Windows** gets a version resource at all for the first time — the
+  right-click → Properties → Details tab was completely empty, so one
+  download could not be told from another without starting it.
+* **Linux** has no such panel; `--version` on the command line and the credit
+  line at the foot of the column are the answers there.
+
+`test_version_metadata.py` holds the spec to reading the number rather than
+repeating it, and the guard is about the shape of the spec rather than about
+today's number — a test asserting "the spec says 2.39.0" would need hand
+editing every release, which is the fault it is guarding against.
+
+### 🔎 Two audits were passing on half the panel, and one on its own filename
+
+* **`audit_panel.py` never looked inside a folded section.** Six of them start
+  folded, so most of the column — including the three sliders whose missing ⓘ
+  this audit was written for — had never been measured. It reported "Clean"
+  the whole time, and it was clean about the half it could see. Proved by
+  mutation: a button pinned narrower than its text reads **Clean with the
+  folds shut and 24 problems with them open**.
+* **A new `audit_without_the_tools.py`** drives the real window in all four
+  states of ArgyllCMS × ffmpeg — present and absent, crossed, because both
+  missing is a fresh machine and nobody ever sits in front of it. It took
+  three tries to make it able to fail: the probe file was called
+  `audit-needs-argyll.cxf` and every message quotes the file's name; the
+  message ends with argyllcms.com; and the window appends a paragraph naming
+  ArgyllCMS to every failed open. It now asks for the two things only the
+  real explanation has — that it was **not found**, and **where to get it**.
+
+And it found a real fault: the message telling somebody where to point at
+ArgyllCMS still sent them to *This window*, a section the button had just
+moved out of.
+
 ### 🔺 The cut triangles are gone
 
 Kite-shaped dark wedges on a shape the moment it was made see-through,

@@ -144,6 +144,15 @@ def audit_once(window, panel, label: str) -> list:
     for widget in panel.findChildren(QWidget):
         if not widget.isVisible():
             continue
+        # QT'S OWN TOOLTIP IS NOT PART OF THE PANEL. A hover tooltip is a
+        # top-level popup that Qt parents to the widget under the mouse, so
+        # findChildren hands it back with everything else — and it is drawn
+        # BESIDE the window on purpose, which this read as "876px past the
+        # panel's right edge". Eight identical complaints, none of them about
+        # the layout, and they only appeared at all because the pointer
+        # happened to be resting over the column while the audit ran.
+        if widget.isWindow():
+            continue
         name = widget.objectName() or widget.__class__.__name__
         cut = clipped(widget)
         if cut is not None:
@@ -423,7 +432,31 @@ def main() -> int:
     gamut_app.Notice.say = staticmethod(lambda *a, **k: None)
     pump(app, 3)
 
+    # EVERY SECTION OPEN FIRST, AND THIS WAS A HOLE IN THE AUDIT.
+    #
+    # Every question below is asked of VISIBLE widgets — a hidden one has no
+    # position and no width, so measuring it would report nonsense. But six
+    # sections of this column start FOLDED, so their contents were hidden, so
+    # this audit had never once looked at them: "How the patches are drawn",
+    # "What the colours are measured against", "How it looks", "Viewer and
+    # export styling", "This window", and now "The application itself" —
+    # between them most of the controls in the window, including the three
+    # sliders whose missing ⓘ this audit was written for.
+    #
+    # It reported "Clean" the whole time, and it was clean about the half it
+    # was looking at. Opening every fold first costs nothing and is what makes
+    # the count at the end mean what it says. The folds are opened in memory
+    # only — _refold does not write to the settings store — so nobody's own
+    # folded sections are disturbed by running this.
     panel = window.findChild(QScrollArea).widget()
+    opened = 0
+    for box in panel.findChildren(QGroupBox):
+        if hasattr(box, "_refold") and not getattr(box, "_fold_open", True):
+            box._fold_open = True
+            box._refold()
+            opened += 1
+    pump(app, 1.5)
+    print(f"  {opened} folded section(s) opened so they can be measured.")
     problems = list(audit_registry(window))
     problems += audit_help(window, panel)
     problems += audit_hover(panel)

@@ -115,8 +115,9 @@ def convert_to_ti3(path: Path) -> Path:
             f"printed and read this chart yourself, you very likely have it "
             f"already and it is simply somewhere unusual.\n\n"
             f"Get it from {DOWNLOAD_URL}, or, if it is already installed, "
-            f"point the viewer at it with Where ArgyllCMS is… under This "
-            f"window.\n\n.ti3 measurements, .gam files and ICC profiles "
+            f"point the viewer at it with Where ArgyllCMS is… under The "
+            f"application itself, at the foot of the left-hand column."
+            f"\n\n.ti3 measurements, .gam files and ICC profiles "
             f"need none of this and open as they are.")
     out_dir = Path(tempfile.mkdtemp(prefix="gamut-convert-"))
     stem = out_dir / path.stem
