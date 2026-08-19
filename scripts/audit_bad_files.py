@@ -40,6 +40,8 @@ import prefs                                                   # noqa: E402
 
 prefs.use_a_scratch_store()
 
+from PyQt6.QtCore import Qt                                   # noqa: E402
+
 ASK = """
 (function () {
   var d = document.getElementsByClassName('plotly-graph-div')[0];
@@ -234,7 +236,16 @@ def main() -> int:
         broken.write_text("not a profile at all\n", encoding="utf-8")
         panel.add(list(profiles[:2]) + [broken])
         pump(9)
-        rows = [panel._list.item(i).text() for i in range(panel._list.count())]
+        # THE WORDS ARE ON THE ROW, NOT IN ITS text(). Each row of a run is
+        # drawn by a widget of its own now, because every profile carries an
+        # × to take it out again -- so the item's text() is empty and what
+        # the row IS lives in its accessible text, which is also what a
+        # screen reader is given. This audit was the fourth reader of that
+        # list and the only one not updated when the × arrived; it had been
+        # reporting a missing mark on a row that says so perfectly well.
+        rows = [panel._list.item(i).data(Qt.ItemDataRole.AccessibleTextRole)
+                or panel._list.item(i).text()
+                for i in range(panel._list.count())]
         named = any("could not be read" in row and "printer-2022" in row
                     for row in rows)
         usable = [getattr(u, "name", u) for u in getattr(panel._run, "usable", [])]

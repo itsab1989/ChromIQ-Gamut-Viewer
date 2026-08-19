@@ -123,7 +123,10 @@ PALETTES = {
         # an empty tickbox. On a dark window that is an inset, darker than the
         # surface around it, which is what BG_DARK already was.
         field="#101010",
-        kept="rgb(105,112,126)"),
+        kept="rgb(105,112,126)",
+        # The dark window's dim is comfortably above the floor already; the
+        # key exists in both so the stylesheet needs no special case.
+        credit="#9a958f"),
     "light": dict(
         bg="#eeece8",            # LM_BG_WINDOW
         panel="#f7f4ef",         # LM_BG_SURFACE — group-box fill
@@ -131,6 +134,15 @@ PALETTES = {
         line_soft="#b0aba4",     # LM_BORDER_HI
         text="#22211f",          # LM_TEXT_MAIN
         dim="#7a7570",           # LM_TEXT_DIM
+        # THE CREDIT AT THE FOOT NEEDS ITS OWN, and audit_readable is what
+        # said so: at 10px on the window ground, LM_TEXT_DIM comes to 3.86:1
+        # against the 4.5:1 a small piece of body text has to reach. The
+        # panel fill is a shade lighter than the window, which is why the
+        # same key measures 4.16 elsewhere and fails here. This is the
+        # LIGHTEST step along the same grey that passes -- 4.53:1 on the
+        # window, 4.88 on a panel -- so the line stays as quiet as it was
+        # meant to be and can still be read.
+        credit="#6f6a65",
         faint="#a8a4a0",         # LM_TEXT_FAINT
         # NOT "faint" ON A LIGHT WINDOW, and this is why the key exists.
         # Measured on the group-box fill: faint comes to 2.26:1, which is
@@ -441,7 +453,7 @@ QPushButton#footLink:hover {{ color: {c["accent_hot"]};
    and the quietest: dimmer and smaller than the links above it, in the same
    dim key every explanatory paragraph uses, so it is there for anybody who
    looks for it and competes with nothing. */
-QLabel#footCredit {{ color: {c["dim"]}; font-size: 10px;
+QLabel#footCredit {{ color: {c["credit"]}; font-size: 10px;
                      padding: 6px 0 2px 0; }}
 QLabel#eyebrow {{ color: {c["dim"]}; font-size: 10px; font-weight: 600;
                   letter-spacing: 1.4px; }}
