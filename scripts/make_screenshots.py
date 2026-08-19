@@ -367,10 +367,35 @@ def ink_amounts_outside(w):
     patches come out beyond what that paper can reach.
     """
     ink_amounts(w)
-    w._chart_profile = PROFILE
-    w._fill_chart_profiles()
-    w._place_chart()
+    # CHOSEN THE WAY A READER CHOOSES IT, through the "Placed through" box,
+    # rather than by setting the attribute behind it and calling the placer.
+    # The window does more than place the patches when that box changes -- it
+    # decides again which controls can do anything, and the out-of-reach row
+    # is one of them. Reaching past the control left the row hidden and this
+    # scene failing its own assertion, which is the assertion doing its job:
+    # a switch the reader could not have found was never the thing under test.
+    w._load(PROFILE)
     pump(3.0)
+    w._fill_chart_profiles()
+    for i in range(w._chart_through.count()):
+        if w._chart_through.itemData(i) == str(PROFILE):
+            w._chart_through.setCurrentIndex(i)
+            break
+    w._on_chart_profile()
+    pump(3.0)
+    # AND THE SECTION IS OPENED, because "How the patches are drawn" starts
+    # folded and a folded section's contents are not visible at all -- which
+    # is exactly what this scene's assertion was reporting. Every condition
+    # the window checks was already true: the chart is drawable, two shapes
+    # are judging it, the patches are placed. Measured in that state, and the
+    # row still answered isVisible() = False, even after an explicit refresh,
+    # because its whole section was put away.
+    #
+    # A reader wanting to see this marking clicks that heading. So does this.
+    if not getattr(w._chart_look_box, "_fold_open", True):
+        w._chart_look_box._fold_open = True
+        w._chart_look_box._refold()
+    pump(1.5)
     assert w._chart_placed is not None, "the chart was not placed by the profile"
     assert w._chart_outside_row.isVisible(), (
         "the out-of-reach row is still hidden, so its switch is not something "
@@ -579,6 +604,14 @@ def split_into_families(w):
 
 
 #: file name → (how to set it up, how big the window is for it)
+#: Pictures that are the same as another ON PURPOSE, with the reason.
+#: Anything not named here that comes out identical to another picture is a
+#: fault -- two illustrations of two different things cannot be one image.
+SAME_ON_PURPOSE = {
+    # CIELAB is the space the window opens in.
+    "12-space-cielab.webp": "01-one-chart.webp",
+}
+
 SHOTS = {
     "01-one-chart.webp": (one_chart, (WIDE, TALL)),
     "02-vs-srgb.webp": (vs_srgb, (WIDE, TALL)),
@@ -632,11 +665,21 @@ def main() -> int:
 
     for name in wanted:
         setup, (wide, tall) = SHOTS[name]
-        # A FRESH WINDOW EACH TIME, and its settings cleared with it. These
-        # controls are remembered between runs on purpose, so a shot set up
-        # after another one would inherit whatever that one switched on -- and
-        # the picture would be right on a clean machine and wrong on the
-        # machine that makes them.
+        # A FRESH WINDOW EACH TIME, AND ITS SETTINGS CLEARED WITH IT -- which
+        # this said it did and did not do. The store is a throwaway one (see
+        # prefs.use_a_scratch_store above), but it lives for the whole run, so
+        # every choice a scene made was inherited by every scene after it.
+        #
+        # IT WENT UNNOTICED FOR AS LONG AS THE THEMES DIFFERED BY A PIXEL.
+        # Scene 09 switches to light and the appearance is remembered, so
+        # scenes 12 onwards were all photographed in light -- and 12's CIELAB
+        # shot came out BYTE-IDENTICAL to 09's, caught by this script's own
+        # rule that two pictures of two different things cannot be the same
+        # image. It only became identical once the two appearances started
+        # laying out identically, which is a fix; the leak underneath it was
+        # always there, and every space picture in the README has been in the
+        # wrong appearance.
+        prefs.store().clear()
         window = gamut_app.GamutApp([])
         window.resize(wide, tall)
         window.show()
@@ -675,6 +718,14 @@ def main() -> int:
         fingerprint = bytes(image.toImage().constBits().asarray(
             image.toImage().sizeInBytes()))
         clash = seen.get(fingerprint)
+        if clash and SAME_ON_PURPOSE.get(name) == clash:
+            # DECLARED, WITH THE REASON. CIELAB is the space the window opens
+            # in, so "the same paper drawn in CIELAB" IS the opening picture --
+            # the row in the README shows one shape on three sets of axes, and
+            # the first of the three is the default by definition. The rule
+            # keeps its teeth everywhere else; this pair is named, so a NEW
+            # collision still fails.
+            clash = None
         if clash:
             print(f"  [ FAIL ] {name}: identical to {clash}")
             failures.append(f"{name}: the same picture as {clash}")
