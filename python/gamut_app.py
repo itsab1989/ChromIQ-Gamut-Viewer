@@ -867,6 +867,69 @@ class WrappedLabel(QLabel):
         QTimer.singleShot(0, self._refit)
 
 
+class ElidingLabel(QLabel):
+    """One line that shrinks to fit, with the middle taken out.
+
+    WHY, AND IT WAS SEEN RATHER THAN REASONED. A profile added to a run is
+    listed by its file name, and a real file name is long: "Studio printer —
+    heavy matte cotton 310gsm — 2025-03-14 after the new inks" is 613 px of
+    text in a 312 px list. A QListWidget answers that by growing a HORIZONTAL
+    SCROLLBAR, so the column that holds the settings sprouted a little strip
+    with arrows at each end -- reported from the window as "it looked like
+    there were some side scrolling elements somewhere ... in the main window,
+    left column".
+
+    Nobody wants to scroll a settings column sideways to read a file name.
+
+    THE MIDDLE IS WHAT GOES, not the end, and that is the whole point for
+    these names: they begin with the device and the paper and END with the
+    date, which is how one is told from the next. Cutting the tail off would
+    leave a list of rows that all read the same.
+
+    The full name is still there for anybody who wants it -- on the row's
+    tooltip, and as the widget's accessible text, so a screen reader is given
+    the name and not the abbreviation.
+    """
+
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self._full = text
+        self.setToolTip(text)
+        self.setAccessibleName(text)
+        # NO MINIMUM OF ITS OWN. A QLabel asks for the width of its whole
+        # text, which is exactly what made the list scroll: the label
+        # insisted, the row obeyed, and the list grew a scrollbar to reach
+        # the rest of it.
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored,
+                           QSizePolicy.Policy.Preferred)
+        super().setText(text)
+
+    def setText(self, text: str) -> None:      # noqa: N802 (Qt naming)
+        self._full = text
+        self.setToolTip(text)
+        self.setAccessibleName(text)
+        super().setText(text)
+        self._shorten()
+
+    def full_text(self) -> str:
+        """The name as it really is, for anything that reads rather than looks."""
+        return self._full
+
+    def resizeEvent(self, event) -> None:      # noqa: N802 (Qt naming)
+        super().resizeEvent(event)
+        self._shorten()
+
+    def _shorten(self) -> None:
+        room = max(0, self.width())
+        if room <= 0:
+            return
+        shown = self.fontMetrics().elidedText(
+            self._full, Qt.TextElideMode.ElideMiddle, room)
+        if shown != super().text():
+            super().setText(shown)
+
+
 class NoScrollComboBox(QComboBox):
     """A combo box that ignores the wheel unless it has been clicked into.
 
@@ -3608,6 +3671,15 @@ class TimelineDialog(QDialog):
             outer.addLayout(row)
 
         self._list = QListWidget(self)
+        # AND IT NEVER SCROLLS SIDEWAYS. A settings column is read top to
+        # bottom; a strip with arrows at each end, to reach the rest of a
+        # file name, is not something anybody should be asked to operate.
+        # The rows elide instead -- see ElidingLabel -- and this is the
+        # backstop that makes that the ONLY answer: with the bar switched
+        # off, a row too wide is a fault that shows rather than a scrollbar
+        # that hides it.
+        self._list.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # AS TALL AS THE RUN, UP TO A POINT. A fixed 150 px is right in a
         # window with room to spare and wrong in a column: four profiles left
         # sixty pixels of empty list under them, in the one place where
@@ -3962,10 +4034,17 @@ class TimelineDialog(QDialog):
         # THE CAVEAT LIVES BESIDE THE GRAPH, not only behind the ⓘ. A trend
         # line is the kind of picture people trust more than they should, and
         # somebody who never opens the help will still read this.
-        self._caution = WrappedLabel(
-            "Remember: this is how far apart the PROFILES are, not how far "
-            "the device drifted. Chart fade and any change in how you built "
-            "them are inside these numbers too.", self)
+        # AND IT GOES AWAY WHEN THERE ARE NO NUMBERS TO BE CAUTIOUS ABOUT.
+        # With one profile open the panel correctly says "A run needs at
+        # least two profiles of the same device" -- and then warned, in the
+        # next breath, about what a set of numbers does not mean when no
+        # numbers have been shown. Found by driving a run of exactly one.
+        # BUILT EMPTY, AND FILLED WHEN THERE ARE NUMBERS. Built with its
+        # words it showed the moment the window opened -- before anything was
+        # open to be cautious about -- and then vanished on the first redraw,
+        # which is the disappearing-line fault all over again. Caught by
+        # audit_the_switch_changes_nothing on the run that introduced it.
+        self._caution = WrappedLabel("", self, hide_when_empty=True)
         self._caution.setObjectName("hint")
         said.addWidget(self._caution)
 
@@ -4554,7 +4633,7 @@ class TimelineDialog(QDialog):
             rl = QHBoxLayout(row)
             rl.setContentsMargins(4, 0, 2, 0)
             rl.setSpacing(6)
-            said = QLabel(text, row)
+            said = ElidingLabel(text, row)
             said.setObjectName("slot")
             rl.addWidget(said, 1)
             shut = QPushButton("×", row)
@@ -4668,7 +4747,9 @@ class TimelineDialog(QDialog):
         if pair is None or self._run is None:
             self._verdict.setText(
                 drift_series.verdict(self._run) if self._run else "")
+            # NOTHING TO COMPARE, NOTHING TO CAUTION ABOUT.
             self._caution.setText(
+                "" if not (self._run and self._run.since_first) else
                 "Remember: this is how far apart the PROFILES are, not how "
                 "far the device drifted. Chart fade and any change in how you "
                 "built them are inside these numbers too.")
