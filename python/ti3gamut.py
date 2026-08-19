@@ -2712,7 +2712,17 @@ _PAGE_BACKGROUND = "#111318"
 #: did when it was saved. The other three are the ones people actually ask a
 #: picture to be: nothing at all behind it, a neutral grey that flatters
 #: neither end, and plain black and white for printing or for a projector.
-PAGE_SCHEMES = ("dark", "light", "none", "slate", "ink")
+#: "follow" is not a palette of its own — it is dark or light, chosen by the
+#: reader's own system setting and changed again if they change it while the
+#: page is open. It exists because a saved page opens in the colouring it was
+#: saved in and can do nothing else, so a page written from a dark window
+#: arrives as a black rectangle in the middle of somebody's light document or
+#: web page. Reported from the published showcase: "the viewer frames stand
+#: out because they are black by default although we offer multiple
+#: colorschemes."
+PAGE_FOLLOWS_THE_READER = "follow"
+PAGE_SCHEMES = ("dark", "light", PAGE_FOLLOWS_THE_READER, "none", "slate",
+                "ink")
 
 #: How a shape may be drawn. Exactly the three the window offers, and the only
 #: three :func:`build_figure` knows what to do with. Kept here rather than
@@ -4722,7 +4732,17 @@ def _spin_script(ids, spin, mode: str = "dark",
     import json
 
     which = "light" if mode == "light" else "dark"
-    colours = SCENE_COLOURS[which]
+    # "follow you" is not a palette, so the STATIC colours written into the
+    # file have to be one of the two it chooses between. Light is the safer
+    # start: a page that is going to be dark repaints itself the instant the
+    # script runs, while the reverse -- black arriving first -- is the flash
+    # this whole option exists to stop.
+    #
+    # KNOWN AND NOT YET FIXED: a reader whose machine is dark gets one frame
+    # of light paper before the script repaints. Curing it means writing both
+    # colours into the stylesheet behind a prefers-color-scheme query, in the
+    # two page writers, and that is a separate piece of work.
+    colours = SCENE_COLOURS[which if which in SCENE_COLOURS else "light"]
     settings = dict(spin)
     settings["ids"] = list(ids)
     settings["ink"] = colours["text"]
@@ -6134,7 +6154,15 @@ window.cqSpinControls = function (settings) {
         + "walls of the box around it, the grid on them and the writing. The "
         + "shape you are reading is the same shape whichever you pick.\\n\\n"
         + "dark and light are the two the window itself uses, and the page "
-        + "opens on whichever it was saved in. none takes the background "
+        + "opens on whichever it was saved in. follow you takes its cue from "
+        + "the machine reading it: dark if that machine is set to dark, light "
+        + "if it is set to light, and it changes over by itself if you switch "
+        + "at dusk with the page still open — that is the one to save when "
+        + "you do not know where the page is going, because a dark page "
+        + "dropped into somebody's light document arrives as a black "
+        + "rectangle in the middle of it. It needs nothing installed and no "
+        + "internet; a browser too old to be asked is treated as light. "
+        + "none takes the background "
         + "away completely, so the shape floats on whatever the page is sitting "
         + "in — that is the one for dropping a picture into a document, a "
         + "slide or a forum post. slate is a neutral grey: a gamut on black "
@@ -6593,15 +6621,42 @@ window.cqSpinControls = function (settings) {
   var schemes = (settings.schemes && settings.schemes.length)
     ? settings.schemes.slice()
     : (palettes ? Object.keys(palettes) : [mode]);
-  function schemeName(which) { return which; }
+  function schemeName(which) {
+    return which === "follow" ? "follow you" : which;
+  }
   function nextScheme() {
     var at = schemes.indexOf(mode);
     return schemes[(at < 0 ? 0 : at + 1) % schemes.length];
   }
+  // WHICH PALETTE "follow you" MEANS AT THIS MOMENT. Not a palette of its
+  // own: it is dark or light, decided by the reader's own system setting, so
+  // a page dropped into somebody else's light document stops being a black
+  // rectangle in the middle of it. A browser too old to answer is treated as
+  // light, because a page that cannot ask is most likely being printed or
+  // read in a plain document.
+  function theirs() {
+    try {
+      if (window.matchMedia
+          && window.matchMedia("(prefers-color-scheme: dark)").matches)
+        return "dark";
+    } catch (e) {}
+    return "light";
+  }
+  // AND IT KEEPS FOLLOWING. Somebody who turns their machine dark at dusk
+  // with the page still open should watch it follow, not have to reload.
+  // Attached once; it does nothing unless the page is on "follow you".
+  try {
+    if (window.matchMedia) {
+      var watch = window.matchMedia("(prefers-color-scheme: dark)");
+      var react = function () { if (mode === "follow") applyMode(); };
+      if (watch.addEventListener) watch.addEventListener("change", react);
+      else if (watch.addListener) watch.addListener(react);
+    }
+  } catch (e) {}
 
   function applyMode() {
     if (!palettes) return;
-    var p = palettes[mode] || palettes.dark;
+    var p = palettes[mode === "follow" ? theirs() : mode] || palettes.dark;
     if (!p) return;
     ink = p.text; paper = p.page;
     paint();

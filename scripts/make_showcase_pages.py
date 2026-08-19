@@ -475,13 +475,32 @@ def main() -> int:
             def selectedFiles(self):
                 return [str(target)]
 
+        # AND THE OPTIONS WINDOW IN FRONT OF IT. The run's Save used to go
+        # straight to the file chooser; it now asks first — whether the viewer
+        # travels, whether the words go with it — which is the right behaviour
+        # and left this script waiting on a modal window nobody could answer.
+        # Found the hard way: a run of this builder was still on screen after
+        # three hours and eleven minutes, with that very window open.
+        #
+        # Subclassed rather than replaced, so the dialog is still built for
+        # real and choices() reports ITS defaults. A hand-written dict here
+        # would silently stop tracking the dialog the moment somebody adds an
+        # option to it, and these pages are the ones we publish.
+        real_dialog = gamut_app.WebPageDialog
+
+        class Options(real_dialog):
+            def exec(self):
+                return 1                  # as if Save were pressed, unchanged
+
         was = w._file_dialog
         w._file_dialog = lambda *a, **k: Files()
+        gamut_app.WebPageDialog = Options
         try:
             timeline._on_save()
             pump(1.0)
         finally:
             w._file_dialog = was
+            gamut_app.WebPageDialog = real_dialog
 
     p = page("07-five-batches-nothing-to-see.html")
     save_timeline(p)
@@ -672,4 +691,20 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # OUT, RATHER THAN WAITING FOR QT TO AGREE. Ending with SystemExit while a
+    # QApplication and a WebEngine page are still alive can leave the process
+    # sitting there for ever with its window on screen: one run of this script
+    # was found still up after THREE HOURS AND ELEVEN MINUTES, long after it
+    # had written its pages and printed its summary, and the person at the
+    # machine saw an app with a save dialog open. The audits in this folder
+    # already end this way for the same reason.
+    #
+    # The flush is not optional: os._exit skips it, and a summary that never
+    # reaches the terminal is how a green run comes to look like a silent one.
+    import os
+    import sys as _sys
+
+    _code = main()
+    _sys.stdout.flush()
+    _sys.stderr.flush()
+    os._exit(_code)
