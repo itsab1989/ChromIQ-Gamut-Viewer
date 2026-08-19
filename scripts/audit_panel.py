@@ -167,7 +167,16 @@ def audit_once(window, panel, label: str) -> list:
         # happened to be resting over the column while the audit ran.
         if widget.isWindow():
             continue
+        # NAME THE SECTION, NOT THE CLASS. "OVERFLOWS QGroupBox" sends
+        # somebody hunting through fifteen of them; the heading is what they
+        # can see on screen and search the source for.
         name = widget.objectName() or widget.__class__.__name__
+        if isinstance(widget, QGroupBox) and widget.title():
+            name = f"{name} {widget.title()!r}"
+        else:
+            inside = _ancestor(widget, QGroupBox)
+            if inside is not None and inside.title():
+                name = f"{name} (inside {inside.title()!r})"
         cut = clipped(widget)
         if cut is not None:
             text, needed, got = cut

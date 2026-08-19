@@ -945,6 +945,26 @@ class NoScrollComboBox(QComboBox):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # AND IT DOES NOT DEMAND THE WIDTH OF ITS LONGEST ITEM.
+        #
+        # A combo box asks, by default, for enough room to show the widest
+        # thing in its list. Several of these hold FILE NAMES -- "Placed
+        # through" lists the open profiles, "Compare with" lists the other
+        # file -- and a real name is long: measured with one open, the
+        # chooser demanded 613 px and dragged its whole group to 683 px in a
+        # 358 px column, so "A chart to be printed" was drawn 306 px past the
+        # column's right edge and simply cut off.
+        #
+        # Found by crossing a long file name against every place the window
+        # shows one, after a photograph caught the same thing in the run's
+        # list. One list fixed proves nothing about the other four.
+        #
+        # A combo already elides its own text when it is narrower than its
+        # contents, and the whole name is there the moment the list is
+        # opened, so nothing is lost by letting the layout decide the width.
+        self.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(12)
 
     def wheelEvent(self, event) -> None:        # noqa: N802 (Qt naming)
         if self.hasFocus():
@@ -10402,15 +10422,26 @@ class GamutApp(QMainWindow):
                 body = getattr(box, "body", None)
                 if body is None or hasattr(box, "_widest_body"):
                     continue
+                # AND ITS OWN FRAME IS MEASURED IN THE SAME BREATH, for the
+                # same reason: the difference between what a group asks for
+                # and what its contents ask for is only true while the
+                # contents are THERE. Asked of a folded group it is the width
+                # of a heading minus the width of nothing, which is not a
+                # frame at all -- and using that number left two sections 12
+                # and 14 px short of what they needed.
                 if body.isHidden():
                     body.setVisible(True)
                     if body.layout() is not None:
                         body.layout().invalidate()
                         body.layout().activate()
                     box._widest_body = body.minimumSizeHint().width()
+                    box._own_frame = (box.minimumSizeHint().width()
+                                      - box._widest_body)
                     body.setVisible(False)
                 else:
                     box._widest_body = body.minimumSizeHint().width()
+                    box._own_frame = (box.minimumSizeHint().width()
+                                      - box._widest_body)
         finally:
             column.setUpdatesEnabled(True)
 
@@ -10486,9 +10517,20 @@ class GamutApp(QMainWindow):
             # the column. A long TITLE is already paid for by the other half
             # of `wants` below, so charging it to all fifteen groups spent
             # 146 px on nothing.
-            body = getattr(box, "body", None)
-            frame = (box.minimumSizeHint().width()
-                     - body.minimumSizeHint().width()) if body is not None else edge
+            # ONLY WHERE THE QUESTION HAS AN ANSWER. A group's own frame is
+            # the difference between what it asks for and what its contents
+            # ask for -- true while it is OPEN, and meaningless once it is
+            # folded, because a folded group asks for the width of its
+            # HEADING and nothing else. Computed there it came out far too
+            # small, and two sections were left 12 and 14 px short of what
+            # they needed: caught by audit_panel with a long-named chart
+            # open, which is what changes the group that dominates.
+            #
+            # A folded group falls back to the shared allowance, which is the
+            # widest real frame in the column and cannot be too small.
+            # THE FRAME THIS GROUP ACTUALLY HAS, measured above with its
+            # contents shown, whether or not it happens to be folded now.
+            frame = getattr(box, "_own_frame", edge)
             inside = inside_of(box)
             # THE WIDER OF THE TWO ANSWERS, because each is right about a
             # different thing: a shut group knows its heading, an open one
