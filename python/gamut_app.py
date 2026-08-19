@@ -5828,6 +5828,25 @@ class TimelineDialog(QDialog):
                               config={"displayModeBar": False},
                               default_height="100%", div_id="timeline")
         first = self._run.usable[0].name if self._run.usable else "this device"
+        # AND THE TITLE SHRINKS WITH THE WINDOW, exactly as it does on every
+        # page ti3gamut writes. The caption is one line of SVG text that
+        # cannot wrap and is the same width whatever the screen, so on a phone
+        # the end of it falls off -- measured at 390px before this: 463px of
+        # title in a 390px page, the last dozen characters gone, and no
+        # sideways scroll to warn anybody because the SVG simply clips.
+        #
+        # THE SAME OMISSION THIS METHOD'S DOCSTRING ALREADY WARNS ABOUT: the
+        # caption script is written here by hand rather than by ti3gamut's
+        # writer, "which is how four published pages came to have no such
+        # script at all while the audit that watches for exactly this said
+        # Clean". _write_dark_html emits these two media queries; this writer
+        # did not, so a scene page kept every word on a phone and a graph page
+        # did not.
+        #
+        # Measured with them in place, on a page the application really saves:
+        # 13px -> 11px -> 10px, and all 68 characters of "How far <device> has
+        # moved -- the biggest difference at each step" inside a 390px page,
+        # 30px clear of the edge.
         return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -5851,25 +5870,6 @@ class TimelineDialog(QDialog):
  .families {{ list-style:none; margin:0 0 .9em; padding:0; }}
  .families li {{ margin:0 0 .25em; }}
  @media (max-width:520px) {{ .picture {{ height:60vh; }} }}
- /* AND THE TITLE SHRINKS WITH THE WINDOW, exactly as it does on every page
-    ti3gamut writes. It is one line of SVG text that cannot wrap and is the
-    same width whatever the screen, so on a phone the end of it falls off --
-    measured at 390px: 463px of title in a 390px page, the last dozen
-    characters gone, and no sideways scroll to warn anybody because the SVG
-    simply clips.
-
-    THE SAME OMISSION THIS METHOD'S OWN DOCSTRING WARNS ABOUT. It says the
-    caption script is "written here by hand rather than by ti3gamut's
-    writer -- which is how four published pages came to have no such script
-    at all while the audit that watches for exactly this said Clean". These
-    two rules were the next thing to go missing the same way: _write_dark_html
-    emits them (see ti3gamut, around the modebar media query) and this writer
-    did not, so a scene page kept every word on a phone and a graph page did
-    not.
-
-    Measured with the rules in place: 13px -> 11px -> 10px, all 68 characters
-    of "How far <device> has moved -- the biggest difference at each step"
-    inside a 390px page. */
  @media (max-width:820px) {{ .gtitle {{ font-size:11px !important; }} }}
  @media (max-width:480px) {{ .gtitle {{ font-size:10px !important; }} }}
 </style></head><body>
