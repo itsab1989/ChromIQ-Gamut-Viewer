@@ -22,6 +22,27 @@
              transition: border-color .15s; }
   figure a:hover { border-color: #ff4573; }
   figure img { width: 100%; height: auto; display: block; }
+  /* THE PICTURE OFFERS TO BECOME THE REAL THING. Every frame here shows the
+     viewer's own control strip -- Pause, speed, zoom, reset view, more... --
+     because it is a photograph OF the viewer. Reported from the page: "the
+     controls on the showcase page invited me to try right there - which is
+     misleading". They are honest now: press once and the photograph is
+     replaced, in place, by the page itself. */
+  figure a { position: relative; }
+  .live { position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+          display: flex; align-items: center; justify-content: center;
+          background: rgba(9,10,13,.34); border: 0; cursor: pointer;
+          font: 600 .95rem/1 inherit; color: #fff; letter-spacing: .01em;
+          opacity: 0; transition: opacity .15s; }
+  figure a:hover .live, .live:focus-visible { opacity: 1; }
+  .live span { background: #ff4573; padding: .7rem 1.15rem;
+               border-radius: 999px; box-shadow: 0 6px 22px rgba(0,0,0,.45); }
+  .live small { display: block; font-weight: 400; font-size: .78rem;
+                opacity: .85; margin-top: .2rem; }
+  figure iframe { width: 100%; height: 78vh; min-height: 520px; border: 0;
+                  display: block; background: #0f1115; }
+  .after { font-size: .85rem; color: #7c8390; margin-top: .45rem; }
+  .after a { display: inline; border: 0; line-height: inherit; }
   figcaption { font-size: .85rem; color: #7c8390; line-height: 1.5;
                margin-top: .45rem; }
   .open { font-size: .95rem; }
@@ -69,7 +90,7 @@ agree on.</p>
   <a href="pages/01-two-papers-both-ways.html"><img
      src="shots/01-two-papers-both-ways.png"
      alt="A matte paper drawn solid inside a gloss paper's wireframe cage,
-          with both containment percentages written under the shape"></a>
+          with both containment percentages written under the shape"><span class="live"><span>Press to take control<small>the real viewer, right here</small></span></span></a>
   <figcaption>The matte cotton solid, the baryta gloss as a cage around it.
   Saved turning; the strip underneath is yours.</figcaption>
 </figure>
@@ -90,7 +111,7 @@ another</h2>
   <a href="pages/02-against-adobe-rgb.html"><img
      src="shots/02-against-adobe-rgb.png"
      alt="The gloss paper drawn solid inside the Adobe RGB space's coloured
-          cage"></a>
+          cage"><span class="live"><span>Press to take control<small>the real viewer, right here</small></span></span></a>
   <figcaption>The gloss inside Adobe&nbsp;RGB&nbsp;(1998), drawn as a cage
   in its own colours.</figcaption>
 </figure>
@@ -109,7 +130,7 @@ sRGB</a>.</p>
   <a href="pages/04-a-chart-in-ink-amounts.html"><img
      src="shots/04-a-chart-in-ink-amounts.png"
      alt="A cloud of chart patches drawn inside the printer's RGB cube, the
-          out-of-reach ones picked out"></a>
+          out-of-reach ones picked out"><span class="live"><span>Press to take control<small>the real viewer, right here</small></span></span></a>
   <figcaption>The chart in the printer’s own ink amounts — every patch a
   point in the RGB cube, the survivors under a skin.</figcaption>
 </figure>
@@ -128,7 +149,7 @@ never what it is judged by.<sup><a href="#f3">[3]</a></sup></p>
   <a href="pages/06-a-year-on-the-shelf.html"><img
      src="shots/06-a-year-on-the-shelf.png"
      alt="The gloss paper's shape painted red where colour is out of reach
-          after a year, grey where it is not"></a>
+          after a year, grey where it is not"><span class="live"><span>Press to take control<small>the real viewer, right here</small></span></span></a>
   <figcaption>Red is out of reach a year later; grey is still within it.
   The loss sits where a fading brightener puts it — in the blues.</figcaption>
 </figure>
@@ -148,7 +169,7 @@ see”</h2>
   <a href="pages/07-five-batches-nothing-to-see.html"><img
      src="shots/07-five-batches-nothing-to-see.png"
      alt="A drift graph of five batch profiles staying inside the
-          nobody-can-see-this band"></a>
+          nobody-can-see-this band"><span class="live"><span>Press to take control<small>the real viewer, right here</small></span></span></a>
   <figcaption>Five batches over a year, every step inside the band nobody
   can see. The verdict is written on the page.</figcaption>
 </figure>
@@ -168,7 +189,7 @@ it</h2>
 <figure>
   <a href="pages/08-the-batch-where-something-happened.html"><img
      src="shots/08-the-batch-where-something-happened.png"
-     alt="A drift graph that is quiet for three steps and then jumps"></a>
+     alt="A drift graph that is quiet for three steps and then jumps"><span class="live"><span>Press to take control<small>the real viewer, right here</small></span></span></a>
   <figcaption>Quiet, quiet, a jump of ΔE 4.13, quiet. The page names the
   two deliveries it happened between.</figcaption>
 </figure>
@@ -189,7 +210,7 @@ anyway</h2>
   <a href="pages/09-two-shells-the-same-size.html"><img
      src="shots/09-two-shells-the-same-size.png"
      alt="Two nearly identical gamut shells with a cloud of colours between
-          them, coloured by how far each moved"></a>
+          them, coloured by how far each moved"><span class="live"><span>Press to take control<small>the real viewer, right here</small></span></span></a>
   <figcaption>The 2019 and 2024 profiles of one printer, volumes 0.43%
   apart, with the moved colours drawn between them.</figcaption>
 </figure>
@@ -210,7 +231,7 @@ size</a>.</p>
   <a href="pages/10-the-cut-at-54.html"><img
      src="shots/10-the-cut-at-54.png"
      alt="A flat cut through two papers at mid lightness, one clearly wider
-          than the other"></a>
+          than the other"><span class="live"><span>Press to take control<small>the real viewer, right here</small></span></span></a>
   <figcaption>The cut at L*&nbsp;54: the matte cotton (red) is the wider
   paper in the mid-tones.</figcaption>
 </figure>
@@ -218,7 +239,7 @@ size</a>.</p>
   <a href="pages/11-the-cut-at-20.html"><img
      src="shots/11-the-cut-at-20.png"
      alt="A flat cut through the same two papers deep in the shadows, where
-          the other paper is the larger one"></a>
+          the other paper is the larger one"><span class="live"><span>Press to take control<small>the real viewer, right here</small></span></span></a>
   <figcaption>The same two papers at L*&nbsp;20: down in the shadows the
   rag is the one still standing.</figcaption>
 </figure>
@@ -355,3 +376,38 @@ on <a href="../index.html">the main page</a>.</p>
 </footer>
 
 </main>
+
+<script>
+// A PHOTOGRAPH THAT BECOMES THE PAGE. Every frame on this page shows the
+// viewer's own control strip, because it is a photograph OF the viewer --
+// which invited a click it could not honour. A plain click now swaps the
+// still for the real saved page, in place, so those controls are the ones
+// you can use. Anything but a plain click -- a new tab, a middle click, a
+// modifier -- is left alone, so the link still behaves like a link.
+//
+// Loaded only when asked, deliberately: the eight pages are about six
+// megabytes each, and embedding them all would make a page nobody on a phone
+// would wait for.
+(function () {
+  document.querySelectorAll('figure a[href$=".html"]').forEach(function (link) {
+    link.addEventListener('click', function (ev) {
+      if (ev.defaultPrevented || ev.button !== 0
+          || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+      ev.preventDefault();
+      var href = link.getAttribute('href');
+      var shot = link.querySelector('img');
+      var frame = document.createElement('iframe');
+      frame.src = href;
+      frame.setAttribute('title', shot ? shot.alt : 'the viewer');
+      var after = document.createElement('p');
+      after.className = 'after';
+      after.innerHTML = 'This one is live — turn it, zoom it, click a name in '
+        + 'the key to hide it. <a href="' + href + '" target="_blank" '
+        + 'rel="noopener">Open it in its own tab</a> for the whole width.';
+      var box = link.parentNode;
+      link.replaceWith(frame);
+      box.insertBefore(after, frame.nextSibling);
+    });
+  });
+})();
+</script>

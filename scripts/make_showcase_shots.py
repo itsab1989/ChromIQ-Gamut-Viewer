@@ -89,7 +89,45 @@ def main() -> int:
                 continue
             page.wait_for_timeout(1500)
             target = SHOTS / (source.stem + ".png")
-            page.screenshot(path=str(target))
+            # CUT WHERE THE PAGE HAS A JOIN, not at whatever pixel the window
+            # happens to end at. A plain viewport screenshot is 720 px of
+            # whatever is there, and what was there was the middle of a
+            # sentence: reported from the live site, "the first example has
+            # the text in its frame cut off at the bottom". A poster with half
+            # a sentence in it looks like a broken page rather than a picture
+            # of a working one.
+            #
+            # So the shot ends just under the control strip -- picture, key,
+            # strip, which is a whole thing to look at and the part the card
+            # is advertising. The prose below it belongs to the page, and the
+            # page is one press away.
+            # Asked of the page itself, so it works for a 3D scene, a graph
+            # and a flat cut alike: which elements does the bottom edge cut
+            # THROUGH, and where does the highest of them begin? Cut there.
+            cut = page.evaluate("""(function () {
+              var edge = 720, highest = edge;
+              var all = document.body.querySelectorAll('*');
+              for (var i = 0; i < all.length; i++) {
+                var el = all[i];
+                if (!el.textContent || !el.textContent.trim()) continue;
+                if (el.children.length) continue;      // leaves carry the words
+                var b = el.getBoundingClientRect();
+                if (b.height <= 0 || b.width <= 0) continue;
+                if (b.top < edge && b.bottom > edge && b.top < highest)
+                  highest = b.top;
+              }
+              return Math.floor(highest === edge ? edge : highest - 6);
+            })()""")
+            if cut and 240 < cut <= 720:
+                page.screenshot(path=str(target),
+                                clip={"x": 0, "y": 0, "width": 860,
+                                      "height": cut})
+            else:
+                # No strip found, or it sits outside the window: fall back to
+                # the plain shot rather than guess, and say so.
+                print(f"  {source.stem}: no control strip to cut under "
+                      f"(measured {cut}) — full window")
+                page.screenshot(path=str(target))
             print(f"  {target.name:45s} "
                   f"{target.stat().st_size / 1024:6.0f} kB")
         browser.close()
