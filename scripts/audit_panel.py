@@ -50,7 +50,9 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shutil
 import sys
+import tempfile
 import time
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -559,10 +561,57 @@ def main() -> int:
     problems += audit_hover(panel)
 
     # A chart open, because half the panel only exists once there is one.
+    # A CHART OPEN, AND ITS NAME AS LONG AS A REAL ONE.
+    #
+    # Half the panel only exists once a chart is open, and the name of what
+    # is open is shown in three places -- the slot that names it, the chooser
+    # that lists the profiles it can be placed through, and the readout under
+    # them. Every one of those was tested for years with "Glossy-paper", and
+    # a real name is not like that: "Verification chart 480 patches — built
+    # for heavy matte cotton at 310gsm — March 2025" is what somebody
+    # actually types.
+    #
+    # Measured with one: the "Placed through" chooser demanded 613 px for its
+    # longest item and dragged its whole group 306 px past the column's right
+    # edge. The run's list had already been caught scrolling sideways for the
+    # same reason, from a photograph -- and the sweep written after that
+    # found nothing, because every file IT opened had a short name.
+    #
+    # So the audit copies the chart under a long name and opens that. It
+    # costs one file copy and it is the difference between testing the panel
+    # and testing the panel's easy case.
     chart = os.environ.get("AUDIT_CHART", "")
+    if not chart:
+        built_in = HERE.parent / "demo" / "verification-chart-480.ti1"
+        if built_in.is_file():
+            chart = built_in
     if chart and pathlib.Path(chart).is_file():
-        window._open_chart_file(pathlib.Path(chart))
-        pump(app, 2)
+        source = pathlib.Path(chart)
+        long_name = (pathlib.Path(tempfile.mkdtemp(prefix="audit-panel-"))
+                     / ("Verification chart 480 patches — built for heavy "
+                        "matte cotton at 310gsm — March 2025" + source.suffix))
+        shutil.copyfile(source, long_name)
+        window._open_chart_file(long_name)
+        pump(app, 2.5)
+
+    # AND A PROFILE WITH A LONG NAME, WHICH IS THE OTHER HALF OF IT.
+    #
+    # The chart's name is drawn by a label, which wraps. The PROFILE's name
+    # goes into two combo boxes -- "Placed through" and "Compare with" -- and
+    # a combo asks for the width of its longest ITEM. That is the widget that
+    # dragged a group 306 px off the side of the column, so an audit that
+    # opens a long-named chart and a short-named profile still misses it.
+    #
+    # Proved by mutation rather than assumed: with the combo fix taken out
+    # and only the chart renamed, this audit reported "Clean".
+    profile = HERE.parent / "demo" / "Glossy-paper.icc"
+    if profile.is_file():
+        long_profile = (pathlib.Path(tempfile.mkdtemp(prefix="audit-panel-"))
+                        / ("Studio printer — heavy matte cotton 310gsm — "
+                           "2025-03-14 after the new inks" + profile.suffix))
+        shutil.copyfile(profile, long_profile)
+        window._load(long_profile)
+        pump(app, 6)
 
     out = HERE.parent.parent / "audit-shots"
     if shots:
