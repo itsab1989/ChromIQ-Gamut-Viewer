@@ -14895,7 +14895,7 @@ class GamutApp(QMainWindow):
         # two different cuts, which is the one thing this view must never be.
         cuts = None
         if controls and (offer is None or offer.get("cut", True)):
-            cuts = slice_levels(gamuts[:2])
+            cuts = slice_levels(gamuts[:2], include=lightness)
             if cuts is not None:
                 cuts["title"] = ""
                 cuts["at"] = min(

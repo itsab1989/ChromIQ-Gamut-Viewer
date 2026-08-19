@@ -2141,3 +2141,59 @@ def test_a_page_arrives_with_the_far_wall_drawn_first():
     # AND THE ENGINE SAYS SO, which is what lets the audit ask.
     assert "wall: wall" in js, (
         "how() no longer reports the default, so nothing can check it")
+
+
+# --- the height the sender was looking at ---------------------------------
+#
+# A saved cross-section is drawn at the sender's exact lightness and titled
+# with it, while the slider under it can only reach the levels the page
+# carries -- and those sit on a 2.0 grid. Saved at L* 51 the picture said 51
+# and the strip said 50: the page disagreed with itself, and nothing in the
+# suite would have noticed. Found by an agent driving the real window, then
+# confirmed here from the grid itself: 45 levels from 10 to 98, and 51 not
+# among them.
+
+def _one_gamut():
+    """A shape to cut, built without ArgyllCMS so this runs anywhere."""
+    import numpy as np
+    from gamutview import Gamut
+    from scipy.spatial import ConvexHull
+    rng = np.random.default_rng(7)
+    pts = rng.normal(size=(400, 3)) * (26.0, 30.0, 30.0) + (52.0, 0.0, 0.0)
+    hull = ConvexHull(pts)
+    kept = pts[hull.vertices]
+    # The same shape every run: a hull of 400 seeded points, tall enough in
+    # lightness to be cut at several heights. Built the way test_chart.py
+    # builds one rather than a second way of my own.
+    return Gamut(vertices=kept, faces=ConvexHull(kept).simplices,
+                 colors=np.zeros((len(kept), 3)), volume=1.0,
+                 space="lab", mode="hull")
+
+
+def test_a_cut_saved_at_an_odd_lightness_can_be_slid_back_to():
+    """The level the page opens at is the one its title claims."""
+    gamuts = [("paper", _one_gamut())]
+    cuts = ti3gamut.slice_levels(gamuts, include=51.0)
+    assert cuts is not None
+    levels = [round(float(v), 3) for v in cuts["levels"]]
+    assert 51.0 in levels, (
+        "a page saved at L* 51 must be able to open at L* 51; the grid is "
+        f"every {ti3gamut._CUT_STEP} and would otherwise stop at 50 or 52")
+    nearest = min(range(len(levels)), key=lambda i: abs(levels[i] - 51.0))
+    assert levels[nearest] == 51.0, "the strip would open a step off its title"
+
+
+def test_the_grid_is_not_padded_when_it_already_has_the_height():
+    """Nothing extra is carried when the sender was on the grid anyway."""
+    gamuts = [("paper", _one_gamut())]
+    plain = ti3gamut.slice_levels(gamuts)
+    onit = ti3gamut.slice_levels(gamuts, include=plain["levels"][3])
+    assert len(onit["levels"]) == len(plain["levels"])
+
+
+def test_a_height_outside_the_shape_is_not_invented():
+    """A lightness no part of the shape reaches adds no level."""
+    gamuts = [("paper", _one_gamut())]
+    plain = ti3gamut.slice_levels(gamuts)
+    far = ti3gamut.slice_levels(gamuts, include=max(plain["levels"]) + 40)
+    assert len(far["levels"]) == len(plain["levels"])

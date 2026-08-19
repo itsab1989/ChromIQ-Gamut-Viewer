@@ -7969,7 +7969,8 @@ _CUT_STEP = 2.0
 _CUT_POINTS = 180
 
 
-def slice_levels(gamuts, step: float = _CUT_STEP, points: int = _CUT_POINTS):
+def slice_levels(gamuts, step: float = _CUT_STEP, points: int = _CUT_POINTS,
+                 include: float = None):
     """Every cross-section a reader can slide to, worked out once at save time.
 
     A cross-section in the window has a slider under it, and the saved page
@@ -7999,6 +8000,21 @@ def slice_levels(gamuts, step: float = _CUT_STEP, points: int = _CUT_POINTS):
     while first <= hi:
         levels.append(round(first, 3))
         first += step
+    # AND THE HEIGHT THE SENDER WAS ACTUALLY LOOKING AT, if the grid missed
+    # it. The grid is every second lightness, so a reader could never slide
+    # to an odd one -- and the page is drawn at the sender's EXACT height and
+    # titled with it. Saved at L* 51 the picture said 51 and the strip under
+    # it said 50, because 51 was not one of the 45 levels the page carried.
+    #
+    # Measured on the demo profile: 45 levels from 10 to 98, and 51 simply
+    # absent. Adding the one the sender chose costs a single ring set -- about
+    # 1.6 kB against the 73 kB the whole grid takes -- and makes the page open
+    # where the window was, which is the whole promise of saving a view.
+    if include is not None:
+        wanted = round(float(include), 3)
+        if lo <= wanted <= hi and not any(abs(v - wanted) < 1e-6 for v in levels):
+            levels.append(wanted)
+            levels.sort()
     if len(levels) < 2:
         return None
 
@@ -8180,7 +8196,11 @@ def write_slice_html(gamuts, out: Path, lightness: float, title: str,
     """
     cuts = None
     if controls and (offer is None or offer.get("cut", True)):
-        cuts = slice_levels(gamuts)
+        # THE HEIGHT THIS PAGE IS DRAWN AT IS ONE THE READER CAN GET BACK TO.
+        # Without `include` the grid is every second lightness, so a page
+        # saved at an odd one opened with its strip a step away from its own
+        # title. See slice_levels.
+        cuts = slice_levels(gamuts, include=lightness)
         if cuts is not None:
             cuts["title"] = title
             # WHICH OF THEM THE PAGE OPENED AT, so the slider starts under
