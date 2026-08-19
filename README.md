@@ -1345,6 +1345,7 @@ python scripts/audit_showcase_page.py     # every showcase frame explains itself
 python scripts/audit_follows_the_reader.py  # a page set to "follow you" wears the reader's own colours
 python scripts/audit_the_controls_can_be_shut.py  # whatever you open in a page, you can close again
 python scripts/audit_the_readme_is_true.py  # every link, anchor and picture in the documentation
+python scripts/audit_two_views.py         # a page holding both views offers each what it can honour
 python scripts/check_layout.py            # two engines, ten window sizes
 python scripts/check_momentum.py          # does the shape carry on turning when the reader lets go?
 python scripts/check_binary_arch.py       # a built binary is really the architecture we claimed
