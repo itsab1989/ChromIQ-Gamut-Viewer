@@ -299,8 +299,7 @@ Tick **Show them in two rooms, side by side** and each gets its own scene:
 <img src="docs/screenshots/14-side-by-side.webp" width="880" alt="Two measured papers drawn in two separate 3D scenes side by side">
 
 Turn one and the other turns with it, so you are always comparing the same
-face of both — that is what makes two rooms worth having. Untick **Keep both
-rooms pointing the same way** to move each on its own.
+face of both — that is what makes two rooms worth having. Untick **Both rooms point the same way** to move each on its own.
 
 ### Tint it into the accent
 
@@ -599,7 +598,7 @@ with ArgyllCMS" means exactly or approximately.
 ### Following one device through time
 
 Two profiles of one scanner, made years apart, and the question "has it
-drifted?" — that is what **Follow one device over time…** is for.
+drifted?" — that is what **One device over time** is for.
 
 **A gamut comparison cannot answer it, and the reason is worth stating.** Two
 profiles can enclose almost exactly the same shape and send the colours *inside*
@@ -648,7 +647,7 @@ moved — printer-2019 → printer-2021 (ΔE 1.07)* — and the whole run first 
 last. Choose one and the graph is replaced by the heat-map for that pair: every
 colour drawn where the earlier profile puts it, painted by how far the later one
 sends it instead. The picture names the pair it is showing, so a screenshot of
-it is still about something. **Save this as a web page…** writes whichever of
+it is still about something. **Save this run as a web page…** writes whichever of
 the two you are looking at, rather than always the graph.
 
 <img src="docs/screenshots/25-one-step-of-a-run.webp" width="620" alt="The same window with one step chosen, drawn as a cloud of colour">
@@ -1162,7 +1161,7 @@ Nothing, unless you ask.
   with every row saying what it is and what the units are.
 
 Your settings are remembered automatically and survive a restart — including
-which explanations you left open. **Start again with the standard settings**
+which explanations you left open. **Start again with standard settings**
 puts every one of them back, and never touches a file of yours.
 
 ---

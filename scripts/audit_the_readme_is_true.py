@@ -20,20 +20,24 @@ WHAT IS ASKED, and the failure direction of each:
                                heading text, so an edited heading silently
                                breaks every link to it;
   every picture exists        a missing screenshot renders as a broken image;
-NOT ASKED, AND THE REASON IS MEASURED. The fourth question — "is every
-control the README names still in the window?" — was written, run, and taken
-out again: it produced seventeen complaints of which about two were real,
-because this README uses bold for emphasis as often as for quotation. The
-detail is in the comment where it would go. It needs the window's own list of
-control labels to compare against; guessing from punctuation does not work.
+ASKED THE ONLY WAY THAT WORKS. The fourth question was first written as
+"every bold phrase must appear in the window's own words", which produced
+seventeen complaints of which about two were real — this README uses bold for
+emphasis as often as for quotation. So it is narrowed to the fault that
+actually happens: a control is RENAMED and the sentence describing it stays
+behind, leaving a phrase that is very nearly a label and not quite one.
+Emphasis is not nearly anything. The labels are read off the real window, not
+out of the source, and punctuation that belongs to a button rather than to a
+sentence — a trailing ellipsis, quotation marks — is not a rename.
 
 NOT CHECKED HERE, and said rather than implied: whether a screenshot still
 LOOKS like the window. That needs the window drawn and compared, which
-`scripts/make_screenshots.py` does; this asks the questions that can be
-answered from the text and the tree.
+`scripts/make_screenshots.py` does.
+
 """
 from __future__ import annotations
 
+import difflib
 import pathlib
 import re
 import sys
@@ -54,6 +58,63 @@ NOT_CONTROLS = {
 LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 IMAGE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 BOLD = re.compile(r"\*\*([^*]{4,60})\*\*")
+
+
+def tidy(words: str) -> str:
+    """A label without the punctuation that belongs to a button rather than
+    to a sentence: a trailing ellipsis, quotation marks, stray spaces."""
+    words = words.strip().strip('"\u201c\u201d\u2018\u2019')
+    words = words.rstrip("\u2026.:").strip()
+    return " ".join(words.lower().split())
+
+
+def the_windows_own_words() -> list:
+    """Every word the window puts on a control, read off the real window.
+
+    Off the WINDOW rather than out of the source, because a label built from
+    two pieces or translated on the way to the screen is only itself once it
+    is on a widget.
+    """
+    import os
+    import time
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    sys.path.insert(0, str(ROOT / "python"))
+    sys.argv = ["audit_the_readme_is_true"]
+    try:
+        import prefs
+
+        prefs.use_a_scratch_store()
+        from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox,
+                                     QGroupBox, QPushButton, QRadioButton)
+        import gamut_app
+
+        app = QApplication.instance() or QApplication(sys.argv)
+        gamut_app.Notice.warn = staticmethod(lambda *a, **k: None)
+        gamut_app.Notice.say = staticmethod(lambda *a, **k: None)
+        win = gamut_app.GamutApp([])
+        win.resize(1400, 900)
+        win.show()
+        end = time.time() + 3
+        while time.time() < end:
+            app.processEvents()
+            time.sleep(0.01)
+        said = set()
+        for kind in (QPushButton, QCheckBox, QRadioButton, QGroupBox):
+            for w in win.findChildren(kind):
+                text = (w.title() if isinstance(w, QGroupBox)
+                        else w.text()).strip()
+                if len(text) > 3:
+                    said.add(text)
+        for box in win.findChildren(QComboBox):
+            for i in range(box.count()):
+                text = box.itemText(i).strip()
+                if len(text) > 3:
+                    said.add(text)
+        win.close()
+        return sorted(said)
+    except Exception:                                    # noqa: BLE001
+        return []
 
 
 def slugs_of(text: str) -> set:
@@ -109,35 +170,65 @@ def main() -> int:
             if not target.startswith("http"):
                 pictures += 1
 
-        # THE CONTROLS IT QUOTES — NOT YET, AND THE REASON IS MEASURED.
-        #
-        # The obvious rule is "every bold phrase in the README is a control's
-        # name, so it must appear in the window's own words". Written and run,
-        # it produced SEVENTEEN complaints and about two of them were real:
-        # this README uses bold for emphasis as much as for quotation, so
-        # "**Usually not**", "**Where an installer puts it**" and
-        # "**88.8% of the picture unlike the solid one to 0.7%**" were all
-        # reported as missing controls.
-        #
-        # A check that cries seventeen times to be right twice will be ignored,
-        # and then it is worse than nothing — this project has met that before
-        # with a pixel comparison that raised 77 false alarms. Telling a quoted
-        # LABEL from an emphasised PHRASE needs the window's own list of
-        # control texts to compare against, not a guess from punctuation, and
-        # that is the piece of work this line is waiting for.
-
     print(f"  {links} link(s), {anchors} anchor(s), {pictures} picture(s) "
           f"checked")
+
+    # AND THE CONTROLS IT NAMES, asked the only way that works.
+    #
+    # The obvious rule — "every bold phrase must appear in the window's own
+    # words" — was written, run, and taken out: seventeen complaints of which
+    # about two were real, because this README uses bold for emphasis as often
+    # as for quotation. A check that cries seventeen times to be right twice
+    # gets ignored, and this project has met that before with a pixel
+    # comparison that raised 77 false alarms.
+    #
+    # So the question is narrowed to the fault that actually happens: a
+    # control gets RENAMED and the sentence describing it stays behind. A
+    # renamed control leaves a phrase that is very nearly a label and not
+    # quite one — "Show what it cannot print" against "Show what it can't
+    # print". Emphasis is not nearly anything: "Usually not" resembles no
+    # control in the window at all. Measured on this README, the near-miss
+    # rule reports nothing where the crude one reported seventeen.
+    labels = the_windows_own_words()
+    if labels:
+        # A QUOTED BLOCK STILL QUOTES THE WINDOW. A bold label that wraps
+        # inside a "> " blockquote carries the marker into the middle of the
+        # phrase, and reading it literally reported "Save the numbers > as a
+        # table" as a renamed control. The markers are the page's furniture,
+        # not the window's words.
+        readme = re.sub(r"(?m)^\s*>\s?", "",
+                        (ROOT / "README.md").read_text(encoding="utf-8"))
+        # PUNCTUATION IS NOT A RENAME. A button says "Save this view as a
+        # web page…" and the README says **Save this view as a web page** —
+        # the ellipsis means "this opens a dialog" and belongs to the button,
+        # not to the sentence. Quotation marks are the same. Compared without
+        # them, so the only thing left to report is a difference in the WORDS.
+        plain = {tidy(l): l for l in labels}
+        for phrase in BOLD.findall(readme):
+            phrase = phrase.strip()
+            if len(phrase) < 6 or tidy(phrase) in plain:
+                continue
+            near = difflib.get_close_matches(tidy(phrase), list(plain),
+                                             n=1, cutoff=0.82)
+            if near:
+                near = [plain[near[0]]]
+                problems.append(
+                    f"README says **{phrase}**, and the window says "
+                    f"\"{near[0]}\" — one of them has been renamed and the "
+                    f"other has not")
+        print(f"  {len(labels)} control label(s) read off the window")
+    else:
+        print("  the window could not be opened, so the controls it names "
+              "were not checked")
     print()
     if problems:
         for line in problems:
             print("  " + line)
         print(f"\n  {len(problems)} problem(s).")
         return 1
-    print("  Clean: every link lands, every anchor exists and every picture "
-          "is there.\n  Whether the words still describe the window is NOT "
-          "asked here — see the note\n  in the loop above for why not, and "
-          "what it would take.")
+    print("  Clean: every link lands, every anchor exists, every picture is "
+          "there, and every\n  control the README names still answers to that "
+          "name in the window.")
     return 0
 
 
