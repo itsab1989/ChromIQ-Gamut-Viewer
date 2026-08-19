@@ -94,6 +94,9 @@ patches* in the key.
 **How:** **A skin over the patches** → *Solid*, *The colours of the patches*,
 70% solid. **How big the dots are** at its lowest and 25% solid.
 
+**Turn it yourself:** [the same view as a web page](../pages/05b-the-charts-own-reach.html)
+— one file, no installation, and every control above the picture is live.
+
 ---
 
 ## The same chart and the same paper, in CIELAB.

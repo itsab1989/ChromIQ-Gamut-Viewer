@@ -36,4 +36,4 @@ Nothing changed between this loop and the one above except which measurement is 
 
 [← Previous](page-5.md) · [The README](../../README.md) · [Next →](page-7.md)
 
-*[1](../MOTION.md) · [2](page-2.md) · [3](page-3.md) · [4](page-4.md) · [5](page-5.md) · **6***
+*[1](../MOTION.md) · [2](page-2.md) · [3](page-3.md) · [4](page-4.md) · [5](page-5.md) · **6** · [7](page-7.md)*

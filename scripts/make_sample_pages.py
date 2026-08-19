@@ -506,6 +506,40 @@ def main() -> int:
     check("05", "and there are enough of them to be the point of the picture",
           outside > 50, f"{inside} within reach, {outside} beyond it")
 
+    # ------------------------------------------------------------- 05b
+    #
+    # THE ONE THE MOVING PICTURES SHOW AND THE PAGES DID NOT. Page 7 of the
+    # motion set has this as a loop — "The chart's own reach, as a solid" —
+    # and it was asked for as something a reader can turn for themselves:
+    # "i want that example as a web view export as well because it looks
+    # beautiful". The settings are the ones that page's own caption records,
+    # so the two cannot drift apart: a solid skin in the colours of the
+    # patches at 70%, with the dots at their smallest and a quarter solid.
+    print("\n05b — the chart's own reach, as a solid")
+    w._chart_skin.setCurrentIndex(w._chart_skin.findData("solid"))
+    pump(1.2)
+    w._chart_skin_colour.setCurrentIndex(
+        w._chart_skin_colour.findData("patches"))
+    pump(1.2)
+    w._chart_skin_opacity.setValue(70)
+    w._chart_dot.setValue(w._chart_dot.minimum())
+    w._chart_dot_opacity.setValue(25)
+    pump(2.5)
+    p = page("05b-the-charts-own-reach.html")
+    save_to(p)
+    made.append(("05b", p))
+    body = p.read_text(encoding="utf-8")
+    check("05b", "the skin is there in the colours of the patches",
+          "a skin over the patches" in body)
+    check("05b", "and it is NOT called a gamut, which it is not",
+          "How much colour it holds" not in body)
+    # put the chart's look back for the pages that follow
+    w._chart_skin.setCurrentIndex(w._chart_skin.findData("mesh"))
+    w._chart_skin_opacity.setValue(30)
+    w._chart_dot.setValue(60)
+    w._chart_dot_opacity.setValue(100)
+    pump(2)
+
     # ---------------------------------------------------------------- 06
     print("\n06 — the same chart and paper, in CIELAB")
     w._space.setCurrentIndex(w._space.findData("lab"))
@@ -884,13 +918,32 @@ def main() -> int:
             def selectedFiles(self):
                 return [str(target)]
 
-        was = w._file_dialog
+        # AND THE OPTIONS WINDOW IN FRONT OF IT. The run's Save asks what the
+        # page should carry before it asks where to put it, and this route
+        # stood in for the file chooser only — so the build stopped on a modal
+        # window nobody could answer and sat there with the application on
+        # screen. The same fault was found and fixed in the showcase builder;
+        # this one was not carried across, and it cost a ten-minute run and a
+        # window left in somebody's way.
+        #
+        # Subclassed, so the real dialog is still built and its own defaults
+        # are still used. A hand-written dict here stops tracking the dialog
+        # the moment an option is added to it.
+        real_dialog = gamut_app.WebPageDialog
+
+        class Options(real_dialog):
+            def exec(self):
+                return 1                  # as if Save were pressed, unchanged
+
+        was, was_options = w._file_dialog, gamut_app.WebPageDialog
         w._file_dialog = lambda *a, **k: Files()
+        gamut_app.WebPageDialog = Options
         try:
             timeline._on_save()
             pump(1.0)
         finally:
             w._file_dialog = was
+            gamut_app.WebPageDialog = was_options
 
     p = page("15-one-printer-over-five-years.html")
     save_timeline(p)

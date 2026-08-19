@@ -173,6 +173,35 @@ def main() -> int:
     print(f"  {links} link(s), {anchors} anchor(s), {pictures} picture(s) "
           f"checked")
 
+    # A SET OF PAGES MUST OFFER ALL OF ITSELF, which is a MISSING link and
+    # therefore invisible to everything above: those rules follow the links
+    # that are written and can say nothing about one that is not.
+    #
+    # Reported from the site: "on page 6 there is no direct lnk to page 7".
+    # Measured: page 6's row of numbers stopped at 6, so the only way onward
+    # was the "Next →" line — which is why it was "in some instances". Every
+    # other page in the set offered all seven.
+    motion = sorted((ROOT / "docs" / "motion").glob("page-*.md"))
+    if motion:
+        pages = ["MOTION.md"] + [m.name for m in motion]
+        for doc in [ROOT / "docs" / "MOTION.md"] + motion:
+            text = doc.read_text(encoding="utf-8", errors="replace")
+            row = [l for l in text.splitlines()
+                   if l.count("·") >= 4 and ("](page-" in l or "](motion/" in l)]
+            if not row:
+                problems.append(f"{doc.name}: no row of pages to move by")
+                continue
+            offered = row[0]
+            for n in range(1, len(pages) + 1):
+                # either a link to it, or the bold mark of the page you are on
+                if f"[{n}](" in offered or f"**{n}**" in offered:
+                    continue
+                problems.append(
+                    f"{doc.name}: its row of pages does not offer {n}, so a "
+                    f"reader there cannot go straight to it")
+        print(f"  {len(pages)} page(s) in the moving-picture set, each "
+              f"offering the rest")
+
     # AND THE CONTROLS IT NAMES, asked the only way that works.
     #
     # The obvious rule — "every bold phrase must appear in the window's own

@@ -6973,7 +6973,15 @@ window.cqSpinControls = function (settings) {
         + "walls of the box around it, the grid on them and the writing. The "
         + "shape you are reading is the same shape whichever you pick.\n\n"
         + "dark and light are the two the window itself uses, and the page "
-        + "opens on whichever it was saved in. none takes the background "
+        + "opens on whichever it was saved in. follow you takes its cue from "
+        + "the machine reading it: dark if that machine is set to dark, light "
+        + "if it is set to light, and it changes over by itself if you switch "
+        + "at dusk with the page still open — that is the one to save when "
+        + "you do not know where the page is going, because a dark page "
+        + "dropped into somebody's light document arrives as a black "
+        + "rectangle in the middle of it. It needs nothing installed and no "
+        + "internet; a browser too old to be asked is treated as light. "
+        + "none takes the background "
         + "away completely, so the shape floats on whatever the page is sitting "
         + "in — that is the one for dropping a picture into a document, a "
         + "slide or a forum post. slate is a neutral grey: a gamut on black "
@@ -7286,6 +7294,22 @@ window.cqSpinControls = function (settings) {
       // alternative is losing the picture altogether. Scroll chaining is
       // deliberately left alone, so a thumb that reaches the end of the panel
       // carries on to the page rather than stopping dead.
+      // NEVER TALLER THAN WHAT IT OPENS INTO, at any height, and the "any
+      // height" is the fix. This cap lived behind @media (max-height:560px),
+      // which is a phone held upright and nothing else -- so a viewport of,
+      // say, 608 px got no cap at all and the panel grew to 684 px, TALLER
+      // THAN THE THING IT SAT IN. Measured on a framed page at 390x780: the
+      // way back ("less…") ended up at y=-247, above the visible area, with
+      // 1561 px of content in a 608 px frame. Reported from an iPhone: "they
+      // fill the whole frame and i can't see the less button any more so i
+      // can't close them and effectively can't see the shape again".
+      //
+      // A control that cannot be shut is worse than one that was never
+      // offered, so the panel is now capped wherever it is opened -- 60vh in
+      // the ordinary case, and the old tighter 46vh on a short screen where
+      // the picture needs what is left. It scrolls inside itself, and the
+      // strip that opened it stays exactly where it was.
+      + ".cq-spin-panel{max-height:60vh;overflow-y:auto}"
       + "@media (max-height:560px){"
       + ".cq-spin-panel{max-height:46vh;overflow-y:auto}"
       + "}"
@@ -7432,15 +7456,42 @@ window.cqSpinControls = function (settings) {
   var schemes = (settings.schemes && settings.schemes.length)
     ? settings.schemes.slice()
     : (palettes ? Object.keys(palettes) : [mode]);
-  function schemeName(which) { return which; }
+  function schemeName(which) {
+    return which === "follow" ? "follow you" : which;
+  }
   function nextScheme() {
     var at = schemes.indexOf(mode);
     return schemes[(at < 0 ? 0 : at + 1) % schemes.length];
   }
+  // WHICH PALETTE "follow you" MEANS AT THIS MOMENT. Not a palette of its
+  // own: it is dark or light, decided by the reader's own system setting, so
+  // a page dropped into somebody else's light document stops being a black
+  // rectangle in the middle of it. A browser too old to answer is treated as
+  // light, because a page that cannot ask is most likely being printed or
+  // read in a plain document.
+  function theirs() {
+    try {
+      if (window.matchMedia
+          && window.matchMedia("(prefers-color-scheme: dark)").matches)
+        return "dark";
+    } catch (e) {}
+    return "light";
+  }
+  // AND IT KEEPS FOLLOWING. Somebody who turns their machine dark at dusk
+  // with the page still open should watch it follow, not have to reload.
+  // Attached once; it does nothing unless the page is on "follow you".
+  try {
+    if (window.matchMedia) {
+      var watch = window.matchMedia("(prefers-color-scheme: dark)");
+      var react = function () { if (mode === "follow") applyMode(); };
+      if (watch.addEventListener) watch.addEventListener("change", react);
+      else if (watch.addListener) watch.addListener(react);
+    }
+  } catch (e) {}
 
   function applyMode() {
     if (!palettes) return;
-    var p = palettes[mode] || palettes.dark;
+    var p = palettes[mode === "follow" ? theirs() : mode] || palettes.dark;
     if (!p) return;
     ink = p.text; paper = p.page;
     paint();
@@ -7461,6 +7512,23 @@ window.cqSpinControls = function (settings) {
     for (var w = 0; w < written.length; w++) {
       written[w].style.color = p.text;
       written[w].style.background = p.page;
+    }
+    // AND THE SLIDER'S OWN WORDS, which are written with the colours the file
+    // was saved in and were being left behind by every change of colouring.
+    //
+    // Reported from a phone: "the text that belongs to the hide anything under
+    // slider is hard do read". Measured on that page: 1.17:1 against the
+    // paper, where everything else on it is 15.13:1 — the light palette's
+    // near-black ink sitting on a dark page, which is the same fault as the
+    // control strip that stayed light, in a third place.
+    //
+    // The accent goes too, or the slider's handle keeps the old ink while its
+    // label changes.
+    var cut = document.getElementById("cq-cut");
+    if (cut) {
+      cut.style.color = p.text;
+      var runner = cut.querySelector("input[type=range]");
+      if (runner) runner.style.accentColor = p.text;
     }
     if (flat) {
       relayout({"paper_bgcolor": p.page, "plot_bgcolor": p.plot,
@@ -7697,6 +7765,30 @@ window.cqSpinControls = function (settings) {
     // Already all on screen: scrolling would only move the picture for
     // nothing. The 4px is for the rounding two engines disagree about.
     if (box.bottom <= window.innerHeight + 4) return;
+    // WHEN IT CANNOT ALL FIT, THE WAY BACK WINS. Scrolling the panel into
+    // view pushes the strip that opened it off the top -- measured inside a
+    // framed page at 390x780: "less…" ended up at y=-4, four pixels above the
+    // visible area, which is as unreachable as four hundred. Reported from an
+    // iPhone: "i can't see the less button any more so i can't close them".
+    //
+    // So the STRIP is brought to the top instead. The panel is capped and
+    // scrolls inside itself, so everything in it is still reachable, and the
+    // one control that must never be lost is the one that is guaranteed.
+    // AND IT SCROLLS THIS PAGE ONLY. scrollIntoView walks up through every
+    // ancestor, and inside a frame that ancestor is somebody ELSE'S page: the
+    // showcase scrolled itself whenever a reader opened the controls, which
+    // is how the strip left the top of the frame -- y=-114, measured, worse
+    // than the fault it was meant to cure. Reported as "clicking the more
+    // button for controls scrolls down a bit on the whole page".
+    //
+    // Computing the offset and scrolling this window moves this document and
+    // nothing above it, framed or not.
+    if (bar) {
+      var top = bar.getBoundingClientRect().top
+                + (window.pageYOffset || document.documentElement.scrollTop || 0);
+      window.scrollTo({top: Math.max(0, top - 6), behavior: "smooth"});
+      return;
+    }
     // "nearest" rather than "start": where the panel does fit once scrolled
     // to, this stops as soon as it is all visible instead of pushing the
     // picture off the top regardless.
@@ -7874,7 +7966,15 @@ window.cqSpinControls = function (settings) {
   // at, so re-applying that on every load would redraw every outline for
   // nothing in the first moment somebody is looking at it.
   if (cuts && cutAt !== (cuts.at || 0)) showCut(cutAt);
-  if (mode !== (settings.mode || "dark")) applyMode();
+  // AT LOAD, AND ALWAYS WHEN THE COLOURING HAS TO BE WORKED OUT. This ran
+  // only when the remembered colouring DIFFERED from the saved one, which is
+  // right for a fixed palette and wrong for "follow you": a page saved that
+  // way has mode === settings.mode, so nothing ran and the reader got the
+  // static colours the file was written with. Measured before this line
+  // changed: pressing the button round to "follow you" worked perfectly and
+  // saving a page as "follow you" did nothing at all -- the feature looked
+  // finished from inside the window and was not.
+  if (mode === "follow" || mode !== (settings.mode || "dark")) applyMode();
   push();
   // THE PAGE IS UP -- said on a later frame, so the mark survives anything
   // that stops the browser reaching one, including the tab being killed for
