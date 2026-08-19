@@ -345,7 +345,21 @@ def main() -> int:
         shutil.rmtree(folder, ignore_errors=True)
         win.close()
         return 1
-    print("  Clean: both pages carry the picture that was on screen.")
+    # THE VERDICT SAYS WHAT WAS ACTUALLY JUDGED. Offscreen, the picture is
+    # skipped a hundred lines above and this used to close with "both pages
+    # carry the picture that was on screen" regardless -- a sentence that is
+    # false in exactly the run where it is printed, and the default run at
+    # that. A summary that reads the same whether or not the hardest third of
+    # the check happened is how a measurement of the wrong thing comes to read
+    # as coverage.
+    if OFFSCREEN:
+        print("  Clean AS FAR AS IT WAS LOOKED AT: both pages carry what was "
+              "on screen.\n  The picture was NOT judged -- there is no screen "
+              "to draw it on. Run this\n  with QT_QPA_PLATFORM= to include "
+              "it.")
+    else:
+        print("  Clean: both pages and the saved picture carry what was on "
+              "screen.")
     shutil.rmtree(folder, ignore_errors=True)
     win.close()
     pump(0.3)
