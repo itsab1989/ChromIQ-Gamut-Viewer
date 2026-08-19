@@ -10352,8 +10352,19 @@ class GamutApp(QMainWindow):
         # mid-word, reported from the window as "under choose an icc profile
         # the text is cut off".
         #
-        # A cut sentence is worse than a wide column, so the width goes back
-        # until the heights follow the width honestly. What is measured and
+        # AND THE NARROWING IS NOW IN, because the fault that stopped it has
+        # been found and fixed. It was never the paragraphs: the row holding
+        # an open file's name was free to GROW, swallowed the group's spare
+        # height, and pushed the last sentence under the frame. Capped, the
+        # narrow column is clean -- audit_panel across 24 states with a chart
+        # open, and audit_the_switch_changes_nothing across three content
+        # states, each driven dark -> light -> dark.
+        #
+        # WHAT IT IS WORTH: 504 -> 358 px, and every one of those 146 pixels
+        # goes to the picture, which is the thing anybody opened the window
+        # for. The history below is kept because it is the reasoning, and
+        # because the next person to touch this arithmetic should know what
+        # it broke the first time. What is measured and
         # kept: the allowance is 80 px and comes from "Are the patches
         # inside?", a group whose TITLE is long and whose body is tiny, and
         # the column needs only 381 of the 503 it takes.
@@ -10390,7 +10401,13 @@ class GamutApp(QMainWindow):
                            - body.minimumSizeHint().width())
         wants = []
         for box in column.findChildren(QGroupBox):
-            frame = edge
+            # EACH GROUP PAYS FOR ITS OWN FRAME, not for the widest frame in
+            # the column. A long TITLE is already paid for by the other half
+            # of `wants` below, so charging it to all fifteen groups spent
+            # 146 px on nothing.
+            body = getattr(box, "body", None)
+            frame = (box.minimumSizeHint().width()
+                     - body.minimumSizeHint().width()) if body is not None else edge
             inside = inside_of(box)
             # THE WIDER OF THE TWO ANSWERS, because each is right about a
             # different thing: a shut group knows its heading, an open one
