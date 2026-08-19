@@ -205,8 +205,32 @@ def main() -> int:
                               f"{crept:.2f}° -- it cannot be caught")
 
             # 5: parking it parks it.
+            #
+            # THE SAME BASELINE AS SCENARIO 3, AND FOR THE SAME REASON. This
+            # read its baseline the instant the button came up, which is
+            # before the drawing library has finished the drag, so it counted
+            # the library's own catching-up as a throw -- exactly the trap
+            # written up above, left in place here because the two scenarios
+            # were fixed a fortnight apart.
+            #
+            # It reported "webkit: a drag that stopped before the button came
+            # up still threw 42.64 degrees", and the page was innocent. Proved
+            # by instrumenting letGo() inside a copy of the page: on this
+            # gesture it refuses, and says why -- "still: turn 0.000" -- in
+            # both engines. Proved again from the other side by running the
+            # identical gesture with momentum switched OFF, where our throw
+            # cannot run at all: WebKit still moved 42.66 degrees. Something
+            # that happens with the feature turned off is not the feature.
+            #
+            # What it is: the library eases the camera towards the drag and
+            # WebKit's is still catching up at the moment of release. A trace
+            # across the whole gesture puts every degree of it inside the
+            # first 100 ms -- 15.9 round and 41.8 up -- and then 0.000 in
+            # every 100 ms window for the next second. A throw does the
+            # opposite and keeps adding.
             look(tab, page, on=True)
             throw(tab, stop_first=True)
+            tab.wait_for_timeout(200)
             parked = angle(tab)
             tab.wait_for_timeout(600)
             slipped = apart(parked, angle(tab))
