@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.39.5
+
+### 🤚 The shape stops jumping when you let go over it
+
+Drag a shape and release with the pointer over the shape itself, and it jumped
+— but release over the walls or the background and it stood still. The two
+were the same event, and the clue that solved it was the label: pointing at a
+shape makes the viewer work out what is under the pointer and draw its name,
+and that redraw committed a camera the picture had not yet caught up with.
+
+    over the shape    chromium 69.48°   webkit 37.54°   in ONE frame
+    over the wall     chromium  0.00°   webkit  0.00°
+
+Turning the label off would have cured it and taken something real away, so
+instead the picture catches up **when the button comes up**, where it belongs
+to the gesture you just made rather than arriving later out of nowhere. After:
+0.00° in every case, in both engines, with the name still appearing when you
+point at a shape.
+
+*Two of my own explanations were wrong on the way and are recorded as such: the
+speed of the drag has nothing to do with it, and an early test that seemed to
+clear "what is under the pointer" had hidden only one of the three things
+under it.*
+
+### 🔍 And a sixth thing the momentum check proves
+
+Letting go over a shape must move nothing — crossed against letting go over the
+wall, because a page that only stands still over the walls is the fault that
+was reported. Mutation-tested: take the fix out and it reports 34.96° and
+47.72°.
+
 ## v2.39.4
 
 ### 🎚 The slider stops growing and shrinking under your thumb
