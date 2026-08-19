@@ -1330,12 +1330,24 @@ python scripts/audit_two_groupings.py     # the split and the destination colour
 python scripts/audit_two_groupings_run.py  # and the same pair on the OTHER path, a run
 python scripts/audit_nothing_around_nothing.py  # no control on screen with nothing in it
 python scripts/audit_the_wall_order.py    # the far wall first: 6 cameras x 4 scenes, never worse
+python scripts/audit_the_switch_changes_nothing.py  # light and dark may change the look and nothing else
+```
+
+Those all use good files, on a complete computer, in Qt's own web view. These
+ask the other half — what somebody meets on a bad day, and what the pages do
+once they leave here:
+
+```bash
+python scripts/audit_bad_files.py         # an empty file, a text file named .icc, a CMYK profile
+python scripts/audit_without_the_tools.py # the window on a computer with no ArgyllCMS and no ffmpeg
+python scripts/audit_the_page_at_any_size.py  # a saved page from a wide desktop down to a phone
+python scripts/audit_other_engines.py     # the same pages in Firefox and Safari, not only Chromium
+python scripts/check_layout.py            # two engines, ten window sizes
+python scripts/check_momentum.py          # does the shape carry on turning when the reader lets go?
+python scripts/check_binary_arch.py       # a built binary is really the architecture we claimed
 ```
 
 An open fault, with everything measured about it so far, is written up in [docs/THE-SEE-THROUGH-TRIANGLES.md](docs/THE-SEE-THROUGH-TRIANGLES.md): the kite-shaped wedges that appear on a shape the moment it is made see-through.
-
-```
-```
 
 Several of these were written after a fault got past everything else, and each
 one says in its own file what it was written for. Three of them have been
@@ -1343,7 +1355,26 @@ mutation-tested — the fault put back on purpose, to see whether the check
 still notices — because a check phrased in terms of the thing it guards
 cannot catch that thing being removed. `scripts/mutation_test_audit_truth.py`
 does that for one of them and is worth reading before trusting any of the
-rest.
+rest. When you put a fault back, make the script prove the fault landed —
+`assert s.count(old) == 1` before it writes the file. A green run has two
+causes that look identical from the outside: the check is blind, or the fault
+was never introduced. They lead to opposite conclusions.
+
+**If you write another one: `sys.argv` belongs to Qt here.** Every script in
+this folder replaces it with a tidy one before a `QApplication` is built, so
+anything the script wants from the command line has to be taken *first*:
+
+```python
+ASKED = list(sys.argv[1:])      # before the overwrite
+...
+args = ap.parse_args(ASKED)     # not parse_args()
+```
+
+Reversed, the parse reads an empty list, and the option the script advertises
+in its own usage line is accepted and silently ignored. That has happened three
+times in this tree, and the expensive one was a check that was pointed at a
+deliberately broken page, audited the default pages instead, and reported
+"Clean" — which was read as the check being blind.
 
 The last one is worth knowing about even if you never publish anything. It
 writes each page by pressing the window's own **Save** button, then reads the
