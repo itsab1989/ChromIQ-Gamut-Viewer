@@ -9,9 +9,19 @@ and nothing repainted -- cannot be reproduced here. Proved, not assumed: both
 mutations that recreate it (withholding the palettes, and letting the static
 colours disagree with the settings) leave this audit reporting Clean.
 
-Covering it means writing a second page with `offer={}` and asking the same
-questions of it. Until that exists, this file proves the mechanism and not
-every page kind that uses it.
+THAT GAP IS NOW CLOSED, and proved rather than assumed. A third page is
+written with `offer={}` — no buttons at all — and the same questions asked of
+it. Mutation-tested by putting the fault back (the palettes travelling only
+when the appearance button does): the mutation was asserted to have landed,
+and this audit then fails in BOTH engines with
+
+    NO BUTTONS, saved following, a dark reader → page #efebe6 ... WRONG
+    a page saved to follow but written with no buttons opened #efebe6 for a
+    dark reader, wanted #111111 — it cannot follow without the palettes
+
+Run on a COPY of the tree rather than in it, because another agent was working
+in python/ti3gamut.py at the time and a mutation that restores the file would
+have destroyed its work.
 
     ../gv-venv/bin/python scripts/audit_follows_the_reader.py
 
