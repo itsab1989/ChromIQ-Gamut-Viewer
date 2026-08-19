@@ -2824,6 +2824,14 @@ class WebPageDialog(QDialog):
             "Let the shape carry on turning when they let go", self)
         self._glide.setChecked(True)
         rows.addWidget(self._glide, 2, 0, 1, 2)
+        # AND NOT OVER A LINE CHART, which has no camera to carry on turning.
+        # This one sits with the questions about the page rather than in the
+        # list of controls, so the rule that puts the list away (NEEDS says
+        # glide needs a camera) never reached it -- and it was the single
+        # switch still offered over a graph after the list went.
+        if not self._for_a_cloud:
+            self._glide.setChecked(False)
+            self._glide.hide()
         glide_hint = Hint(
             "Whether a drag ends the way a real object would. With this on, "
             "letting go of the shape leaves it turning for about a second, "
@@ -3303,14 +3311,22 @@ class WebPageDialog(QDialog):
             strip.toggled.connect(box.setEnabled)
         stack.addStretch(1)
 
+        area = FadingScrollArea(self)
+        area.setWidget(held)
         if not self._for_a_cloud:
             # AND THE WHOLE LIST GOES WITH IT. Twenty-two switches about
             # turning, hiding families and fading a comparison, offered over a
             # line chart with two lines on it, would be a page of promises the
             # file cannot keep.
+            #
+            # AFTER setWidget, AND THAT IS THE WHOLE OF THE BUG THIS FIXES.
+            # Hiding it first looks right and is undone one line later:
+            # QScrollArea.setWidget SHOWS the widget it is handed. So the
+            # intent was written, defeated by ordering, and never checked --
+            # measured on the dialog for a line graph, 26 of the 27 switches
+            # a cloud gets were still being offered, over a page that draws
+            # no controls at all.
             held.hide()
-        area = FadingScrollArea(self)
-        area.setWidget(held)
         area.setWidgetResizable(True)
         area.setFrameShape(QFrame.Shape.NoFrame)
         area.setHorizontalScrollBarPolicy(
