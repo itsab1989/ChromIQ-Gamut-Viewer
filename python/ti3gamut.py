@@ -7229,6 +7229,125 @@ window.cqSpinControls = function (settings) {
 """
 
 
+def write_two_views_html(views, out: Path, mode: str = "dark", spin=None,
+                         controls: bool = True, offer=None,
+                         notes: str = "") -> Path:
+    """One page holding the shells AND a cut through them, with a switch.
+
+    Asked for from the window: "could the exported web viewer files get a
+    toggle to switch between the view of the shells and the sliced view ... the
+    other controls would then have to update accordingly".
+
+    WHY THIS IS A NEW WRITER AND NOT A FLAG ON ANOTHER. A page has always
+    carried one KIND of picture, chosen when it was saved, and every writer
+    reads that choice once and builds around it. Two kinds in one file is a
+    different shape of page — two figures, one shown — and pretending otherwise
+    would put an "if" in the middle of four writers instead of one place.
+
+    WHAT IT COSTS, and it is the reason the choice belongs to whoever saves:
+    the viewer that dominates the file is carried once either way, so the
+    second view costs only its own data. The scene is a mesh; the cut is a set
+    of rings. Measured on the demo pair, a page with both is about a tenth
+    larger than a page with the scene alone.
+
+    *views* is [(caption, figure), (caption, figure)] — the shells first, the
+    cut second, because that is the order the switch offers them in and the
+    first is the one the page opens on.
+    """
+    import plotly.io as pio
+    from html import escape as html_escape
+
+    colours = static_palette(mode)
+    blocks, ids = [], []
+    for i, (caption, fig) in enumerate(views):
+        flat = not any(getattr(t, "type", "") in ("scatter3d", "mesh3d")
+                       for t in fig.data)
+        fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), showlegend=False)
+        if not flat:
+            fig.update_layout(scene=dict(domain=dict(x=[0, 1], y=[0, 1])))
+        div = pio.to_html(fig, include_plotlyjs=(i == 0), full_html=False,
+                          div_id=f"scene{i}",
+                          config={"displaylogo": False, "responsive": True,
+                                  "scrollZoom": True, **_MODEBAR_ONLY})
+        ids.append(f"scene{i}")
+        # THE SECOND ONE IS BUILT AND HIDDEN, not built when it is asked for.
+        # A picture drawn on demand is a picture the reader waits for, and the
+        # data is already in the file either way.
+        blocks.append(
+            f'<div class="cq-view" data-view="{i}"'
+            f'{"" if i == 0 else " hidden"}>'
+            f'<div class="cap">{caption}</div>{div}</div>')
+
+    switch = (
+        '<div class="cq-views" style="display:flex;gap:.6em;'
+        'justify-content:center;padding:.6em 0">'
+        + "".join(
+            f'<button type="button" data-cq="view" data-goes="{i}"'
+            f'{" aria-pressed=\"true\"" if i == 0 else ""}>'
+            f'{caption}</button>'
+            for i, (caption, _fig) in enumerate(views))
+        + "</div>")
+
+    turn = _spin_script(ids, spin, mode, controls, offer)
+    swap = """<script>
+// THE SWITCH, AND WHAT IT TELLS THE REST OF THE PAGE.
+//
+// Showing the other picture is the easy half. The half that was asked for is
+// that the controls follow: the movement engine decides what a control may do
+// by asking each picture whether it is flat, so it is handed the ids that are
+// SHOWING and works the rest out itself — the camera and the turning for the
+// shells, the lightness for the cut.
+(function () {
+  var views = [].slice.call(document.querySelectorAll(".cq-view"));
+  var buttons = [].slice.call(
+    document.querySelectorAll('button[data-cq="view"]'));
+  function show(which) {
+    views.forEach(function (v, i) { v.hidden = (i !== which); });
+    buttons.forEach(function (b, i) {
+      if (i === which) b.setAttribute("aria-pressed", "true");
+      else b.removeAttribute("aria-pressed");
+    });
+    var live = views[which].querySelector(".js-plotly-plot");
+    if (live && window.Plotly) window.Plotly.Plots.resize(live);
+    // ONLY THE ENGINE IS TOLD. Handing the strip a settings object with
+    // nothing in it but the ids rebuilds it from nothing — measured, it came
+    // out with no controls at all in either engine. The strip is built once
+    // from the page's own settings and stays; what changes is which picture
+    // the engine is pointed at.
+    if (window.cqSpin && live) window.cqSpin.set({ids: [live.id]});
+  }
+  buttons.forEach(function (b, i) {
+    b.addEventListener("click", function () { show(i); });
+  });
+  window.addEventListener("load", function () { show(0); });
+})();
+</script>"""
+
+    written = (f'<div class="cq-notes" style="font:13px/1.6 -apple-system,'
+               f'BlinkMacSystemFont,sans-serif;color:{colours["text"]};'
+               f'background:{colours["page"]};max-width:46em;margin:0 auto;'
+               f'padding:0 1.5em 1.5em">{notes}</div>') if notes else ""
+    html = f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html_escape(views[0][0])}</title><style>
+ html {{ height:100%; }}
+ body {{ margin:0; padding:0; min-height:100%; background:{colours['page']};
+         color:{colours['text']}; display:flex; flex-direction:column; }}
+ .cq-view {{ flex:1 1 auto; min-height:62vh; width:100%; }}
+ .cq-view[hidden] {{ display:none; }}
+ .cap {{ font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+         color:{colours['caption']}; padding:.6em 1.2em 0; }}
+ .cq-views button {{ font:inherit; cursor:pointer; border-radius:999px;
+        padding:.45em .95em; border:1px solid {colours['grid']};
+        background:transparent; color:inherit; }}
+ .cq-views button[aria-pressed] {{ border-color:{colours['text']}; }}
+</style></head><body>{switch}{''.join(blocks)}{written}
+<script>{_ORDER_JS}</script><script>{_CAPTION_JS}</script>{turn}{swap}
+</body></html>"""
+    Path(out).write_text(html, encoding="utf-8")
+    return Path(out)
+
+
 def write_side_by_side_html(pages, out: Path, mode: str = "dark",
                             linked: bool = True, spin=None,
                             controls: bool = True, offer=None,
