@@ -15083,7 +15083,7 @@ class GamutApp(QMainWindow):
         if self._side_by_side.isChecked() and len(gamuts) >= 2:
             self._write_two_rooms(gamuts, out, clouds, lost,
                                   controls=controls, offer=offer, glide=glide,
-                                  notes=notes)
+                                  notes=notes, colours=colours)
         else:
             write_html(gamuts, out, self._scene_title(),
                        # SPLIT WHETHER OR NOT IT IS FADED RIGHT NOW. The
@@ -15103,7 +15103,7 @@ class GamutApp(QMainWindow):
                        controls=controls, offer=offer,
                        carry_viewer=carry_viewer, notes=notes,
                        patches=clouds, styles=styles, lost=lost,
-                       **self._render_options())
+                       **self._render_options(colours))
         return False
 
     def _write_two_slices(self, gamuts, out, controls: bool = False,
@@ -15148,7 +15148,8 @@ class GamutApp(QMainWindow):
 
     def _write_two_rooms(self, gamuts, out, clouds, lost,
                          controls: bool = False, offer=None,
-                         glide: bool = False, notes: str = "") -> None:
+                         glide: bool = False, notes: str = "",
+                         colours: str = None) -> None:
         """One page, two scenes, each holding a single shape.
 
         Each is built by the same code that builds the single view, so the two
@@ -15164,7 +15165,7 @@ class GamutApp(QMainWindow):
         """
         from ti3gamut import build_figure, write_side_by_side_html
 
-        options = self._render_options()
+        options = self._render_options(colours)
         # THE CHART IS MARKED PER ROOM, not once for both. Left alone, every
         # room got the same chart — and its red patches are worked out against
         # the FIRST shape on screen, so the right-hand room showed a chart
@@ -15196,7 +15197,8 @@ class GamutApp(QMainWindow):
                 chart=self._chart_marked_against(chart, gamut, slot),
                 drift=drift if i == 0 else None,
                 **options)))
-        write_side_by_side_html(figures, out, mode=self._appearance,
+        write_side_by_side_html(figures, out,
+                                mode=(colours or self._appearance),
                                 linked=self._link_cameras.isChecked(),
                                 spin=self._spin_options(glide),
                                 controls=controls, offer=offer, notes=notes)
@@ -15348,7 +15350,7 @@ class GamutApp(QMainWindow):
         return light_position(self._light_value("direction"),
                               self._light_value("height"))
 
-    def _render_options(self) -> dict:
+    def _render_options(self, colours: str = None) -> dict:
         """Every option the renderer takes, from the controls, in one place.
 
         The live view and the saved page both use this. Keeping two copies of
@@ -15362,7 +15364,12 @@ class GamutApp(QMainWindow):
             opacity=self._shared["opacity"],
             points=self._points.isChecked(),
             aspect=self._aspect.currentData(),
-            mode=self._appearance,
+            # THE SAVE'S CHOICE FIRST, THE WINDOW'S LOOK SECOND. This read
+            # the window's appearance flat, and it is where "what colours
+            # should it open in" was lost for every single-scene page:
+            # seven of the eleven showcase pages went on being written
+            # dark after the option existed and was being passed in.
+            mode=(colours or self._appearance),
             paint=self._shared["paint"],
             depth=self._shared["depth"],
             mesh_paint=self._shared["mesh_paint"],

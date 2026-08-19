@@ -593,7 +593,8 @@ def test_a_room_of_its_own_is_always_drawn_solid(monkeypatch):
     fake = _FakeApp()
     fake._appearance = "dark"
     fake._link_cameras = _Checked(True)
-    fake._render_options = lambda: {}
+    # takes the page's colour choice, like the real one
+    fake._render_options = lambda colours=None: {}
     gamut_app.GamutApp._write_two_rooms(
         fake, [("Glossy", None), ("Matte", None)],
         pathlib.Path("never-written.html"), None, None)
