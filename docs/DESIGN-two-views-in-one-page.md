@@ -52,6 +52,28 @@ dominates the file, is carried once either way.
    `audit_offers.py` already crosses page kinds against the switches a page
    can honour and is the pattern to follow.
 
+## MEASURED SINCE: the cut has no way to be moved
+
+The switch and the strip are built and proved, and there is a hole in the
+middle of them. **A reader can change to the cross-section and then cannot
+slide it.**
+
+The lightness slider is built only when the page's settings carry the ring
+sets to slide through — `var cuts = settings.cuts` in the page script, and it
+gives up unless `cuts.levels` holds more than one. `write_two_views_html`
+never passes them, so the cut view comes up offering zoom, "back to the start"
+and the panel, and nothing that moves the cut.
+
+That is precisely the half of *"manipulate each view in a way that makes sense
+for it"* the switch was asked for, so the feature is not finished until it is
+carried:
+
+    write_two_views_html(..., cuts=slice_levels(gamuts, include=lightness))
+
+and then `audit_two_views.py` should assert it — the cut view must offer its
+own control, exactly as it asserts that the shells offer the turning controls
+and the cut does not. The audit does not ask that yet, and says so.
+
 ## What to watch
 
 - **Both instances, always.** A page saved from the main window and one saved
