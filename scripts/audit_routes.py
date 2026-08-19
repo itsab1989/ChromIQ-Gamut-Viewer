@@ -61,10 +61,6 @@ import numpy as np                                            # noqa: E402
 #: Each of these was learned the hard way and lives in one writer; a route
 #: that does not go through that writer loses it in silence.
 FEATURES = {
-    "the see-through draw order": (
-        "cqOrder",
-        "makes a faint surface read as a solid instead of coming apart into "
-        "missing triangles"),
     "a name for the tab": (
         "<title>",
         "a page sent to somebody arrives showing its file name without it"),
@@ -77,12 +73,27 @@ FEATURES = {
         "audit said Clean while six pages had no such script at all -- it was "
         "added to the writer most pages go through and not to the one that "
         "builds two rooms"),
-    "one reset, the one that goes home": (
-        "resetCameraDefault3d",
-        "the strip's other reset returns to the library's framing, which "
-        "crops a wide flat gamut"),
+    "a title that shrinks with the window": (
+        "max-width:820px",
+        "the caption is one line of SVG text that cannot wrap and is the same "
+        "width whatever the screen, so on a narrow one its end simply falls "
+        "off -- and nothing warns the reader, because the SVG clips rather "
+        "than scrolling. Measured on a graph page that had no such rule: 463px "
+        "of title in a 390px page, the last dozen characters gone. THIS IS "
+        "THE THIRD THING TO GO MISSING FROM page_html, after the caption "
+        "script and the page's colours, because it is written by hand rather "
+        "than by ti3gamut's writer"),
 }
 
+#: WHY THE 480px RULE IS NOT ASKED FOR, only the 820px one. The pages that
+#: ti3gamut writes carry both; the two-room and cross-section template carries
+#: only the wider one, and that was measured rather than assumed before this
+#: audit was allowed to have an opinion: a two-room page has no Plotly title
+#: at all (its captions are HTML), and a cross-section's title is "lightness
+#: L* = 50" -- 17 characters, 113px wide, sitting 269px INSIDE a 390px page.
+#: Demanding the tighter rule there would report a fault that does not exist,
+#: which is the other way an audit wastes a day.
+#:
 #: Features that only apply where they can. A drift cloud has a ΔE per point
 #: and a picture of two papers has not, so asking every route for the reader's
 #: threshold would report a fault that is not one.
@@ -97,6 +108,20 @@ WHERE_IT_APPLIES = {
     # that demanded it everywhere would have had somebody "fixing" a page
     # that was already right -- which is the other way an audit wastes a day.
     "the hover-streak cure": ("spikethickness", "3d"),
+    # A LINE GRAPH HAS NO SURFACES TO ORDER AND NO CAMERA TO SEND HOME, and
+    # both of these sat in the unconditional list only because every route
+    # this audit knew about was a 3D one. Adding the run's graph made that
+    # assumption visible: it was reported as missing two features it cannot
+    # have. Checked against a real graph page before moving them -- cqOrder
+    # is absent (nothing see-through to sort) and the page carries its words
+    # under `class="words"` rather than `cq-notes`.
+    "the see-through draw order": ("cqOrder", "3d"),
+    # A RESET BELONGS TO A CAMERA, and a line graph has neither. Measured
+    # before moving it: a cloud page saved the SMALL way (14 kB, library
+    # fetched) still carries this, because the page's own control strip names
+    # it -- so for a 3D route the check is real. A graph page carries no
+    # strip at all and no camera to send home.
+    "one reset, the one that goes home": ("resetCameraDefault3d", "3d"),
 }
 
 
@@ -216,6 +241,28 @@ def through_the_window(folder):
     panel.write_page(out, carry_viewer=False, controls=True, numbers=True)
     made.append(("the run's saved page", out, {"clouds", "notes", "3d"}))
 
+    # AND THE RUN'S GRAPH, WHICH IS A DIFFERENT WRITER AND WAS NEVER ASKED.
+    #
+    # Everything above chose a PAIR, so every page this audit had ever looked
+    # at went through ti3gamut's writer. With no pair chosen the panel draws
+    # the whole run as a line graph and writes it with `page_html`, a second
+    # writer built by hand -- and that is the route that has now quietly lost
+    # two of the features in this very table: the caption script once, and the
+    # rule that shrinks a title on a phone after that. Both were found from
+    # outside, by somebody looking at a page, while this said "Clean".
+    #
+    # A graph has no 3D scene and no cloud, so it is asked only for what a
+    # flat picture can have.
+    for i in range(panel._picture_of.count()):
+        if panel._picture_of.itemData(i) is None:
+            panel._picture_of.setCurrentIndex(i)
+            break
+    panel._draw()
+    pump(3)
+    out = folder / "run-graph.html"
+    panel.write_page(out, carry_viewer=False, controls=True, numbers=True)
+    made.append(("the run's graph, saved", out, set()))
+
     scenes = sorted(win._tmp.glob("scene-*.html"))
     if scenes:
         out = folder / "window-live.html"
@@ -228,6 +275,7 @@ def through_the_window(folder):
 
 def main() -> int:
     folder = pathlib.Path(tempfile.mkdtemp(prefix="routes-"))
+    print(f"  pages written to {folder}")
     problems = []
     try:
         made = routes(folder)
