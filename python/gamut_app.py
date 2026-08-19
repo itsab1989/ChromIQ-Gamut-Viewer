@@ -2824,12 +2824,17 @@ class WebPageDialog(QDialog):
             "Let the shape carry on turning when they let go", self)
         self._glide.setChecked(True)
         rows.addWidget(self._glide, 2, 0, 1, 2)
-        # AND NOT OVER A LINE CHART, which has no camera to carry on turning.
-        # This one sits with the questions about the page rather than in the
-        # list of controls, so the rule that puts the list away (NEEDS says
-        # glide needs a camera) never reached it -- and it was the single
-        # switch still offered over a graph after the list went.
-        if not self._for_a_cloud:
+        # AND NOT WHERE THERE IS NO CAMERA TO CARRY ON TURNING. This one
+        # sits with the questions about the page rather than in the list of
+        # controls, so the rule that puts the list away (NEEDS says glide
+        # needs a camera) never reached it.
+        #
+        # KEYED ON THE CAMERA, NOT ON "is it a cloud", and that second version
+        # is the one the audit caught: hidden only for a line graph, it was
+        # still offered over a CROSS-SECTION, which is drawn flat and has no
+        # camera either. Same promise the file cannot keep, one page further
+        # along.
+        if not self._for_a_cloud or not self._shows.get("camera", True):
             self._glide.setChecked(False)
             self._glide.hide()
         glide_hint = Hint(

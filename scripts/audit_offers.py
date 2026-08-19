@@ -205,13 +205,88 @@ def read_controls(folder, made):
     return found
 
 
+def ask_the_dialog(needs, every) -> list:
+    """What the DIALOG shows, asked of a real one rather than modelled.
+
+    WHY THIS EXISTS, AND IT IS THE FAULT THIS AUDIT ONCE MISSED. Everything
+    else here compares what a PAGE builds against what the dialog WOULD
+    offer, worked out from the NEEDS map. The map was right the whole time
+    and the widget disagreed with it: `held.hide()` for a flat page was undone
+    one line later by QScrollArea.setWidget, which shows the widget it is
+    handed. So somebody saving a run graph was offered 26 of the 27 switches a
+    3D cloud gets, over a page that builds none of them -- and this audit said
+    Clean, because it was checking the rule against itself.
+
+    A LINE GRAPH IS ASKED FOR TOO, which this audit did not know about: it is
+    the only page written with for_a_cloud False, and it draws no reader
+    controls at all, so the honest expectation is nothing offered.
+    """
+    from PyQt6.QtWidgets import QApplication, QWidget
+    import gamut_app
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    holder = QWidget()
+    kinds = [
+        ("one shape", True, {"two_shapes": False, "surfaces": True,
+                             "flat": False, "camera": True, "fade": False}),
+        ("two shapes", True, {"two_shapes": True, "surfaces": True,
+                              "flat": False, "camera": True, "fade": True}),
+        ("a drift cloud", True, {"two_shapes": False, "surfaces": False,
+                                 "flat": False, "camera": True,
+                                 "fade": False}),
+        ("a cross-section", True, {"two_shapes": True, "surfaces": True,
+                                   "flat": True, "camera": False,
+                                   "fade": False}),
+        ("a line graph", False, {"two_shapes": False, "surfaces": False,
+                                 "flat": False, "camera": False,
+                                 "fade": False}),
+    ]
+    problems, keep = [], []
+    for name, cloud, shows in kinds:
+        dialog = gamut_app.WebPageDialog(holder, for_a_cloud=cloud,
+                                         shows=shows)
+        keep.append(dialog)          # deleted together, at the end
+        # isVisibleTo, not isHidden: the offers live inside a container the
+        # dialog puts away wholesale, and isHidden answers only for a
+        # widget's own flag. Measured the wrong way this same dialog reported
+        # 26 offers and then 0, and neither number was true.
+        # THE TWO THAT ARE NOT PAGE CONTROLS ARE EXCUSED HERE TOO. The page
+        # side already skips them -- full screen is left out when the browser
+        # says it cannot, and "remember" stores a choice rather than drawing
+        # anything -- so counting them on the dialog side only would report a
+        # disagreement that is a difference in bookkeeping.
+        shown = {switch for switch, box in dialog._offer.items()
+                 if box.isVisibleTo(dialog) and switch not in NOT_A_BUTTON}
+        if getattr(dialog, "_glide", None) is not None \
+                and dialog._glide.isVisibleTo(dialog):
+            shown.add("glide")
+        wanted = set() if not cloud else {
+            switch for switch in every
+            if needs.get(switch) is None or shows.get(needs[switch], False)}
+        print(f"   {name}: the dialog shows {len(shown)}, its rules say "
+              f"{len(wanted)}")
+        for switch in sorted(shown - wanted):
+            problems.append(f"[shown]   {name}: the dialog offers "
+                            f"'{switch}' where its own rules say it cannot "
+                            f"apply")
+        for switch in sorted(wanted - shown):
+            problems.append(f"[missing] {name}: the rules allow '{switch}' "
+                            f"and the dialog does not show it")
+    for dialog in keep:
+        dialog.setParent(None)
+    holder.deleteLater()
+    return problems
+
+
 def main() -> int:
     import gamut_app
 
     needs = gamut_app.WebPageDialog.NEEDS
     every = set(MARKERS)
+    print("what the save dialog offers, asked of a real dialog:")
+    dialog_problems = ask_the_dialog(needs, every)
     folder = pathlib.Path(tempfile.mkdtemp(prefix="offers-"))
-    problems, seen_anywhere = [], set()
+    problems, seen_anywhere = list(dialog_problems), set()
     try:
         made = write_them(folder)
         built = read_controls(folder, made)
