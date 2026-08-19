@@ -50,6 +50,7 @@ def pump(seconds):
 print(f"  {'file':5s} {'compare':8s} {'chart':6s} | "
       f"{'width':5s} {'run drawn':9s} {'the line above the run':38s} seen?")
 problems = []
+widths = []          # (px, file, compare, chart), first row is the yardstick
 for a_file, compare, a_chart in itertools.product((0, 1), repeat=3):
     win = gamut_app.GamutApp([])
     win.resize(1280, 800)
@@ -93,9 +94,39 @@ for a_file, compare, a_chart in itertools.product((0, 1), repeat=3):
           f"{(said[:36] + '…') if len(said) > 36 else said:38s} "
           f"{'yes' if shown else ('NO' if said else '-')}   "
           f"answer {'yes' if verdict_seen else 'NO'}")
-    if inner.width() != 503:
-        problems.append(f"column is {inner.width()} px with "
-                        f"file={a_file} compare={compare} chart={a_chart}")
+    # THE COLUMN MUST NOT MOVE, and that is a comparison, not a number.
+    #
+    # This said `!= 503` — the width the column had before it was deliberately
+    # narrowed (504 -> 358, commit f3ce4e8). Every run since has failed on all
+    # eight rows, reporting the intended change as a fault, and nobody saw it
+    # because nobody ran the file. A pinned pixel count also encodes the
+    # FONTS: the same tree measures 362 in one process and 369 in another,
+    # traced to "Inter" being asked for and not bundled, so even the right
+    # number would be right only on one machine.
+    #
+    # What this file is actually about is whether a run open BESIDE a file, a
+    # comparison or a chart disturbs the column. So it is judged against the
+    # first state measured, which is how audit_width states the same rule.
+    #
+    # AND HOW MUCH THAT IS WORTH, measured rather than assumed. Three
+    # mutations were tried and NONE could make this line fire: a 700 px
+    # minimum on the run-owner label, 90 px added to the column whenever a
+    # chart is placed, and the sizing re-run after the run loads. All eight
+    # rows stayed at the same width every time. The reason is in the window:
+    # _widen_the_column_to_fit_it runs ONCE as the window comes up, from a
+    # single caller, and measures the GROUPS -- which are the same whatever is
+    # open. The column is content-independent by construction.
+    #
+    # So this is a backstop, not the guard: it would catch a future sizing
+    # that started depending on what is loaded, and nothing else. The file
+    # that really watches the column move is audit_width, which folds,
+    # unfolds and switches appearance, where it genuinely can.
+    widths.append((inner.width(), a_file, compare, a_chart))
+    if inner.width() != widths[0][0]:
+        problems.append(
+            f"column moved to {inner.width()} px with file={a_file} "
+            f"compare={compare} chart={a_chart}, from {widths[0][0]} px with "
+            f"nothing else open")
     if said and not shown:
         problems.append(
             f"the line explaining the big view is off screen with "
