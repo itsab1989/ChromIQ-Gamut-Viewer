@@ -7,7 +7,7 @@ pixels too long for the column, so what ships is a button reading
 skips a truncated word it already knows — and neither does a unit test, because
 the only thing that knows how wide a word is is a real font on a real widget.
 
-So this asks the widgets themselves, in the real application, and it asks four
+So this asks the widgets themselves, in the real application, and it asks five
 separate questions rather than one:
 
   1. IS ANY TEXT CUT OFF?  Every button, checkbox, label, radio and combobox
@@ -22,6 +22,15 @@ separate questions rather than one:
      every space. This is the one that makes adding a space safe: a control
      nobody thought about shows up here rather than in somebody's hands, live
      over a picture it cannot change.
+  5. CAN ANY PARAGRAPH BE CUT?  Every wrapping label must be a
+     ``WrappedLabel``, which recomputes its own height from the width it is
+     actually given. A plain QLabel with wordWrap has no such defence, and a
+     narrower column silently takes its last line off.
+
+AND IT OPENS EVERY FOLDED SECTION FIRST, which it did not do for a long time:
+six sections start folded, their contents are hidden, and hidden widgets have
+no size to measure — so most of this column had never been looked at while
+this printed "Clean".
 
 IT RUNS IN EVERY SPACE AND AT SEVERAL WIDTHS, because a label that fits in
 CIELAB may not fit once a space with longer state messages is chosen, and the
@@ -168,8 +177,40 @@ def audit_once(window, panel, label: str) -> list:
                     f"[{label}] OVERFLOWS  {name}: {edge - right_edge}px "
                     f"past the panel's right edge")
 
-    # Every ⓘ must share its row with the thing it explains.
     import gamut_app
+
+    # 5. EVERY WRAPPING PARAGRAPH MUST BE ONE THAT RE-FITS ITSELF.
+    #
+    # This is the guard that answers "what catches a cut sentence", and the
+    # answer turned out to be a different question. FOUR checks were built for
+    # a cut paragraph and all four reported Clean — heights, running past the
+    # group, visibleRegion, and a pixel comparison. They were right. Driven at
+    # the narrow width that had caused the report, with one paragraph then
+    # deliberately capped at 20 px to make a cut on purpose, nothing was cut:
+    # gamut_app.WrappedLabel recomputes its own minimum height from the width
+    # it actually has, on every resize, so it simply put the height back.
+    #
+    # Measured in the real window: all eleven wrapping labels in the column
+    # are WrappedLabel. A plain QLabel with wordWrap set has no such defence —
+    # its height is whatever the layout gave it when it was built, and a
+    # narrower column silently takes the last line off. So the check is not
+    # "is anything cut" but "could anything be": one plain wrapping QLabel is
+    # the fault, and it is visible the moment it is added rather than after
+    # somebody narrows the column six months later.
+    plain = [x for x in panel.findChildren(QLabel)
+             if x.isVisible() and x.wordWrap() and x.text()
+             and not isinstance(x, gamut_app.WrappedLabel)
+             and not isinstance(x, gamut_app.Hint)]
+    for x in plain:
+        problems.append(
+            f"[{label}] CAN BE CUT  a plain wrapping QLabel — its height is "
+            f"whatever the layout gave it, so a narrower column takes the "
+            # ITS OWN TEXT, NOT text_of(). That helper returns "" for a
+            # wrapping label on purpose — it is about elision — so the first
+            # version of this named the fault and then quoted nothing.
+            f"last line off. Use WrappedLabel: {x.text()[:60]!r}")
+
+    # Every ⓘ must share its row with the thing it explains.
     hints = [h for h in panel.findChildren(gamut_app.Hint) if h.isVisible()]
     others = [w for w in panel.findChildren(INTERACTIVE + (QLabel,))
               if w.isVisible() and not isinstance(w, gamut_app.Hint)]

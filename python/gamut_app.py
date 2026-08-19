@@ -10233,11 +10233,32 @@ class GamutApp(QMainWindow):
         # until the heights follow the width honestly. What is measured and
         # kept: the allowance is 80 px and comes from "Are the patches
         # inside?", a group whose TITLE is long and whose body is tiny, and
-        # the column needs only 381 of the 503 it takes. The saving is real
-        # and still there to collect -- it needs the wrapped paragraphs to be
-        # re-measured at the new width first, which audit_panel does not
-        # currently catch, since it reported clean while that sentence was
-        # cut.
+        # the column needs only 381 of the 503 it takes.
+        #
+        # WHAT IS NOW KNOWN, measured by rebuilding the window with the
+        # per-group allowance in place and driving it:
+        #
+        #   * THE COLUMN REALLY DOES NARROW: 504 -> 358 px, and every wrapped
+        #     paragraph re-wraps and grows taller exactly as it should.
+        #   * A WRAPPED PARAGRAPH CANNOT BE CUT BY NARROWING. All eleven
+        #     wrapping labels in this column are WrappedLabel, which
+        #     recomputes its own minimum height from the width it actually
+        #     has on every resize. Capping one at 20 px on purpose did not
+        #     even produce a cut -- it put the height straight back. That is
+        #     why four separate checks for a cut sentence all reported clean:
+        #     they were right.
+        #   * WHAT NARROWING REALLY COSTS IS SLACK. At 358 the auto-update
+        #     tickbox -- "Look for a newer version when the app starts", 303
+        #     px of label that cannot wrap -- is given exactly 303 px. Not
+        #     clipped, and one pixel or one translation from it.
+        #   * AND IT IS NOT CLEAN YET. With a chart open, at 358, audit_panel
+        #     reports nine ORPHAN ⓘ in the light theme that it does not
+        #     report at 504. Real or an artefact of that audit's
+        #     centre-to-centre rule, it is unexplained, so the width stays.
+        #
+        # The saving is real and still there to collect. What it needs now is
+        # that ⓘ question settled, and a floor under the slack so the width
+        # does not sit on a knife edge.
         edge = 22
         for box in column.findChildren(QGroupBox):
             body = getattr(box, "body", None)
