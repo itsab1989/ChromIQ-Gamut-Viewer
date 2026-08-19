@@ -1176,6 +1176,63 @@ class Masthead(QWidget):
 
 
 
+def grey_the_scales(box, split, plain_tooltip) -> None:
+    """Grey the colourings that cannot act while the cloud is split by family.
+
+    THE OTHER HALF OF A PAIR THIS WINDOW ALREADY HALF-ENFORCES. When the cloud
+    is coloured by destination, the split tick greys out, and the comment there
+    says why: a control that goes on claiming a grouping the picture does not
+    use "is a control saying something untrue, which this window has already
+    learnt is worse than one that does nothing".
+
+    The same was true in the other direction and nothing said so. Measured with
+    two profiles open, five colourings crossed against the tick: with the tick
+    OFF, five colourings give five different pictures; with it ON they give
+    TWO. "How far it moved", "lighter or darker", "redder or greener" and
+    "warmer or cooler" come out identical -- names, point counts and colours
+    alike -- because a cloud cut into seven named groups has nowhere to put a
+    sliding scale. All four stayed lit and selectable and did nothing.
+
+    ONE FUNCTION FOR BOTH WINDOWS. The greying above it was written in the
+    main window and only there, which is the asymmetry Basti asked to stop:
+    "in general both path should benefit from any improvements". The timeline
+    carries the identical pair, so it calls this too.
+
+    THE ENTRIES, NOT THE BOX. Greying the whole thing would shut the reader
+    out of "the colour it is heading for", which is the one entry that does
+    act -- it takes the grouping over and greys the tick in turn -- and they
+    would have to untick first to find that out.
+    """
+    if box is None or split is None:
+        return
+    split_on = split.isChecked() and split.isEnabled()
+    model = box.model()
+    # WHAT IS PROVED HERE, AND WHAT IS NOT. That the four entries cannot be
+    # chosen is proved: audit_two_groupings reads isEnabled() on each item in
+    # both states and fails if a dead one can still be picked (mutation-tested
+    # -- remove the line below and it names all four).
+    #
+    # How a disabled entry LOOKS was not established, and an attempt to
+    # "fix" it was reverted rather than shipped on a guess. Three instruments
+    # were tried on an open popup and none can be trusted here: widget.grab()
+    # returned byte-identical images for a foreground colour proved to be on
+    # the model and readable back from it, and render() painted something
+    # that was not the list at all. Qt greys disabled entries by itself in
+    # every style this application has been run under, so the likeliest
+    # reading is that the photograph was wrong and the window is right --
+    # but if a greyed entry ever looks live on screen, the cure is a styled
+    # delegate on box.view() plus a colour on the item, and the reason it
+    # is not here already is that nothing could show it was needed.
+    for i in range(box.count()):
+        item = model.item(i) if hasattr(model, "item") else None
+        if item is None:
+            continue                       # not a standard model: leave it be
+        item.setEnabled(not (split_on and box.itemData(i) != "toward"))
+    if plain_tooltip is not None:
+        box.setToolTip(GamutApp.COLOURING_IS_THE_FAMILIES if split_on
+                       else plain_tooltip)
+
+
 def pick_colour(parent, current: str, title: str, clearable: bool = True):
     """Choose a colour — in this application's own window, not the system's.
 
@@ -3947,6 +4004,7 @@ class TimelineDialog(QDialog):
             "colour it stands for. One teal-to-orange scale for all three "
             "means the key is learned once and cannot be mistaken for the "
             "thing it describes.")
+        self._coloured_by_words = self._coloured_by.toolTip()
         self._coloured_by.activated.connect(lambda _i: self._draw())
         self._coloured_by.activated.connect(
             lambda _i: self._show_only_what_applies())
@@ -4135,6 +4193,9 @@ class TimelineDialog(QDialog):
             "among the six.")
         self._split_words = self._by_family.toolTip()
         self._by_family.stateChanged.connect(lambda _s: self._draw())
+        # Ticking it greys the scales it silences, here as in the main window.
+        self._by_family.stateChanged.connect(
+            lambda _s: self._show_only_what_applies())
         # THE CONTROLS ARE NOT READOUTS, and hosted they no longer sit among
         # them. Basti, looking at the panel in the column: "maybe in this
         # section the options to split into color families and hide anything
@@ -4861,6 +4922,10 @@ class TimelineDialog(QDialog):
         self._by_family.setToolTip(
             GamutApp.SPLIT_IS_THE_DESTINATIONS if by_destination
             else self._split_words)
+        # AND THE SAME PAIR FROM THE OTHER SIDE, by the same function the main
+        # window calls -- see grey_the_scales.
+        grey_the_scales(self._coloured_by, self._by_family,
+                        getattr(self, "_coloured_by_words", None))
         self._with_shapes.setVisible(useful)
         for part in (self._cut, self._cut_label, self._cut_says):
             part.setVisible(useful)
@@ -8860,6 +8925,7 @@ class GamutApp(QMainWindow):
             "ΔE 0.1 and two different ones agree to about 0.4 — so painting "
             "those a confident colour would be inventing a direction out of "
             "noise.")
+        self._drift_by_tooltip = self._drift_by.toolTip()
         self._drift_by.activated.connect(lambda _i: self._redraw())
         self._drift_by.activated.connect(
             lambda _i: self._refresh_drift_controls())
@@ -8916,6 +8982,12 @@ class GamutApp(QMainWindow):
             "among the six.")
         self._split_tooltip = self._drift_split.toolTip()
         self._drift_split.stateChanged.connect(self._redraw)
+        # AND THE COLOURINGS IT SILENCES ARE GREYED THE MOMENT IT IS TICKED.
+        # The combo above already refreshes the controls when it changes; this
+        # is the same edge from the other end, and without it the four dead
+        # entries only grey out on the NEXT unrelated change.
+        self._drift_split.stateChanged.connect(
+            lambda _s: self._refresh_drift_controls())
         # IN A ROW OF ITS OWN, exactly like the tick above it, and that is the
         # whole reason for the row. Added straight to the column it began two
         # pixels to the left of "Show me where, in the picture" -- measured,
@@ -11650,6 +11722,31 @@ class GamutApp(QMainWindow):
         "question. To get it back, set \"coloured by\" to anything else: how "
         "far it moved, or one of the three directions.")
 
+    #: And the same sentence from the other side. The pair above has always
+    #: been enforced in ONE direction -- the tick greys when the destination
+    #: colouring wins -- and the reverse was never looked at, by the window or
+    #: by the audit that crosses them.
+    #:
+    #: Measured: with the split ticked, five colourings draw TWO distinct
+    #: pictures. "How far it moved", "lighter or darker", "redder or greener"
+    #: and "warmer or cooler" come out byte-identical, because a cloud cut
+    #: into seven named groups has no room left for a sliding scale. Only
+    #: "the colour it is heading for" differs, and that one greys the tick.
+    #: So four of the five sat there lit and selectable and changed nothing.
+    #:
+    #: The four are greyed rather than the whole box, so that the destination
+    #: colouring -- the one entry that DOES act, by taking the grouping over
+    #: -- stays reachable without unticking anything first.
+    COLOURING_IS_THE_FAMILIES = (
+        "These are greyed out while \"Split it into colour families\" is "
+        "ticked, because the cloud is already drawn as seven named groups — "
+        "one per family — and a sliding scale of colour has nowhere to show "
+        "itself in a picture built that way.\n\n"
+        "To use them, untick \"Split it into colour families\" just below.\n\n"
+        "\"The colour it is heading for\" stays available: it does its own "
+        "grouping, by the family each colour is moving toward, and takes over "
+        "from the tick when you choose it.")
+
     def _refresh_drift_controls(self) -> None:
         """Grey out the three that only act on the cloud, when there is none.
 
@@ -11692,6 +11789,8 @@ class GamutApp(QMainWindow):
             split.setEnabled(not by_destination)
             split.setToolTip(self.SPLIT_IS_THE_DESTINATIONS if by_destination
                              else self._split_tooltip)
+            grey_the_scales(self._drift_by, split,
+                            getattr(self, "_drift_by_tooltip", None))
 
     def _drift_colouring(self):
         """Which question the cloud's colours answer, or None for how far.

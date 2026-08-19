@@ -116,6 +116,20 @@ for i in range(box.count()):
                 f"[{label}] the split is greyed out when it can act")
         if key != "toward" and split and len(names) < 2:
             problems.append(f"[{label}] split is on and the cloud is one trace")
+        # AND THE SAME RULE THE OTHER WAY ROUND, which this file asserted in
+        # prose and never tested. With the split on, the four sliding scales
+        # draw an identical picture -- measured: five colourings, TWO distinct
+        # pictures -- so an entry that can still be picked is claiming an
+        # effect it does not have. Exactly what the paragraph at the top of
+        # this file forbids, on the side nobody was looking at.
+        item = box.model().item(i)
+        if split and key != "toward" and item is not None and item.isEnabled():
+            problems.append(
+                f"[{label}] can still be chosen while the cloud is split into "
+                f"colour families, and picking it changes nothing")
+        if not split and item is not None and not item.isEnabled():
+            problems.append(
+                f"[{label}] is greyed out with the split off, where it acts")
 
 print()
 for p in problems:
