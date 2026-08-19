@@ -200,7 +200,10 @@ def main() -> int:
     args = ap.parse_args()
     if args.prove:
         return prove()
-    pages = ([(a, True) for a in args.pages] if args.pages
+    # AN INDEX IS PROSE AND PICTURES, whatever way it arrives. Demanding a
+    # WebGL canvas of one reports the audit's own assumption as a fault.
+    pages = ([(a, not pathlib.Path(a).name == "index.html")
+              for a in args.pages] if args.pages
              else [(path, scene) for path, scene in DEFAULT])
     return run(pages, pathlib.Path(args.shots) if args.shots else None)
 
