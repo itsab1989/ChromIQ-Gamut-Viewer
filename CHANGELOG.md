@@ -7,6 +7,12 @@
 The controls column was **504 px** and is now **362**. Every one of those
 pixels goes to the shape, which is what anybody opened the window for.
 
+It counts for most on a small screen, where there is least to go round.
+Driven and measured: on a 900 × 600 window the picture is now **482 px wide
+against about 340** — nearly half as much again. Below that the window
+politely refuses to shrink further, clamping at 838 px with 420 px of picture,
+rather than squeezing the shape into nothing.
+
 The saving was found long ago and could not be taken, because narrowing the
 column **cut a sentence in half** under *Placed through* — reported with a
 photograph, and "seemingly only in dark mode". Both halves of that turned out
