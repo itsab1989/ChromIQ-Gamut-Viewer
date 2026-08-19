@@ -519,7 +519,8 @@ class _FakeApp:
         import gamut_app
         for name in ("_opacity", "_depth", "_detail", "_slice_at", "_rings"):
             setattr(self, name, None)
-        for name in ("_slice_on", "_points", "_show_lost", "_relative",
+        for name in ("_slice_on", "_points", "_show_lost", "_lost_in_colour",
+                     "_relative",
                      "_manual_light", "_rings_on", "_neutral",
                      "_ideal_neutral",
                      "_auto_update", "_side_by_side", "_link_cameras"):

@@ -8357,6 +8357,39 @@ class GamutApp(QMainWindow):
         _r.addWidget(lost_hint, 0, Qt.AlignmentFlag.AlignVCenter)
         lv.addLayout(_r)
 
+        # AND WHAT THE OUT-OF-REACH PART IS PAINTED IN. Asked for from the
+        # window — "is there a way to turn this magenta out of reach section
+        # into the real colors that are out of reach?" — and asked for as an
+        # OPTION rather than a new default: "that out of reach in colors thing
+        # should be an option not a default that cant be changed".
+        self._lost_in_colour = QCheckBox("…in the colours themselves", g_look)
+        self._lost_in_colour.stateChanged.connect(self._redraw)
+        colour_hint = Hint(
+            "Paints the out-of-reach part of the shape in the colours it is "
+            "actually made of, instead of one flat red.\n\n"
+            "WHAT IT CHANGES: grey still means the comparison can print it. "
+            "Everything you can SEE is what you would not get — so instead of "
+            "\"you lose this region\", the picture says \"you lose these "
+            "colours\", and you can tell a lost deep blue from a lost bright "
+            "orange without turning the shape round.\n\n"
+            "WHEN THE FLAT RED IS BETTER, and it is the default for this "
+            "reason: a colour that is out of reach but dark and close to "
+            "neutral is painted a dark, nearly grey colour, which sits very "
+            "near the grey that means the opposite. One flat red can be seen "
+            "from any angle at any size, so it is the one to keep when you "
+            "want to see WHERE the loss is at a glance, or when the picture is "
+            "going into a document at postage-stamp size.\n\n"
+            "WHAT IT NEEDS: nothing beyond Show what it cannot print, the tick "
+            "above — this simply repaints what that already draws. Nothing "
+            "measured changes and no number on the screen moves; it travels "
+            "into a saved picture or page exactly as you see it here.", g_look)
+        colour_hint.setObjectName("hint_lost_colour_hint")
+        _rc = QHBoxLayout(); _rc.setContentsMargins(16, 0, 0, 0)
+        _rc.setSpacing(6)
+        _rc.addWidget(self._lost_in_colour, 1)
+        _rc.addWidget(colour_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_rc)
+
         # WHERE THE SHAPES AGREE, FADED AWAY.
         #
         # A SLIDER RATHER THAN A TICK BOX, and that is a measured decision.
@@ -11235,6 +11268,7 @@ class GamutApp(QMainWindow):
             ("slice_on", self._slice_on, "check", False),
             ("points", self._points, "check", False),
             ("show_lost", self._show_lost, "check", False),
+            ("lost_in_colour", self._lost_in_colour, "check", False),
             ("agree", self._agree, "slider", 100),
             ("differ", self._differ, "slider", 100),
             ("relative", self._relative, "check", False),
@@ -13453,6 +13487,9 @@ class GamutApp(QMainWindow):
     #: because that is what somebody grepping for it would type.
     SPACE_INDEPENDENT = {
         "_space": "the control that chooses the space cannot depend on it",
+        "_lost_in_colour": "repaints the out-of-reach faces the shape already "
+                           "has; whichever space the shape is drawn in, those "
+                           "faces are the same faces",
         "_aspect": "box proportions apply to a cloud of dots as much as to a "
                    "surface",
         "_grid_on": "the box and its grid frame any scene",
@@ -15370,6 +15407,9 @@ class GamutApp(QMainWindow):
             # seven of the eleven showcase pages went on being written
             # dark after the option existed and was being passed in.
             mode=(colours or self._appearance),
+            lost_in_their_own_colours=bool(
+                getattr(self, "_lost_in_colour", None)
+                and self._lost_in_colour.isChecked()),
             paint=self._shared["paint"],
             depth=self._shared["depth"],
             mesh_paint=self._shared["mesh_paint"],

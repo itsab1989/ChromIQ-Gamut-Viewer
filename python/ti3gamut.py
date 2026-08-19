@@ -641,7 +641,8 @@ def static_palette(mode: str):
 
 def _mesh_lost(gamut, name: str, opacity: float, lost,
                kept: str = _KEPT, depth: float = 0.35, light=None,
-               only=None, alphas=None, stand=None) -> "list":
+               only=None, alphas=None, stand=None,
+               lost_in_their_own_colours: bool = False) -> "list":
     """The gamut painted by what the comparison cannot reproduce.
 
     *only* splits it exactly as it splits a plain mesh -- see :func:`_mesh`.
@@ -652,7 +653,26 @@ def _mesh_lost(gamut, name: str, opacity: float, lost,
     """
     import plotly.graph_objects as go
     v = _plot_points(gamut)
-    colours = [_LOST if bad else kept for bad in lost]
+    # WHAT THE OUT-OF-REACH PART IS PAINTED IN.
+    #
+    # One flat colour says WHERE the loss is and nothing about what is being
+    # lost. Painting those faces in the colours they actually are says both:
+    # grey means "this paper can print it", and anything you can SEE is what
+    # you would not get. Asked for from the window: "is there a way to turn
+    # this magenta out of reach section into the real colors that are out of
+    # reach?"
+    #
+    # It is an option and not a replacement, because the two answer different
+    # questions and one of them is weaker in a particular way: an out-of-reach
+    # colour that happens to be dark and unsaturated sits close to the grey,
+    # so the boundary that a flat magenta makes obvious can become hard to
+    # find. The flat colour stays the default for that reason.
+    if lost_in_their_own_colours:
+        own = [f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
+               for r, g, b in gamut.colors]
+        colours = [own[i] if bad else kept for i, bad in enumerate(lost)]
+    else:
+        colours = [_LOST if bad else kept for bad in lost]
     # THE FADE GOES ON BEFORE THE WELD, so it travels with the colours it
     # belongs to. Welding renumbers the vertices; a mask applied afterwards
     # would line up with nothing.
@@ -8391,7 +8411,8 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                  ideal_neutrals: bool = False, chart=None,
                  light=None, grid: bool = True, space=None,
                  chart_look=None, agree: float = 1.0, differ: float = 1.0,
-                 split: bool = False, drift=None, camera=None):
+                 split: bool = False, drift=None, camera=None,
+                 lost_in_their_own_colours: bool = False):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -8488,9 +8509,10 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # cost, and a page nobody can fade has no use for it at all.
         stand = (standing if (split and standing is not None) else None)
         if marked is not None:
-            fig.add_trace(_mesh_lost(g, name, base_i, marked, c["kept"],
-                                     depth_i, light=light, alphas=alphas,
-                                     stand=stand))
+            fig.add_trace(_mesh_lost(
+                g, name, base_i, marked, c["kept"], depth_i, light=light,
+                alphas=alphas, stand=stand,
+                lost_in_their_own_colours=lost_in_their_own_colours))
         elif how in ("solid", "solid+mesh"):
             fig.add_trace(_mesh(g, name, opacity=base_i,
                                 paint=paint_i, index=i, depth=depth_i,
