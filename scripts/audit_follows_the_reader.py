@@ -141,7 +141,19 @@ def the_pages(where: pathlib.Path) -> tuple:
             ("pinned-dark", None, {"appearance": True, "camera": True}),
             ("saved-following", "follow", {"appearance": True,
                                            "camera": True}),
-            ("following-no-buttons", "follow", {})):
+            ("following-no-buttons", "follow", {}),
+            # EVERY CHOICE THE DIALOG OFFERS, not the two that were
+            # interesting. A reader asked the obvious question -- "some
+            # websites maybe have a fixed design and this would then stand out
+            # too much ... whether one of those could be set as a default" --
+            # and the answer is yes, all six. Which means all six have to be
+            # checked: the inconsistency we met (a dark page with a light
+            # control strip) was invisible until somebody looked at the strip,
+            # and it could hide in any of them.
+            ("pinned-light", "light", {"appearance": True}),
+            ("pinned-none", "none", {"appearance": True}),
+            ("pinned-slate", "slate", {"appearance": True}),
+            ("pinned-ink", "ink", {"appearance": True})):
         out = where / f"{label}.html"
         panel.write_page(out, carry_viewer=True, controls=True, numbers=True,
                          offer=offer, colours=colours)
@@ -198,7 +210,8 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         where = pathlib.Path(tmp)
-        pinned, chosen, bare = the_pages(where)
+        (pinned, chosen, bare, p_light, p_none, p_slate,
+         p_ink) = the_pages(where)
         following = pinned      # the same file, pressed round
         print(f"  wrote one page, saved dark "
               f"({pinned.stat().st_size // 1024} kB)")
@@ -338,6 +351,42 @@ def main() -> int:
                         problems.append(
                             f"{name}: no-buttons page is {body} with a {strip} "
                             f"strip — half of it followed")
+                    tab.close()
+
+                # EVERY PINNED CHOICE OPENS IN ITS OWN COLOURS, and its
+                # strip agrees with its page. "none" is deliberately
+                # see-through, so the body reports whatever is behind it and
+                # only the agreement is asked of that one.
+                from ti3gamut import SCENE_COLOURS as _WANTED
+                for label, page in (("light", p_light), ("none", p_none),
+                                    ("slate", p_slate), ("ink", p_ink)):
+                    tab = browser.new_page(
+                        viewport={"width": 1000, "height": 760})
+                    tab.emulate_media(color_scheme="dark")
+                    tab.goto(page.resolve().as_uri())
+                    tab.wait_for_timeout(4000)
+                    body = rgb(tab.evaluate(
+                        "getComputedStyle(document.body).backgroundColor"))
+                    strip = rgb(tab.evaluate(
+                        "(function(){var b=document.querySelector"
+                        "('.cq-spin-bar');return b ? "
+                        "getComputedStyle(b).backgroundColor : '';})()"))
+                    want = rgb(_WANTED[label]["page"])
+                    fits = (label == "none") or body == want
+                    agrees = (label == "none") or not strip or strip == body
+                    verdict = "ok" if (fits and agrees) else "WRONG"
+                    shown = strip or "(none)"
+                    print(f"      pinned {label:6s}, a DARK reader opens it → "
+                          f"page {body} strip {shown}  {verdict}")
+                    if label != "none" and body != want:
+                        problems.append(
+                            f"{name}: a page pinned to {label} opened {body} "
+                            f"for a dark reader, wanted {want} — the reader's "
+                            f"machine overruled the choice")
+                    if label != "none" and strip and strip != body:
+                        problems.append(
+                            f"{name}: the {label} page is {body} with a "
+                            f"{strip} strip — half of it in another colouring")
                     tab.close()
 
                 # and a pinned page stays pinned
