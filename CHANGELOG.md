@@ -1,9 +1,32 @@
 # Changelog
 
-## v2.39.1 — not yet tagged
+## v2.39.1
 
-Everything here is on master and none of it is in a release. The application
-is at 2.39.0; whether this becomes 2.39.1 is a decision, not a formality.
+A release of small honesties: a page that keeps its words on a phone, a cut
+that opens where you left it, a run that asks before it writes five megabytes,
+and four controls that have stopped pretending to work.
+
+### 🎚 Four colourings stop offering themselves when they cannot act
+
+"Coloured by" and "Split it into colour families" both group the same cloud,
+and only one of them can be in charge. The window already knew that in one
+direction — pick the destination colouring and the tick greys out. The other
+direction was never looked at.
+
+Crossed properly, with two profiles open:
+
+    split off   5 colourings → 5 different pictures
+    split on    5 colourings → 2
+
+With the cloud cut into seven named groups there is nowhere to put a sliding
+scale, so *how far it moved*, *lighter or darker*, *redder or greener* and
+*warmer or cooler* all drew the same picture — while staying lit and
+selectable. They are greyed while the tick is on, and the box says why and
+names the tick to untick. **"The colour it is heading for" stays available**,
+because it is the one that does act: it takes the grouping over and greys the
+tick in turn.
+
+Both windows, the main one and a run's own panel, and both are now guarded.
 
 ### 📱 A saved page keeps every word on a phone
 
