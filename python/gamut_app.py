@@ -5715,6 +5715,32 @@ class TimelineDialog(QDialog):
         pair = self._chosen_pair()
         stem = (f"{first}-over-time" if pair is None
                 else f"{_clean_stem(pair[2])}-where-it-moved")
+        # THE SAME QUESTIONS EVERY OTHER SAVE ASKS, and this one never asked
+        # them. It went straight to the file chooser and wrote the page with
+        # every default, so a run always travelled with the viewer inside it:
+        # 4.9 MB, and no way to ask for the small one. Every other page in
+        # this application offers the choice -- about five megabytes and it
+        # works with no network at all, or forty kilobytes and it fetches the
+        # viewer the first time it is opened -- and a run is the page most
+        # likely to be sent to somebody, because it is the one with a story.
+        #
+        # Found by driving the real window rather than by reading this.
+        #
+        # AND THE DIALOG IS TOLD WHAT KIND OF PAGE IT IS. It has known how to
+        # do that since somebody asked for it -- "the export dialog should
+        # only allow to choose control options ... applicable for what is
+        # exported" -- so a line graph is not offered four ways to turn a
+        # camera it does not have. `shows_a_cloud` is the panel's own answer
+        # to that question and was already written for this.
+        cloud = self.shows_a_cloud()
+        options = WebPageDialog(
+            parent, for_a_cloud=cloud,
+            shows={"two_shapes": self.shows_two_shapes(),
+                   "surfaces": cloud, "flat": False, "camera": cloud,
+                   "fade": cloud and self.shows_two_shapes()})
+        if not options.exec():
+            return
+        chosen = options.choices()
         chooser = parent._file_dialog(
             "Where should the page go?", QFileDialog.FileMode.AnyFile,
             "Web page (*.html)", f"{stem}.html", profiles=False)
@@ -5724,7 +5750,12 @@ class TimelineDialog(QDialog):
             return
         target = Path(chooser.selectedFiles()[0])
         try:
-            said = self.write_page(target)
+            said = self.write_page(
+                target,
+                carry_viewer=chosen.get("carry_viewer", True),
+                controls=chosen.get("controls", True),
+                numbers=chosen.get("numbers", True),
+                offer=chosen.get("offer"))
         except ValueError:
             Notice.warn(self, "There is nothing to save",
                         "That pair could not be compared, so there is no "
