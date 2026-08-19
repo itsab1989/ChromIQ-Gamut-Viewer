@@ -81,6 +81,49 @@ for i in range(box.count()):
     if key != "toward" and shown and not can:
         problems.append(f"[run: {label}] the split is greyed out when it can act")
 
+# AND THE PAIR THE OTHER WAY ROUND, which this file walked past.
+#
+# It went through the colourings with the tick left alone, so it never saw the
+# state the main window's audit found: with the split ON, the four sliding
+# scales draw an identical picture and must not still be selectable. The fix
+# went into one function that BOTH windows call, so if the guard lives in one
+# audit only, the run path is protected by nothing -- which is the very
+# asymmetry the file's own opening quotation is about.
+#
+# BOTH ARE SET ON EVERY PASS, and that is not tidiness. Written the other way
+# -- tick first, then walk the colourings -- it reported four faults that were
+# not there: the loop above leaves the colouring on "the colour it is heading
+# for", which correctly disables the tick, and setChecked() on a DISABLED tick
+# still reports itself checked. The window was right to leave the scales alone
+# (nothing is splitting), and the audit was reading a state no user can reach.
+# The same trap is written up thirty lines into audit_two_groupings.
+print(f"\n  {'coloured by':34s} {'split':6s} can be chosen")
+for i in range(box.count()):
+    for split in (False, True):
+        box.setCurrentIndex(i)
+        box.activated.emit(i)
+        panel._by_family.setChecked(split)
+        pump(6)
+        item = box.model().item(i)
+        if item is None:
+            continue
+        label, key = box.itemText(i), box.itemData(i)
+        live = item.isEnabled()
+        really_split = (panel._by_family.isChecked()
+                        and panel._by_family.isEnabled())
+        print(f"  {label:34s} {str(split):6s} {live}"
+              f"{'' if really_split == split else '   (the tick cannot act)'}")
+        if really_split and key != "toward" and live:
+            problems.append(
+                f"[run: {label}] can still be chosen while the cloud is split "
+                f"into colour families, and picking it changes nothing")
+        if not really_split and not live:
+            problems.append(
+                f"[run: {label}] is greyed out when nothing is splitting the "
+                f"cloud, where it acts")
+panel._by_family.setChecked(False)
+pump(4)
+
 # AND IT MUST NOT CRASH, which is what the same pair did before today.
 box.setCurrentIndex(box.findData("toward"))
 box.activated.emit(box.currentIndex())
