@@ -133,6 +133,26 @@ jobs:
       # QtWebEngine needs these to even load on a bare Linux runner.
       - name: Linux system libraries
         if: runner.os == 'Linux'
+        # A STEP THAT CANNOT SIT THERE FOR HOURS, and two ways it silently can.
+        #
+        # v2.39.5 hung here twice: the job reported "in progress" on this step
+        # for over three hours with nothing after it, while the other six
+        # platforms had finished in minutes. The job's own timeout-minutes: 45
+        # did not fire, because a runner that has stopped reporting is not the
+        # same as a step that is running long.
+        #
+        # NEEDRESTART_MODE=a and DEBIAN_FRONTEND=noninteractive are the two
+        # standard causes of an apt install stopping to ask a question in CI —
+        # a service-restart prompt and a changed configuration file — and
+        # neither is wanted here. -y answers apt; it does not answer those.
+        #
+        # The step timeout is the belt: forty packages installed one at a time
+        # take about five minutes when the mirrors are well, so twenty is
+        # generous, and a hang now costs twenty minutes instead of a night.
+        timeout-minutes: 20
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
         run: |
           sudo apt-get update
           # 24.04 renamed libasound2 to libasound2t64, and apt fails the whole
