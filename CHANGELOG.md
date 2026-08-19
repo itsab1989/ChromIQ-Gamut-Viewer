@@ -1,5 +1,55 @@
 # Changelog
 
+## v2.39.3
+
+One new option, one piece of text that could not be read, and a check that
+stops looking only where the last fault was.
+
+### 🎨 The out-of-reach part, in the colours it actually is
+
+**Show what it cannot print** paints the unprintable part of a shape in one
+flat red: it says *where* the loss is and nothing about *what* is being lost.
+A new tick under it — **…in the colours themselves** — paints those faces in
+the colours they are. Grey still means the comparison can print it, so
+everything you can see is what you would not get: instead of "you lose this
+region", the picture says "you lose these colours", and a lost deep blue is
+distinguishable from a lost bright orange without turning the shape round.
+
+**The flat red stays the default**, and the tooltip says why rather than
+leaving it to taste: an out-of-reach colour that is dark and close to neutral
+paints dark and nearly grey, which sits right next to the grey that means the
+opposite. One flat colour reads from any angle at any size — which is what a
+picture pasted into a document at postage-stamp size needs.
+
+It travels into saved pictures and pages exactly as it looks on screen.
+
+### 👓 Text on a saved page that could not be read
+
+The words belonging to the **Hide anything under** slider measured **1.17:1**
+against the paper they sat on, where every other word on the same page was
+15.13:1 — below any readable floor.
+
+A page that follows the reader's light or dark setting repaints itself when it
+opens, and three elements in turn had been left out of that repaint: the
+control strip, the notes, and now the slider's labels, each keeping the ink
+the file was written with. All three now follow, the slider's handle included.
+
+### 🔍 A check that does not need to be told where to look
+
+The readability rule that came out of this originally named the three places
+the fault had been reported in — which is a check for the one thing it will
+never need to catch again. It now measures the contrast of **every visible
+word a page draws for itself** and fails anything under 3:1. Proved by
+breaking something none of those three places covered: the strip's own
+buttons, which it caught at 1.03:1 in both engines.
+
+The colour-scheme audit was widened the same way. A saved page can be pinned
+to any of six colourings — follow the reader, dark, light, no background,
+neutral grey, plain black and white — for a site whose design is fixed; all
+six are now opened with the reader's machine set the other way, so a page that
+quietly followed instead of staying pinned would show up. Previously two of
+the six were checked.
+
 ## v2.39.2
 
 Three things a page could not do: wear the colours of whoever opens it, be
