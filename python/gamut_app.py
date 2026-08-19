@@ -6982,6 +6982,21 @@ class GamutApp(QMainWindow):
         chv.addWidget(self._chart_btn)
 
         row = QWidget(g_chart)
+        # NO TALLER THAN WHAT IS IN IT, and this row is where that was
+        # learned. A plain QWidget wrapping a row of controls takes Qt's
+        # default policy, which lets it GROW -- so at the narrow width it
+        # opened 62 px tall around a 36 px label, pushed everything below it
+        # down by 26, and the last paragraph in the group ended 8 px past the
+        # group's own bottom edge. That is the cut sentence, again, from one
+        # level up: "narrowing cuts off the text ... in dark mode but it is
+        # there in light mode".
+        #
+        # It looked like an appearance fault for the usual reason: switching
+        # re-polishes every widget, the layouts run again, and the row settles
+        # at 36 -- measured -8px as it opens, +10px after a switch, and +10px
+        # for ever after that.
+        row.setSizePolicy(QSizePolicy.Policy.Preferred,
+                          QSizePolicy.Policy.Maximum)
         rl = QHBoxLayout(row)
         rl.setContentsMargins(0, 0, 0, 0)
         self._chart_label = WrappedLabel("", row)
