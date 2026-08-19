@@ -7090,7 +7090,15 @@ window.cqSpinControls = function (settings) {
   // at, so re-applying that on every load would redraw every outline for
   // nothing in the first moment somebody is looking at it.
   if (cuts && cutAt !== (cuts.at || 0)) showCut(cutAt);
-  if (mode !== (settings.mode || "dark")) applyMode();
+  // AT LOAD, AND ALWAYS WHEN THE COLOURING HAS TO BE WORKED OUT. This ran
+  // only when the remembered colouring DIFFERED from the saved one, which is
+  // right for a fixed palette and wrong for "follow you": a page saved that
+  // way has mode === settings.mode, so nothing ran and the reader got the
+  // static colours the file was written with. Measured before this line
+  // changed: pressing the button round to "follow you" worked perfectly and
+  // saving a page as "follow you" did nothing at all -- the feature looked
+  // finished from inside the window and was not.
+  if (mode === "follow" || mode !== (settings.mode || "dark")) applyMode();
   push();
   // THE PAGE IS UP -- said on a later frame, so the mark survives anything
   // that stops the browser reaching one, including the tab being killed for

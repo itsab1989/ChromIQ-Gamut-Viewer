@@ -54,13 +54,17 @@ def rgb(css: str) -> str:
     return css
 
 
-def a_page(where: pathlib.Path, appearance: str) -> pathlib.Path:
-    """One real saved page, written by the window's own Save.
+def the_pages(where: pathlib.Path) -> tuple:
+    """Two real pages from ONE window: one pinned dark, one saved following.
 
-    Driven rather than called: the scheme list a page can move through is
-    baked into it when it is written, so a page from docs/ predates this
-    colouring and could never reach it. Only a page written by today's code
-    carries it.
+    ONE WINDOW, AND THAT IS NOT TIDINESS. Building a second GamutApp in the
+    same process after the first has closed segfaults — WebEngine's context is
+    gone and the next page to draw takes the process with it (exit 139, no
+    output at all). Both pages therefore come from one session.
+
+    Both are written from a DARK window on purpose: if the second opens light
+    for a light reader, the CHOICE beat the window, which is the whole point
+    of it.
     """
     import os
     import time
@@ -87,12 +91,10 @@ def a_page(where: pathlib.Path, appearance: str) -> pathlib.Path:
             time.sleep(0.01)
 
     pump(2.5)
-    win._set_appearance(appearance)
+    win._set_appearance("dark")
     pump(1.5)
     profiles = sorted(pathlib.Path(tempfile.gettempdir())
                       .glob("showme-*/printer-*.icc"))
-    # THE RUN'S PANEL WRITES THE PAGE. The page writer lives there, not on the
-    # window, and this is the same route audit_routes drives.
     panel = win._timeline
     panel.add(list(profiles[:3]))
     pump(12)
@@ -103,13 +105,19 @@ def a_page(where: pathlib.Path, appearance: str) -> pathlib.Path:
             show.activated.emit(i)
             break
     pump(8)
-    out = where / f"saved-{appearance}.html"
-    panel.write_page(out, carry_viewer=True, controls=True, numbers=True,
-                     offer={"appearance": True, "camera": True})
-    pump(1)
+
+    made = []
+    for label, colours in (("pinned-dark", None), ("saved-following",
+                                                   "follow")):
+        out = where / f"{label}.html"
+        panel.write_page(out, carry_viewer=True, controls=True, numbers=True,
+                         offer={"appearance": True, "camera": True},
+                         colours=colours)
+        pump(1.5)
+        made.append(out)
     win.close()
-    pump(0.4)
-    return out
+    pump(0.5)
+    return tuple(made)
 
 
 def press_round_to_follow(tab, tries: int = 8) -> str:
@@ -158,7 +166,7 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         where = pathlib.Path(tmp)
-        pinned = a_page(where, "dark")
+        pinned, chosen = the_pages(where)
         following = pinned      # the same file, pressed round
         print(f"  wrote one page, saved dark "
               f"({pinned.stat().st_size // 1024} kB)")
@@ -232,6 +240,25 @@ def main() -> int:
                         f"at {after} — it followed once and then stopped")
                 tab.close()
 
+                # a page SAVED as "follow you" needs no pressing
+                for wants, expected in (("light", LIGHT_PAPER),
+                                        ("dark", DARK_PAPER)):
+                    tab = browser.new_page(
+                        viewport={"width": 1000, "height": 760})
+                    tab.emulate_media(color_scheme=wants)
+                    tab.goto(chosen.resolve().as_uri())
+                    tab.wait_for_timeout(4000)
+                    got = rgb(tab.evaluate(
+                        "getComputedStyle(document.body).backgroundColor"))
+                    print(f"      SAVED following, a {wants:5s} reader opens "
+                          f"it → {got}  {'ok' if got == expected else 'WRONG'}")
+                    if got != expected:
+                        problems.append(
+                            f"{name}: a page saved to follow the reader "
+                            f"opened {got} for a {wants} reader, wanted "
+                            f"{expected} — the choice did not reach the file")
+                    tab.close()
+
                 # and a pinned page stays pinned
                 tab = browser.new_page(viewport={"width": 1000, "height": 760})
                 tab.emulate_media(color_scheme="light")
@@ -256,8 +283,9 @@ def main() -> int:
             print("  " + line)
         print(f"\n  {len(problems)} problem(s).")
         return 1
-    print("  Clean: it follows the reader, keeps following, and leaves a "
-          "pinned page alone.")
+    print("  Clean: it follows the reader, keeps following, leaves a pinned "
+          "page alone,\n  and a page SAVED that way needs no pressing at "
+          "all.")
     return 0
 
 

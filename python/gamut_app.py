@@ -2927,6 +2927,63 @@ class WebPageDialog(QDialog):
             "before this option existed.", self)
         glide_hint.setObjectName("hint_glide_hint")
         rows.addWidget(glide_hint, 2, 2, Qt.AlignmentFlag.AlignVCenter)
+
+        # WHICH COLOURS IT OPENS IN, and it is a question worth asking because
+        # the answer used to be "whatever this window happens to be wearing".
+        # Reported of the published pages: "the viewer frames stand out
+        # because they are black by default although we offer multiple
+        # colorschemes" -- a page written from a dark window arrives as a
+        # black rectangle in the middle of somebody's light document.
+        #
+        # "Follow whoever opens it" leads and is the default, because a saved
+        # page is the thing most likely to be sent to somebody whose screen we
+        # know nothing about. Every other colouring is still here, and the
+        # reader can move through all of them in the page itself.
+        self._colours = NoScrollComboBox(self)
+        self._colours.addItem("Follow whoever opens it — dark or light, "
+                              "their choice", "follow")
+        self._colours.addItem("Dark, whatever they use", "dark")
+        self._colours.addItem("Light, whatever they use", "light")
+        self._colours.addItem("No background at all — for dropping into a "
+                              "document", "none")
+        self._colours.addItem("Neutral grey — the fairest ground to judge a "
+                              "colour on", "slate")
+        self._colours.addItem("Plain black and white — for printing it out",
+                              "ink")
+        rows.addWidget(QLabel("Colours", self), 3, 0)
+        rows.addWidget(self._colours, 3, 1)
+        colours_hint = Hint(
+            "Which colours the page wears when somebody opens it — the paper "
+            "behind the shape, the walls of the box around it and the "
+            "writing. NOT ONE MEASURED COLOUR CHANGES: the shape is the same "
+            "shape on every one of them.\n\n"
+            "FOLLOW WHOEVER OPENS IT is the one to keep unless you have a "
+            "reason not to. The page asks the machine reading it whether it "
+            "is set to dark or to light and dresses itself to match, and if "
+            "they switch over at dusk with the page still open it follows "
+            "them. It is the answer for a page you are sending somebody, "
+            "because a dark page dropped into a light document arrives as a "
+            "black rectangle in the middle of it — and a light one in a dark "
+            "document glares.\n\n"
+            "DARK and LIGHT pin it, which is what you want when the page is "
+            "going somewhere you have already seen: a slide deck that is "
+            "black throughout, or a printed handout.\n\n"
+            "NO BACKGROUND AT ALL leaves the shape floating on whatever the "
+            "page is sitting in. That is the one for dropping a picture into "
+            "a document or a forum post where the surrounding paper should "
+            "show through.\n\n"
+            "NEUTRAL GREY is the fairest ground to judge a colour against: a "
+            "gamut on black looks brighter than it is and one on white looks "
+            "duller, and halfway is neither. PLAIN BLACK AND WHITE is for "
+            "printing the page or putting it on a projector, where a "
+            "near-black goes to mud and a warm white goes yellow.\n\n"
+            "WHAT IT NEEDS: nothing. No internet, nothing installed, and no "
+            "setting on the reader's machine — a browser too old to be asked "
+            "which way it is set is treated as light. And whoever opens it "
+            "can still move through all six from the strip under the "
+            "picture, so nothing you choose here shuts a door.",
+            self, title="What colours the page opens in")
+        rows.addWidget(colours_hint, 3, 2, Qt.AlignmentFlag.AlignVCenter)
         glide_hint.follow(self._glide)
 
         outer.addLayout(rows)
@@ -3507,6 +3564,7 @@ class WebPageDialog(QDialog):
         return {"carry_viewer": bool(self._carry.currentData()),
                 "numbers": self._numbers.isChecked(),
                 "controls": self._strip.isChecked(),
+                "colours": self._colours.currentData(),
                 # NOT INSIDE "offer", THOUGH IT SITS BESIDE ONE. The offers say
                 # which CONTROLS the reader is handed; this says how the page
                 # BEHAVES before they touch anything, and it applies just as
@@ -5706,7 +5764,7 @@ class TimelineDialog(QDialog):
 
     def write_page(self, target, *, carry_viewer: bool = True,
                    controls: bool = True, offer=None,
-                   numbers: bool = True) -> str:
+                   numbers: bool = True, colours: str = None) -> str:
         """Write whatever this panel is showing as a page, and say what it is.
 
         ONE WRITER, TWO CALLERS. This panel's own Save button used to write
@@ -5732,10 +5790,11 @@ class TimelineDialog(QDialog):
         if pair is None:
             first = self._run.usable[0].name if self._run.usable else "device"
             figure = drift_series.figure(
-                self._run, mode=self._appearance,
+                self._run, mode=(colours or self._appearance),
                 title=f"How far {first} has moved")
             target.write_text(self.page_html(figure, carry=carry_viewer,
-                                             words=numbers),
+                                             words=numbers,
+                                             colours=colours),
                               encoding="utf-8")
             return ("the sentence explaining what the lines do and do not "
                     "mean is saved with it")
@@ -5772,7 +5831,8 @@ class TimelineDialog(QDialog):
                 spin = asks()
             except Exception:             # noqa: BLE001 — a save must not fall
                 spin = None
-        _write_dark_html(figure, target, self._appearance, spin=spin,
+        _write_dark_html(figure, target, colours or self._appearance,
+                         spin=spin,
                          notes=self._cloud_notes(pair) if numbers else "",
                          carry_viewer=carry_viewer, controls=controls,
                          offer=offer)
@@ -5853,7 +5913,8 @@ class TimelineDialog(QDialog):
                 carry_viewer=chosen.get("carry_viewer", True),
                 controls=chosen.get("controls", True),
                 numbers=chosen.get("numbers", True),
-                offer=chosen.get("offer"))
+                offer=chosen.get("offer"),
+                colours=chosen.get("colours"))
         except ValueError:
             Notice.warn(self, "There is nothing to save",
                         "That pair could not be compared, so there is no "
@@ -5915,7 +5976,7 @@ class TimelineDialog(QDialog):
         Notice.say(self, "Saved", f"Written to\n{target}")
 
     def page_html(self, figure, *, carry: bool = True,
-                  words: bool = True) -> str:
+                  words: bool = True, colours: str = None) -> str:
         """The saved page: the graph, then the words, both on the first screen.
 
         WRITTEN HERE RATHER THAN LEFT TO THE DRAWING LIBRARY, and the reason is
@@ -5939,7 +6000,13 @@ class TimelineDialog(QDialog):
         # that watches for exactly this said "Clean". It watches for this one
         # now too.
         from ti3gamut import _CAPTION_JS, SCENE_COLOURS
-        c = SCENE_COLOURS["light" if self._appearance == "light" else "dark"]
+        # THE CHOICE FIRST, THE WINDOW SECOND. This page — the run's graph —
+        # was the one route that ignored "what colours should it open in",
+        # because it is written here rather than by the shared writer. Caught
+        # by an audit that read the mode back out of the saved file and found
+        # "dark" in a page saved to follow the reader.
+        look = colours or self._appearance
+        c = SCENE_COLOURS["light" if look == "light" else "dark"]
         # THE CAVEAT IS NOT OPTIONAL, and *words* does not reach it. Leaving
         # the numbers out is a reasonable thing to want -- a picture for a
         # slide. Leaving out the sentence that says a rising line is just as
@@ -12928,6 +12995,7 @@ class GamutApp(QMainWindow):
                               controls=chosen.get("controls", True),
                               offer=chosen.get("offer"),
                               glide=chosen.get("glide", False),
+                              colours=chosen.get("colours"),
                               carry_viewer=chosen["carry_viewer"],
                               notes=(self._readout_text()
                                      if chosen["numbers"] else ""))
@@ -13004,7 +13072,8 @@ class GamutApp(QMainWindow):
                 target, carry_viewer=chosen["carry_viewer"],
                 controls=chosen.get("controls", True) if cloud else False,
                 offer=chosen.get("offer") if cloud else None,
-                numbers=chosen["numbers"])
+                numbers=chosen["numbers"],
+                colours=chosen.get("colours"))
         except (OSError, ValueError) as exc:
             Notice.warn(self, "That could not be saved", str(exc))
             return
@@ -14969,7 +15038,8 @@ class GamutApp(QMainWindow):
 
     def _write_scene(self, gamuts, clouds, styles, lost, out, *,
                      controls: bool = False, carry_viewer: bool = True,
-                     notes: str = "", offer=None, glide: bool = False) -> bool:
+                     notes: str = "", offer=None, glide: bool = False,
+                     colours: str = None) -> bool:
         """Write whatever is on screen, whichever of the four it is.
 
         ONE PLACE, BECAUSE THERE WERE TWO AND THEY DISAGREED. This window can
@@ -15001,11 +15071,12 @@ class GamutApp(QMainWindow):
             # four arrangements quietly saved less than the other three.
             if self._side_by_side.isChecked() and len(gamuts) >= 2:
                 self._write_two_slices(gamuts, out, controls=controls,
+                                       colours=colours,
                                        offer=offer, notes=notes,
                                        carry_viewer=carry_viewer)
             else:
                 write_slice_html(gamuts, out, float(self._slice_at.value()),
-                                 self._scene_title(), mode=self._appearance,
+                                 self._scene_title(), mode=(colours or self._appearance),
                                  controls=controls, offer=offer, notes=notes,
                                  carry_viewer=carry_viewer)
             return True
@@ -15037,7 +15108,8 @@ class GamutApp(QMainWindow):
 
     def _write_two_slices(self, gamuts, out, controls: bool = False,
                           offer=None, notes: str = "",
-                          carry_viewer: bool = True) -> None:
+                          carry_viewer: bool = True,
+                          colours: str = None) -> None:
         """Two cross-sections, side by side, on one range.
 
         The same question as two rooms in 3D -- what does each of these look
@@ -15066,10 +15138,10 @@ class GamutApp(QMainWindow):
                     key=lambda i: abs(cuts["levels"][i] - lightness))
         extent = cuts["extent"] if cuts else slice_extent(gamuts, lightness)
         pages = [(name, build_slice_figure(
-            [(name, g)], lightness, "", mode=self._appearance,
+            [(name, g)], lightness, "", mode=(colours or self._appearance),
             extent=extent, legend=False, first=i, slidable=cuts is not None))
             for i, (name, g) in enumerate(gamuts[:2])]
-        write_side_by_side_html(pages, out, mode=self._appearance,
+        write_side_by_side_html(pages, out, mode=(colours or self._appearance),
                                 linked=self._link_cameras.isChecked(),
                                 spin={"cuts": cuts} if cuts else None,
                                 controls=controls, offer=offer, notes=notes)
