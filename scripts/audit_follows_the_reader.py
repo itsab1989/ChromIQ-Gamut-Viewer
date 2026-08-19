@@ -65,6 +65,34 @@ DARK_PAPER = "#111111"
 LIGHT_PAPER = "#efebe6"
 
 
+#: Every word the page writes for itself, measured against what it sits on.
+#: 3:1 is the floor for large text in WCAG 2.1; everything here is well above
+#: it when it is right, so anything near the floor is a fault rather than a
+#: judgement call.
+READABLE = """(function () {
+  function lum(c) {
+    var p = c.match(/\\d+/g).slice(0, 3).map(function (v) {
+      v = v / 255;
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+  }
+  var paper = lum(getComputedStyle(document.body).backgroundColor);
+  var bad = [];
+  document.querySelectorAll("#cq-cut *, .cq-notes, .cq-fingers").forEach(
+    function (e) {
+      if (e.children.length) return;
+      var t = (e.textContent || "").trim();
+      if (!t) return;
+      var ink = lum(getComputedStyle(e).color);
+      var hi = Math.max(ink, paper), lo = Math.min(ink, paper);
+      var ratio = (hi + 0.05) / (lo + 0.05);
+      if (ratio < 3) bad.push([t.slice(0, 34), ratio.toFixed(2)]);
+    });
+  return bad;
+})()"""
+
+
 def rgb(css: str) -> str:
     """'rgb(17, 17, 17)' -> '#111111', so the two can be compared."""
     css = (css or "").strip()
@@ -305,6 +333,20 @@ def main() -> int:
                         "(function(){var b=document.querySelector"
                         "('.cq-spin-bar');return b ? "
                         "getComputedStyle(b).backgroundColor : '';})()"))
+                    # AND EVERY WORD THE PAGE WRITES ITSELF. Checking the body
+                    # and the strip was still checking two things out of three:
+                    # the slider's own labels were left in the ink the file was
+                    # saved with, and measured 1.17:1 against the paper where
+                    # the rest of the page was 15.13:1. Reported as "the text
+                    # that belongs to the hide anything under slider is hard do
+                    # read". So the question is now asked of the words, not of
+                    # the parts somebody thought to name.
+                    faint = tab.evaluate(READABLE)
+                    if faint:
+                        problems.append(
+                            f"{name}: a {wants} reader gets "
+                            + "; ".join(f"{t} at {r}:1" for t, r in faint[:3])
+                            + " — too faint to read against the page")
                     if not strip:
                         problems.append(
                             f"{name}: this page has no control strip to check, "

@@ -7654,6 +7654,23 @@ window.cqSpinControls = function (settings) {
       written[w].style.color = p.text;
       written[w].style.background = p.page;
     }
+    // AND THE SLIDER'S OWN WORDS, which are written with the colours the file
+    // was saved in and were being left behind by every change of colouring.
+    //
+    // Reported from a phone: "the text that belongs to the hide anything under
+    // slider is hard do read". Measured on that page: 1.17:1 against the
+    // paper, where everything else on it is 15.13:1 — the light palette's
+    // near-black ink sitting on a dark page, which is the same fault as the
+    // control strip that stayed light, in a third place.
+    //
+    // The accent goes too, or the slider's handle keeps the old ink while its
+    // label changes.
+    var cut = document.getElementById("cq-cut");
+    if (cut) {
+      cut.style.color = p.text;
+      var runner = cut.querySelector("input[type=range]");
+      if (runner) runner.style.accentColor = p.text;
+    }
     if (flat) {
       relayout({"paper_bgcolor": p.page, "plot_bgcolor": p.plot,
                 "font.color": p.text,
