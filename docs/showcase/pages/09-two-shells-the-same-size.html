@@ -7456,6 +7456,22 @@ window.cqSpinControls = function (settings) {
       // alternative is losing the picture altogether. Scroll chaining is
       // deliberately left alone, so a thumb that reaches the end of the panel
       // carries on to the page rather than stopping dead.
+      // NEVER TALLER THAN WHAT IT OPENS INTO, at any height, and the "any
+      // height" is the fix. This cap lived behind @media (max-height:560px),
+      // which is a phone held upright and nothing else -- so a viewport of,
+      // say, 608 px got no cap at all and the panel grew to 684 px, TALLER
+      // THAN THE THING IT SAT IN. Measured on a framed page at 390x780: the
+      // way back ("less…") ended up at y=-247, above the visible area, with
+      // 1561 px of content in a 608 px frame. Reported from an iPhone: "they
+      // fill the whole frame and i can't see the less button any more so i
+      // can't close them and effectively can't see the shape again".
+      //
+      // A control that cannot be shut is worse than one that was never
+      // offered, so the panel is now capped wherever it is opened -- 60vh in
+      // the ordinary case, and the old tighter 46vh on a short screen where
+      // the picture needs what is left. It scrolls inside itself, and the
+      // strip that opened it stays exactly where it was.
+      + ".cq-spin-panel{max-height:60vh;overflow-y:auto}"
       + "@media (max-height:560px){"
       + ".cq-spin-panel{max-height:46vh;overflow-y:auto}"
       + "}"
@@ -7894,6 +7910,30 @@ window.cqSpinControls = function (settings) {
     // Already all on screen: scrolling would only move the picture for
     // nothing. The 4px is for the rounding two engines disagree about.
     if (box.bottom <= window.innerHeight + 4) return;
+    // WHEN IT CANNOT ALL FIT, THE WAY BACK WINS. Scrolling the panel into
+    // view pushes the strip that opened it off the top -- measured inside a
+    // framed page at 390x780: "less…" ended up at y=-4, four pixels above the
+    // visible area, which is as unreachable as four hundred. Reported from an
+    // iPhone: "i can't see the less button any more so i can't close them".
+    //
+    // So the STRIP is brought to the top instead. The panel is capped and
+    // scrolls inside itself, so everything in it is still reachable, and the
+    // one control that must never be lost is the one that is guaranteed.
+    // AND IT SCROLLS THIS PAGE ONLY. scrollIntoView walks up through every
+    // ancestor, and inside a frame that ancestor is somebody ELSE'S page: the
+    // showcase scrolled itself whenever a reader opened the controls, which
+    // is how the strip left the top of the frame -- y=-114, measured, worse
+    // than the fault it was meant to cure. Reported as "clicking the more
+    // button for controls scrolls down a bit on the whole page".
+    //
+    // Computing the offset and scrolling this window moves this document and
+    // nothing above it, framed or not.
+    if (bar) {
+      var top = bar.getBoundingClientRect().top
+                + (window.pageYOffset || document.documentElement.scrollTop || 0);
+      window.scrollTo({top: Math.max(0, top - 6), behavior: "smooth"});
+      return;
+    }
     // "nearest" rather than "start": where the panel does fit once scrolled
     // to, this stops as soon as it is all visible instead of pushing the
     // picture off the top regardless.
