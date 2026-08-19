@@ -79,11 +79,23 @@ READABLE = """(function () {
   }
   var paper = lum(getComputedStyle(document.body).backgroundColor);
   var bad = [];
-  document.querySelectorAll("#cq-cut *, .cq-notes, .cq-fingers").forEach(
+  // EVERY WORD THE PAGE DRAWS, not a list of the places a fault has already
+  // been found in. Three times now the answer has been "an element nobody had
+  // added to the repaint", and a check naming #cq-cut, .cq-notes and
+  // .cq-fingers would have missed all three before they were reported. The
+  // drawing library's own SVG text is left out: it is restyled through
+  // relayout, in its own colours, and is not the page's writing.
+  document.querySelectorAll("body *").forEach(
     function (e) {
       if (e.children.length) return;
+      if (e.closest(".js-plotly-plot") || e.closest("svg")) return;
+      var tag = e.tagName;
+      if (tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT") return;
       var t = (e.textContent || "").trim();
       if (!t) return;
+      var box = e.getBoundingClientRect();
+      if (box.width < 1 || box.height < 1) return;      // not on screen
+      if (getComputedStyle(e).visibility === "hidden") return;
       var ink = lum(getComputedStyle(e).color);
       var hi = Math.max(ink, paper), lo = Math.min(ink, paper);
       var ratio = (hi + 0.05) / (lo + 0.05);
