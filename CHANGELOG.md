@@ -2,6 +2,95 @@
 
 ## v2.39.0
 
+### ↔ The column gives 146 px back to the picture, and a sentence stops being cut
+
+The controls column was **504 px** and is now **362**. Every one of those
+pixels goes to the shape, which is what anybody opened the window for.
+
+The saving was found long ago and could not be taken, because narrowing the
+column **cut a sentence in half** under *Placed through* — reported with a
+photograph, and "seemingly only in dark mode". Both halves of that turned out
+to be true and neither was about colour.
+
+**A group's own frame is its own business.** Each group was charged the widest
+frame in the column instead of its own. The frame is the difference between
+what a group asks for and what its contents ask for — true while it is open,
+and meaningless once folded, since a folded group asks for the width of its
+heading and nothing else. It is now measured once, with the contents shown, at
+the same moment the group's widest body is measured.
+
+**And the thing that cut the sentence was a row that grew.** A plain container
+wrapping a file name's row takes Qt's default size policy, which lets it
+expand: it opened 62 px tall around a 36 px label, swallowed the group's spare
+height, and pushed the last paragraph 8 px past the group's own bottom edge.
+
+### 🌓 Light and dark now lay out identically, and neither loses a line
+
+Reported in both directions — *"there is a line of text missing in dark, while
+light sometimes leaves too much space"*, and then the reproduction that gave
+it away: *"the initial dark mode is good. you switch to light mode and then
+there is unused space added below the text. you switch back to dark and the
+space is still there"*.
+
+Nothing about light or dark was involved. Traced by watching every measurement
+of one paragraph while a chart opened: its **minimum was right the whole way**
+— 36 px for 36 px of words — while its **height drifted to 48**, because the
+policy let it grow and it absorbed whatever space its group had spare. How
+much it got depended on the order the layouts happened to run in, and
+switching the appearance re-polishes every widget, runs them all again, and
+settles it.
+
+A paragraph is now capped at the height of its own text. It is words; it has
+no business absorbing space. Driven in the real window, opened in dark and
+never switched, then switched and switched back: **every paragraph is exactly
+its needed height in all three states**, where nine of thirteen used to change.
+
+The same mechanism explains a line that vanished: with nothing open the run
+panel says *"Nothing open yet. Add two or more profiles of one device."*, and
+after a trip to the other appearance it said nothing at all, for good. The
+sentence now has one home, and the panel falls back to it instead of to "".
+
+### 📏 A long file name no longer breaks the column
+
+Real names are long, and every list in this window had been tested against
+"Glossy-paper".
+
+* **The run's list scrolled sideways.** A name of 613 px in a 312 px list, and
+  a list answers that with a scrollbar and arrows — reported from the window
+  and then photographed. The rows now take the MIDDLE out instead, which is
+  the right end to lose: these names begin with the device and the paper and
+  END with the date, so cutting the tail would leave rows that all read the
+  same. The full name stays on the tooltip and as accessible text.
+* **The choosers demanded their longest item.** *Placed through* and *Compare
+  with* both hold file names, and a combo box asks for the width of the widest
+  thing in its list: measured, one demanded 613 px and dragged its whole
+  section 306 px off the side of the column.
+
+`audit_panel` now opens a chart AND a profile named the way real files are
+named, so this cannot come back quietly.
+
+### 🖼 The sample pages were serving an older engine than the application
+
+Every page under `docs/pages` is written by pressing the window's own Save
+button and then read back against the claim its card makes. They had not been
+rebuilt since the cut-triangle work, so a shared page carried the wall order
+**without the closed-surface gate** — the fix that stopped it being applied to
+open halves, where the rule it rests on is not true.
+
+### 📷 Every README picture had inherited the last one's settings
+
+The screenshot script promised, in a comment, that each scene starts from a
+fresh window "and its settings cleared with it". It never cleared them, and
+the store lives for the whole run — so scene 09 switches to light and every
+scene after it was photographed in light. Every "the same paper drawn in
+CIELUV / XYZ" picture has been in the wrong appearance for as long as they
+have existed.
+
+It surfaced only once the two appearances began laying out identically: the
+CIELAB shot came out byte-identical to the light-mode one, and the script's
+own rule — two pictures of two different things cannot be one image — caught
+it.
+
 ### 🧰 The loose buttons at the foot of the column are two named sections
 
 Nine controls sat at the bottom of the column with no heading over them —
@@ -170,7 +259,10 @@ called behind the shape is missing"*, and then *"it is ok when this wall can
 be turned off and on but i'd need to know the option that does it"*. It is
 **Show the walls, the grid and the numbers**, in *How it looks*.
 
-### ↔ The column is 503 wide again, not 520
+### ↔ The column was 520 and became 503
+
+*(and then 362 — see the top of this release, where the rest of that story
+is told.)*
 
 Measured rather than trimmed by eye: the column is as wide as its widest row,
 and the widest row was *Outline colour* at 330 px — a label, a drop-down whose
