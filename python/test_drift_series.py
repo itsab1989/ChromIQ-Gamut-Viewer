@@ -763,6 +763,37 @@ def test_one_profile_alone_offers_no_comparison(app, tmp_path):
     dialog.close()
 
 
+def test_one_profile_alone_is_told_a_run_needs_two(tmp_path):
+    """Reported from driving the real window: one profile in, and the panel
+    showed only the file's name and date. A reader who has just added their
+    first profile is exactly the reader who does not yet know what a run is,
+    so the words have to come from the window rather than the manual."""
+    import drift_series
+    only = [dated(tmp_path / "alone.icc", (2021, 6, 1, 12, 0, 0))]
+    run = drift_series.build(only)
+    assert any("at least two" in said for said in run.complaints), (
+        run.complaints)
+
+
+def test_the_needs_two_sentence_is_shown_and_survives_a_redraw(app, tmp_path):
+    """The sentence being IN the run is not the same as the reader SEEING it:
+    the answer box has been wiped once before, by a redraw writing an empty
+    complaints list over it (685b800). So this asks the label, then redraws,
+    then asks again."""
+    import gamut_app
+    only = [dated(tmp_path / "alone.icc", (2021, 6, 1, 12, 0, 0))]
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    dialog.add(only)
+    app.processEvents()
+    assert "at least two" in dialog._complaints.text()
+    assert not dialog._complaints.isHidden()
+    dialog._draw()
+    app.processEvents()
+    assert "at least two" in dialog._complaints.text(), (
+        "a redraw wiped the sentence that says a run needs two profiles")
+    dialog.close()
+
+
 def test_removing_a_profile_never_leaves_a_different_pair_under_one_label(
         app, five_years):
     """THE TRAP THIS WHOLE REBUILD EXISTS FOR, and the worst way it could
