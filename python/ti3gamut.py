@@ -4513,9 +4513,35 @@ window.cqSpin = (function () {
     grabbing = true;
     if (sampler === null) sampler = window.requestAnimationFrame(sample);
   }
+  // THE PICTURE CATCHES UP WHEN THE HAND LETS GO, not when the reader happens
+  // to point at something.
+  //
+  // Reported: "if the mouse arrow lands on the shape itself when letting go it
+  // jumps a little bit", and — the clue that solved it — "a label popped up".
+  // Measured: releasing over a shape moves the camera 69 degrees in Chromium
+  // and 37 in WebKit, IN A SINGLE FRAME, while releasing over the walls moves
+  // nothing. Turning the hover off removes the jump entirely, so the label and
+  // the jump are the same event: pointing at a shape makes the library draw a
+  // readout, and that redraw commits a camera the picture had not yet caught
+  // up with.
+  //
+  // Turning hover off would cure it and take something real away — pointing at
+  // a shape to read its name is behaviour these pages offer. So the catching-up
+  // is done at the moment the button comes up, where it belongs to the gesture
+  // the reader just made, instead of arriving later out of nowhere.
+  function settle() {
+    for (var i = 0; i < ids.length; i++) {
+      var gd = scene(ids[i]);
+      if (!gd || isFlat(gd)) continue;
+      var cam = liveCam(gd);
+      if (cam) setCam(gd, cam);
+    }
+  }
+
   function letGo() {
     if (!grabbing) return;
     grabbing = false;
+    settle();
     if (sampler !== null) {
       window.cancelAnimationFrame(sampler); sampler = null;
     }

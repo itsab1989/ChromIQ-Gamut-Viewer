@@ -5734,9 +5734,35 @@ window.cqSpin = (function () {
     grabbing = true;
     if (sampler === null) sampler = window.requestAnimationFrame(sample);
   }
+  // THE PICTURE CATCHES UP WHEN THE HAND LETS GO, not when the reader happens
+  // to point at something.
+  //
+  // Reported: "if the mouse arrow lands on the shape itself when letting go it
+  // jumps a little bit", and — the clue that solved it — "a label popped up".
+  // Measured: releasing over a shape moves the camera 69 degrees in Chromium
+  // and 37 in WebKit, IN A SINGLE FRAME, while releasing over the walls moves
+  // nothing. Turning the hover off removes the jump entirely, so the label and
+  // the jump are the same event: pointing at a shape makes the library draw a
+  // readout, and that redraw commits a camera the picture had not yet caught
+  // up with.
+  //
+  // Turning hover off would cure it and take something real away — pointing at
+  // a shape to read its name is behaviour these pages offer. So the catching-up
+  // is done at the moment the button comes up, where it belongs to the gesture
+  // the reader just made, instead of arriving later out of nowhere.
+  function settle() {
+    for (var i = 0; i < ids.length; i++) {
+      var gd = scene(ids[i]);
+      if (!gd || isFlat(gd)) continue;
+      var cam = liveCam(gd);
+      if (cam) setCam(gd, cam);
+    }
+  }
+
   function letGo() {
     if (!grabbing) return;
     grabbing = false;
+    settle();
     if (sampler !== null) {
       window.cancelAnimationFrame(sampler); sampler = null;
     }
@@ -8160,5 +8186,5 @@ window.cqSpinControls = function (settings) {
   settled();
 };
 
-window.addEventListener('load', function () {var s = {"on": true, "glide": true, "placed": true, "turn": {"mode": "swing", "speed": 7.0, "range": 80.0}, "tilt": {"mode": "off", "speed": 4.0, "range": 20.0}, "ids": ["scene0"], "ink": "#22211f", "paper": "#efebe6", "mode": "follow", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true, "opacity": true, "wires": true, "grey": true, "views": true, "fullscreen": true, "picture": true, "cut": true, "agree": true, "sweep": false}, "palettes": {"dark": {"page": "#111111", "plot": "#141414", "grid": "#262626", "caption": "#8a8a8a", "text": "#e6e6e6", "axis": "#333333", "kept": "rgb(68,74,87)", "wire": "#9aa3b2", "mark": "#9aa3b2"}, "light": {"page": "#efebe6", "plot": "#f7f4ef", "grid": "#e0ddd7", "caption": "#7a7570", "text": "#22211f", "axis": "#d0ccc6", "kept": "rgb(176,180,188)", "wire": "#a8a4a0", "mark": "#7a7570"}, "none": {"page": "rgba(0,0,0,0)", "plot": "rgba(0,0,0,0)", "grid": "rgba(0,0,0,0)", "caption": "#8a8a8a", "text": "#8a8a8a", "axis": "rgba(0,0,0,0)", "kept": "rgb(120,124,132)", "wire": "#9aa3b2", "mark": "#9aa3b2"}, "slate": {"page": "#727272", "plot": "#7a7a7a", "grid": "#8f8f8f", "caption": "#242424", "text": "#151515", "axis": "#8f8f8f", "kept": "rgb(126,126,126)", "wire": "#414141", "mark": "#242424"}, "ink": {"page": "#ffffff", "plot": "#ffffff", "grid": "#c8c8c8", "caption": "#000000", "text": "#000000", "axis": "#c8c8c8", "kept": "rgb(190,190,190)", "wire": "#606060", "mark": "#000000"}}, "schemes": ["follow", "dark", "light", "none", "slate", "ink"]};window.cqSpin.set(s);window.cqSpinControls(s);});</script></body>
+window.addEventListener('load', function () {var s = {"on": true, "glide": true, "placed": true, "turn": {"mode": "swing", "speed": 7.0, "range": 80.0}, "tilt": {"mode": "off", "speed": 4.0, "range": 20.0}, "ids": ["scene0"], "ink": "#22211f", "paper": "#efebe6", "mode": "follow", "show": {"play": true, "speed": true, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true, "opacity": true, "wires": true, "grey": true, "views": true, "fullscreen": true, "picture": true, "cut": true, "agree": true, "sweep": false}, "palettes": {"dark": {"page": "#111111", "plot": "#141414", "grid": "#262626", "caption": "#8a8a8a", "text": "#e6e6e6", "axis": "#333333", "kept": "rgb(68,74,87)", "wire": "#9aa3b2", "mark": "#9aa3b2"}, "light": {"page": "#efebe6", "plot": "#f7f4ef", "grid": "#e0ddd7", "caption": "#7a7570", "text": "#22211f", "axis": "#d0ccc6", "kept": "rgb(176,180,188)", "wire": "#a8a4a0", "mark": "#7a7570"}, "none": {"page": "rgba(0,0,0,0)", "plot": "rgba(0,0,0,0)", "grid": "rgba(0,0,0,0)", "caption": "#8a8a8a", "text": "#8a8a8a", "axis": "rgba(0,0,0,0)", "kept": "rgb(120,124,132)", "wire": "#9aa3b2", "mark": "#9aa3b2"}, "slate": {"page": "#727272", "plot": "#7a7a7a", "grid": "#8f8f8f", "caption": "#242424", "text": "#151515", "axis": "#8f8f8f", "kept": "rgb(126,126,126)", "wire": "#414141", "mark": "#242424"}, "ink": {"page": "#ffffff", "plot": "#ffffff", "grid": "#c8c8c8", "caption": "#000000", "text": "#000000", "axis": "#c8c8c8", "kept": "rgb(190,190,190)", "wire": "#606060", "mark": "#000000"}}, "schemes": ["follow", "dark", "light", "none", "slate", "ink"]};window.cqSettings = s;window.cqSpin.set(s);window.cqSpinControls(s);});</script></body>
 </html>
