@@ -18,10 +18,13 @@ WHAT IT ASKS, of each size, inside the page itself:
      sized to something rather than nothing.
 
 WHAT IT CANNOT ANSWER. This runs in QtWebEngine, which is Chromium -- so it
-speaks for Chrome and Edge, and NOT for Firefox or Safari. Those two need a
-real window and a pair of eyes; a headless Firefox screenshot cannot even
-photograph a WebGL canvas (measured: a canvas cleared to bright pink comes out
-background-coloured), so a blank picture from one proves nothing at all.
+speaks for Chrome and Edge, and NOT for Firefox or Safari. Those are
+`audit_other_engines.py`'s job: the same questions, from `page_questions.py`,
+asked of real Gecko and real WebKit. One caveat carries over from measuring:
+a headless Firefox SCREENSHOT cannot photograph a WebGL canvas (a canvas
+cleared to bright pink comes out background-coloured), but the canvas's own
+context answers truthfully in all three engines, which is what the questions
+read.
 
     python scripts/audit_the_page_at_any_size.py [page.html ...]
 """
@@ -53,47 +56,11 @@ from PyQt6.QtCore import QUrl                                  # noqa: E402
 from PyQt6.QtWebEngineWidgets import QWebEngineView            # noqa: E402
 from PyQt6.QtWidgets import QApplication                       # noqa: E402
 
-#: The shapes of window a reader actually has. The last is a phone upright,
-#: which is the one nobody tests and everybody uses.
-SIZES = [(1680, 1000), (1280, 860), (1024, 700), (820, 900), (620, 800),
-         (390, 780)]
-
-ASK = """(function () {
-  var d = document.documentElement, b = document.body;
-  var out = {
-    // WHETHER THIS IS THE PAGE AT ALL. Everything below reads as clean on a
-    // blank document, so the first thing asked is whether anything arrived.
-    here: (document.title || '') + '|' + (b ? b.innerHTML.length : 0),
-    w: window.innerWidth, h: window.innerHeight,
-    sideways: Math.max(d.scrollWidth, b ? b.scrollWidth : 0) - d.clientWidth,
-    canvases: 0, gl: 0, glw: 0, past: [], strip: null
-  };
-  // AND HOW MUCH IS DRAWN IN SVG, because not every page is a 3D scene: the
-  // run pages are LINE GRAPHS, which Plotly draws as SVG paths and which have
-  // no canvas at all. Demanding a canvas of those reported six faults that
-  // were the check's own assumption.
-  var paths = document.querySelectorAll('svg path, svg .point, svg .trace');
-  out.svg = paths.length;
-  var cs = document.getElementsByTagName('canvas');
-  out.canvases = cs.length;
-  for (var i = 0; i < cs.length; i++) {
-    var g = null;
-    try { g = cs[i].getContext('webgl2') || cs[i].getContext('webgl'); }
-    catch (e) {}
-    if (g) { out.gl++; out.glw = Math.max(out.glw, g.drawingBufferWidth); }
-  }
-  var all = document.querySelectorAll('button, a, .cq-controls, .modebar');
-  for (var j = 0; j < all.length; j++) {
-    var r = all[j].getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) continue;
-    if (r.right > d.clientWidth + 1 || r.left < -1) {
-      out.past.push((all[j].textContent || all[j].className || 'element')
-                    .trim().slice(0, 24) + ' @' + Math.round(r.left) + '..' +
-                    Math.round(r.right));
-    }
-  }
-  return JSON.stringify(out);
-})()"""
+# THE QUESTIONS LIVE IN ONE PLACE, shared with the audit that asks them of
+# Firefox, WebKit and stock Chromium. Two private copies is how one audit
+# quietly starts asking something easier than the other.
+sys.path.insert(0, str(HERE))
+from page_questions import ASK, SIZES, judge, said             # noqa: E402
 
 
 def main() -> int:
@@ -142,31 +109,10 @@ def main() -> int:
                                 f"answered")
                 continue
             where = f"[{page.name} {wide}x{tall}]"
-            # A PAGE THAT DID NOT ARRIVE CANNOT BE AUDITED, and must never be
-            # reported as though it had been.
-            body = int((got.get("here") or "|0").split("|")[-1] or 0)
-            if body < 500:
-                problems.append(f"{where} the page did not load at all "
-                                f"({body} bytes of body) — nothing below this "
-                                f"was measured")
-                continue
-            if got["sideways"] > 1:
-                problems.append(f"{where} scrolls SIDEWAYS by "
-                                f"{got['sideways']}px")
-            for item in got["past"]:
-                problems.append(f"{where} past the edge: {item}")
-            drawn_in_gl = got["canvases"] >= 1 and got["gl"] >= 1 and got["glw"] >= 1
-            drawn_in_svg = got.get("svg", 0) >= 20
-            if got["canvases"] >= 1 and not drawn_in_gl:
-                problems.append(f"{where} a canvas with no live WebGL context")
-            elif not drawn_in_gl and not drawn_in_svg:
-                problems.append(
-                    f"{where} nothing is drawn — no WebGL canvas and only "
-                    f"{got.get('svg', 0)} SVG marks")
-            print(f"  {where}: {got['canvases']} canvas, gl {got['gl']}, "
-                  f"svg {got.get('svg', 0)}, "
-                  f"sideways {got['sideways']}px, "
-                  f"{len(got['past'])} past the edge")
+            found = judge(got, where)
+            problems.extend(found)
+            if not (len(found) == 1 and "did not load" in found[0]):
+                print(f"  {where}: {said(got)}")
     print()
     if problems:
         for line in problems:
