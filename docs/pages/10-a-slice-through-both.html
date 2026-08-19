@@ -4209,12 +4209,19 @@ window.cqOrder = (function () {
         // this is here to remove.
         if (!(t.opacity < 1) && !someColourFades(t.vertexcolor)) continue;
         var m = t.i.length, mid = new Float64Array(m * 3), f;
-        var nrm = new Float64Array(m * 3), vol = 0;
+        // ONLY A CLOSED SURFACE HAS A WALL BEHIND IT. Without this the wall
+        // order was applied to every see-through mesh alike, including the
+        // agreeing and differing HALVES of a shape -- open sheets, where the
+        // rule it rests on is not true and the two groups can swap as the
+        // shape turns. The page says which are closed; see `_is_a_shell`.
+        var shut = !!(t.meta && t.meta.cqShell);
+        var nrm = shut ? new Float64Array(m * 3) : null, vol = 0;
         for (f = 0; f < m; f++) {
           var a = t.i[f], b = t.j[f], c = t.k[f];
           mid[f * 3]     = (t.x[a] + t.x[b] + t.x[c]) / 3;
           mid[f * 3 + 1] = (t.y[a] + t.y[b] + t.y[c]) / 3;
           mid[f * 3 + 2] = (t.z[a] + t.z[b] + t.z[c]) / 3;
+          if (!nrm) continue;
           // The triangle's own cross product, fixed in the measurements'
           // numbers: which way it points against the line of sight is the
           // only view-dependent part, and that is one dot product a frame.
@@ -4958,8 +4965,14 @@ window.cqOrder = (function () {
               surfaces += plots[q].meshes.length;
               if (plots[q].pool) pooled += plots[q].pool.count;
             }
+            // WHETHER THE PAGE ARRIVED WITH THE WALL ORDER ON, which is a
+            // different claim from whether it works. A check that throws the
+            // switch itself proves the mechanism and nothing about the
+            // default -- measured: switching the default off left the wall
+            // audit reporting "Clean", because it turns it on before it
+            // looks. So the default is reported, and asked for separately.
             return {fast: fast, plots: plots.length, faces: n,
-                    surfaces: surfaces, pooled: pooled};
+                    surfaces: surfaces, pooled: pooled, wall: wall};
           }};
 })();
 window.addEventListener('load', function () {
