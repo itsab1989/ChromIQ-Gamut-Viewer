@@ -740,9 +740,33 @@ class WrappedLabel(QLabel):
         # has to be capped outright, which is what this does.
         self._hug = hug
         self.setWordWrap(True)
-        self.setSizePolicy(QSizePolicy.Policy.Preferred,
-                           QSizePolicy.Policy.Fixed if hug
-                           else QSizePolicy.Policy.MinimumExpanding)
+        policy = QSizePolicy(QSizePolicy.Policy.Preferred,
+                             QSizePolicy.Policy.Fixed if hug
+                             else QSizePolicy.Policy.MinimumExpanding)
+        # THE LAYOUT ASKS AT THE REAL WIDTH, EVERY TIME, instead of trusting a
+        # height that was worked out once and kept.
+        #
+        # Reported as a difference between the appearances, in both
+        # directions: "comparing dark and light mode on some instances there
+        # is a line of text missing in dark, while light sometimes leaves too
+        # much space", and then the reproduction that names the mechanism —
+        # "with the wider left column the initial dark mode is good. you
+        # switch to light mode and then there is unused space added below the
+        # text. you switch back to dark and the space is still there".
+        #
+        # Nothing about light or dark is involved. Switching the appearance
+        # re-applies the stylesheet, which re-POLISHES every widget, and Qt
+        # applies stylesheet padding at polish -- so widths move for a moment
+        # and every paragraph measured itself against a width it does not
+        # end up with. The answer was then kept as a minimum height, which is
+        # a floor: the extra space could never come back out, whichever
+        # appearance you returned to.
+        #
+        # heightForWidth is Qt's own answer to this. QLabel already computes
+        # it correctly for a wrapped label; what was missing is the size
+        # policy SAYING SO, without which no layout ever calls it.
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
         self._refit()
 
     def _refit(self) -> None:
@@ -767,7 +791,49 @@ class WrappedLabel(QLabel):
         if needed != self.minimumHeight():
             self.setMinimumHeight(needed)
             self.updateGeometry()
-        if self._hug and needed != self.maximumHeight():
+            # AND EVERY LAYOUT ABOVE IT IS TOLD TO WORK AGAIN.
+            #
+            # updateGeometry() says "my hint has changed"; it does not make
+            # anything act on it. A layout that has already handed this label
+            # 48 px goes on handing it 48 px, even after the label has just
+            # said 36 is enough -- a minimum is a floor, and lowering a floor
+            # does not lower what is standing on it. Measured: twelve pixels
+            # of nothing under the name of an open chart, which stayed until
+            # the appearance was switched, because re-polishing is the only
+            # thing that was resizing anything.
+            holder = self.parentWidget()
+            for _ in range(6):        # as far as the column, never further
+                if holder is None:
+                    break
+                if holder.layout() is not None:
+                    holder.layout().invalidate()
+                holder = holder.parentWidget()
+        # AND NEVER TALLER THAN ITS OWN WORDS, WHICH IS THE WHOLE OF THE
+        # "UNUSED SPACE" REPORT.
+        #
+        # Reported as an appearance bug -- "you switch to light mode and then
+        # there is unused space added below the text. you switch back to dark
+        # and the space is still there" -- and it is nothing of the kind.
+        # Traced by watching every measurement of one label as a chart was
+        # opened:
+        #
+        #     _refit  width 422 -> min 36..36   height 36 -> 36
+        #     _refit  width 422 -> min 20..36   height 21 -> 36
+        #     _refit  width 422 -> min 36..36   height 41 -> 41
+        #     _refit  width 422 -> min 36..36   height 48 -> 48
+        #
+        # The MINIMUM is right throughout: 36 px for 36 px of words. The
+        # HEIGHT drifts to 48 anyway, because the policy is MinimumExpanding
+        # -- the label is allowed to grow, so it soaks up whatever vertical
+        # space its group has going spare, and how much it gets depends on
+        # the order the layouts happen to run in. Re-polishing on an
+        # appearance change runs them again and it lands on 36.
+        #
+        # A paragraph has no business absorbing space: it is words, and it
+        # needs exactly as much room as the words take. Capping it puts the
+        # spare where it belongs -- the group tightens to its contents, which
+        # is what _tighten_groups asks for anyway.
+        if needed != self.maximumHeight():
             self.setMaximumHeight(needed)
 
     def resizeEvent(self, event) -> None:      # noqa: N802 (Qt naming)
@@ -777,6 +843,28 @@ class WrappedLabel(QLabel):
     def setText(self, text: str) -> None:      # noqa: N802 (Qt naming)
         super().setText(text)
         self._refit()
+        # AND AGAIN ONCE THE LAYOUT HAS HAD ITS SAY.
+        #
+        # Measured, driving the real window: the label naming an open chart
+        # came out 48 px tall for 36 px of words -- twelve pixels of nothing
+        # under the text -- and stayed that way until the appearance was
+        # switched, after which it was 36 and correct for ever. Nine of the
+        # thirteen paragraphs in the column changed height across that round
+        # trip, which is the whole of "there is unused space added below the
+        # text" and of the line missing in the other direction.
+        #
+        # The reason is ordinary and has nothing to do with light or dark:
+        # text is set BEFORE the layout has given the label the width it will
+        # end up with -- a file is opened, the readouts are written, and the
+        # column is measured afterwards -- so it wraps to more lines than it
+        # needs and keeps that height as a floor. Switching the appearance
+        # re-polishes everything, which resizes it, which is the only thing
+        # that ever asked it to measure itself again.
+        #
+        # Asked a second time on the next turn of the event loop, when the
+        # width is real. It is one measurement of one label and it happens
+        # only when the words change.
+        QTimer.singleShot(0, self._refit)
 
 
 class NoScrollComboBox(QComboBox):
@@ -10278,6 +10366,28 @@ class GamutApp(QMainWindow):
         needs = max(346, column.minimumSizeHint().width(), *(wants or (0,)))
         if needs > column.minimumWidth():
             column.setFixedWidth(needs)
+        # AND EVERY PARAGRAPH IS MEASURED AGAIN, AT THE WIDTH IT ENDED UP
+        # WITH. This is the other half of the cut sentence, and it is what
+        # made the fault look like a property of the dark appearance.
+        #
+        # A WrappedLabel works its height out from the width it has, and it
+        # is told to do so by its own resizeEvent. But a paragraph whose text
+        # is set BEFORE the column has settled -- which is every paragraph
+        # that describes a file, because the file is opened first and the
+        # column is measured afterwards -- keeps the height it worked out at
+        # the width it had then, and nothing resizes it again. Switching the
+        # appearance re-polishes every widget, which does resize them, which
+        # is why the same window was right in one appearance and wrong in the
+        # other. Reported exactly that way: "comparing dark and light mode on
+        # some instances there is a line of text missing in dark, while light
+        # sometimes leaves too much space" -- one stale measurement, and it
+        # errs in both directions depending on which way the width moved.
+        #
+        # Asked here because here is where the width stops moving: this runs
+        # once as the window comes up, and again after every appearance
+        # change, which are the two moments the answer can go stale.
+        for paragraph in column.findChildren(WrappedLabel):
+            paragraph._refit()
         gutter = area.verticalScrollBar().sizeHint().width()
         wide = needs + gutter + 2 * area.frameWidth()
         if wide > area.width():
