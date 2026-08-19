@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.39.6
 
 ### 🧱 The remainder of an extreme fade is drawn genuinely solid
 
