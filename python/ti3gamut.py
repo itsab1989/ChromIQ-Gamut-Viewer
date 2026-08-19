@@ -4834,7 +4834,11 @@ def _spin_script(ids, spin, mode: str = "dark",
     blob = json.dumps(settings)
     return (f"<script>{_SPIN_JS}\n{_SPIN_CONTROLS_JS}\n"
             f"window.addEventListener('load', function () "
-            f"{{var s = {blob};window.cqSpin.set(s);"
+            # THE SETTINGS ARE KEPT WHERE THE PAGE CAN REACH THEM AGAIN. A
+            # page that can switch between two pictures has to rebuild its
+            # strip for whichever is showing, and it can only do that from the
+            # settings it was built with. Nothing else reads this.
+            f"{{var s = {blob};window.cqSettings = s;window.cqSpin.set(s);"
             f"window.cqSpinControls(s);}});</script>")
 
 
@@ -7309,12 +7313,31 @@ def write_two_views_html(views, out: Path, mode: str = "dark", spin=None,
     });
     var live = views[which].querySelector(".js-plotly-plot");
     if (live && window.Plotly) window.Plotly.Plots.resize(live);
-    // ONLY THE ENGINE IS TOLD. Handing the strip a settings object with
-    // nothing in it but the ids rebuilds it from nothing — measured, it came
-    // out with no controls at all in either engine. The strip is built once
-    // from the page's own settings and stays; what changes is which picture
-    // the engine is pointed at.
-    if (window.cqSpin && live) window.cqSpin.set({ids: [live.id]});
+    // AND THE STRIP IS REBUILT FOR THE PICTURE THAT IS SHOWING. This is the
+    // half the switch was asked for: "the other controls would then have to
+    // update accordingly so the user can manipulate each view in a way that
+    // makes sense for it".
+    //
+    // The strip already knows how — it drops the turning controls when it is
+    // told the picture is flat — but it is told ONCE, when the page loads. So
+    // it is handed the page's own settings again with two things changed: the
+    // id that is showing, and whether that one is flat. Handing it anything
+    // less rebuilds it from nothing, which is measured: with only the ids it
+    // came back with no controls at all.
+    if (!live || !window.cqSettings) return;
+    var flat = !(live._fullLayout && live._fullLayout.scene);
+    var s = {};
+    for (var k in window.cqSettings) s[k] = window.cqSettings[k];
+    s.ids = [live.id];
+    s.flat = flat;
+    if (window.cqSpin) window.cqSpin.set(s);
+    if (window.cqSpinControls) {
+      var old = document.querySelector(".cq-spin-bar");
+      var panel = document.querySelector(".cq-spin-panel");
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
+      window.cqSpinControls(s);
+    }
   }
   buttons.forEach(function (b, i) {
     b.addEventListener("click", function () { show(i); });
