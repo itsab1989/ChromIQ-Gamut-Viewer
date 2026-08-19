@@ -44,6 +44,8 @@ SHOWCASE = HERE.parent / "docs" / "showcase"
 INDEX = SHOWCASE / "index.html"
 #: A scene page with the full set of controls behind "more…".
 PAGE = SHOWCASE / "pages" / "02-against-adobe-rgb.html"
+#: The page whose cut readout actually changes as the slider moves.
+DRIFTED = SHOWCASE / "pages" / "09-two-shells-the-same-size.html"
 
 #: Heights that matter: the one reported, one just under the old media query
 #: where the cap DID apply, and a roomy one.
@@ -146,6 +148,67 @@ def main() -> int:
                             f"{name} {how} at {height}: pressing it again did "
                             f"not put the picture back")
                     tab.close()
+        for browser in engines.values():
+            browser.close()
+
+    # AND THE SLIDER MUST NOT CHANGE LENGTH UNDER THE THUMB.
+    #
+    # Its readout says "nothing hidden" at one end and "ΔE 3.0" along the rest,
+    # and everything around it was sized to its content: the box, the row and
+    # the track all shrank when the words got shorter, so the slider grew 18 px
+    # the moment somebody moved it and shrank back at the end. Reported as
+    # "kind of jumpy and confusing".
+    #
+    # Asked of the TRACK rather than of the words, because the words are
+    # supposed to change and the track is not.
+    print()
+    print(f"  {'engine':9s} {'width':>6s}  the slider's track")
+    print("  " + "-" * 40)
+    with sync_playwright() as play:
+        try:
+            engines = {n: getattr(play, n).launch()
+                       for n in ("chromium", "webkit")}
+        except Exception:                               # noqa: BLE001
+            engines = {}
+        for name, browser in engines.items():
+            for wide in (390, 900):
+                tab = browser.new_page(viewport={"width": wide,
+                                                 "height": 900})
+                # THE PAGE THAT HAS THE SLIDER WORTH WATCHING. The
+                # containment page above carries a cut control whose readout
+                # never changes, so it cannot show the fault at all: with the
+                # fix removed entirely, this check still said "ok". A drift
+                # page is the one whose readout swaps between "nothing hidden"
+                # and "ΔE 3.0", which is what made the track move.
+                tab.goto(DRIFTED.resolve().as_uri())
+                tab.wait_for_timeout(6000)
+                tab.evaluate("var c = document.getElementById('cq-cut');"
+                             "if (c) c.hidden = false;")
+                tab.wait_for_timeout(400)
+                widths = tab.evaluate("""(function(){
+                  var r = document.querySelector('#cq-cut input[type=range]');
+                  if (!r) return [];
+                  var out = [], was = r.value;
+                  [r.min, r.max, r.min].forEach(function (v) {
+                    r.value = v;
+                    r.dispatchEvent(new Event('input', {bubbles: true}));
+                    out.push(Math.round(r.getBoundingClientRect().width));
+                  });
+                  r.value = was;
+                  r.dispatchEvent(new Event('input', {bubbles: true}));
+                  return out;
+                })()""")
+                tab.close()
+                if not widths:
+                    continue
+                moved = max(widths) - min(widths)
+                print(f"  {name:9s} {wide:6d}  {min(widths)}–{max(widths)} px"
+                      f"   moves {moved} px  {'ok' if moved <= 1 else 'JUMPY'}")
+                if moved > 1:
+                    problems.append(
+                        f"{name} at {wide}px: the slider's track changes by "
+                        f"{moved} px as the reader drags it — it grows and "
+                        f"shrinks under the thumb")
         for browser in engines.values():
             browser.close()
 

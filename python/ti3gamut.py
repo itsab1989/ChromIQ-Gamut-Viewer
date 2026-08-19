@@ -7630,7 +7630,17 @@ def _threshold_control(html: str, mode: str, its_own_slider: bool = True) -> str
     # WORKING PART is handed out either way -- see window.cqHideBelow -- so
     # the window's own slider drives exactly the code a reader would.
     js = """
-<div id="cq-cut" hidden style="max-width:46em;margin:0 auto;padding:.4em 1.5em 1.2em;
+<!-- A WIDTH OF ITS OWN, or the whole control sizes itself to whatever it
+     currently says. It is a flex item in the page's column, so "max-width and
+     auto margins" left it shrink-to-fit: measured, the box went 498 px wide
+     saying "nothing hidden" and 461 px saying "ΔE 3.0", and the slider inside
+     it lost 18 px the moment the reader moved the thumb. Reported as "it
+     changes its width ... which is kind of jumpy and confusing".
+     Two earlier attempts failed because they treated the symptom — pinning
+     the readout, then giving the row its own line — while this box went on
+     shrinking, and one of them made the jump worse (39 px). -->
+<div id="cq-cut" hidden style="width:100%;box-sizing:border-box;
+     max-width:46em;margin:0 auto;padding:.4em 1.5em 1.2em;
      font:14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
      color:__TEXT__">
   <label style="display:flex;align-items:center;gap:.8em;flex-wrap:wrap">
@@ -7645,8 +7655,13 @@ def _threshold_control(html: str, mode: str, its_own_slider: bool = True) -> str
       <input type="range" data-cq="cut" min="0" max="0" step="1" value="0"
              style="flex:1 1 8em;min-width:7em;min-height:44px;
                     accent-color:__TEXT__">
+      <!-- AND THE READOUT KEEPS ITS OWN WIDTH, which only works now that the
+           box around it does. It says "nothing hidden" at one end and "ΔE 3.0"
+           along the rest — 97 px against 42 px — and being sized to its
+           content it handed the difference to the track. 7.2em is the wider of
+           those two at this size, measured rather than guessed. -->
       <span data-cq="cutsays" style="flex:0 0 auto;white-space:nowrap;
-            opacity:.85">nothing hidden</span>
+            min-width:7.2em;opacity:.85">nothing hidden</span>
     </span>
   </label>
   <p data-cq="cutnote" style="margin:.4em 0 0;opacity:.75"></p>
