@@ -82,16 +82,68 @@ side is within noise of baseline and the fix REDUCES sorted faces). The lag
 report is not reproduced here — likely software rendering or window size;
 open.
 
-## Open (next pass)
+## Window scenes, per-pixel — SETTLED
 
-* Which trace paints the "flat lid" in scene B — hide-one-trace probe is in
-  window_repro.py (run on baseline; fix-tree re-run pending).
-* Parity classification of the window meshes (inside-view pixel counts per
-  camera, fix vs baseline) — meshes and matrices are harvested.
-* Whether the fix's own 16-camera check (4,062 → 0) was taken in the same
-  two-shape agree-0 configuration — to be answered from the fix's trail.
-* The design question the numbers pose: an open shell's interior is lit like
-  an exterior, so it does not READ as an interior. Candidate cures to
-  measure, not pick: back-face culling on the open remainder / a cap along
-  the cut / darkening back faces. Any cure must reach the window AND the
-  saved pages and must not give back the 108.3 → 49.9 ms gain.
+Parity classifier on the window's own harvested meshes; calibration on the
+scene's own closed recut shell (B-a99): 15,797 and 54,696 covered pixels at
+two cameras, 0 classified inside — exact.
+
+* Scene A (2019 vs 2021, agree 0%): at the default camera **87% of the drawn
+  shell's pixels (6,970 of 7,982) show the INTERIOR**; at a second tilt 90%;
+  at a from-below tilt 0%. The standing remainder of a drift pair is thin
+  scattered patches, and from most angles you look at their inner sides —
+  lit like outer ones. "The inside looks shattered" is literally exact.
+* Scene A (differ 0%): ~0% interior — the agreeing bulk stands and shows
+  its exterior; that end of the control does not produce the effect.
+* Scene B (2019 vs sRGB + chart, agree 0%): interior is only 2–9% at the
+  probed cameras. The big "flat lid" is the standing remainder's TRUE
+  EXTERIOR — the shape genuinely loses its top at agree 0% by design, with
+  a hard cut edge along the sRGB intersection. The hide-one-trace probe
+  attributes the lid to the printer shell (hiding the chart skin keeps it;
+  hiding the shell leaves only grey skin and dots), and the streaky
+  "shattered" texture appears only when the translucent chart skin
+  (opacity 0.3, sorted transparent path) blends over that bright surface.
+
+## The fix's own 16-view check — what it was and was not blind to
+
+It was taken in the same class of configuration (page 14, two shapes,
+agreement at 0%, outline shown and hidden). It asked one question: is any
+pixel painted by a piece that lies BEHIND a nearer solid one (4,062 → 0).
+That question is answered and stays answered. It never asked what should be
+visible THROUGH the opening — the interior's appearance was outside its
+frame, not wrongly measured.
+
+## Verdict across all four reports
+
+2.39.6 removed nothing that was visible before — the hole predates the fix
+(same faces at alpha 0). Occlusion is now correct where it was wrong. What
+the reports describe is the one thing the fix could not decide: an OPEN
+shell's interior is drawn lit exactly like its exterior, so it reads as an
+outer surface seen from inside ("outer edge from the inside") or as broken
+skin ("shattered"). At agree 0% the picture is SUPPOSED to lose the
+agreement; whether its interior should be culled, capped along the cut, or
+shaded as an interior is a design decision, and per the project's standing
+rule the default is to change nothing until Basti picks.
+
+Candidate cures, each with a measured cost to check before choosing:
+* back-face culling on the open remainder — hides interiors, but the same
+  culling family shredded outlines at grazing angles when measured before
+  (docs/THE-SEE-THROUGH-TRIANGLES.md), and plotly offers no native culling;
+* a cap along the cut (a neutral "sliced" surface) — honest, reads like a
+  cross-section, needs new geometry along the intersection curve;
+* darkening back faces — impossible statically (a face changes side as the
+  camera moves), so it means per-frame recolouring: a cost exactly where
+  the 108.3 → 49.9 ms gain lives;
+* or EXPLAIN it: one sentence in the agree-control tooltip saying that at
+  0% the standing part is an open shell and from some angles you will see
+  its hollow inside. Cheapest, changes no pixel, reaches window and pages
+  through the same engine string.
+
+## Performance
+
+No regression measured: relayout-turn median in scene B, fix 2.8–3.0 ms vs
+baseline 2.5–2.7 ms (hardware GL, within run-to-run noise), and the fix
+strictly REDUCES the per-frame sorted-triangle count (on page 14 it halved
+frame times, 108.3 → 49.9 ms). Basti's lag report did not reproduce in this
+harness; if it persists on his machine it is likely software rendering or
+window size, and wants measuring THERE rather than guessing here.
