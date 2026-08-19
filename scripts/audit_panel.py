@@ -7,7 +7,7 @@ pixels too long for the column, so what ships is a button reading
 skips a truncated word it already knows — and neither does a unit test, because
 the only thing that knows how wide a word is is a real font on a real widget.
 
-So this asks the widgets themselves, in the real application, and it asks five
+So this asks the widgets themselves, in the real application, and it asks six
 separate questions rather than one:
 
   1. IS ANY TEXT CUT OFF?  Every button, checkbox, label, radio and combobox
@@ -26,6 +26,11 @@ separate questions rather than one:
      ``WrappedLabel``, which recomputes its own height from the width it is
      actually given. A plain QLabel with wordWrap has no such defence, and a
      narrower column silently takes its last line off.
+  6. IS ANYTHING DRAWN UNDER A GROUP'S FRAME?  The lowest control in a group
+     must clear the group's own bottom edge. This is the one that catches a
+     cut sentence, and it took five attempts to find: the four before it
+     asked the LABEL, which was the right height all along -- what it had no
+     room for was the border sitting in the same pixels.
 
 AND IT OPENS EVERY FOLDED SECTION FIRST, which it did not do for a long time:
 six sections start folded, their contents are hidden, and hidden widgets have
@@ -209,6 +214,48 @@ def audit_once(window, panel, label: str) -> list:
             # wrapping label on purpose — it is about elision — so the first
             # version of this named the fault and then quoted nothing.
             f"last line off. Use WrappedLabel: {x.text()[:60]!r}")
+
+    # 6. NOTHING MAY BE DRAWN UNDER A GROUP'S OWN FRAME — the check that
+    #    finally catches a cut sentence, and the fifth attempt at it.
+    #
+    # THE FOUR BEFORE IT ASKED THE WIDGET, and the widget was not the one
+    # getting it wrong: heights, running past the group, visibleRegion and a
+    # pixel comparison all reported Clean while a photograph showed the last
+    # line of a paragraph sliced in half. The label was the right height for
+    # its text -- 60 px for 60 px of words, agreed by heightForWidth, by font
+    # metrics and by the label itself. What it did NOT have was anywhere to
+    # put it: the group's layout had a 2 px bottom margin written over the
+    # stylesheet's 8, so the label's last line and the group's border were in
+    # the same pixels.
+    #
+    # SO THE MEASUREMENT IS THE CLEARANCE, not the height: how far the lowest
+    # thing in a group sits above the group's own bottom edge. Measured in the
+    # real window, and it separates the two states cleanly:
+    #
+    #     cut       0 px   the label's bottom IS the group's bottom
+    #     whole    6-12 px every group, both appearances
+    #
+    # Four is the floor because six is the tightest the window actually has,
+    # and a border is one pixel with a four-pixel radius.
+    FRAME = 4
+    for group in panel.findChildren(QGroupBox):
+        if not group.isVisible() or not getattr(group, "_fold_open", True):
+            continue
+        lowest = None
+        for child in group.findChildren(QWidget):
+            if not child.isVisible() or isinstance(child, QGroupBox):
+                continue
+            bottom = child.mapTo(group, child.rect().bottomLeft()).y()
+            if lowest is None or bottom > lowest[0]:
+                lowest = (bottom, child)
+        if lowest is None:
+            continue
+        clearance = group.height() - lowest[0]
+        if clearance < FRAME:
+            problems.append(
+                f"[{label}] UNDER THE FRAME  {group.title()!r}: its lowest "
+                f"control ends {clearance}px above the group's edge, so it "
+                f"is drawn under the border — {text_of(lowest[1])[:50]!r}")
 
     # Every ⓘ must share its row with the thing it explains.
     hints = [h for h in panel.findChildren(gamut_app.Hint) if h.isVisible()]

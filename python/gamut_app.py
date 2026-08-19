@@ -13601,7 +13601,36 @@ class GamutApp(QMainWindow):
                            for j in range(inner.count())):
                     layout.removeItem(layout.itemAt(i))
             left, top, right, _bottom = layout.getContentsMargins()
-            layout.setContentsMargins(left, top, right, 2)
+            # AND THE BOTTOM IS THE STYLESHEET'S OWN 8, NOT 2 — WHICH CUT A
+            # SENTENCE IN HALF FOR EVERY RELEASE UNTIL NOW.
+            #
+            # Reported from the window with a photograph: "under placed
+            # through the small text was cut off but seemingly only in dark
+            # mode". It was cut, and the "only in dark" is the clue that
+            # names the cause.
+            #
+            # Qt maps a stylesheet's padding onto the layout's contents
+            # margins AT POLISH. QGroupBox is styled `padding: 4px 8px 8px
+            # 8px`, so the bottom is 8; this pass ran after that and wrote 2
+            # over it, which leaves the last line of a paragraph under the
+            # group's own frame. Dark is what the window opens in, so nothing
+            # re-polishes and the 2 stands. Switching to light re-polishes,
+            # the 8 comes back, and the sentence is whole again — which is
+            # exactly what makes it look like a dark-mode fault.
+            #
+            # MEASURED, in the real window, with the chart open and the
+            # paragraph under "Placed through" at four lines:
+            #
+            #     bottom 2   last line cut through the middle
+            #     bottom 5   still cut
+            #     bottom 8   whole, in both appearances
+            #
+            # So it takes the style's own number rather than the smallest one
+            # that happens to work at this font and this screen. What this
+            # pass was really for -- the three empty rows above, 29 px each,
+            # left behind when an ⓘ moved -- is untouched and is where the
+            # space it was reclaiming actually was.
+            layout.setContentsMargins(left, top, right, 8)
             # NEVER TALLER THAN WHAT IS IN IT. A group will otherwise take any
             # spare height the column hands out, which shows as a band of
             # nothing under the last control -- and the band grows as options
