@@ -42,6 +42,12 @@ sys.path.insert(0, str(ROOT / "python"))
 import prefs  # noqa: E402
 
 prefs.use_a_scratch_store()
+# THE ARGUMENTS ARE KEPT BEFORE QT IS HANDED A TIDY sys.argv. Overwriting it
+# first and calling parse_args() later parses a list with nothing in it, so
+# the --out this script's own usage line advertises was accepted and ignored,
+# and the pages went to the default folder whatever anybody asked for. The
+# same trap has now been found in three scripts here.
+ASKED = list(sys.argv[1:])
 sys.argv = ["make_showcase_pages"]
 
 SHOWCASE_DEMO = ROOT / "demo" / "showcase"
@@ -135,7 +141,7 @@ def check(page: str, claim: str, ok: bool, detail: str = "") -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(ROOT / "docs" / "showcase" / "pages"))
-    args = ap.parse_args()
+    args = ap.parse_args(ASKED)
     out_dir = pathlib.Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
