@@ -1,5 +1,62 @@
 # Changelog
 
+## v2.39.2
+
+Three things a page could not do: wear the colours of whoever opens it, be
+closed again once its controls were opened, and be tried without leaving the
+page it was shown on.
+
+### 🌗 A saved page can follow whoever opens it
+
+A page opened in the colouring it was saved in and could do nothing else, so
+one written from a dark window arrived as a black rectangle in the middle of
+somebody's light document. **Follow whoever opens it** joins dark, light, no
+background, neutral grey and plain black and white — it is not a palette but a
+choice between two, made by the reader's own machine, and it keeps following
+if they switch at dusk with the page still open. A browser too old to be asked
+is treated as light.
+
+It is now a question the save dialog asks, with the new colouring as the
+default, and it reaches every writer: the shared one, the two-room one, the
+cross-section one and the run's own. **A page you deliberately pinned stays
+pinned** — that is checked as carefully as the new behaviour, because every
+page saved before this release must open exactly as it always did.
+
+*One line had been quietly flattening every colouring to dark before the page
+was written, so the choice reached everything except the last step that
+mattered.*
+
+### 🔓 Controls that can be opened can be closed
+
+Reported from an iPhone, on a viewer embedded in a page: opening **more…**
+filled the frame with controls, the way back scrolled out of sight, and the
+shape could not be brought back — the reader was locked out of the picture.
+
+Two faults, one on top of the other. The panel's only height limit applied to
+screens under 560 px, so a 608 px frame got none and it opened **taller than
+the thing it sat in**. And the scroll that brought it into view reached up
+into the page around it, carrying the strip off the top. The panel is capped
+wherever it opens and scrolls inside itself; the scroll moves its own document
+only; and when the two cannot both fit, the way back wins.
+
+### 🖼 The pictures on the showcase are the real thing
+
+Every frame on the showcase page showed a viewer's control strip because it
+was a photograph of one — controls that invited a press they could not honour.
+A press now replaces the still with the real page, in place, loaded only when
+asked. Each card carries two stills, light and dark, and picks the one that
+matches the reader. The stills also stop mid-sentence no longer: they are cut
+where the page has a join rather than at a fixed height.
+
+### 🔍 And the checks that hold it there
+
+Four new ones, each driven in real Chromium and real WebKit: a page set to
+follow really does wear the reader's colours (and a pinned one does not), the
+controls can always be shut — three heights × framed and standalone × two
+engines — every showcase frame explains itself before it is pressed and comes
+alive when it is, and every check in `scripts/` is named in the README so none
+can go undiscovered again.
+
 ## v2.39.1
 
 A release of small honesties: a page that keeps its words on a phone, a cut
