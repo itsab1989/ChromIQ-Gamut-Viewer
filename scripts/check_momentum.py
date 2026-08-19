@@ -239,6 +239,49 @@ def main() -> int:
             if slipped > STILL_MEANS:
                 faults.append(f"{name}: a drag that stopped before the button "
                               f"came up still threw {slipped:.2f}°")
+
+            # 6: LETTING GO OVER THE SHAPE MOVES NOTHING.
+            #
+            # Reported: "if the mouse arrow lands on the shape itself when
+            # letting go it jumps a little bit", with the clue that solved it —
+            # "a label popped up". They are the same event: pointing at a shape
+            # makes the library draw a readout, and that redraw committed a
+            # camera the picture had not caught up with. Measured before the
+            # cure: 69° in Chromium and 37° in WebKit, in ONE frame, while
+            # releasing over the walls moved nothing at all.
+            #
+            # CROSSED, because either alone proves nothing. The same gesture is
+            # released twice, once over the shape and once out at the wall, and
+            # they must agree — a page that only stands still over the walls is
+            # the fault, and one that moves in both is a different fault.
+            look(tab, page, on=False)
+            box = tab.locator(".js-plotly-plot").first.bounding_box()
+            middle = (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            wall = (box["x"] + box["width"] - 40, box["y"] + box["height"] / 2)
+            moved = {}
+            for label, (ex, ey) in (("over the shape", middle),
+                                    ("over the wall", wall)):
+                tab.mouse.move(ex - 120, ey)
+                tab.mouse.down()
+                for i in range(1, 13):
+                    tab.mouse.move(ex - 120 + 10 * i, ey)
+                    tab.wait_for_timeout(12)
+                for _ in range(5):                       # come to rest first
+                    tab.mouse.move(ex, ey)
+                    tab.wait_for_timeout(30)
+                at_release = angle(tab)
+                tab.mouse.up()
+                tab.wait_for_timeout(900)
+                moved[label] = apart(at_release, angle(tab))
+            print(f"  {name:9s} let go over the shape: moved "
+                  f"{moved['over the shape']:5.2f}°, over the wall "
+                  f"{moved['over the wall']:5.2f}°")
+            for label, how_far in moved.items():
+                if how_far > STILL_MEANS:
+                    faults.append(
+                        f"{name}: letting go {label} moved the shape "
+                        f"{how_far:.2f}° — the picture is catching up with the "
+                        f"drag after the hand has finished")
             tab.close()
             print()
         for browser in engines.values():
