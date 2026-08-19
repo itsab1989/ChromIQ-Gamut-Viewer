@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+### 🧱 The remainder of an extreme fade is drawn genuinely solid
+
+Reported from the page comparing a paper with Adobe RGB, with "where they
+agree" at 0% and the outline hidden: *"it is like i am looking through the
+remaining shape although the part is solid ... looking at the yellow some
+orange shines through"*. He was right, and it was not the data: the fade is
+an alpha per vertex, and **one vertex below alpha 1 puts the whole mesh on
+the drawing library's transparent path, which never writes the depth
+buffer** — so the solid remainder only hid what lay behind it when the
+per-frame triangle sort got every pixel right, which a sort of triangles
+cannot promise (docs/THE-SEE-THROUGH-TRIANGLES.md).
+
+Measured against a genuinely opaque render of the same triangles, sixteen
+camera angles, outline shown and hidden alike: up to **4,062 pixels per view**
+painted with a piece that lay *behind* a solid one.
+
+Now, when the fade sits at its ends — every vertex at exactly 0 or 1, shape
+strength 1 — the invisible triangles are removed and the colours left plain,
+so the mesh stays on the opaque path and the depth buffer decides. The same
+sixteen views: **0 wrongly-covered pixels**. Anything strictly between 0
+and 1 keeps the old behaviour to the byte, and sliding back up restores the
+full shape exactly. Applied in the window, in every saved page's own slider,
+and in the pages this repository publishes — the same rule in the Python and
+in the page script, checked against each other number for number (479 / 845
+of 1,324 triangles on the demo pair).
+
+And it is faster where it matters: on the reported page in the reported
+state, the frame time halved (108.3 ms → 49.9 ms median in a software-rendered
+harness; 1,324 sorted triangles per frame → 0), and at full strength the
+picture and its cost are unchanged.
+
 ## v2.39.5
 
 ### 🤚 The shape stops jumping when you let go over it

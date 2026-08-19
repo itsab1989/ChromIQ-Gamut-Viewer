@@ -209,6 +209,48 @@ Whatever is tried must reach every instance of the viewer **and the web
 export** — the saved page is written by the same `build_figure`, so a fix in
 the engine reaches both, and one that is not in the engine reaches neither.
 
+## The same fault, back through a different door: the fade at 0%
+
+Reported a year of pages later, from 14-a-paper-against-adobe-rgb with
+"where they agree" at 0% and the outline hidden by its key: *"it is like i am
+looking through the remaining shape although the part is solid ... looking at
+the yellow some orange shines through"*.
+
+The alphas were right — measured on the page: 329 vertices plain, 508 at
+rgba(…,0), trace opacity 1, no vertex anywhere in between. But **one vertex
+below alpha 1 puts the whole mesh on the library's transparent path**
+(`hasAlpha`, and the transparent path never writes the depth buffer), so the
+solid remainder was blending in draw order like everything else on that
+path. The wall order above cannot save it: the remaining pieces are an OPEN
+subset of the shell, and within one wall the sort is still triangle middles
+in 4,096 buckets. Against a genuinely opaque render of the same 479
+triangles, sixteen cameras, outline shown and hidden: up to 4,062 pixels a
+view covered by a piece that lay behind a solid one. Hiding the outline
+changes nothing in the numbers — it only uncovers the view.
+
+**The cure is not a better sort — it is leaving the transparent path
+entirely.** At the fade's ends (every vertex at exactly 0 or 1, shape
+strength 1) the invisible triangles are removed and the colours left plain:
+the mesh is then opaque, the depth buffer decides every pixel, and the same
+sixteen cameras measure 0 wrongly-covered pixels. Anything strictly between
+0 and 1 — an intermediate slider, a straddling triangle on a mesh that was
+never re-cut, a strength below 1 — keeps the sorted transparent path it
+always had, to the byte. It is also cheaper: on the reported page in the
+reported state the frame time halved (108.3 → 49.9 ms median, software
+rendering), because 1,324 sorted triangles a frame became 0.
+
+One trap on the way is worth keeping: the page-script half of the fix read
+the triangle lists off `gd.data` and silently did nothing, because a saved
+page stores them binary-packed (`{dtype, bdata}`) with no length to walk.
+The decoded lists live in `_fullData`. A sweep that finds nothing must prove
+its probe landed — this one was caught because the page census still showed
+1,324 faces where 479 were expected.
+
+`_solid_remainder` in `python/ti3gamut.py` is the Python half (used by
+`_mesh` and `_mesh_lost`); the `plainRemainder` block in `dressOne` is the
+page's half. The two are checked against each other number for number: 479
+standing / 845 agreeing of 1,324 on the demo pair, from both sides.
+
 ## Where the code is
 
 * `python/ti3gamut.py` — `_ORDER_JS` / `window.cqOrder`: the per-frame depth

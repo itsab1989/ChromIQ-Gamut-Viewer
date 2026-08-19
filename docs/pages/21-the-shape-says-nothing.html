@@ -6387,7 +6387,7 @@ window.cqSpinControls = function (settings) {
     dressing.forEach(function (part) {
       var t = part.gd.data[part.at];
       if (!t) return;
-      var patch = {}, any = false;
+      var patch = {}, any = false, meant = null;
       // THE KEY KEEPS ITS FULL STRENGTH AND ITS COLOUR unless the reader
       // asked for grey, in which case it follows -- otherwise the list of
       // names would go on showing colours the picture no longer has.
@@ -6411,6 +6411,7 @@ window.cqSpinControls = function (settings) {
         var share = g.opened.opacity ? (st.opacity / g.opened.opacity) : 1;
         var want_op = (st.opacity === g.opened.opacity)
           ? mine : Math.max(0, Math.min(1, mine * share));
+        meant = on("opacity", true) ? want_op : strength;
         if (on("opacity", true) && differs(strength, want_op)) {
           patch.opacity = want_op; any = true;
         }
@@ -6441,6 +6442,82 @@ window.cqSpinControls = function (settings) {
       // for a shape whose stored settings differ from the saved ones.
       var fading = !!mark;
       var greying = on("grey", true) && g.plain;
+      // THE SOLID REMAINDER IS DRAWN GENUINELY SOLID.
+      //
+      // One vertex below alpha 1 puts the whole mesh on the library's
+      // transparent path, which never writes the depth buffer -- so with one
+      // group faded to NOTHING and the other left at full strength, the
+      // "solid" remainder only hid what lay behind it when the per-frame
+      // triangle sort got every pixel right, which a sort of triangles
+      // cannot promise. Reported from the page comparing a paper with Adobe
+      // RGB, agreement at 0%: "it is like i am looking through the remaining
+      // shape although the part is solid". Measured there: up to 4,062
+      // pixels per view painted with a piece that lay BEHIND a solid one,
+      // sixteen views, with the comparison outline shown and hidden alike.
+      //
+      // So at the fade's ENDS the invisible triangles are removed and the
+      // colours left plain: nothing on the transparent path, the depth
+      // buffer back in charge, and the same sixteen views measured again at
+      // 0 wrongly-covered pixels. Anything strictly between 0 and 1 -- an
+      // intermediate slider, a straddling triangle on a mesh that was not
+      // re-cut, a shape strength below 1 -- keeps the path it always had,
+      // to the byte. The full triangle list is remembered through the same
+      // store the colours use, so sliding back up always restores it. The
+      // Python that draws the window and writes these pages does the very
+      // same thing -- see _solid_remainder.
+      var plainRemainder = false;
+      if (fading && t.type === "mesh3d" && t.i && t.j && t.k) {
+        // FROM THE DRAWN DATA, NOT THE WRITTEN FILE. A saved page stores its
+        // triangle lists binary-packed ({dtype, bdata}), which has no length
+        // and no elements to walk -- read off gd.data this whole block ran,
+        // matched nothing, and silently did nothing. The library's _fullData
+        // carries the decoded lists; they are copied to plain arrays ONCE,
+        // into the same store the colours use, so every later press compares
+        // and restores real numbers.
+        var full = (part.gd._fullData || [])[part.at] || t;
+        var di = (full.i && full.i.length !== undefined) ? full.i : t.i;
+        var dj = (full.j && full.j.length !== undefined) ? full.j : t.j;
+        var dk = (full.k && full.k.length !== undefined) ? full.k : t.k;
+        if (di && di.length !== undefined) {
+          var iAll = was(part, "i", Array.prototype.slice.call(di)),
+              jAll = was(part, "j", Array.prototype.slice.call(dj)),
+              kAll = was(part, "k", Array.prototype.slice.call(dk));
+          var ni = iAll, nj = jAll, nk = kAll;
+          var ends = (meant === null
+                      ? (t.opacity === undefined ? 1 : t.opacity)
+                      : meant) === 1
+            && (agreeAt === 0 || agreeAt === 1)
+            && (differAt === 0 || differAt === 1)
+            && (agreeAt < 1 || differAt < 1);
+          if (ends) {
+            var ki = [], kj = [], kk = [], whole = true, f;
+            for (f = 0; f < iAll.length; f++) {
+              var fa = mark.charAt(iAll[f]) === "1" ? differAt : agreeAt;
+              var fb = mark.charAt(jAll[f]) === "1" ? differAt : agreeAt;
+              var fc = mark.charAt(kAll[f]) === "1" ? differAt : agreeAt;
+              if (fa === 0 && fb === 0 && fc === 0) continue;  // invisible
+              if (fa < 1 || fb < 1 || fc < 1) { whole = false; break; }
+              ki.push(iAll[f]); kj.push(jAll[f]); kk.push(kAll[f]);
+            }
+            // ONLY when every triangle still drawn is wholly solid AND
+            // something was actually removed; an empty remainder is the
+            // shape that agrees everywhere, which fades away whole exactly
+            // as before.
+            if (whole && ki.length && ki.length < iAll.length) {
+              ni = ki; nj = kj; nk = kk; plainRemainder = true;
+            }
+          }
+          // AGAINST WHAT IS DRAWN NOW, element for element -- `differs`
+          // cannot read the written file's binary-packed lists, and a patch
+          // that is not needed is a scene rebuild for nothing.
+          var q = 0, same = ni.length === di.length;
+          if (same) for (q = 0; q < ni.length; q++)
+            if (ni[q] !== di[q]) { same = false; break; }
+          if (!same) {
+            patch.i = ni; patch.j = nj; patch.k = nk; any = true;
+          }
+        }
+      }
       if (greying || fading) {
         COLOUR_FIELDS.forEach(function (field) {
           var had = reach(t, field);
@@ -6461,7 +6538,11 @@ window.cqSpinControls = function (settings) {
           //
           // It composes with grey rather than fighting it: grey decides WHAT
           // colour each point is, this decides how much of it there is.
-          if (fading && field === "vertexcolor" && Array.isArray(want)) {
+          // ... unless the solid remainder above took over: then the colours
+          // stay plain on purpose, because one rgba vertex is enough to put
+          // the whole mesh back on the transparent path.
+          if (fading && !plainRemainder
+              && field === "vertexcolor" && Array.isArray(want)) {
             want = want.map(function (colour, at) {
               return withAlpha(colour,
                 mark.charAt(at) === "1" ? differAt : agreeAt);
