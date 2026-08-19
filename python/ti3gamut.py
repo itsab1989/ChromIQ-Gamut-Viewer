@@ -4731,7 +4731,17 @@ def _spin_script(ids, spin, mode: str = "dark",
         return ""
     import json
 
-    which = "light" if mode == "light" else "dark"
+    # EVERY COLOURING THE PAGE KNOWS, not just the two the window has.
+    #
+    # This flattened anything that was not "light" to "dark", which was right
+    # while a page could only ever open in one of the window's own two. It is
+    # what silently swallowed "follow you": the choice arrived here intact --
+    # proved by printing it at the writer's door -- and was turned into "dark"
+    # one line before the settings were built, so the page opened dark and the
+    # two files came out BYTE-IDENTICAL. The choice had reached everything
+    # except the last line that mattered.
+    which = mode if mode in PAGE_SCHEMES else (
+        "light" if mode == "light" else "dark")
     # "follow you" is not a palette, so the STATIC colours written into the
     # file have to be one of the two it chooses between. Light is the safer
     # start: a page that is going to be dark repaints itself the instant the
