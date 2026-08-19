@@ -1,0 +1,32 @@
+{
+  "01": {
+    "cotton_in_gloss": "99.1",
+    "gloss_in_cotton": "81.2"
+  },
+  "02": {
+    "gloss_in_adobe": "90.7"
+  },
+  "03": {
+    "gloss_in_srgb": "75.9"
+  },
+  "04": {
+    "inside": 233,
+    "outside": 247
+  },
+  "06": {
+    "still_fits": "91.9",
+    "lost_share": "8.1"
+  },
+  "07": {
+    "total_de": "0.90"
+  },
+  "08": {
+    "jump_de": "4.13",
+    "between_a": "2023-07-10",
+    "between_b": "2023-10-09"
+  },
+  "09": {
+    "volumes_apart_pct": "0.43",
+    "worst_de": "3.03"
+  }
+}

@@ -1,0 +1,357 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Eight questions about papers — ChromIQ Gamut Viewer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: dark light; }
+  body { margin: 0; padding: 3rem 1.25rem 5rem;
+         font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #111318; color: #e8eaed; }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .6rem; }
+  h2 { font-size: 1.25rem; line-height: 1.3; margin: 3rem 0 .4rem; }
+  h2 small { color: #ff4573; font-size: .8em; margin-right: .45em; }
+  h3 { font-size: 1rem; margin: 2rem 0 .3rem; }
+  p, li { color: #c3c8d0; }
+  a { color: #ff4573; }
+  b { color: #e8eaed; }
+  .lead { font-size: 1.1rem; }
+  figure { margin: 1rem 0 .6rem; }
+  figure a { display: block; border: 1px solid #2a2e37; border-radius: 12px;
+             overflow: hidden; line-height: 0;
+             transition: border-color .15s; }
+  figure a:hover { border-color: #ff4573; }
+  figure img { width: 100%; height: auto; display: block; }
+  figcaption { font-size: .85rem; color: #7c8390; line-height: 1.5;
+               margin-top: .45rem; }
+  .open { font-size: .95rem; }
+  .note { border-left: 3px solid #ff4573; padding-left: 1rem; margin: 2.2rem 0; }
+  .foot { border-top: 1px solid #2a2e37; margin-top: 3.5rem; padding-top: 1.5rem; }
+  .foot h3 { margin-top: 1.6rem; }
+  .foot p, .foot li { font-size: .92rem; }
+  .foot ol { padding-left: 1.2rem; }
+  code { background: #1a1d24; border-radius: 4px; padding: .1em .35em;
+         font-size: .9em; }
+  footer { margin-top: 3rem; color: #7c8390; font-size: .9rem; }
+  sup a { text-decoration: none; }
+  @media (prefers-color-scheme: light) {
+    body { background: #efebe6; color: #22242a; }
+    p, li { color: #4a4f58; } b { color: #22242a; }
+    figure a { border-color: #d9d3cb; }
+    figcaption { color: #6b7280; }
+    .foot { border-top-color: #d9d3cb; }
+    code { background: #e3ddd4; }
+    footer { color: #6b7280; }
+  }
+</style>
+<main>
+
+<h1>Eight questions about papers</h1>
+
+<p class="lead">A paper is usually sold on one number — a gamut volume, a
+percentage of a standard space. Each picture below is a question that number
+cannot answer, asked of real measurement files by
+<a href="https://github.com/itsab1989/ChromIQ-Gamut-Viewer">ChromIQ Gamut
+Viewer</a> and answered by the window itself. Every page was written by the
+application's own <b>Save this view as a web page…</b> button, nothing edited
+afterwards — so what you can turn, cut and interrogate here is exactly what
+the person you send it to gets.<sup><a href="#honesty">†</a></sup></p>
+
+<p><b>The pages are not pictures.</b> Open one: drag to turn, pinch or
+scroll to zoom, click a name in the key to hide it, and use the strip under
+the picture — it pauses the movement, changes its speed, and puts everything
+back if you get lost. Open <b>more…</b> for the rest: fade one shape, drain
+its colour, look from four fixed angles, dissolve away everything two shapes
+agree on.</p>
+
+<h2><small>1</small>“Fits inside” has two answers, and people quote one</h2>
+<figure>
+  <a href="pages/01-two-papers-both-ways.html"><img
+     src="shots/01-two-papers-both-ways.png"
+     alt="A matte paper drawn solid inside a gloss paper's wireframe cage,
+          with both containment percentages written under the shape"></a>
+  <figcaption>The matte cotton solid, the baryta gloss as a cage around it.
+  Saved turning; the strip underneath is yours.</figcaption>
+</figure>
+<p>Two papers, compared the only honest way — both directions.
+<b>99.1%</b> of the colour the heavy matte cotton can print also fits inside
+the baryta gloss. Ask it the other way round and only <b>81.2%</b> of the
+gloss fits inside the cotton. Same two papers, same measurement, two
+different answers — because containment is a direction, not a similarity
+score. A single “these papers are 95% alike” figure is hiding whichever
+direction it did not ask.<sup><a href="#f1">[1]</a></sup></p>
+<p class="open">Open it:
+<a href="pages/01-two-papers-both-ways.html">two papers, both ways
+round</a>.</p>
+
+<h2><small>2</small>The same paper scores 90.7 on one ruler and 75.9 on
+another</h2>
+<figure>
+  <a href="pages/02-against-adobe-rgb.html"><img
+     src="shots/02-against-adobe-rgb.png"
+     alt="The gloss paper drawn solid inside the Adobe RGB space's coloured
+          cage"></a>
+  <figcaption>The gloss inside Adobe&nbsp;RGB&nbsp;(1998), drawn as a cage
+  in its own colours.</figcaption>
+</figure>
+<p>Coverage numbers come with a ruler attached, and the ruler is usually not
+named. The same baryta gloss holds <b>90.7%</b> of Adobe RGB (1998) — and
+<b>75.9%</b> of sRGB. Neither number is wrong; they answer different
+questions. Pictures edited for print mostly travel in Adobe RGB, pictures
+from a phone in sRGB, so which ruler matters depends on whose files end up
+on the paper. Quote either — but say which.<sup><a href="#f2">[2]</a></sup></p>
+<p class="open">Open them: <a href="pages/02-against-adobe-rgb.html">against
+Adobe RGB (1998)</a> · <a href="pages/03-against-srgb.html">against
+sRGB</a>.</p>
+
+<h2><small>3</small>Print a 480-patch chart, and 247 patches don’t make it</h2>
+<figure>
+  <a href="pages/04-a-chart-in-ink-amounts.html"><img
+     src="shots/04-a-chart-in-ink-amounts.png"
+     alt="A cloud of chart patches drawn inside the printer's RGB cube, the
+          out-of-reach ones picked out"></a>
+  <figcaption>The chart in the printer’s own ink amounts — every patch a
+  point in the RGB cube, the survivors under a skin.</figcaption>
+</figure>
+<p>A 480-patch test chart, placed through the gloss profile and asked what
+happens on the matte cotton: <b>233</b> patches land within the cotton’s
+reach, <b>247</b> ask for colour it does not have. That is the concrete
+version of “smaller gamut” — not a percentage but a count of actual patches,
+each one drawn where it lands. The same scene is saved twice, in the
+printer’s <a href="pages/04-a-chart-in-ink-amounts.html">own ink amounts</a>
+and in <a href="pages/05-the-same-chart-in-cielab.html">CIELAB</a> — and the
+counts are identical in both, because the space is how a thing is drawn,
+never what it is judged by.<sup><a href="#f3">[3]</a></sup></p>
+
+<h2><small>4</small>A year on the shelf, painted where it hurts</h2>
+<figure>
+  <a href="pages/06-a-year-on-the-shelf.html"><img
+     src="shots/06-a-year-on-the-shelf.png"
+     alt="The gloss paper's shape painted red where colour is out of reach
+          after a year, grey where it is not"></a>
+  <figcaption>Red is out of reach a year later; grey is still within it.
+  The loss sits where a fading brightener puts it — in the blues.</figcaption>
+</figure>
+<p>The same gloss measured again after a year on the shelf. Its volume
+figure barely blinks — but <b>8.1%</b> of the colour it could print no
+longer fits inside the new measurement (<b>91.9%</b> still does), and the
+shape shows <i>where</i>: painted red across the blues and violets, which is
+exactly the region an optical brightener takes with it as it fades. A reader
+can fade away everything the two measurements agree on and be left looking
+at nothing but the loss.<sup><a href="#f4">[4]</a></sup></p>
+<p class="open">Open it: <a href="pages/06-a-year-on-the-shelf.html">a year
+on the shelf</a>.</p>
+
+<h2><small>5</small>Five batches, and the graph that says “nothing to
+see”</h2>
+<figure>
+  <a href="pages/07-five-batches-nothing-to-see.html"><img
+     src="shots/07-five-batches-nothing-to-see.png"
+     alt="A drift graph of five batch profiles staying inside the
+          nobody-can-see-this band"></a>
+  <figcaption>Five batches over a year, every step inside the band nobody
+  can see. The verdict is written on the page.</figcaption>
+</figure>
+<p>Batch-to-batch consistency is a claim that usually lives in a datasheet.
+Here it is as a page: five batch profiles a few months apart, and across the
+whole year the colours inside move <b>ΔE 0.90</b> altogether — below the
+point where a difference becomes visible at all. The page’s own verdict:
+<i>“Nothing has moved that anybody could see.”</i> It also says, in the same
+breath, what it does <i>not</i> claim — these are differences between
+profiles, chart fade included.<sup><a href="#f5">[5]</a></sup></p>
+<p class="open">Open it:
+<a href="pages/07-five-batches-nothing-to-see.html">five batches, nothing to
+see</a>.</p>
+
+<h2><small>6</small>The batch where something happened, with the dates on
+it</h2>
+<figure>
+  <a href="pages/08-the-batch-where-something-happened.html"><img
+     src="shots/08-the-batch-where-something-happened.png"
+     alt="A drift graph that is quiet for three steps and then jumps"></a>
+  <figcaption>Quiet, quiet, a jump of ΔE 4.13, quiet. The page names the
+  two deliveries it happened between.</figcaption>
+</figure>
+<p>The other shape of run, and the more useful diagnosis. Three quiet
+quarters, then one step of <b>ΔE 4.13</b> — plainly visible — between the
+deliveries of <b>2023-07-10</b> and <b>2023-10-09</b>, and quiet again
+after. A trend line would have averaged that into “gradual drift”; the page
+says instead: something <i>happened</i> between those two dates, go and
+look up what changed. That is a question with an answer in a production
+log.<sup><a href="#f6">[6]</a></sup></p>
+<p class="open">Open it:
+<a href="pages/08-the-batch-where-something-happened.html">the batch where
+something happened</a>.</p>
+
+<h2><small>7</small>Two shells the same size — and the colours inside moved
+anyway</h2>
+<figure>
+  <a href="pages/09-two-shells-the-same-size.html"><img
+     src="shots/09-two-shells-the-same-size.png"
+     alt="Two nearly identical gamut shells with a cloud of colours between
+          them, coloured by how far each moved"></a>
+  <figcaption>The 2019 and 2024 profiles of one printer, volumes 0.43%
+  apart, with the moved colours drawn between them.</figcaption>
+</figure>
+<p>The strongest case against judging by size. A studio printer profiled in
+2019 and again in 2024: the two shells enclose volumes <b>0.43%</b> apart —
+identical by any figure anyone would quote. Inside them, the worst-moved
+colour has gone <b>ΔE 3.03</b>, which is plainly visible on paper. Every
+tool that compares gamut volumes calls this printer unchanged; the cloud
+between the shells shows you exactly which reds and blues moved, family by
+family, with a slider to hide everything below the ΔE you care
+about.<sup><a href="#f7">[7]</a></sup></p>
+<p class="open">Open it:
+<a href="pages/09-two-shells-the-same-size.html">two shells the same
+size</a>.</p>
+
+<h2><small>8</small>Same volume, different paper: what one number hides</h2>
+<figure>
+  <a href="pages/10-the-cut-at-54.html"><img
+     src="shots/10-the-cut-at-54.png"
+     alt="A flat cut through two papers at mid lightness, one clearly wider
+          than the other"></a>
+  <figcaption>The cut at L*&nbsp;54: the matte cotton (red) is the wider
+  paper in the mid-tones.</figcaption>
+</figure>
+<figure>
+  <a href="pages/11-the-cut-at-20.html"><img
+     src="shots/11-the-cut-at-20.png"
+     alt="A flat cut through the same two papers deep in the shadows, where
+          the other paper is the larger one"></a>
+  <figcaption>The same two papers at L*&nbsp;20: down in the shadows the
+  rag is the one still standing.</figcaption>
+</figure>
+<p>The matte cotton and the soft-white rag enclose the same volume to within
+a rounding error — 575,120 cubic Lab units each. “Equal gamut,” says the
+number. Then cut both shapes at one lightness and slide: in the mid-tones
+the cotton is clearly the wider paper; down at L* 20 the cotton is nearly
+gone while the rag still holds real colour, because its blacks reach deeper.
+One paper for saturated mid-tone work, one for shadow depth — and no single
+number tells them apart. The slider on the page moves the cut, so the reader
+finds the crossover themselves.<sup><a href="#f8">[8]</a></sup></p>
+<p class="open">Open them: <a href="pages/10-the-cut-at-54.html">the cut at
+L* 54</a> · <a href="pages/11-the-cut-at-20.html">the cut at L* 20</a>.</p>
+
+<div class="note" id="honesty">
+<p><b>† What is real here, and what is invented.</b> The papers are
+imaginary and their names are made up — no page here describes any real
+product. The measurements are derived from this project’s demo files by
+<code>scripts/make_showcase_measurements.py</code>, which bends only what
+each story needs and then <i>proves its own story before writing a byte</i>:
+the containment asymmetry, the equal volumes, where the shelf-year loss
+sits. Every number on this page was read off the running application while
+the pages were saved — <code>scripts/make_showcase_pages.py</code> records
+them into <a href="figures.json"><code>figures.json</code></a> and fails the
+build if this page quotes anything the window did not say. The arithmetic
+answering the questions is the application’s own, and it treats invented
+papers and real ones exactly alike. Measure a real paper and ask it the same
+questions.</p>
+</div>
+
+<div class="foot">
+<h3>How every one of these was made</h3>
+<p>Each recipe below is the complete click path from a fresh window. The
+demo measurements ship with the source in <code>demo/showcase/</code>;
+regenerate them with
+<code>python scripts/make_showcase_measurements.py</code>, and rebuild every
+page and photograph on this site with
+<code>python scripts/make_showcase_pages.py</code> followed by
+<code>python scripts/make_showcase_shots.py</code>. The pages are saved by
+the window’s own Save button; the photographs are taken from the saved pages
+in a browser, never drawn separately.</p>
+
+<p id="f1"><b>[1] Two papers, both ways round.</b></p>
+<ol>
+<li>Open <code>heavy matte cotton 310gsm.ti3</code> (first, so it is the
+solid shape), then <code>baryta gloss 315gsm.ti3</code> (second, so it is
+the outline — an inner shape drawn as a cage inside a closed surface would
+be invisible).</li>
+<li>Both containment sentences appear in the readout unasked.</li>
+<li>Movement: turning on, <i>swing</i>, speed 7, sweep 80°.</li>
+<li><b>Save this view as a web page…</b> with <i>the figures underneath</i>
+ticked.</li>
+</ol>
+
+<p id="f2"><b>[2] One paper, two rulers.</b></p>
+<ol>
+<li>Open <code>baryta gloss 315gsm.ti3</code>.</li>
+<li>Under <b>Compare with</b>, choose <i>Adobe RGB (1998)</i>.</li>
+<li>Under <b>How it looks</b>, set the first shape to <i>solid</i> and the
+second to <i>outline</i>, and give the outline the shapes’ own colours.</li>
+<li>Movement: turning on, <i>round</i>, speed 6. Save with the figures.</li>
+<li>For the second page: change <b>Compare with</b> to <i>sRGB</i> and save
+again.</li>
+</ol>
+
+<p id="f3"><b>[3] A chart on a paper that cannot reach all of it.</b></p>
+<ol>
+<li><b>Open a chart…</b> → <code>verification-chart-480.ti1</code>.</li>
+<li>Open <code>heavy matte cotton 310gsm.ti3</code> — first, because a
+chart is judged against the first shape on screen.</li>
+<li>Open <code>studio printer, baryta gloss.icc</code> — second, because a
+chart is placed through the first <i>profile</i> on screen. (Opened the
+other way round, the chart is judged against the very profile that placed
+it, and the picture shows two lost patches instead of 247.)</li>
+<li><b>Place the chart</b>; set the space to <i>ink amounts</i>; set the
+chart skin to <i>mesh</i>.</li>
+<li>Movement on; save. Switch the space to <i>CIELAB</i> and save the
+second page.</li>
+</ol>
+
+<p id="f4"><b>[4] A year on the shelf.</b></p>
+<ol>
+<li>Open <code>baryta gloss 315gsm.ti3</code>, then
+<code>baryta gloss 315gsm, a year on the shelf.ti3</code>.</li>
+<li>Tick <b>Show what it cannot print</b> — with two shapes open, the first
+is judged against the second, no comparison needs choosing.</li>
+<li>Movement: turning, speed 5. Save with the figures and every control the
+page can carry.</li>
+</ol>
+
+<p id="f5"><b>[5] Five batches, nothing to see.</b> and
+<b id="f6">[6] The batch where something happened.</b></p>
+<ol>
+<li>The batch profiles are written at build time by
+<code>make_showcase_pages.py</code> using
+<code>make_demo_profiles.py</code>’s machinery — bent copies of the demo
+profile under invented batch names, five per run.</li>
+<li><b>Follow one device over time…</b> → <b>Add profiles…</b> → all five
+of a run’s <code>.icc</code> files.</li>
+<li>The graph, the verdict sentence and the caveat are the window’s own.
+<b>Save this as a web page…</b>.</li>
+<li>For [6], clear the run and add the other five files.</li>
+</ol>
+
+<p id="f7"><b>[7] Two shells the same size.</b></p>
+<ol>
+<li>Open <code>studio printer, spring 2019.icc</code> and
+<code>studio printer, autumn 2024.icc</code> (also written at build
+time).</li>
+<li>Tick <b>Draw how far each colour moved</b>, then <b>Split it into
+colour families</b>.</li>
+<li>Save with the figures underneath.</li>
+</ol>
+
+<p id="f8"><b>[8] The cut at two lightnesses.</b></p>
+<ol>
+<li>Open <code>heavy matte cotton 310gsm.ti3</code>, then
+<code>soft-white rag 300gsm.ti3</code>.</li>
+<li>Tick <b>Slice it at one lightness</b>; set the slider to L* 54.
+Save.</li>
+<li>Move the slider to L* 20. Save the second page.</li>
+<li>(The cuts sit at even lightnesses because the saved page precomputes
+its slidable cuts on a 2-unit grid.)</li>
+</ol>
+</div>
+
+<footer>
+<p>Every page written by
+<a href="https://github.com/itsab1989/ChromIQ-Gamut-Viewer">ChromIQ Gamut
+Viewer</a> — a free companion to
+<a href="https://github.com/itsab1989/ChromIQ">ChromIQ</a> — and shown
+exactly as saved. More of what the saved pages can do, feature by feature,
+on <a href="../index.html">the main page</a>.</p>
+</footer>
+
+</main>
