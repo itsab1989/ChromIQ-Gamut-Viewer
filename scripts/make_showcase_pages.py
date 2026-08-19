@@ -172,15 +172,21 @@ def main() -> int:
                 numbers: bool = False, offer=None) -> None:
         from PyQt6.QtWidgets import QDialog
 
-        class Options:
-            def __init__(self, *a, **k):
-                pass
-
+        class Options(gamut_app.WebPageDialog):
+            # SUBCLASSED, NOT REPLACED. This was a hand-written dict, and it
+            # stopped tracking the dialog the moment an option was added to
+            # it: "what colours should it open in" arrived with a default of
+            # "follow whoever opens it", this dict did not mention it, and
+            # every published page went on being written dark — the very
+            # complaint the option was built to answer. Only the three
+            # answers this builder deliberately fixes are overridden now;
+            # everything else comes from the real dialog's own defaults.
             def exec(self):
                 return QDialog.DialogCode.Accepted.value
 
             def choices(self):
-                return {"carry_viewer": carry, "numbers": numbers,
+                return {**super().choices(),
+                        "carry_viewer": carry, "numbers": numbers,
                         "controls": True,
                         "offer": (offer if isinstance(offer, dict)
                                   else DEFAULT_OFFER)}
