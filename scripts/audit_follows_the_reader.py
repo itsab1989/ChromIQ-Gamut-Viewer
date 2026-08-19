@@ -120,12 +120,21 @@ def the_pages(where: pathlib.Path) -> tuple:
     pump(8)
 
     made = []
-    for label, colours in (("pinned-dark", None), ("saved-following",
-                                                   "follow")):
+    # THE THIRD ONE IS THE PAGE KIND THAT BROKE. Both pages above are written
+    # WITH the appearance button offered, and the palettes a page needs in
+    # order to follow anybody used to travel only when that button did. So the
+    # fault reported from a phone -- a chart page saved to follow, its body
+    # dark and its control strip light, because nothing arrived to repaint it
+    # -- could not happen in either of them. A page written with NO offers at
+    # all is the one that exposes it.
+    for label, colours, offer in (
+            ("pinned-dark", None, {"appearance": True, "camera": True}),
+            ("saved-following", "follow", {"appearance": True,
+                                           "camera": True}),
+            ("following-no-buttons", "follow", {})):
         out = where / f"{label}.html"
         panel.write_page(out, carry_viewer=True, controls=True, numbers=True,
-                         offer={"appearance": True, "camera": True},
-                         colours=colours)
+                         offer=offer, colours=colours)
         pump(1.5)
         made.append(out)
     win.close()
@@ -179,7 +188,7 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         where = pathlib.Path(tmp)
-        pinned, chosen = the_pages(where)
+        pinned, chosen, bare = the_pages(where)
         following = pinned      # the same file, pressed round
         print(f"  wrote one page, saved dark "
               f"({pinned.stat().st_size // 1024} kB)")
@@ -289,6 +298,36 @@ def main() -> int:
                             f"{name}: a page saved to follow the reader "
                             f"opened {got} for a {wants} reader, wanted "
                             f"{expected} — the choice did not reach the file")
+                    tab.close()
+
+                # the page kind that broke: saved following, no buttons
+                for wants, expected in (("dark", DARK_PAPER),
+                                        ("light", LIGHT_PAPER)):
+                    tab = browser.new_page(
+                        viewport={"width": 1000, "height": 760})
+                    tab.emulate_media(color_scheme=wants)
+                    tab.goto(bare.resolve().as_uri())
+                    tab.wait_for_timeout(4000)
+                    body = rgb(tab.evaluate(
+                        "getComputedStyle(document.body).backgroundColor"))
+                    strip = rgb(tab.evaluate(
+                        "(function(){var b=document.querySelector"
+                        "('.cq-spin-bar');return b ? "
+                        "getComputedStyle(b).backgroundColor : '';})()"))
+                    good = body == expected and (not strip or strip == body)
+                    print(f"      NO BUTTONS, saved following, a {wants:5s} "
+                          f"reader → page {body} strip "
+                          f"{strip or '(none)'}  {'ok' if good else 'WRONG'}")
+                    if body != expected:
+                        problems.append(
+                            f"{name}: a page saved to follow but written with "
+                            f"no buttons opened {body} for a {wants} reader, "
+                            f"wanted {expected} — it cannot follow without the "
+                            f"palettes")
+                    if strip and strip != body:
+                        problems.append(
+                            f"{name}: no-buttons page is {body} with a {strip} "
+                            f"strip — half of it followed")
                     tab.close()
 
                 # and a pinned page stays pinned
