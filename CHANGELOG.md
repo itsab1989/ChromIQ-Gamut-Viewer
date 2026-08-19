@@ -1,5 +1,31 @@
 # Changelog
 
+## v2.39.4
+
+### 🎚 The slider stops growing and shrinking under your thumb
+
+The **Hide anything under** slider changed length as you dragged it: its
+readout says "nothing hidden" at one end and "ΔE 3.0" along the rest, and
+everything around it was sized to whatever it currently said — so the track
+took up the slack. Measured at phone width, it jumped **55 px** the moment the
+thumb moved and snapped back at the end; 17 px on a desktop.
+
+The control now has a width of its own instead of shrinking to fit its
+contents, and the readout keeps its width too. Measured after: **no movement
+at all**, at 390, 900 and 1400 px, in both Chromium and WebKit.
+
+*Two earlier attempts fixed nothing and one made it worse, because both
+treated the readout while the whole box went on resizing. The cause only
+appeared after measuring every container between the track and the page.*
+
+### 🔍 The readability check stops looking only where the last fault was
+
+The check that came out of the unreadable slider text named the three places
+that fault had been reported in — which is a check for the one thing it will
+never need to catch again. It now measures the contrast of **every visible
+word a saved page draws for itself** and fails anything under 3:1, proved by
+breaking something none of those three places covered.
+
 ## v2.39.3
 
 One new option, one piece of text that could not be read, and a check that
