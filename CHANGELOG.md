@@ -1,5 +1,88 @@
 # Changelog
 
+## v2.39.1 — not yet tagged
+
+Everything here is on master and none of it is in a release. The application
+is at 2.39.0; whether this becomes 2.39.1 is a decision, not a formality.
+
+### 📱 A saved page keeps every word on a phone
+
+The caption above a picture is one line of SVG that cannot wrap, so on a
+narrow screen its end simply falls off — and nothing warns the reader,
+because the SVG clips rather than scrolling. Every page this application
+writes shrinks that caption as the window narrows. **Except a run's graph,
+which never got the rule**: 463 px of title in a 390 px page, the last dozen
+characters gone.
+
+    a scene page   455 → 417 → 379 px   font 12 → 11 → 10   fits
+    a graph page   463 → 463 → 463 px   font 13 throughout  77 px lost
+
+It shrinks now, and all 68 of its characters sit 30 px inside the edge. The
+six published graph pages were rebuilt to carry it.
+
+*Still open, and a wording decision rather than a fault:* the longest titles
+need more than a smaller face. One showcase page has the rule and is still
+96 px over at phone width.
+
+### ✂️ A cut saved at an odd lightness opens where you left it
+
+A cross-section is drawn at the exact lightness you were looking at and
+titled with it — while the slider under it could only reach every second
+value. Saved at L\* 51, the picture said 51 and the strip said 50. The page
+disagreed with itself, and nothing in the suite would have noticed.
+
+The height you were on is now carried with the page when the grid missed it:
+one extra ring set, about 1.6 kB against the 73 kB the grid already costs.
+
+### 💾 The run's Save asks what every other Save asks
+
+A run page was always about five megabytes, because the question was never
+put: it went straight to the file chooser and wrote with every default. Every
+other page in this application offers the choice — five megabytes that works
+with no network, or fourteen kilobytes that fetches the viewer once. A run is
+the page most likely to be sent to somebody, because it is the one with a
+story in it.
+
+### 🎛 A line graph is offered the two switches it can keep
+
+Asked to describe itself as a flat page, the save dialog put its whole list of
+reader controls away — and Qt showed it again one line later, because handing
+a widget to a scroll area shows it. So a run graph was offered 26 of the 27
+switches a 3D shape gets: four ways to turn a camera it has not got, a fade
+that needs two shapes, a slider for a cross-section. The page, granted every
+one of them, draws none.
+
+It now offers exactly what a graph can keep: whether the viewer travels, and
+whether the words go with it. The same rule caught a second case — "let the
+shape carry on turning" was being offered over a cross-section, which is flat
+and has no camera either.
+
+### 🔍 Three audits that were passing on less than they claimed
+
+* **The route audit had never seen the writer that keeps losing things.**
+  Every page it checked chose a pair, so every page went through one writer;
+  the run's graph goes through another, built by hand, which had already lost
+  the caption script once and the title rule after that. It is a route now.
+* **The offers audit asked its own rules rather than the dialog.** It
+  compared what a page builds against what the dialog *would* offer, computed
+  from a map. The map was right; the widget disagreed with it. It builds a
+  real dialog now.
+* **The panel audit opens files named the way real files are named.** A name
+  somebody would actually type is long enough to drag a whole section off the
+  side of the column, which is how that fault reached a photograph.
+
+### 🌐 The saved pages meet Firefox and WebKit
+
+Opened in real Gecko, real WebKit and stock Chromium, at six window shapes
+down to a phone held upright, with a cold load at the narrowest: 147
+measurements, all clean, photographs inspected. They had only ever been seen
+in one engine at one size.
+
+### 🧪 One profile is told a run needs two, and something holds it true
+
+The message was already right; nothing guarded it. Two tests now do,
+mutation-tested by blanking the sentence.
+
 ## v2.39.0
 
 ### ↔ The column gives 146 px back to the picture, and a sentence stops being cut
