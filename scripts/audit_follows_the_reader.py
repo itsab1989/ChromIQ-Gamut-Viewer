@@ -1,5 +1,18 @@
 """A saved page set to "follow you" wears the colours of whoever opens it.
 
+A GAP THIS FILE DOES NOT COVER, stated rather than left to be discovered.
+Every page it writes is written WITH the appearance button offered, and the
+palettes a page needs in order to follow anybody used to travel only when that
+button did. So the fault reported from a phone -- a chart page saved to follow,
+its body dark and its control strip light, because the palettes never arrived
+and nothing repainted -- cannot be reproduced here. Proved, not assumed: both
+mutations that recreate it (withholding the palettes, and letting the static
+colours disagree with the settings) leave this audit reporting Clean.
+
+Covering it means writing a second page with `offer={}` and asking the same
+questions of it. Until that exists, this file proves the mechanism and not
+every page kind that uses it.
+
     ../gv-venv/bin/python scripts/audit_follows_the_reader.py
 
 WHY THIS EXISTS. A saved page opens in the colouring it was saved in and could
@@ -250,6 +263,25 @@ def main() -> int:
                     tab.wait_for_timeout(4000)
                     got = rgb(tab.evaluate(
                         "getComputedStyle(document.body).backgroundColor"))
+                    # AND THE STRIP UNDER THE PICTURE, which is part of the
+                    # page and was never asked about. Reading the body alone
+                    # passed a page whose body was dark and whose control strip
+                    # was light — reported from a phone: "the control strip is
+                    # light mode but the rest is dark". A page half in one
+                    # colouring is not following anybody.
+                    strip = rgb(tab.evaluate(
+                        "(function(){var b=document.querySelector"
+                        "('.cq-spin-bar');return b ? "
+                        "getComputedStyle(b).backgroundColor : '';})()"))
+                    if not strip:
+                        problems.append(
+                            f"{name}: this page has no control strip to check, "
+                            f"so the half-followed fault cannot be seen here — "
+                            f"point this audit at a page that has one")
+                    if strip and strip != got:
+                        problems.append(
+                            f"{name}: a {wants} reader got a {got} page with a "
+                            f"{strip} control strip — half of it followed")
                     print(f"      SAVED following, a {wants:5s} reader opens "
                           f"it → {got}  {'ok' if got == expected else 'WRONG'}")
                     if got != expected:

@@ -616,6 +616,29 @@ def _is_a_shell(only=None) -> dict:
     return {} if only is not None else {"cqShell": 1}
 
 
+def static_palette(mode: str):
+    """Which palette the colours WRITTEN INTO a file come from.
+
+    ONE ANSWER, BECAUSE TWO IS WHAT WENT WRONG. Eight places asked this, seven
+    of them with the same ternary — "light" if the mode is light, otherwise
+    dark — and the eighth, the one that builds the page's settings, resolved it
+    differently. That was invisible while every page opened in one of the
+    window's own two colourings, and the moment "follow you" arrived the two
+    answers disagreed: the settings said light, the ternaries said dark, and a
+    page came out with a DARK body and a LIGHT control strip. Reported from a
+    phone: "the control strip is light mode but the rest is dark".
+
+    "follow you" is not a palette — the page picks one at load from the
+    reader's own machine. What is written into the file is only what shows
+    before the script runs, and light is the safer of the two: a page that is
+    going to be dark repaints itself immediately, while the reverse is a black
+    flash in the middle of somebody's document.
+    """
+    if mode in SCENE_COLOURS:
+        return SCENE_COLOURS[mode]
+    return SCENE_COLOURS["light"]
+
+
 def _mesh_lost(gamut, name: str, opacity: float, lost,
                kept: str = _KEPT, depth: float = 0.35, light=None,
                only=None, alphas=None, stand=None) -> "list":
@@ -4752,7 +4775,7 @@ def _spin_script(ids, spin, mode: str = "dark",
     # of light paper before the script repaints. Curing it means writing both
     # colours into the stylesheet behind a prefers-color-scheme query, in the
     # two page writers, and that is a separate piece of work.
-    colours = SCENE_COLOURS[which if which in SCENE_COLOURS else "light"]
+    colours = static_palette(which)
     settings = dict(spin)
     settings["ids"] = list(ids)
     settings["ink"] = colours["text"]
@@ -4762,7 +4785,17 @@ def _spin_script(ids, spin, mode: str = "dark",
     # BOTH PALETTES, but only when the page is allowed to switch between
     # them. A page that cannot change its paper has no use for the other one,
     # and there is no reason to put it in the file.
-    if settings["show"].get("appearance"):
+    # OR WHEN THE PAGE HAS TO WORK ITS COLOURING OUT FOR ITSELF.
+    #
+    # The palettes used to travel only when the reader was given the button to
+    # change colouring with, which was right when a page opened in exactly the
+    # colours it was written with. "Follow you" is decided at load from the
+    # reader's own machine, and a page cannot decide anything without the two
+    # palettes to choose between: measured on a chart page saved to follow —
+    # a dark reader got the light colours, because applyMode returns at its
+    # first line when there is nothing to apply.
+    if (settings["show"].get("appearance")
+            or which == PAGE_FOLLOWS_THE_READER):
         settings["palettes"] = {k: dict(v) for k, v in SCENE_COLOURS.items()}
         # AND THE ORDER TO MOVE THROUGH THEM, starting from the one the page
         # was saved in, so the first press goes somewhere rather than
@@ -7178,7 +7211,7 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
     """
     import plotly.io as pio
 
-    colours = SCENE_COLOURS["light" if mode == "light" else "dark"]
+    colours = static_palette(mode)
     blocks, first_id = [], None
     ids = []
     flat = False                       # set per page; safe when there are none
@@ -7319,7 +7352,7 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
       neither, for 30 s    -- "taking a long time", which is not the same
                               claim and does not go away if it does arrive
     """
-    c = SCENE_COLOURS["light" if mode == "light" else "dark"]
+    c = static_palette(mode)
 
     # DEFINED BEFORE THE TAG THAT CALLS THEM. Both are safe to call before the
     # notice itself exists further down the page: the wish is remembered and
@@ -7553,7 +7586,7 @@ def _threshold_control(html: str, mode: str, its_own_slider: bool = True) -> str
     picture is redrawn from them each time, so sliding back to the left brings
     every colour back exactly as it was.
     """
-    c = SCENE_COLOURS["light" if mode == "light" else "dark"]
+    c = static_palette(mode)
     # THE CONTROL ITSELF IS FOR A SAVED PAGE. In the application's own view
     # the window already has this slider in its column, and two of them a few
     # inches apart is two controls for one thing that can disagree. The
@@ -7806,7 +7839,7 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     html = html.replace("</body>", f"<script>{_CAPTION_JS}</script></body>", 1)
     if not carry_viewer:
         html = _say_if_the_viewer_never_arrives(html, mode)
-    _PAGE_BACKGROUND = SCENE_COLOURS["light" if mode == "light" else "dark"]["page"]
+    _PAGE_BACKGROUND = static_palette(mode)["page"]
     # HIDING THE OVERFLOW HIDES WHATEVER IS UNDER THE PICTURE, and the first
     # time round only half of that was noticed.
     #
@@ -7989,7 +8022,7 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
         # THE NUMBERS TRAVEL WITH THE PICTURE. A shape sent to somebody
         # without them is a shape they cannot check, and "which paper was
         # that?" is where every one of these ends up otherwise.
-        colours = SCENE_COLOURS["light" if mode == "light" else "dark"]
+        colours = static_palette(mode)
         # NAMED, so the reader can be given a switch for it. On a phone the
         # numbers are easily taller than the screen, and somebody who has read
         # them once wants them out of the way -- see the "notes" control.
@@ -8201,7 +8234,7 @@ def build_slice_figure(gamuts, lightness: float, title: str,
 
     from gamutview import slice_at
 
-    c = SCENE_COLOURS["light" if mode == "light" else "dark"]
+    c = static_palette(mode)
     fig = go.Figure()
     empty = []
     for i, (name, g) in enumerate(gamuts):
@@ -8372,7 +8405,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
     would label a cube of ink percentages a*, b*, L*.
     """
     import plotly.graph_objects as go
-    c = SCENE_COLOURS["light" if mode == "light" else "dark"]
+    c = static_palette(mode)
     _axes_space = space or (gamuts[0][1].space if gamuts else "lab")
     if gamuts and space and gamuts[0][1].space != space:
         raise ValueError(
