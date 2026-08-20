@@ -79,15 +79,36 @@ def a_page(where: pathlib.Path):
     q *= rng.uniform(0.5, 1, size=(700, 1)) ** (1 / 3)
     lab = q * np.array([38, 52, 50])
     lab[:, 0] = np.clip(lab[:, 0] * 0.6 + 50, 4, 96)
-    shape = build_gamut(lab)
+    # SAYING WHAT THE NUMBERS ARE. `build_gamut` reads its input as XYZ unless
+    # told otherwise, so handing it Lab silently builds a shape in the wrong
+    # space -- corners at L* -71,327, no rings, and `slice_levels` returning
+    # None, which is what made this page's cut unslidable and looked like a
+    # fault in the writer.
+    shape = build_gamut(lab, input_space="lab")
 
     scene = ti3gamut.build_figure([("a paper", shape)], "Measured gamut")
-    cut = ti3gamut.build_slice_figure([("a paper", shape)], 50.0,
-                                      "A cut at L* 50")
+
+    # THE CUT IS GIVEN SOMETHING TO SLIDE THROUGH, which was the gap this
+    # page was written with and which docs/DESIGN-two-views-in-one-page.md
+    # recorded: a reader could switch to the cross-section and then not move
+    # it. The recipe is the one the two-pane cut page already uses -- the
+    # levels worked out once, the figure built `slidable` over their shared
+    # extent, and the levels carried into the page's settings, where the
+    # control strip looks for `settings.cuts`.
+    at = 50.0
+    cuts = ti3gamut.slice_levels([("a paper", shape)], include=at)
+    if cuts is not None:
+        cuts["title"] = ""
+        cuts["at"] = min(range(len(cuts["levels"])),
+                         key=lambda i: abs(cuts["levels"][i] - at))
+    cut = ti3gamut.build_slice_figure(
+        [("a paper", shape)], at, "A cut at L* 50",
+        extent=(cuts["extent"] if cuts else None),
+        slidable=cuts is not None)
     out = where / "both.html"
     ti3gamut.write_two_views_html(
         [("The shells", scene), ("A cut through it", cut)], out,
-        spin={"on": False}, controls=True,
+        spin={"on": False, "cuts": cuts}, controls=True,
         offer={"appearance": True, "camera": True})
     return out
 
@@ -150,6 +171,29 @@ def main() -> int:
                     problems.append(
                         f"{name}: the shells offer none of the turning "
                         f"controls, which is what a camera is for")
+                # AND THE CUT MUST OFFER THE ONE CONTROL THAT IS ITS OWN.
+                # Switching to a cross-section that cannot be moved is the
+                # half of "manipulate each view in a way that makes sense for
+                # it" that this page was asked for.
+                if not ({"cut", "cut-at", "cut-up", "cut-down"} & cut):
+                    problems.append(
+                        f"{name}: the cut offers nothing to move it with — a "
+                        f"reader can switch to the cross-section and is then "
+                        f"stuck at whichever lightness it was saved at")
+                # AND THE MIRROR OF IT, which this audit did not ask and
+                # should have. Giving the cut its levels put the lightness
+                # controls in the strip for BOTH views -- the shells offered
+                # cut, cut-at, cut-up and cut-down, none of which a
+                # three-dimensional scene can honour. That is the same lie
+                # the turning controls would be on a flat cut, in the other
+                # direction, and it was introduced by the very change that
+                # cured the cut's missing slider.
+                loose = {"cut", "cut-at", "cut-up", "cut-down"} & shells
+                if loose:
+                    problems.append(
+                        f"{name}: the shells offer {' '.join(sorted(loose))} "
+                        f"— a scene has no cross-section to move, so these "
+                        f"cannot act there")
                 stranded = TURNING & cut
                 if stranded:
                     problems.append(
