@@ -311,13 +311,31 @@ def main() -> int:
           f"outside row={w._chart_outside_row.isVisible()}")
     check("24. the skin's own settings appear only with a skin",
           "no colour or opacity row while the skin is set to none",
-          not w._chart_skin_row.isVisible(),
-          f"skin row={w._chart_skin_row.isVisible()}")
+          w._chart_skin_row.isHidden(),
+          f"skin row hidden={w._chart_skin_row.isHidden()}")
     w._chart_skin.setCurrentIndex(w._chart_skin.findData("solid")); pump(4)
+    # ASKED OF THE ROW ITSELF, NOT OF WHETHER IT IS ON SCREEN.
+    #
+    # These three read `isVisible()`, which is False for anything inside a
+    # FOLDED SECTION whatever its own state — and "How the patches are drawn"
+    # is folded when the window opens. So 25 and 26 failed on a correct
+    # application, and 24 PASSED FOR THE WRONG REASON: it asks for False, and
+    # a folded ancestor supplies False even if the row were wrongly shown.
+    # One blind instrument, seen from both sides.
+    #
+    # Measured with every section opened, which is what settled it:
+    #
+    #     skin = none    hidden=True     skin = solid   hidden=False
+    #     no paper       hidden=True     paper + chart  hidden=False
+    #
+    # exactly as each ought to be. `isHidden()` is the widget's own answer and
+    # does not depend on whether somebody has scrolled to it or unfolded it.
+    # Proved not to be vacuous: force the row shown where it must be hidden
+    # and 24 fails, which it could not do before.
     check("25. choosing a skin brings its settings with it",
           "the colour and opacity rows appear",
-          w._chart_skin_row.isVisible(),
-          f"skin row={w._chart_skin_row.isVisible()}")
+          not w._chart_skin_row.isHidden(),
+          f"skin row hidden={w._chart_skin_row.isHidden()}")
 
     if glossy_icc.is_file() and matte_ti3.is_file():
         w._chart_profile = glossy_icc; w._fill_chart_profiles()
@@ -325,8 +343,8 @@ def main() -> int:
         w._load(matte_ti3); pump(12)
         check("26. the out-of-reach row appears once something judges",
               "a paper is open, so there is something to be out of reach of",
-              w._chart_outside_row.isVisible(),
-              f"outside row={w._chart_outside_row.isVisible()}")
+              not w._chart_outside_row.isHidden(),
+              f"outside row hidden={w._chart_outside_row.isHidden()}")
         import chart as _cm
         marked = w._chart_cloud()[2]
         dev = _cm.device_positions(w._chart[1])
