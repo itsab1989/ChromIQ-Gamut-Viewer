@@ -60,7 +60,7 @@ from PyQt6.QtWidgets import QApplication                       # noqa: E402
 # Firefox, WebKit and stock Chromium. Two private copies is how one audit
 # quietly starts asking something easier than the other.
 sys.path.insert(0, str(HERE))
-from page_questions import ASK, SIZES, judge, said             # noqa: E402
+from page_questions import ASK, SIZES, judge, rotted, said     # noqa: E402
 
 
 def main() -> int:
@@ -79,6 +79,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     view = QWebEngineView()
     problems: list = []
+    readings: list = []
     for page in pages:
         if not page.is_file():
             problems.append(f"{page.name}: not there")
@@ -109,10 +110,14 @@ def main() -> int:
                                 f"answered")
                 continue
             where = f"[{page.name} {wide}x{tall}]"
+            readings.append(got)
             found = judge(got, where)
             problems.extend(found)
             if not (len(found) == 1 and "did not load" in found[0]):
                 print(f"  {where}: {said(got)}")
+    # A NAME THAT MATCHES NOTHING ANYWHERE cannot answer the question it was
+    # written for, and says Clean while doing it.
+    problems.extend(rotted(readings))
     print()
     if problems:
         for line in problems:

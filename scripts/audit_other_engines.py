@@ -47,7 +47,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 
-from page_questions import ASK, SIZES, judge, said  # noqa: E402
+from page_questions import ASK, SIZES, judge, rotted, said  # noqa: E402
 
 #: What is opened when no page is named: one of each kind of thing the
 #: application saves -- a 3D scene, the heaviest control set, a flat cut,
@@ -100,10 +100,13 @@ def wait_until_drawn(page, expects_scene: bool) -> None:
         waited += 250
 
 
-def look_at(page, where: str, expects_scene: bool, problems: list) -> None:
+def look_at(page, where: str, expects_scene: bool, problems: list,
+            readings: list | None = None) -> None:
     got = json.loads(page.evaluate(ASK))
     found = judge(got, where, expects_scene)
     problems.extend(found)
+    if readings is not None:
+        readings.append(got)
     print(f"  {where}: {said(got)}")
 
 
@@ -111,6 +114,7 @@ def run(pages, shots: pathlib.Path | None) -> int:
     from playwright.sync_api import sync_playwright
 
     problems: list = []
+    readings: list = []
     with sync_playwright() as p:
         for engine in ENGINES:
             browser = getattr(p, engine).launch()
@@ -129,7 +133,8 @@ def run(pages, shots: pathlib.Path | None) -> int:
                     tab.wait_for_timeout(700)   # the library re-lays itself out
                     where = f"[{engine} {page_file.name} {wide}x{tall}]"
                     before = len(problems)
-                    look_at(tab, where, expects_scene, problems)
+                    look_at(tab, where, expects_scene, problems,
+                            readings)
                     if shots and (len(problems) > before
                                   or (wide, tall) in (SIZES[1], SIZES[-1])):
                         shots.mkdir(parents=True, exist_ok=True)
@@ -142,10 +147,14 @@ def run(pages, shots: pathlib.Path | None) -> int:
                 tab.reload()
                 wait_until_drawn(tab, expects_scene)
                 look_at(tab, f"[{engine} {page_file.name} {wide}x{tall} "
-                             f"fresh]", expects_scene, problems)
+                             f"fresh]", expects_scene, problems, readings)
                 tab.close()
             browser.close()
 
+    # AND WHETHER THE QUESTION COULD SEE ANYTHING AT ALL, asked of the whole
+    # run rather than of one page: a single page may honestly offer no
+    # controls, a name that matches nothing anywhere cannot.
+    problems.extend(rotted(readings))
     print()
     if problems:
         for line in problems:
