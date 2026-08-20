@@ -707,10 +707,27 @@ def _mesh_lost(gamut, name: str, opacity: float, lost,
         keep, _remap = _weld_order(v, colours, stand)
         carried = "".join("1" if stand[i] else "0" for i in keep)
     v, colours, faces = _weld(v, colours, picked, stand)
+    # A SIMPLE SKIN IS LIT FACET BY FACET. Reported from the window of two
+    # shapes drawn that way: "this one looks scattered", and the picture
+    # showed long wedges radiating across the surface with hard edges between
+    # them.
+    #
+    # It is the shading, not the shape. Smooth shading averages the normals of
+    # the facets meeting at each corner, and "Wrap it in a simple skin" is a
+    # hull over unevenly spread measured points: MEASURED, 151 of its 414
+    # triangles are needles — the longest edge more than eight times its own
+    # width, the worst 714 times — against 40 of 978 for "Follow the real
+    # edge". An average taken across a needle is smeared along it, and that
+    # smear is the streak.
+    #
+    # Lit facet by facet the same hull comes out clean, which is what a coarse
+    # wrap actually is. The shape, the volume and the colours are untouched:
+    # this changes how the light is worked out and nothing else.
+    smooth = getattr(gamut, "mode", "") != "hull"
     return go.Mesh3d(
         x=v[:, 0], y=v[:, 1], z=v[:, 2],
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-        vertexcolor=colours, opacity=opacity, flatshading=False,
+        vertexcolor=colours, opacity=opacity, flatshading=not smooth,
         lighting=_lighting(depth, opacity),
         lightposition=light or _LIGHT_OVERHEAD,
         # BOTH COLOURS NAMED, not just the alarming one. "red is out of
@@ -2110,7 +2127,9 @@ def _mesh(gamut, name: str, opacity: float,
         # Only the legend key uses this; vertexcolor paints the surface.
         color=_legend_swatch(chosen if chosen is not None else gamut.colors,
                              page),
-        flatshading=False, hoverinfo="name",
+        # A SIMPLE SKIN IS LIT FACET BY FACET — see the note in `_mesh_lost`,
+        # which paints the other half of the same shape and must agree.
+        flatshading=getattr(gamut, "mode", "") == "hull", hoverinfo="name",
         lighting=_lighting(depth, opacity),
         # THE LIGHT THE USER PLACED. Fixed overhead here, this argument was
         # accepted and then dropped, so Set the lighting myself moved nothing.
