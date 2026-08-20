@@ -62,6 +62,22 @@ def window_keys():
     shape = text[text.index("def _shape_controls"):]
     shape = shape[:shape.index("\n    def ", 10)]
     keys |= set(re.findall(r'"([a-z_]+)":\s*\(', shape))
+    # AND THE ONES THE TABLE BUILDS RATHER THAN SPELLS. The seven lighting
+    # settings are entered as `(f"light_{key}", ...)` over LIGHT_CONTROLS, so
+    # a regex looking for literal keys cannot see them — and a name it cannot
+    # see reads exactly like a name the window does not have. Naming them in
+    # NEEDS failed this file's own guard for that reason, about seven
+    # settings that are real, remembered and now pressed by the run.
+    for made in re.findall(r'\(f"([a-z_]+)_\{key\}"', body):
+        rows = re.search(rf"^{made.upper()}_CONTROLS = \((.*?)^\)",
+                         text, re.S | re.M)
+        assert rows, (f"the table behind {made}_* settings is not where this "
+                      f"fixture expects it — the keys it builds cannot be "
+                      f"read, so anything naming them looks wrong")
+        built = re.findall(r'\(\s*"([a-z_]+)",', rows.group(1))
+        assert len(built) >= 3, (f"only {len(built)} {made}_* settings found "
+                                 f"— that table has stopped being literals")
+        keys |= {f"{made}_{one}" for one in built}
     assert len(keys) > 30, f"only found {len(keys)} settings — has the table "\
                            f"stopped being a table of literals?"
     return keys

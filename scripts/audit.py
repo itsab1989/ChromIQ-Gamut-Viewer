@@ -219,6 +219,24 @@ READOUTS = {
 #: So the audit switches the parent on first. Left of the arrow is the control
 #: being tested, right of it is what has to be true for it to have a job.
 NEEDS = {
+    # THE DRIFT COLOURING NEEDS A CLOUD TO COLOUR. "coloured by" chooses how
+    # the drift cloud is painted, and the cloud is only drawn once "Show me
+    # where, in the picture" is ticked — so driven with it off, the control
+    # correctly changes nothing, and the run reported it as a control that
+    # does nothing. Everything else with a prerequisite is named here; this
+    # one was not, and the table has no way of noticing its own omissions.
+    # NAMED AS A WIDGET, because "Show me where, in the picture" is one of
+    # the few controls the window does NOT remember between sessions — its
+    # colouring is remembered and the tick that draws the cloud is not.
+    "drift_by": "_drift_draw",
+    # THE SEVEN LIGHTING SLIDERS. "Set the lighting myself" hides them until
+    # it is ticked; before the visibility test learned to switch a
+    # prerequisite on, every one of them was listed and then skipped as "not
+    # on screen", which reads exactly like a control that was checked.
+    "light_ambient": "manual_light", "light_diffuse": "manual_light",
+    "light_specular": "manual_light", "light_roughness": "manual_light",
+    "light_fresnel": "manual_light", "light_direction": "manual_light",
+    "light_height": "manual_light",
     "slice_at": "slice_on",
     "rings": "rings_on",
     "ideal_neutral": "neutral",
@@ -372,6 +390,61 @@ def window_controls(w) -> list:
     return out
 
 
+def not_in_either_table(w, listed) -> list:
+    """Controls in the column that neither table names, with their words.
+
+    THE LISTING KNEW WHAT IT SKIPPED AND NOT WHAT IT COULD NOT SEE. It is
+    built from `_persisted()` plus `_shape_controls()`, and it already says
+    out loud that the ⓘ folds are left out on purpose. A control in NEITHER
+    table is a different thing: it is never listed, never skipped, and never
+    mentioned — so "press every control there is" was a claim about the
+    controls those two tables happen to hold.
+
+    Measured when this was written, with two papers open and every fold
+    opened: 84 interactive controls in the column, 52 of them moved by a run.
+
+    Nothing here fails a release. It is a number, printed, so the gap can be
+    argued with — the same treatment the ⓘ folds already get.
+    """
+    import gamut_app                     # the window's own module, for Hint
+    from PyQt6.QtWidgets import (QCheckBox, QComboBox, QGroupBox,
+                                 QRadioButton, QScrollArea, QSlider)
+    area = w.findChild(QScrollArea)
+    if area is None or area.widget() is None:
+        return []
+    column = area.widget()
+    # EVERY FOLD OPEN FIRST, in memory only. A row inside a shut section is
+    # hidden, and a hidden widget looks exactly like one that is not there.
+    for box in column.findChildren(QGroupBox):
+        if hasattr(box, "_refold") and not getattr(box, "_fold_open", True):
+            box._fold_open = True
+            box._refold()
+    known = {id(widget) for _key, widget in listed}
+    out = []
+    for kind in (QCheckBox, QRadioButton, QComboBox, QSlider):
+        for control in column.findChildren(kind):
+            if isinstance(control, gamut_app.Hint) or id(control) in known:
+                continue
+            # ONE BUTTON OF A SET WHOSE SETTING IS MOVED is covered by it:
+            # the appearance is one setting with seven radios behind it, and
+            # naming all seven would bury the ones that really are adrift.
+            parent = control.parentWidget()
+            if parent is not None and any(
+                    id(sibling) in known
+                    for sibling in parent.findChildren(type(control))):
+                continue
+            group = control
+            while group is not None and not isinstance(group, QGroupBox):
+                group = group.parentWidget()
+            words = (control.text() if hasattr(control, "text") else "") or ""
+            if isinstance(control, QComboBox):
+                words = "▾ " + (control.currentText()[:34] or "a chooser")
+            out.append((group.title() if group is not None else "the column",
+                        words.strip() or control.objectName() or
+                        type(control).__name__))
+    return out
+
+
 def audit_window(bench, w, gamut_app) -> list:
     """Every setting the window remembers, moved and put back.
 
@@ -399,11 +472,38 @@ def audit_window(bench, w, gamut_app) -> list:
 
     def move_and_restore(key, widget):
         kind = kind_of(widget)
+        # DECLARED HERE AND NOWHERE LOWER DOWN. Written beside the shot it
+        # belongs to, this line sat AFTER the prerequisite block that sets it
+        # and quietly wiped the answer — the same ordering mistake as the
+        # frame that had to go before the outlines, and as a mutation's
+        # verdict printed after the ordinary report.
+        parent_dead = ""
         # A CONTROL THAT IS NOT ON SCREEN IS NOT ASKED. The window hides the
         # ones whose shape is not loaded -- "a control for something that does
         # not exist is worse than no control" -- and pressing one anyway
         # reports it as doing nothing, which is the window being right.
+        # ...BUT A CONTROL ITS PREREQUISITE WOULD REVEAL IS A DIFFERENT
+        # THING. This test ran before anything was switched on, so the seven
+        # lighting sliders and `mesh_paint` were listed by --list and then
+        # never asked: "Set the lighting myself" hides them until it is
+        # ticked, and ticking it is exactly what the NEEDS table is for. The
+        # prerequisite is switched on FIRST, and only then is the control
+        # asked whether it is on screen.
+        woken = None
         if not widget.isVisible():
+            parent_of = NEEDS.get(key, "")
+            switch = getattr(w, parent_of if parent_of.startswith("_")
+                             else "_" + parent_of, None) if parent_of else None
+            if switch is not None and not hasattr(switch, "setChecked"):
+                switch = None
+            if switch is not None and not switch.isChecked():
+                switch.setChecked(True)
+                bench.pump(2.0)
+                woken = switch
+        if not widget.isVisible():
+            if woken is not None:
+                woken.setChecked(False)
+                bench.pump(1.0)
             rows.append((key, None, None, "not on screen, so not asked"))
             return
         # NOTHING LEFT MOVING FROM THE CONTROL BEFORE THIS ONE. Turning the
@@ -447,13 +547,32 @@ def audit_window(bench, w, gamut_app) -> list:
         bench.pump(1.6)
         parent = NEEDS.get(key)
         put_back_parent = None
-        if parent and not parent.startswith("_"):
-            switch = getattr(w, "_" + parent, None)
+        if parent:
+            switch = getattr(w, parent if parent.startswith("_")
+                             else "_" + parent, None)
+            if switch is not None and not hasattr(switch, "setChecked"):
+                switch = None       # `_chart` and friends are data, not ticks
             if switch is not None and not switch.isChecked():
+                # AND WHETHER SWITCHING IT ON DOES ANYTHING HERE. A control
+                # whose prerequisite is dead in this state cannot be judged:
+                # "coloured by" paints the drift cloud, the cloud is only
+                # drawn once "Show me where, in the picture" is ticked, and
+                # the cloud only exists at all when the two things open are
+                # one device at two times. Ticked with no cloud to draw, the
+                # parent changes nothing, the child correctly changes nothing
+                # — and the run called the child broken.
+                #
+                # So the parent is measured too. Nothing is excused by this:
+                # a parent that DOES move the picture leaves the child judged
+                # exactly as before.
+                waking = bench.shot()
                 switch.setChecked(True)
                 put_back_parent = switch
                 bench.pump(2.0)
+                if bench.differs(waking, bench.shot()) < 600:
+                    parent_dead = parent
         bench.pump(0.8)
+        was_by_hand = False
         before = bench.shot()
         if kind == "slider":
             was = widget.value()
@@ -470,6 +589,23 @@ def audit_window(bench, w, gamut_app) -> list:
             widget.setCurrentIndex(to)
         bench.pump(2.4)
         moved = bench.differs(before, bench.shot())
+        # A COMBO FIRES ONLY HALF OF ITSELF, exactly as a slider does — and
+        # the slider branch above has emitted `sliderReleased` for that
+        # reason for months. `setCurrentIndex` raises `currentIndexChanged`
+        # and NOT `activated`, and `activated` is what a person's click
+        # raises: eleven of this window's choosers are wired to it, twenty to
+        # the other. Driven the wrong half, `drift_by` reported "moving it
+        # changed 0 px" — a control that works perfectly when clicked.
+        #
+        # The second chance is only taken when nothing moved, so the twenty
+        # that answered properly are never fired twice — which matters,
+        # because two of the eleven open a file chooser when they fire.
+        if moved < 600 and kind not in ("slider", "check"):
+            widget.activated.emit(to)
+            bench.pump(2.4)
+            moved = bench.differs(before, bench.shot())
+            if moved >= 600:
+                was_by_hand = True
         if kind == "slider":
             widget.setValue(was)
             widget.sliderReleased.emit()
@@ -477,13 +613,18 @@ def audit_window(bench, w, gamut_app) -> list:
             widget.setChecked(was)
         else:
             widget.setCurrentIndex(was)
+            if was_by_hand:
+                widget.activated.emit(was)
         bench.pump(2.4)
         left = bench.differs(before, bench.shot())
         if put_back_parent is not None:
             put_back_parent.setChecked(False)
             bench.pump(1.2)
         why = WINDOW_ACTIONS.get(key)
-        if why:
+        if parent_dead and moved < 600:
+            verdict = (f"not asked — {parent_dead} changes nothing in this "
+                       f"state, so there is nothing for this to act on")
+        elif why:
             verdict = f"as intended — {why}"
         elif moved < 600:
             verdict = "DOES NOTHING"
@@ -870,8 +1011,54 @@ def main(argv=None) -> int:
     gamut_app.Notice.warn = staticmethod(lambda *a, **k: None)
     gamut_app.Notice.say = staticmethod(lambda *a, **k: None)
     gamut_app.Notice.ask = staticmethod(lambda *a, **k: True)
+
+    # AND NO FILE CHOOSER EITHER. A modal dialog in front of this run is not a
+    # slow run, it is a stopped one — and `QFileDialog.exec` cannot be patched
+    # from outside, so the window's own `_file_dialog` is replaced, which is
+    # the way this project already does it. It matters as soon as a control
+    # is driven the way a person drives it: "Compare with" opens a chooser on
+    # `activated`, and nothing here was stopping it.
+    class _NoDialog:
+        def __init__(self, *a, **k):
+            pass
+
+        def exec(self):
+            return 0
+
+        def selectedFiles(self):
+            return []
+
+        def __getattr__(self, _name):
+            return lambda *a, **k: None
+
+    w._file_dialog = lambda *a, **k: _NoDialog()
     bench = Bench(app, w._view)
     bench.pump(2.0)
+
+    # EVERY FOLDED SECTION OPEN BEFORE ANYTHING IS PRESSED. A control inside
+    # a shut section is not visible, and this run skips what is not visible —
+    # so "How it looks" being folded meant the seven lighting sliders and
+    # `mesh_paint` were listed by --list and then reported as "not on screen,
+    # so not asked", which reads exactly like a control that was checked.
+    # `audit_panel` learned this long ago and `audit_controls` copied it; the
+    # lesson had not reached the run that gates a release. Opened in memory
+    # only — `_refold` does not write to the settings store, so nobody's own
+    # folded sections are disturbed.
+    from PyQt6.QtWidgets import QGroupBox as _QGroupBox
+    from PyQt6.QtWidgets import QScrollArea as _QScrollArea
+    _area = w.findChild(_QScrollArea)
+    _opened = 0
+    if _area is not None and _area.widget() is not None:
+        for _box in _area.widget().findChildren(_QGroupBox):
+            if hasattr(_box, "_refold") and not getattr(_box, "_fold_open",
+                                                        True):
+                _box._fold_open = True
+                _box._refold()
+                _opened += 1
+        bench.pump(1.5)
+    if _opened:
+        print(f"  {_opened} folded section(s) opened so their controls can "
+              f"be pressed.")
 
     pages = sorted(pathlib.Path(args.dir).glob("*.html"))
     if args.list:
@@ -894,6 +1081,14 @@ def main(argv=None) -> int:
             print(f"\n  {len(skipped)} explanation folds (ⓘ) are not moved: "
                   f"each opens a paragraph of text in the panel, not anything "
                   f"in the picture.")
+        adrift = not_in_either_table(w, listed)
+        if adrift:
+            print(f"\n  {len(adrift)} control(s) in the column are in "
+                  f"NEITHER table, so a run never moves them — not skipped "
+                  f"on purpose, simply out of reach of how this finds "
+                  f"controls:")
+            for where, words in adrift:
+                print(f"      {where[:28]:30s} {words[:44]}")
         print(f"\nSaved pages under {args.dir}:")
         for p in pages:
             print(f"  {p.name}")
