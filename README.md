@@ -1347,6 +1347,7 @@ python scripts/audit_the_controls_can_be_shut.py  # whatever you open in a page,
 python scripts/audit_the_readme_is_true.py  # every link, anchor and picture in the documentation
 python scripts/audit_two_views.py         # a page holding both views offers each what it can honour
 python scripts/audit_sliders_are_live.py  # the picture follows the handle while it is dragged, not on release
+python scripts/audit_two_rooms_drag.py    # a drag belongs to the room it began in, and the other follows
 python scripts/check_layout.py            # two engines, ten window sizes
 python scripts/check_momentum.py          # does the shape carry on turning when the reader lets go?
 python scripts/check_binary_arch.py       # a built binary is really the architecture we claimed
