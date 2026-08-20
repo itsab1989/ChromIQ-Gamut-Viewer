@@ -94,10 +94,32 @@ LOOK = """(function () {
                  l.fresnel].join(',');
       var faces = (full.i && full.i.length) ? full.i.length
                 : ((t.i && t.i.length) ? t.i.length : 0);
+      // AND WHERE THE POINTS ARE, not only how many there are.
+      //
+      // A cross-section is resampled to a fixed number of steps, so moving it
+      // up or down draws a different ring with the SAME point count and the
+      // same colours -- and a digest of counts alone cannot see it. That is
+      // why "Slice it at one lightness" was reported for hours as doing
+      // nothing "before or after the release", which was never a fault in the
+      // window.
+      // FROM _fullData AGAIN, and this is the third place tonight. A page
+      // packs any sizeable array binary, so `t.x.length` is undefined and
+      // every reading taken from it is the same constant -- which is why the
+      // lightness slider was reported for hours as changing nothing "before
+      // or after the release". The library decodes them for its own use in
+      // _fullData.
+      var xs = (full.x && full.x.length ? full.x : (t.x || []));
+      var ys = (full.y && full.y.length ? full.y : (t.y || []));
+      var at = function (a, i) {
+        var v = a && a.length ? a[Math.min(i, a.length - 1)] : null;
+        return (typeof v === "number") ? v.toFixed(2) : String(v);
+      };
+      var shape = [at(xs, 0), at(xs, Math.floor(xs.length / 2)),
+                   at(ys, 0), at(ys, Math.floor(ys.length / 2))].join(",");
       out.push([String(t.name || ''), t.type,
-                (t.x || []).length, faces,
+                (xs && xs.length) || 0, faces,
                 t.opacity === undefined ? '' : String(t.opacity), sample,
-                lit]);
+                lit, shape]);
     }
   }
   return JSON.stringify(out);

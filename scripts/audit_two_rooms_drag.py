@@ -94,9 +94,30 @@ def moved(before: pathlib.Path, after: pathlib.Path):
 
 
 def a_page(where: pathlib.Path) -> pathlib.Path:
+    """Two rooms, drawn from real measurements where they are to hand.
+
+    AN INVENTED SHAPE HAS HIDDEN A FAULT FROM A CHECK THREE TIMES TONIGHT --
+    most recently a cut that opened at the wrong height, which could not be
+    made to fail on a made-up ball because its lightness range was too narrow
+    to tell the two numbers apart. Real papers have awkward proportions,
+    dents and a full lightness range; invented ones are smooth and tame.
+    """
     import numpy as np
     import ti3gamut
     from gamutview import build_gamut
+
+    demo = HERE.parent / "demo"
+    real = [(p.stem, p) for p in (demo / "Glossy-paper.ti3",
+                                  demo / "Matte-paper.ti3") if p.is_file()]
+    if len(real) == 2:
+        figures = [(name, ti3gamut.build_figure(
+            [(name, build_gamut(ti3gamut.read_measurement(path).lab,
+                                input_space="lab"))], ""))
+            for name, path in real]
+        out = where / "two-rooms.html"
+        ti3gamut.write_side_by_side_html(figures, out, linked=True,
+                                         controls=False)
+        return out
 
     rng = np.random.default_rng(4)
     q = rng.normal(size=(600, 3))
