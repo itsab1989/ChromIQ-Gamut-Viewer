@@ -7876,9 +7876,20 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
     # f-string below, so doubling them the way the surrounding CSS does puts
     # `{{` into the page and the rule never applies -- which it did, and both
     # arrangements came out identical.
+    # BOTH ROOMS ON SCREEN AT ONCE. Reported from the window, of the
+    # arrangement this option had just added: "split in top/bottom shows the
+    # bottom one nearly out of the window". It asked for 68vh EACH and lifted
+    # the row's ceiling, so the two together wanted 136vh and the second sat
+    # below the fold — two rooms you cannot see at the same time are not a
+    # comparison, which is the whole reason to have two.
+    #
+    # So the row keeps the ceiling it has in either arrangement, and the two
+    # halves share it: about 40vh each on a full screen, with a floor low
+    # enough that a short window still shows both rather than pushing one
+    # away.
     stack_css = ("" if not stacked else
-                 " .row  { flex-direction:column; max-height:none; }\n"
-                 " .half { min-height:68vh; }\n"
+                 " .row  { flex-direction:column; }\n"
+                 " .half { min-height:31vh; }\n"
                  " .half + .half { border-left:none;\n"
                  "                 border-top:1px solid "
                  + colours["grid"] + "; }")

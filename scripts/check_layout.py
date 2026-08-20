@@ -98,6 +98,19 @@ TOUCHING = 8.0
 
 MEASURE = """(function(){
   var d=document.querySelector('.js-plotly-plot');
+  // TWO ROOMS ONE ABOVE THE OTHER ARE ONE PICTURE, in the only sense this
+  // check cares about: it asks whether the drawing holds enough of the first
+  // screen to be worth looking at, and a page deliberately arranged as two
+  // stacked rooms gives each of them half. Measuring only the first would
+  // report every such page as half a picture — the check's own assumption,
+  // not the page's fault.
+  var all=document.querySelectorAll('.js-plotly-plot');
+  var stacked=false, together=0;
+  if(all.length===2){
+    var a=all[0].getBoundingClientRect(), b=all[1].getBoundingClientRect();
+    stacked = Math.abs(a.left-b.left)<2 && b.top>=a.bottom-2;
+    if(stacked) together=Math.round(a.height+b.height);
+  }
   var rows=document.querySelectorAll('.cq-spin-panel .cq-row'), pairs=[];
   for (var i=0;i<rows.length;i++){
     var r=rows[i], name=r.querySelector('span'), ctl=r.querySelector('.cq-ctl');
@@ -131,7 +144,8 @@ MEASURE = """(function(){
                  says:a.text, and:b.text});
   }
   return JSON.stringify({
-    picture: d?Math.round(d.getBoundingClientRect().height):0,
+    picture: stacked?together:(d?Math.round(d.getBoundingClientRect().height):0),
+    stacked: stacked,
     view: window.innerHeight, rows: pairs, over: over, labels: marks.length,
     sideways: document.documentElement.scrollWidth>window.innerWidth+1});})();"""
 
