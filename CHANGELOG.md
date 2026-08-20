@@ -1,5 +1,122 @@
 # Changelog
 
+## v2.40.0
+
+Everything here came from one evening: the first time the application was
+driven by the person it is for, rather than by its own tests. Nine faults in
+two hours, every one of them only visible at his combination of settings —
+rings on, detail high, a comparison open, the agreement fade at nothing — and
+none of them at the defaults the checks had always used.
+
+### 🎚 The rings slider follows the handle
+
+*"show rings inside slider only updates the viewer when i let go from dragging
+it - should be live"*, and then the rule that settles the class: *"all sliders
+should work this way"*.
+
+The geometry was never why it waited. Measured first: the rings inside one
+shape cost **0.9 ms** at six of them, 1.8 at thirteen, 2.9 at twenty. What
+cost the time was the only path available — a full page, written and loaded,
+about a second of black for one trace's worth of numbers. The rings now take
+the road the solidity and the shading already take: worked out in Python and
+pushed into the picture already on screen, camera untouched. Measured on the
+real window: 1 point before the drag, **1,840 while the handle is held**,
+unchanged when it is let go.
+
+**Detail and the two agreement sliders still wait for the release, and this
+is why.** A written page carries a mesh's triangle list *binary*, so neither
+`Plotly.restyle` nor assigning the arrays and redrawing replaces it — both
+report success and change nothing. Measured with the agreement hidden: the
+figure said 583 triangles, the page stayed at 978, and the push still
+answered *yes, I did that*. `Plotly.react` does replace them, correctly, and
+costs **2,405 ms** against the rebuild's one second. A slider that waits beats
+a picture that lies.
+
+### ✂️ What is out of reach ends on a clean line, not a staircase
+
+*"what is out of reach here should probably be a clean cut along the shell of
+srgb. instead it is zig zagging"*.
+
+It was the mesh, and that had to be established first: a ragged boundary on
+the two-shape comparison pages was proved last week to be the measurement
+itself. Measured here on his own shapes at his own settings: of the paper's
+978 triangles, **175 — 17.9% of the surface** — carry corners both inside
+sRGB and outside it, and the mark is per corner, so each is painted wholly red
+or wholly grey. The cure was already in the tree and simply never invoked for
+this: the fade re-cuts each shell along the crossing and gets a clean edge,
+while the marking took the other branch. Now: **1,328 triangles and not one
+straddles**, for 18 ms.
+
+### 🪟 Two rooms keep their own settings, and a drag stays where it began
+
+*"when enabling the two rooms the shapes on screen don't keep their visuals
+from before, turning it off again resets the view to how it was before"* — and
+that second half was the diagnosis. Nothing was lost; the settings were never
+handed over. Each room is built with one shape and was passed the whole list
+of per-shape settings, so both rooms drew with the *first* shape's opacity,
+rings and colouring. Room two came out at opacity 1.0 where its shape asked
+for 0.30, and with no rings where it asked for twelve.
+
+*"if i am crossing their seperator while dragging the one where i started from
+stops moving and only the other one still moves"*. Each scene watches its own
+element, so crossing hands the drag over. Measured before: both rooms reported
+movement and finished at (-1.608,-1.384) against (-1.420,-1.576). The room the
+press lands in now holds the pointer for the whole gesture, and the other
+follows once per frame — because with the pointer captured the library emits
+no events at all, where the same drag uncaptured emitted seven.
+
+**Still open:** a drag from the right across the seam now stops instead of
+diverging. `scripts/audit_two_rooms_drag.py` fails on it and says so.
+
+### 🖱 The wheel zooms wherever it is pointed
+
+*"when hovering the mouse over something that triggers showing a label i
+cannot zoom"*. Crossed properly, because the first attempt changed two things
+at once: two places **on** the shape refuse, two **off** it work, so it is
+what is under the pointer and not where the wheel lands. The wheel is not
+swallowed — all five events arrive either way — and dismissing the label first
+does not help, so what blocks it is the hover pick being live. The page now
+moves the camera itself, which nothing can refuse.
+
+### 📏 The perfectly neutral line stands on its own
+
+*"i could understand why this can't show the measured grey from just a profile
+- but is a neutral line impossible as well here?"* It is not. A decoupling
+asked for earlier had only been half done: the window stopped tying the two
+ticks together, while the drawing still refused the line to any shape without
+measured greys. The line is a\* 0, b\* 0 by definition; the greys were only
+ever borrowed for their lightness range, and a profile has a range of its own.
+
+### 🔀 A saved page can carry both views, with a switch
+
+*"could the exported web viewer files get a toggle to switch between the view
+of the shells and the sliced view … the other controls would then have to
+update accordingly"*. The save dialog now asks. The shapes offer the turning
+and the zoom; the cut offers its own lightness controls and the zoom; each
+refuses what it cannot honour, in both directions. About a tenth more file —
+the viewer is the bulk of the page and travels once either way.
+
+### 🩹 The ⓘ that had wandered off, and the audit that could not see it
+
+*"clicked two rooms side by side option and a tooltip icon appears below both
+rooms point the same way"*. It was never a wrap: the pass that puts every icon
+on its control's row walks layouts and never descends into a widget's own
+layout, and that checkbox lives inside a container so the option can be hidden
+with its spacing. The panel audit could not have caught it either — it opened
+every folded section but never ticked a tickbox, and even ticked, that control
+needs **two shapes** to exist at all. It now does both, and immediately found
+something else real: "Slice it at one lightness" had no explanation at all.
+
+### 🔎 And the shapes did not change
+
+*"i feel like some of the shapes and combinations did look better before in
+the past versions"*, with the fair caveat that this was his first time driving
+it. Measured at his settings: **v2.39.6, v2.39.0 and v2.36.0 draw identically,
+trace for trace** — names, types, point counts, triangle counts, colours,
+solidity and shading. The instrument is mutation-proved: it reports 8 traces
+against 7 when something really does change.
+
+
 ## v2.39.6
 
 ### 🧱 The remainder of an extreme fade is drawn genuinely solid
