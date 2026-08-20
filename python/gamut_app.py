@@ -15229,11 +15229,31 @@ class GamutApp(QMainWindow):
         def answered(ok):
             self._rings_live = bool(ok)
 
+        # NOT INTO THE LEGEND KEY, WHICH CARRIES THE SAME NAME.
+        #
+        # A shape's rings are TWO traces: the rings themselves, and a
+        # one-point proxy that exists only so the legend key can be drawn at
+        # full weight while the rings stay light (see `_legend_line`). Both
+        # are called "<shape> (rings inside)", so a push that matches on name
+        # filled the proxy with the whole ring set as well — and a rebuild
+        # does not. Measured on two papers against sRGB, rings at 6: rebuilt,
+        # each shape holds 552 points and 1; pushed, it holds 552 and 552,
+        # and the two pictures differ by 13,538 px. The live view and a saved
+        # page drawing the same setting differently is the one asymmetry this
+        # project keeps having to fix.
+        #
+        # THE LENGTH IS READ FROM `_fullData`. A page packs any sizeable
+        # array binary, so `el.data[i].x.length` is `undefined` — and a test
+        # written against that would skip every trace and quietly turn every
+        # push into a rebuild.
         page.runJavaScript(self._in_every_room(
             f"var want={json.dumps(wanted)};"
             "for(var i=0;i<el.data.length;i++){"
             "var n=String(el.data[i].name||'');"
             "if(!Object.prototype.hasOwnProperty.call(want,n))continue;"
+            "var full=(el._fullData&&el._fullData[i])||el.data[i];"
+            "var have=full&&full.x?full.x.length:0;"
+            "if(!(have>1))continue;"
             "Plotly.restyle(el,{x:[want[n][0]],y:[want[n][1]],"
             "z:[want[n][2]]},[i]);did++;}"), answered)
 

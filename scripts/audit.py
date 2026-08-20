@@ -627,9 +627,12 @@ def audit_window(bench, w, gamut_app) -> list:
                 widget.activated.emit(was)
         bench.pump(2.4)
         left = bench.differs(before, bench.shot())
-        if put_back_parent is not None:
-            put_back_parent.setChecked(False)
-            bench.pump(1.2)
+        # THE PREREQUISITE STAYS ON UNTIL THE VERDICT IS IN. It used to be
+        # switched off here — before the second, on-its-own reading below —
+        # so that reading was taken of a control that could no longer act, on
+        # a picture that had just changed because its parent went off. `rings`
+        # reported the same 23,289 px however the push was fixed, because the
+        # number had nothing to do with the push.
         why = WINDOW_ACTIONS.get(key)
         if parent_dead and moved < 600:
             verdict = (f"not asked — {parent_dead} changes nothing in this "
@@ -689,6 +692,9 @@ def audit_window(bench, w, gamut_app) -> list:
                           "settling"
         else:
             verdict = "works"
+        if put_back_parent is not None:
+            put_back_parent.setChecked(False)
+            bench.pump(1.2)
         rows.append((key, moved, left, verdict))
 
     for key, widget in window_controls(w):
