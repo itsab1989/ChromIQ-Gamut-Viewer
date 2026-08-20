@@ -200,6 +200,20 @@ def main() -> int:
         if slider is None:
             problems.append(f"{label}: no slider called {attr}")
             continue
+        # EACH SLIDER STARTS FROM A KNOWN PICTURE.
+        #
+        # Run one after another without this, each is asked in whatever state
+        # the last one left: "where they differ" was dragged to nothing in a
+        # picture whose agreeing half had already been hidden by the slider
+        # before it, so there was nothing left to change and it was reported
+        # as doing nothing. An answer known in advance needs a starting point
+        # known in advance.
+        if window._agree.value() != 100 or window._differ.value() != 100:
+            window._agree.setValue(100)
+            window._differ.setValue(100)
+            window._redraw()
+            settle(4000)
+
         # THE CUT GETS ITS OWN PICTURE, for the reason written above: it
         # replaces the shapes rather than changing them.
         if attr == "_slice_at":

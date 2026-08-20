@@ -8406,11 +8406,8 @@ class GamutApp(QMainWindow):
         self._agree = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._agree.setRange(0, 100)
         self._agree.setValue(100)
-        self._agree.valueChanged.connect(
-            lambda v: self._agree_lbl.setText("all of it" if v == 100
-                                              else ("hidden" if v == 0
-                                                    else f"{v}%")))
-        self._agree.sliderReleased.connect(self._redraw)
+        self._agree.valueChanged.connect(lambda _v: self._on_fade_changed())
+        self._agree.sliderReleased.connect(self._after_fade)
         agrow.addWidget(self._agree, 1)
         self._agree_lbl = QLabel("all of it", g_look)
         self._agree_lbl.setFixedWidth(52)
@@ -8461,11 +8458,8 @@ class GamutApp(QMainWindow):
         self._differ = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._differ.setRange(0, 100)
         self._differ.setValue(100)
-        self._differ.valueChanged.connect(
-            lambda v: self._differ_lbl.setText("all of it" if v == 100
-                                               else ("hidden" if v == 0
-                                                     else f"{v}%")))
-        self._differ.sliderReleased.connect(self._redraw)
+        self._differ.valueChanged.connect(lambda _v: self._on_fade_changed())
+        self._differ.sliderReleased.connect(self._after_fade)
         dfrow.addWidget(self._differ, 1)
         self._differ_lbl = QLabel("all of it", g_look)
         self._differ_lbl.setFixedWidth(52)
@@ -14666,6 +14660,112 @@ class GamutApp(QMainWindow):
             specular=0.02 + 0.18 * d, roughness=0.95 - 0.5 * d,
             fresnel=0.02 + 0.1 * d))
 
+    def _on_fade_changed(self) -> None:
+        """Fade the shapes as the agreement handles move, without a rebuild.
+
+        Reported as part of "all sliders should work this way". These two are
+        the ones he actually works in -- his standing setting is "where they
+        agree" at 0% -- and they were the dearest to make live, because they
+        do not merely recolour: below full strength the shells are RE-CUT
+        along their crossing (ti3gamut.py:8786), so the picture's geometry
+        changes as well as its colours.
+
+        WHICH IS WHY THIS REBUILDS THE TRACES RATHER THAN PATCHING THEM.
+        Measured before choosing: the whole figure at his settings costs 52 ms
+        whether or not anything is faded, and the re-cut inside it 19 ms --
+        against about a second to write a page and load it. So the arithmetic
+        was never what made these sliders wait for the release; the page was.
+
+        AND IT IS BUILT BY THE SAME CALL THE REBUILD USES, from the inputs the
+        last draw was made from and `_render_options`, which is the one place
+        the renderer's arguments are assembled. A second argument list here is
+        exactly how the saved page and the screen came to disagree before.
+        """
+        self._agree_lbl.setText(self._fade_words(self._agree.value()))
+        self._differ_lbl.setText(self._fade_words(self._differ.value()))
+        self._push_shapes()
+
+    @staticmethod
+    def _fade_words(value: int) -> str:
+        """What an agreement handle says beside itself.
+
+        The ends are named rather than numbered, because "100%" and "0%" do
+        not say what they do: at the top nothing is hidden at all, and at the
+        bottom that part is gone.
+        """
+        if value == 100:
+            return "all of it"
+        return "hidden" if value == 0 else f"{value}%"
+
+    def _after_fade(self) -> None:
+        """Letting go of an agreement handle.
+
+        Nothing to do when the live push landed -- the picture is already
+        what the reader asked for, and rebuilding it would take it away and
+        put back the same thing, with a second of black in between. When the
+        push could not land, this is the redraw that always worked.
+        """
+        if getattr(self, "_shapes_live", False):
+            return
+        self._redraw()
+
+    def _push_shapes(self) -> None:
+        """Rebuild this scene's traces and send them into the page on screen.
+
+        Sets ``_shapes_live`` from the page's own answer, so letting go
+        rebuilds only when the push could not land.
+        """
+        self._shapes_live = False
+        page = self._view.page() if self._view is not None else None
+        inputs = getattr(self, "_scene_inputs", None)
+        if page is None or inputs is None:
+            return
+        if self._side_by_side.isChecked():
+            # TWO ROOMS ARE TWO FIGURES built by another route; pushing one
+            # figure's traces into both would be the "one shape meant all of
+            # them" fault in a new place. Let the release rebuild them.
+            return
+        gamuts, clouds, styles, lost = inputs
+        if not gamuts:
+            return
+        from ti3gamut import build_figure
+
+        try:
+            fig = build_figure(gamuts, self._scene_title(), patches=clouds,
+                               styles=styles, lost=lost,
+                               split=bool(len(gamuts) > 1),
+                               **self._render_options())
+        except Exception:                      # noqa: BLE001 — a live push
+            return                             # that fails leaves the release
+                                               # to redraw, which always works
+        wanted = {}
+        for trace in fig.data:
+            name = str(getattr(trace, "name", "") or "")
+            if not name:
+                continue
+            item = {}
+            for field in ("x", "y", "z", "i", "j", "k", "vertexcolor"):
+                value = getattr(trace, field, None)
+                if value is not None:
+                    item[field] = list(value)
+            if item:
+                wanted[name] = item
+        if not wanted:
+            return
+
+        def answered(ok):
+            self._shapes_live = bool(ok)
+
+        page.runJavaScript(self._in_every_room(
+            f"var want={json.dumps(wanted)};"
+            "for(var i=0;i<el.data.length;i++){"
+            "var n=String(el.data[i].name||'');"
+            "if(!Object.prototype.hasOwnProperty.call(want,n))continue;"
+            "var w=want[n],p={};"
+            "for(var f in w){if(Object.prototype.hasOwnProperty.call(w,f))"
+            "p[f]=[w[f]];}"
+            "Plotly.restyle(el,p,[i]);did++;}"), answered)
+
     def _on_rings_changed(self, value: int) -> None:
         """Restack the rings inside the shapes as the slider moves.
 
@@ -15227,6 +15327,14 @@ class GamutApp(QMainWindow):
                                   controls=controls, offer=offer, glide=glide,
                                   notes=notes, colours=colours)
         else:
+            # WHAT THIS SCENE WAS DRAWN FROM, kept so that a slider can
+            # rebuild its TRACES without rebuilding the page. Measured at his
+            # settings: a figure costs 52 ms to build and a page costs about a
+            # second to write and load, and the difference is the whole reason
+            # the fades were not live. Kept here rather than worked out again
+            # in the push, because two copies of "what is on screen" is how
+            # the live change and the rebuild come to disagree.
+            self._scene_inputs = (list(gamuts), clouds, styles, lost)
             write_html(gamuts, out, self._scene_title(),
                        # SPLIT WHETHER OR NOT IT IS FADED RIGHT NOW. The
                        # reader gets a slider for the agreement, and a trace
