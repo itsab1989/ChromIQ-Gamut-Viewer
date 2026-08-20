@@ -8080,6 +8080,27 @@ class GamutApp(QMainWindow):
         self._slice_on.stateChanged.connect(
             lambda *_a: self._apply_flat_availability())
         lv.addWidget(self._slice_on)
+        slice_hint = Hint(
+            "Swaps the solid shape for a flat cross-section: one horizontal "
+            "slice through it, at the lightness you choose with the slider "
+            "below.\n\n"
+            "This is the view that answers 'how far does each one reach in "
+            "each direction' without you having to judge it through a "
+            "three-dimensional shape. Two outlines lying on the same flat "
+            "picture can be compared at a glance — where one bulges past the "
+            "other, and by how much — which is genuinely hard to do by eye "
+            "when both are solids you are turning around.\n\n"
+            "The mid-tones are usually where two papers differ most, so L* 50 "
+            "is a good place to start. Slide down towards the shadows to see "
+            "which of them holds on to deep colour, and up towards the "
+            "highlights to see where each one runs out.\n\n"
+            "Everything you have chosen about the shapes still applies — the "
+            "colours, what is out of reach, which of them are shown. What "
+            "goes away is the turning: a flat picture has no angle to be "
+            "seen from, so the movement controls have nothing to do until you "
+            "untick this and the shape comes back exactly as it was.", g_look)
+        slice_hint.setObjectName("hint_slice_hint")
+        lv.addWidget(slice_hint)
         srow = QHBoxLayout()
         srow.addWidget(QLabel("Lightness", g_look))
         self._slice_at = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
@@ -8611,7 +8632,6 @@ class GamutApp(QMainWindow):
                                        self._link_row)
         self._link_cameras.setChecked(True)
         self._link_cameras.stateChanged.connect(self._redraw)
-        _lr.addWidget(self._link_cameras)
         lv.addWidget(self._link_row)
         link_hint = Hint(
             "Turn one shape and the other turns with it, so you are always "
@@ -8630,7 +8650,29 @@ class GamutApp(QMainWindow):
             "Either way, nothing about your measurements changes. This only "
             "moves the view.", g_look)
         link_hint.setObjectName("hint_link_hint")
-        _lr.addWidget(link_hint)
+        # THE ⓘ IS PUT IN THE ROW BY HAND, and it has to be.
+        #
+        # Reported from the window: "clicked two rooms side by side option and
+        # a tooltip icon appears below both rooms point the same way - should
+        # probably be at its right side". Measured with two shapes open and
+        # the tick on: the icon sat 25 px BELOW the checkbox at the same left
+        # edge.
+        #
+        # It was never a wrap. `_attach_in_layout` is what puts every other ⓘ
+        # on its control's row, and it walks LAYOUTS -- it never descends into
+        # a widget's own layout. This checkbox lives inside a container widget
+        # so that hiding the option takes its spacing with it (see above), so
+        # the pass walked straight past the pair and left the icon where it
+        # was added. Hence by hand, and marked as such so the pass does not
+        # try to move it again.
+        _link_line = QHBoxLayout()
+        _link_line.setContentsMargins(0, 0, 0, 0)
+        _link_line.setSpacing(6)
+        _link_line.addWidget(self._link_cameras, 1)
+        _link_line.addWidget(link_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        link_hint.setProperty("placed_by_hand", True)
+        link_hint.follow(self._link_cameras)
+        _lr.addLayout(_link_line)
 
         self._spin_on = QCheckBox("Turn it by itself", g_look)
         self._spin_on.stateChanged.connect(self._on_spin_changed)

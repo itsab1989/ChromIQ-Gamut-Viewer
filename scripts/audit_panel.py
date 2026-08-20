@@ -335,6 +335,37 @@ def audit_once(window, panel, label: str) -> list:
                 f"[{label}] NO ⓘ  {name or text_of(control)!r} "
                 f"under {group.title()!r} has its own caption and no "
                 f"explanation on its row")
+
+        # THE OTHER DIRECTION IS STILL NOT ASKED, and this is the honest
+        # record of three attempts that failed rather than a promise.
+        #
+        # This file's summary says question 3 is "DOES EVERY ⓘ SIT BESIDE
+        # SOMETHING? An icon on a row of its own explains nothing". The rule
+        # above is its converse -- a control with no ⓘ -- and nothing here
+        # checks the stranded icon. One was reported from the window, under
+        # "Both rooms point the same way", hours after this printed Clean.
+        #
+        # Tried and taken back out, each proved useless by putting the fault
+        # back on purpose:
+        #
+        #   "is there a control on this icon's row"    60 false alarms in six
+        #       states -- this panel puts an ⓘ beside a wrapped paragraph
+        #       everywhere, and none of those has a control on its row;
+        #   "...or any label whose row overlaps"       no false alarms and no
+        #       detections: with the fault restored it still said Clean;
+        #   "is the icon at the left margin"           measured first (every
+        #       one of 44 visible icons sits at 89-90% across its group, the
+        #       stranded one at 10%), and it STILL said Clean with the fault
+        #       restored.
+        #
+        # The third result is the interesting one and is where the next
+        # attempt should start: it means that by the time this audit measures,
+        # the icon is NOT at the left margin -- something re-attaches it after
+        # the window is built (_attach_in_layout runs during construction, and
+        # the folds and ticks this audit turns on rebuild rows). So the fault
+        # is real on screen and absent by the time it is measured, which no
+        # rule about position can bridge. What is needed is a measurement
+        # taken in the state the reader has, not in the state the audit makes.
     return problems
 
 
@@ -688,17 +719,71 @@ def main() -> int:
                 panel.grab().save(
                     str(out / f"panel-{appearance}-{width}-{space}.png"))
 
+    # AND THE CONTROLS A TICKBOX REVEALS, which nothing above reaches.
+    #
+    # Reported from the window: "clicked two rooms side by side option and a
+    # tooltip icon appears below both rooms point the same way - should
+    # probably be at its right side". Question 3 of this audit is exactly that
+    # rule -- an ⓘ on a row of its own explains nothing -- and it had reported
+    # Clean hours earlier.
+    #
+    # The reason is the same one that was learned once already and not carried
+    # far enough: this opens every folded SECTION before measuring, because a
+    # hidden widget has no size. A control revealed by a TICKBOX is hidden in
+    # the same way and was never revealed at all -- "Both rooms point the same
+    # way" does not exist until "Two rooms, side by side" is ticked, so it was
+    # never built, never measured, and counted clean by absence.
+    #
+    # Both states are kept rather than swapped: a tick can hide something as
+    # well as show it, so measuring only the ticked one would trade this blind
+    # spot for its mirror image.
+    # AND A SECOND SHAPE, WITHOUT WHICH HALF OF THEM STAY HIDDEN ANYWAY.
+    #
+    # "Both rooms point the same way" needs TWO shapes as well as its tick:
+    # side by side has no meaning with one, so the option stays invisible and
+    # has no size, and ticking every box in the panel still did not reach it.
+    # Measured: with one shape open and every tick on, that control reported
+    # isVisible() False; with a second shape open it appeared, and its ⓘ was
+    # sitting 25 px below it.
+    second = HERE.parent / "demo" / "Matte-paper.ti3"
+    if second.is_file():
+        window._load(second)
+        pump(app, 5)
+
+    revealed = []
+    for tick in panel.findChildren(QCheckBox):
+        if tick.isEnabled() and not tick.isChecked():
+            tick.setChecked(True)
+            revealed.append(tick)
+    pump(app, 5)
+    print(f"  {len(revealed)} tickbox(es) turned on, to build the controls "
+          f"they reveal.")
+    extra = 0
+    for appearance in ("dark", "light"):
+        window._set_appearance(appearance) if hasattr(
+            window, "_set_appearance") else None
+        pump(app, 2)
+        for width in widths:
+            window.resize(width, 940)
+            pump(app, 2)
+            problems += audit_once(window, panel,
+                                   f"{appearance}/{width}px/revealed")
+            extra += 1
+            if shots:
+                panel.grab().save(
+                    str(out / f"panel-{appearance}-{width}-revealed.png"))
+
     print()
     if problems:
         for line in problems:
             print("  " + line)
         print(f"\n{len(problems)} problem(s).")
         return 1
-    checked = 2 * len(widths) * window._space.count()
+    checked = 2 * len(widths) * window._space.count() + extra
     print(f"  Clean: {checked} panel states checked "
           f"(2 appearances × {len(widths)} widths × "
-          f"{window._space.count()} spaces), "
-          f"every control answered for.")
+          f"{window._space.count()} spaces, plus {extra} with every tickbox "
+          f"revealed), every control answered for.")
     return 0
 
 
