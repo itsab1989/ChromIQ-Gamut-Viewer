@@ -1,5 +1,47 @@
 # Changelog
 
+## v2.42.0
+
+### 🎚 Every slider in the window now follows its handle
+
+Detail and the cross-section were the last two that waited for you to let go
+and then rebuilt the whole page — a second of black, with the shape thrown
+back to the angle it opens at. All seven change the picture as you drag now.
+
+**Detail waits for a pause, and the others do not.** It is the one control
+that rebuilds the shape you are comparing against from nothing, and then
+everything drawn beside it has to be re-cut along the new boundary: 160 ms at
+20 steps, 522 at 40. Doing that on every step of a drag would make the handle
+itself sticky, which is worse than what it fixes. So the picture catches up
+whenever you pause, even briefly, and once more when you let go. The gain is
+not speed — it is that the picture changes in place, with your viewpoint left
+exactly where you put it.
+
+**The cross-section is the cheapest of all of them** and simply follows, step
+for step. Its frame and its caption travel with it, so the outlines are never
+drawn inside the frame belonging to a different height.
+
+### 🐞 Letting go of Detail no longer asks for your comparison file again
+
+With a profile, a measurement or a picture as the comparison, letting go of
+the Detail slider put a file chooser on screen — twice — asking you to find
+again the very file already drawn in front of you. Cancelling put the box back
+to "Nothing" and took the shape off the screen.
+
+The slider was wired to the handler for *choosing* a comparison, and choosing
+one that lives in a file means being asked which file. The white point and the
+drawing space have always used the handler for a setting that changed; Detail
+was the exception.
+
+### 🔍 And the checking behind all of it
+
+`scripts/audit_a_live_change_is_the_real_thing.py` compares, in pixels, what
+the window draws while you drag against what a rebuild would have drawn —
+both fades at both ends, detail across four resolutions with every point
+moved, and the cut at five heights. It refuses to report at all unless its own
+shapes can show the fault it is looking for, which two earlier versions of it
+could not.
+
 ## v2.41.0
 
 ### 🎚 “Where they agree” and “Where they differ” follow the handle
