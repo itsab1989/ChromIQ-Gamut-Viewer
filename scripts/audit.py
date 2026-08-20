@@ -231,6 +231,14 @@ NEEDS = {
     "drift_by": "_drift_draw",
     # THE ARRANGEMENT NEEDS TWO ROOMS TO ARRANGE.
     "rooms_way": "side_by_side",
+    # THE OUT-OF-REACH COLOURING NEEDS SOMETHING OUT OF REACH TO PAINT.
+    # "…in the colours themselves" repaints the part a shape cannot print,
+    # and that part is only drawn once "Show what it cannot print" is on.
+    # Measured on its own, in the gate's own state: with the parent off it
+    # moves 0 px, with it on it moves 50,048 px and puts the picture back
+    # exactly. So the control was right and the run was asking it in a state
+    # where it had nothing to do.
+    "lost_in_colour": "show_lost",
     # THE SEVEN LIGHTING SLIDERS. "Set the lighting myself" hides them until
     # it is ticked; before the visibility test learned to switch a
     # prerequisite on, every one of them was listed and then skipped as "not
@@ -632,11 +640,53 @@ def audit_window(bench, w, gamut_app) -> list:
             verdict = "DOES NOTHING"
             findings.append(f"{key}: moving it changed {moved} px")
         elif left > 4000:
-            verdict = "DOES NOT COME BACK — test it on its own"
-            findings.append(
-                f"{key}: putting it back left {left} px different. Test it on "
-                f"its own before believing it: a control tested after one that "
-                f"leaves the movement running is measured on a turning shape.")
+            # ASKED AGAIN, ON ITS OWN, BEFORE IT IS BELIEVED.
+            #
+            # This message has always said "test it on its own before
+            # believing it" — and then reported the finding anyway, leaving
+            # the work to a person. Four controls came back this way in one
+            # run with wildly different numbers (aspect 325,747 one run and
+            # 188,024 the next), and `aspect` measured alone moves 332,152 px
+            # and puts the picture back to ZERO. They are not faults; they
+            # are each measured on a picture the control before them had not
+            # finished settling.
+            #
+            # So the run now does what it was telling a person to do: let the
+            # picture settle, take a fresh reading, and move this one control
+            # again. Only a control that fails TWICE, the second time with
+            # nothing else in flight, is reported.
+            bench.pump(3.0)
+            again_before = bench.shot()
+            if kind == "slider":
+                widget.setValue(to)
+                widget.sliderReleased.emit()
+            elif kind == "check":
+                widget.setChecked(not was)
+            else:
+                widget.setCurrentIndex(to)
+                if was_by_hand:
+                    widget.activated.emit(to)
+            bench.pump(2.4)
+            if kind == "slider":
+                widget.setValue(was)
+                widget.sliderReleased.emit()
+            elif kind == "check":
+                widget.setChecked(was)
+            else:
+                widget.setCurrentIndex(was)
+                if was_by_hand:
+                    widget.activated.emit(was)
+            bench.pump(3.0)
+            left = bench.differs(again_before, bench.shot())
+            if left > 4000:
+                verdict = "DOES NOT COME BACK — twice, alone"
+                findings.append(
+                    f"{key}: putting it back left {left} px different, "
+                    f"measured twice and the second time with nothing else "
+                    f"in flight.")
+            else:
+                verdict = "works — the first reading was of a picture still "\
+                          "settling"
         else:
             verdict = "works"
         rows.append((key, moved, left, verdict))

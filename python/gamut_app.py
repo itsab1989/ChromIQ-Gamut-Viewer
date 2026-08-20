@@ -11774,7 +11774,23 @@ class GamutApp(QMainWindow):
         # means no push, and no push means `_rings_live` is False.
         if key in getattr(self, "_drawn_with", {}):
             control = {"rings": self._rings, "detail": self._detail}.get(key)
-            if control is not None and control.value() == self._drawn_with[key]:
+            # THE TICK COMES THROUGH HERE TOO, AND IT MOVES NO SLIDER.
+            #
+            # This guard was added so that letting go of a slider you had not
+            # moved would stop rebuilding the whole picture. "Show rings
+            # inside" reaches it by the same key — and ticking it changes the
+            # rings COUNT not at all, so the guard answered "nothing to do"
+            # and the rings were never drawn. Measured in a fresh window with
+            # one paper: with the tick going off → on the page held the same
+            # two traces and not one pixel changed; moving the count slider
+            # afterwards brought "Glossy-paper (rings inside)" into being and
+            # changed 15,816 px. The tick did nothing until another control
+            # was touched.
+            same_switch = (key != "rings"
+                           or self._rings_on.isChecked()
+                           == self._drawn_with.get("rings_on"))
+            if (control is not None and same_switch
+                    and control.value() == self._drawn_with[key]):
                 return
         self._redraw()
 
@@ -15837,7 +15853,13 @@ class GamutApp(QMainWindow):
         self._drawn_with = {
             "agree": self._agree.value(), "differ": self._differ.value(),
             "rings": self._rings.value(), "detail": self._detail.value(),
-            "cut": self._slice_at.value()}
+            "cut": self._slice_at.value(),
+            # AND WHETHER THE RINGS WERE ON AT ALL, which is a different
+            # question from how many of them there are. Without it, ticking
+            # "Show rings inside" was answered with "the count has not moved
+            # since this was drawn, so there is nothing to do" — and the
+            # rings never appeared. See `_after_shape_setting`.
+            "rings_on": self._rings_on.isChecked()}
         if self._slice_on.isChecked():
             # A CROSS-SECTION IS DRAWN FLAT, LOOKING DOWN. There is no camera,
             # so no movement settings travel with it and the strip leaves out
