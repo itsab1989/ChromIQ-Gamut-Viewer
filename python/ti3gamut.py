@@ -8783,7 +8783,26 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
     # edge rather than a slope across every triangle that straddles it -- see
     # `recut_where_they_part`.
     splits = stands = None
-    if len(gamuts) > 1 and (split or agree < 1.0 or differ < 1.0):
+    # AND WHENEVER SOMETHING IS MARKED AS OUT OF REACH, which is the same
+    # question asked for a different reason.
+    #
+    # Reported from the window: "what is out of reach here should probably be
+    # a clean cut along the shell of srgb. instead it is zig zagging". It was
+    # the mesh and not the measurement, and it was measured on his own shapes
+    # at his own settings: of the paper's 978 triangles, 175 -- 17.9% of the
+    # surface -- have corners both inside sRGB and outside it, and each of
+    # those must be painted wholly red or wholly grey. That staircase IS the
+    # zig-zag. After the re-cut: 1,328 triangles and NOT ONE straddles, for
+    # 18 ms.
+    #
+    # The cure was already here and simply never invoked for this: the fade
+    # got a clean edge and the marking did not, for no reason but which
+    # branch ran. `recut_where_they_part` has carried the mask through from
+    # the start, and refuses the job for the one case it cannot answer -- a
+    # chart, a second paper and a reference together, where a new corner's
+    # marking cannot be worked out -- leaving that shape its old mesh.
+    marked = any(m is not None for m in (lost or ()))
+    if len(gamuts) > 1 and (split or marked or agree < 1.0 or differ < 1.0):
         gamuts, splits, stands, lost = recut_where_they_part(gamuts, lost)
     for i, (name, g) in enumerate(gamuts):
         # Each shape may carry its own settings. Anything it does not name

@@ -113,3 +113,58 @@ def test_a_shape_that_is_not_fully_solid_is_left_alone():
         colours, alphas, faces, 0.55)
     assert len(got_faces) == len(faces), (
         "triangles were dropped from a shape drawn at 55% strength")
+
+
+def test_the_out_of_reach_edge_is_cut_not_stepped():
+    """What is out of reach must end on a clean line, not a staircase.
+
+    Reported from the window: "what is out of reach here should probably be a
+    clean cut along the shell of srgb. instead it is zig zagging". The mark is
+    per CORNER, so a triangle whose corners disagree has to be painted wholly
+    red or wholly grey -- and on his own shapes 175 of 978 triangles (17.9% of
+    the surface) were exactly that. The cure is the re-cut that the fade
+    already used, which inserts corners along the crossing; it simply was not
+    invoked when nothing was faded.
+
+    This pins the RESULT rather than the branch: no drawn triangle may carry
+    corners of both colours. Written against the branch it would pass on a
+    re-cut that had stopped cutting.
+    """
+    import numpy as np
+
+    from gamutview import build_gamut
+
+    rng = np.random.default_rng(4)
+    q = rng.normal(size=(900, 3))
+    q /= np.linalg.norm(q, axis=1)[:, None]
+    q *= rng.uniform(0.55, 1, size=(900, 1)) ** (1 / 3)
+    a = q * np.array([36, 58, 34])
+    a[:, 0] = np.clip(a[:, 0] * 0.6 + 52, 5, 95)
+    b = q * np.array([40, 34, 60])
+    b[:, 0] = np.clip(b[:, 0] * 0.62 + 50, 3, 97)
+    pair = [("a paper", build_gamut(a)), ("a reference", build_gamut(b))]
+
+    skins = ti3gamut.surfaces_of(pair)
+    beyond = np.asarray(ti3gamut.disagreeing_vertices(pair, skins)[0], bool)
+    assert 0.05 < beyond.mean() < 0.95, (
+        "these two shapes do not cross, so there is no boundary to be ragged "
+        "and this test would pass on anything")
+
+    fig = ti3gamut.build_figure(pair, "", styles=["solid", "mesh"],
+                                lost=[beyond, None])
+    checked = 0
+    for trace in fig.data:
+        colours = list(getattr(trace, "vertexcolor", []) or [])
+        if not colours or getattr(trace, "i", None) is None:
+            continue
+        red = np.array([str(c) == str(ti3gamut._LOST) for c in colours])
+        if not red.any():
+            continue
+        faces = np.column_stack([list(trace.i), list(trace.j), list(trace.k)])
+        per = red[faces]
+        stepped = int((per.any(axis=1) & ~per.all(axis=1)).sum())
+        assert stepped == 0, (
+            f"{stepped} of {len(faces)} drawn triangles carry corners of both "
+            f"colours, so the out-of-reach edge is a staircase again")
+        checked += 1
+    assert checked, "no marked mesh was drawn, so nothing was actually checked"
