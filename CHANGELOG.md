@@ -1,5 +1,56 @@
 # Changelog
 
+## v2.44.0
+
+### 🪟 Two rooms on a narrow window stopped cutting the shapes in half
+
+Two papers side by side divided whatever width they were given, however
+little that was. On a phone that is 195 pixels a room — and a 3D box is
+fitted to the room's HEIGHT, so the shape had nowhere to go but straight
+through the side walls, with the axis titles cut mid-word beside it.
+
+Measured rather than judged by eye, because the picture turns by itself and
+one frame proves nothing: spin paused, both rooms pinned to the same four
+viewpoints, counting the vividly coloured pixels — the shape; the type and
+gridlines are grey — sitting in each room's outermost column.
+
+| window | each room | coloured pixels on a side wall |
+|---|---|---|
+| 390 | 195 px | 80–155, at **every** viewpoint, in **both** rooms |
+| 620 | 310 px | 13–91, at every viewpoint, in both rooms |
+| 820 | 410 px | 0–75, at two viewpoints of four |
+| 1024 | 512 px | 0 |
+| 1440 | 720 px | 0 |
+
+One room at the same widths is clean, which is what says this is the splitting
+and not the drawing.
+
+**Below 1000 pixels the two rooms now sit one above the other**, each taking
+the whole width, and the page scrolls down to the second the way it already
+scrolls to the controls. Afterwards: no shape touches a wall at any width from
+a phone to a large desktop, at any viewpoint.
+
+**This is your own window as well, not only a page you send somebody.** The
+control column takes about 370 pixels, so a window 900 wide leaves the picture
+482 — two rooms of 241 each, and both shapes were being cut. Driven on screen
+to be sure: at 1500 the rooms stay side by side, at 900 and 760 they stack,
+and the view scrolls to the second one.
+
+### 🔍 A control off the BOTTOM of a saved page is now a fault as well
+
+The questions both page checks share promised the reader's control strip was
+inside the window "rather than off the bottom or the side". Only the side was
+ever measured, the strip's position was collected and never read, and the
+strip was looked for under a name that matches nothing in any page this
+application writes. A page whose controls sat below the window with no scroll
+that reached them passed at every size in every engine — which is exactly the
+lock-out reported from a phone.
+
+Both checks now ask whether a control can be **reached at all**: a page may be
+taller than the window, but nothing may sit past the end of everything you can
+scroll to, and nothing pinned in place may sit outside it. A name that matches
+nothing anywhere is reported as the blind spot it is.
+
 ## v2.43.1
 
 ### 🎚 Letting go of a slider you did not move no longer redraws everything
