@@ -1,14 +1,24 @@
-"""A fade pushed into the picture on screen draws what a rebuild would draw.
+"""A change pushed into the picture on screen draws what a rebuild would draw.
 
-    ../gv-venv/bin/python scripts/audit_the_live_fade_is_the_real_thing.py
-    ../gv-venv/bin/python scripts/audit_the_live_fade_is_the_real_thing.py --prove
+    ../gv-venv/bin/python scripts/audit_a_live_change_is_the_real_thing.py
+    ../gv-venv/bin/python scripts/audit_a_live_change_is_the_real_thing.py --prove
 
-WHY THIS EXISTS. "Where they agree" and "Where they differ" used to wait for
-the handle to be let go, and then rebuilt the whole page -- about a second of
-black. Reported twice and then as a rule: "should be live", "btw all sliders
-should work this way". They are live now, and the way they are live is that
-the window works out what `build_figure` would have drawn and pushes those
-arrays straight into the scene that is already up.
+WHY THIS EXISTS. "Where they agree", "Where they differ" and "Detail" all used
+to wait for the handle to be let go and then rebuild the whole page -- about a
+second of black. Reported twice and then as a rule: "should be live", "btw all
+sliders should work this way". They are live now, and the way they are live is
+that the window works out what `build_figure` would have drawn and pushes
+those arrays straight into the scene that is already up.
+
+TWO KINDS OF CHANGE ARE ASKED HERE, and they are two because they are
+different in kind rather than in degree:
+
+  a fade    leaves every point where it is and rewrites colours -- plus, at
+            either end, a triangle list;
+  detail    REBUILDS the comparison, so every point moves, every triangle is
+            new, and the paper beside it is re-cut against a new boundary.
+            98,499 points at 40 steps. If a push can carry that it can carry
+            anything this window does.
 
 THAT MAKES THIS THE CHECK THAT MATTERS, and it is not "did the picture
 change". A live push that reaches the wrong trace, or that sends the colours
@@ -157,14 +167,91 @@ def faces(shapes, **fade):
     return {t.name: len(t.i) for t in figure.data if t.type == "mesh3d"}
 
 
-def shoot(browser, path, tag, out_dir, want=None):
+#: The detail the picture is OPENED at, so every push has to move it.
+OPENED_AT = 29
+
+#: Detail is the comparison's own resolution, so the shapes themselves change.
+DETAILS = [12, 20, 29, 40]
+
+#: HIS OWN CONFIGURATION for the detail half, and not for tidiness: a cage
+#: over the comparison with rings inside it is what makes the trace list carry
+#: DUPLICATE NAMES -- three traces every one of which is called
+#: "sRGB (outline)". That is the only reason the push has to match by position
+#: at all, so a check that drew two plain solids would leave the whole
+#: ordered-list guard untested. Drawn this way the picture holds 9 traces;
+#: drawn as two solids it holds 4 and proves nothing about them.
+HIS_WAY = dict(styles=["solid", "mesh"], rings=13)
+
+#: What the window sends for a change of DETAIL: every trace, in order, points
+#: and all. Mirrors `_DETAIL_JS` in the window -- written out rather than
+#: imported, because a check that shares the code under test cannot fail it.
+#: The ARRAYS come from the same place the window gets them, which is the half
+#: that has to be shared.
+PUSH_ALL = """(function (want) {
+  var el = document.getElementsByClassName('plotly-graph-div')[0], i;
+  if (!el || !window.Plotly || !el.data) return 0;
+  if (el.data.length !== want.length) return 0;
+  for (i = 0; i < want.length; i++) {
+    if (String(el.data[i].name || '') !== want[i].n) return 0;
+    if (el.data[i].type !== want[i].t) return 0;
+  }
+  var FIELDS = {x: 'x', y: 'y', z: 'z', i: 'i', j: 'j', k: 'k',
+                c: 'vertexcolor'};
+  for (i = 0; i < want.length; i++) {
+    var patch = {}, any = false, f;
+    for (f in FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(want[i], f)) continue;
+      patch[FIELDS[f]] = [want[i][f]];
+      any = true;
+    }
+    if (any) window.Plotly.restyle(el, patch, [i]);
+  }
+  return want.length;
+})"""
+
+
+def at_detail(steps):
+    """The paper and sRGB built at a given detail — his own pair."""
+    import ti3gamut
+    from gamutview import build_gamut
+    from references import reference_gamut
+
+    f = HERE.parent / "demo" / "Glossy-paper.ti3"
+    return [("Glossy-paper",
+             build_gamut(ti3gamut.read_measurement(f).lab, input_space="lab")),
+            ("sRGB", reference_gamut("sRGB", steps=steps))]
+
+
+def detail_page(where, steps):
+    import ti3gamut
+
+    out = where / f"detail-{steps}.html"
+    ti3gamut.write_html(at_detail(steps), out, "", split=True, controls=False,
+                        camera=CAMERA, spin={"on": False}, **HIS_WAY)
+    return out
+
+
+def detail_arrays(steps):
+    import ti3gamut
+
+    figure = ti3gamut.build_figure(at_detail(steps), "", split=True,
+                                   camera=CAMERA, **HIS_WAY)
+    return ti3gamut.traces_for_restyle(figure)
+
+
+def points(steps):
+    """How many points the picture holds, so the fixture can prove it bites."""
+    return sum(len(t.get("x", ())) for t in detail_arrays(steps))
+
+
+def shoot(browser, path, tag, out_dir, want=None, script=None):
     tab = browser.new_page(viewport={"width": 1200, "height": 820})
     tab.goto(path.resolve().as_uri())
     tab.wait_for_selector(".plotly-graph-div", timeout=40000)
     tab.wait_for_timeout(6000)
     did = None
     if want is not None:
-        did = tab.evaluate(PUSH, want)
+        did = tab.evaluate(script or PUSH, want)
         tab.wait_for_timeout(3000)
     shot = out_dir / f"{tag}.png"
     tab.locator(".plotly-graph-div").first.screenshot(path=str(shot))
@@ -291,6 +378,66 @@ def main() -> int:
                         f"{caption:,} pixels somewhere that is not an end of "
                         f"the slider — the window only rebuilds at the ends, "
                         f"so this sentence would never reach the reader")
+
+            # ---------------------------------------------------- and DETAIL
+            #
+            # A DIFFERENT KIND OF CHANGE, and that is why it is here rather
+            # than in a check of its own. A fade leaves every point where it
+            # is; detail REBUILDS the comparison, so every point moves, every
+            # triangle is new, and the paper drawn beside it is re-cut against
+            # a different boundary. If a push can carry that, it can carry
+            # anything this window does.
+            here = points(OPENED_AT)
+            moved = {d: points(d) for d in DETAILS}
+            names = [t["n"] for t in detail_arrays(OPENED_AT)]
+            if len(set(names)) == len(names):
+                print(f"\n  Every trace here has its own name ({names}), so "
+                      f"this run cannot say\n  whether the ordered-list guard "
+                      f"tells duplicates apart — which is the\n  only reason "
+                      f"the push matches by position at all.")
+                return 2
+            if len(set(moved.values())) < len(moved):
+                print(f"\n  Detail does not change how many points the "
+                      f"picture holds ({moved}),\n  so this run cannot say "
+                      f"whether the push carried them.")
+                return 2
+            repeats = len(names) - len(set(names))
+            print(f"\n  detail moves the points: {moved}, opened at "
+                  f"{OPENED_AT} ({here:,})")
+            print(f"  and {len(names)} traces carry {repeats} repeated "
+                  f"name(s), so position is the only way to tell them "
+                  f"apart\n")
+            print(f"  {'change':20s} {'at':>6s}  {'sent':>4s}  "
+                  f"{'the shapes':>14s}  {'the caption':>13s}")
+            print("  " + "-" * 66)
+            opened = detail_page(where, OPENED_AT)
+            for steps in DETAILS:
+                sent = steps
+                if prove:
+                    # A NEIGHBOURING DETAIL, not a wild one: the fault this
+                    # guards against is a push that lands, reports success and
+                    # draws a picture close enough to pass a careless eye.
+                    sent = 20 if steps != 20 else 29
+                built = detail_page(where, steps)
+                live, did = shoot(browser, opened, f"live-detail-{steps}",
+                                  where, want=detail_arrays(sent),
+                                  script=PUSH_ALL)
+                shot, _ = shoot(browser, built, f"shot-detail-{steps}", where)
+                everything, shapes_only, total = apart(live, shot)
+                caption = everything - shapes_only
+                print(f"  {'detail':20s} {steps:>6d}  {str(did):>4s}  "
+                      f"{shapes_only:>9,} px  {caption:>10,} px")
+                if not did:
+                    problems.append(
+                        f"detail at {steps}: the push was refused — the "
+                        f"picture cannot have followed the handle, whatever "
+                        f"it looks like")
+                elif shapes_only != 0:
+                    problems.append(
+                        f"detail at {steps}: the shapes drawn live and the "
+                        f"shapes a rebuild draws differ by {shapes_only:,} "
+                        f"pixels — a reader who lets go of the handle is "
+                        f"handed a different picture from the one they chose")
             browser.close()
 
     print()
@@ -307,11 +454,12 @@ def main() -> int:
             print("  " + line)
         print(f"\n  {len(problems)} problem(s).")
         return 1
-    print("  Clean: the shapes drawn by a fade pushed into the picture on "
-          "screen are,\n  pixel for pixel, the shapes a rebuild would have "
-          "drawn — at both ends and\n  in between, for both sliders. Only the "
-          "caption differs, only at an end,\n  and that is the sentence the "
-          "window rebuilds to fetch.")
+    print("  Clean: a change pushed into the picture already on screen draws, "
+          "pixel for\n  pixel, what a rebuild would have drawn — both fades "
+          "at both ends and in\n  between, and detail across four "
+          "resolutions with every point moved. Only\n  the caption differs, "
+          "only at an end of a fade, and that is the sentence the\n  window "
+          "rebuilds to fetch.")
     return 0
 
 

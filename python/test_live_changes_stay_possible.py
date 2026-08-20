@@ -533,3 +533,62 @@ def test_the_triangles_travel_with_the_colours():
     assert counts["{}"] != counts["{'differ': 0.0}"], (
         f"the fixture never dropped a triangle at the other end either: "
         f"{counts}")
+
+
+def test_repeated_trace_names_survive_being_handed_over():
+    """Detail cannot be pushed by name, so the order must be kept intact.
+
+    A cage drawn over a comparison is several traces every one of which
+    carries the same name — five repeats of nine, measured on a paper against
+    sRGB with rings inside. A name-keyed hand-over would collapse those into
+    one and send a single trace's points to all of them, which is a picture
+    with most of its cage in the wrong place and nothing on screen to say so.
+
+    So `traces_for_restyle` returns a LIST, in drawing order, names and all,
+    and the pushing end checks the whole ordered list before it touches
+    anything. Position matching is dangerous exactly when nobody checked.
+    """
+    from references import reference_gamut
+
+    pair = [("one", _blob((30, 44, 38), seed=4)),
+            ("sRGB", reference_gamut("sRGB", steps=12))]
+    fig = ti3gamut.build_figure(pair, "", split=True,
+                                styles=["solid", "mesh"], rings=6)
+    got = ti3gamut.traces_for_restyle(fig)
+
+    assert len(got) == len(fig.data), (
+        f"{len(got)} traces were handed over where the figure draws "
+        f"{len(fig.data)} — a push that walks them in step would put every "
+        f"trace after the missing one into the wrong place")
+    assert [t["n"] for t in got] == [str(t.name or "") for t in fig.data]
+    assert [t["t"] for t in got] == [t.type for t in fig.data]
+
+    names = [t["n"] for t in got]
+    assert len(set(names)) < len(names), (
+        f"this fixture has no repeated names ({names}), so it cannot show "
+        f"whether they survive — and repeated names are the whole reason "
+        f"this returns a list rather than a dictionary")
+
+
+def test_detail_moves_every_point_it_is_asked_to_move():
+    """The fixture for a live detail has to bite, like every other one here."""
+    from references import reference_gamut
+
+    seen = {}
+    for steps in (12, 20, 29):
+        pair = [("one", _blob((30, 44, 38), seed=4)),
+                ("sRGB", reference_gamut("sRGB", steps=steps))]
+        fig = ti3gamut.build_figure(pair, "", split=True,
+                                    styles=["solid", "mesh"], rings=6)
+        got = ti3gamut.traces_for_restyle(fig)
+        seen[steps] = sum(len(t.get("x", ())) for t in got)
+        for one in got:
+            drawn = fig.data[got.index(one)]
+            if getattr(drawn, "x", None) is not None:
+                assert len(one["x"]) == len(drawn.x), (
+                    f"{one['n']} at {steps} steps was handed {len(one['x'])} "
+                    f"points where the figure draws {len(drawn.x)}")
+
+    assert len(set(seen.values())) == len(seen), (
+        f"detail did not change how many points the picture holds ({seen}), "
+        f"so nothing here proves the points travel")

@@ -1348,7 +1348,7 @@ python scripts/audit_the_readme_is_true.py  # every link, anchor and picture in 
 python scripts/audit_two_views.py         # a page holding both views offers each what it can honour
 python scripts/audit_the_cut_opens_where_it_was_saved.py  # a saved cross-section opens at the height it was sent at
 python scripts/audit_sliders_are_live.py  # the picture follows the handle while it is dragged, not on release
-python scripts/audit_the_live_fade_is_the_real_thing.py  # a fade pushed into the picture on screen draws what a rebuild draws
+python scripts/audit_a_live_change_is_the_real_thing.py  # a change pushed into the picture on screen draws what a rebuild draws
 python scripts/audit_two_rooms_drag.py    # a drag belongs to the room it began in, and the other follows
 python scripts/check_layout.py            # two engines, ten window sizes
 python scripts/check_momentum.py          # does the shape carry on turning when the reader lets go?

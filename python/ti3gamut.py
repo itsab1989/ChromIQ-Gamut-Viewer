@@ -1698,6 +1698,56 @@ def _solid_remainder(colours, alphas, faces, opacity):
     return _with_alpha(colours, al), faces
 
 
+#: What a trace can carry that a change of DETAIL moves. Colours are named
+#: separately because the field is `vertexcolor` on the trace and `c` here --
+#: kept short because this list is sent across as JSON, once per drag step, for
+#: a comparison that can run to nine thousand points.
+_RESTYLE_FIELDS = ("x", "y", "z", "i", "j", "k")
+
+
+def traces_for_restyle(figure):
+    """EVERY trace of *figure*, in order, for a change that moves the vertices.
+
+    Where :func:`surfaces_for_restyle` sends a shape's colours and triangles
+    for a fade -- which leaves every point exactly where it was -- this sends
+    the points as well, because a change of detail rebuilds the comparison
+    from scratch and nothing about it stays put.
+
+    IN ORDER, AND WITH THE NAMES, because the names are NOT unique: a cage
+    drawn over sRGB is three traces all called "sRGB (outline)". Pushing by
+    name would send one trace's points to all three. So the caller checks the
+    page's whole ordered list of (name, type) against this one and pushes by
+    position only if every single one matches -- position matching is
+    dangerous exactly when nobody checked, and safe when somebody did.
+
+    NOTHING IS ROUNDED. A shorter payload was measured -- two decimal places
+    takes 2,467 kB down to 1,106 -- and refused, because these arrays have to
+    be what a rebuilt page would have held, to the digit, or the picture
+    changes under the reader when they let go. The transfer was never the
+    cost: 1.9 MB reaches the window in 25 ms.
+    """
+    out = []
+    for trace in figure.data:
+        one = {"n": str(getattr(trace, "name", "") or ""),
+               "t": getattr(trace, "type", None)}
+        for field in _RESTYLE_FIELDS:
+            got = getattr(trace, field, None)
+            if got is None:
+                continue
+            if field in "xyz":
+                one[field] = [None if v is None else float(v) for v in got]
+            else:
+                one[field] = [int(v) for v in got]
+        colours = getattr(trace, "vertexcolor", None)
+        # A SINGLE COLOUR IS NOT A LIST OF THEM -- see surfaces_for_restyle,
+        # where a flat colour would have been sent letter by letter.
+        if colours is not None and not isinstance(colours, str) \
+                and len(colours):
+            one["c"] = [str(c) for c in colours]
+        out.append(one)
+    return out
+
+
 def surfaces_for_restyle(figure):
     """Every drawn surface of *figure*, as a picture already on screen wants it.
 
@@ -1711,7 +1761,7 @@ def surfaces_for_restyle(figure):
     apart, which is this project's oldest recurring fault. Taking both from
     `build_figure`'s own output is the only arrangement in which they cannot:
     there is no second implementation to go stale. The check that proves it,
-    in pixels, is `scripts/audit_the_live_fade_is_the_real_thing.py`.
+    in pixels, is `scripts/audit_a_live_change_is_the_real_thing.py`.
 
     THE TRIANGLES TRAVEL, not only the colours. At either end of a fade the
     faces that would be invisible are dropped, so that what is left can go

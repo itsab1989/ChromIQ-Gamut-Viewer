@@ -6833,6 +6833,49 @@ def _sweep_up_after_runs_that_never_finished(mine: Path) -> None:
         pass
 
 
+#: Send a whole scene's worth of new points into the picture already on screen.
+#:
+#: THE ORDERED LIST IS CHECKED BEFORE A SINGLE TRACE IS TOUCHED, and that check
+#: is what makes pushing by POSITION safe here. Everywhere else in this window
+#: a trace is found by its name, because matching by position once faded the
+#: wrong shape -- but a change of detail cannot be done by name at all: a cage
+#: drawn over sRGB is three traces every one of which is called
+#: "sRGB (outline)", so a name would send one trace's points to all three.
+#: Position is the only way to tell them apart, and position is only dangerous
+#: when nobody checked. Anything unexpected -- a different number of traces, a
+#: name out of place, a type that has changed -- and this touches nothing at
+#: all and answers no, so the window falls back to the rebuild that has always
+#: worked.
+#:
+#: ONE RESTYLE PER TRACE rather than one batched call. Batched, a trace with no
+#: triangles has to be handed `undefined` in the middle of the triangle list,
+#: which is a shape of call the drawing library does not document and does not
+#: need to accept. Measured, the difference is a few milliseconds on a payload
+#: of nearly two megabytes.
+_DETAIL_JS = """
+  var el = document.getElementsByClassName('plotly-graph-div')[0];
+  if (!el || !window.Plotly || !el.data) return false;
+  if (el.data.length !== want.length) return false;
+  var i;
+  for (i = 0; i < want.length; i++) {
+    if (String(el.data[i].name || '') !== want[i].n) return false;
+    if (el.data[i].type !== want[i].t) return false;
+  }
+  var FIELDS = {x: 'x', y: 'y', z: 'z', i: 'i', j: 'j', k: 'k',
+                c: 'vertexcolor'};
+  for (i = 0; i < want.length; i++) {
+    var patch = {}, any = false, f;
+    for (f in FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(want[i], f)) continue;
+      patch[FIELDS[f]] = [want[i][f]];
+      any = true;
+    }
+    if (any) window.Plotly.restyle(el, patch, [i]);
+  }
+  return true;
+"""
+
+
 class GamutApp(QMainWindow):
     """One window: measurements on the left, the gamut on the right."""
 
@@ -8391,8 +8434,26 @@ class GamutApp(QMainWindow):
         self._detail = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._detail.setRange(6, 40)
         self._detail.setValue(20)
-        self._detail.valueChanged.connect(
-            lambda v: self._detail_lbl.setText(f"{v} steps"))
+        self._detail.valueChanged.connect(self._on_detail_changed)
+        # WHY THIS ONE WAITS AND THE OTHERS DO NOT.
+        #
+        # Every other live slider changes something the window already has:
+        # colours, a strength, a ring count. Detail rebuilds the shape you are
+        # comparing against, from nothing -- and then everything drawn beside
+        # it has to be re-cut along the new boundary. Measured on his own
+        # configuration, that is 160 ms at 20 steps, 297 at 29 and 522 at 40,
+        # and it happens on the thread that draws the window. Fired on every
+        # step of a drag it would make the HANDLE ITSELF sticky, which is a
+        # worse fault than the one being fixed.
+        #
+        # So the picture catches up whenever the handle pauses, even briefly,
+        # and once more when it is let go. What that buys is not speed: it is
+        # that the picture changes IN PLACE -- no second of black, no camera
+        # thrown back to three-quarters-front -- which is what the report was
+        # actually about.
+        self._detail_soon = QTimer(self)
+        self._detail_soon.setSingleShot(True)
+        self._detail_soon.timeout.connect(self._push_detail)
         self._detail.sliderReleased.connect(self._on_detail_released)
         detrow.addWidget(self._detail, 1)
         self._detail_lbl = QLabel("20 steps", g_look)
@@ -13454,6 +13515,68 @@ class GamutApp(QMainWindow):
             "this. For a true picture, open a full profiling measurement: "
             "those usually hold several hundred patches or more.")
 
+    #: How long the handle must be still before the picture catches up, in
+    #: milliseconds. Not tuned by feel: it has to be longer than a step of an
+    #: ordinary drag (so a sweep across the slider does not queue up twenty
+    #: rebuilds) and shorter than a pause a person would call a wait.
+    DETAIL_SETTLES_AFTER = 150
+
+    def _on_detail_changed(self, value: int) -> None:
+        self._detail_lbl.setText(f"{value} steps")
+        self._detail_soon.start(self.DETAIL_SETTLES_AFTER)
+
+    def _push_detail(self) -> bool:
+        """Rebuild the comparison and send it into the picture on screen.
+
+        Returns whether it landed, so letting go can rebuild the page when it
+        did not -- the same "the page says whether it managed, and a no falls
+        through to the redraw that always worked" the rings, the fades and the
+        grid tick use.
+
+        IT REFUSES MORE THAN IT ACCEPTS, on purpose. A cross-section, two
+        rooms, or a run that owns the view are all pictures this was not
+        worked out for, and a push that half-lands on one of them leaves the
+        reader looking at a shape that is partly the old detail and partly the
+        new -- which nothing on screen would explain. Every one of those falls
+        back to the rebuild, which has always been right and is merely slow.
+        """
+        self._detail_soon.stop()
+        self._detail_live = False
+        view = getattr(self, "_view", None)
+        page = view.page() if view is not None else None
+        if page is None or getattr(self, "_run_drawn", False):
+            return False
+        if self._slice_on.isChecked() or self._side_by_side.isChecked():
+            return False
+        if self._reference is None:
+            # Detail only ever describes the comparison. With none open there
+            # is nothing to rebuild and nothing to send.
+            return False
+        self._rebuild_reference()
+        gamuts, clouds, styles, lost = self._scene_contents()
+        if len(gamuts) < 1:
+            return False
+        from ti3gamut import build_figure, traces_for_restyle
+
+        try:
+            figure = build_figure(gamuts, self._scene_title(), split=True,
+                                  patches=clouds, styles=styles, lost=lost,
+                                  **self._render_options())
+        except Exception:                  # noqa: BLE001 — never on a drag
+            return False
+        self._scene_inputs = (list(gamuts), clouds, styles, lost)
+        wanted = traces_for_restyle(figure)
+        if not wanted:
+            return False
+
+        def answered(ok):
+            self._detail_live = bool(ok)
+
+        page.runJavaScript(
+            f"(function(want){{{_DETAIL_JS}}})({json.dumps(wanted)})",
+            answered)
+        return True
+
     def _on_detail_released(self) -> None:
         """A finer or rougher comparison — rebuilt, never asked for again.
 
@@ -13479,7 +13602,19 @@ class GamutApp(QMainWindow):
         comes from the file. Rebuilding it is a few milliseconds of work that
         changes nothing, which is the right price for having one path that is
         always correct.)
+
+        AND IF THE PICTURE HAS BEEN KEEPING UP, letting go does not rebuild it
+        at all — see `_push_detail`. The readings beside it still have to
+        follow, because those are worked out in Python and no push can carry
+        them.
         """
+        if getattr(self, "_detail_live", False) and self._push_detail():
+            self._chart_profile_offer()
+            self._update_volume()
+            self._update_coverage()
+            self._update_drift()
+            self._update_chart_numbers()
+            return
         self._rebuild_reference()
         self._chart_profile_offer()
         self._redraw()
