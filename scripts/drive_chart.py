@@ -26,7 +26,7 @@ sys.argv = ["x"]
 from pathlib import Path
 
 from PyQt6.QtCore import QSettings
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QGroupBox
 
 import gamut_app
 
@@ -328,8 +328,22 @@ for label, button in (("Open", w._open_btn), ("Close", w._clear_btn),
     need, room = button.sizeHint().width(), button.width()
     check(f'"{button.text()}" fits its button', need <= room,
           f"needs {need}, has {room}")
-    check(f"{label} has a tooltip that explains it",
-          len(button.toolTip()) > 80, button.toolTip()[:40])
+    # A HOVER IS SHORT ON PURPOSE, AND THIS ASKED FOR THE OPPOSITE.
+    #
+    # Reported from the real window, of a tooltip that reached across the
+    # whole screen: "those hover tooltips should be short and the extended
+    # version would be behind the tooltip icons." `_HOVER_LIMIT` is 200
+    # characters and `_one_sentence` trims every hover to its first sentence;
+    # the long text becomes an ⓘ beside the control, or — where a column has
+    # no room for one — is carried by the ⓘ the section already has.
+    #
+    # So this used to demand more than 80 characters of hover and fail on a
+    # window that had done exactly what it was asked. The rule is the other
+    # way round, and the failure direction is a hover that has grown back.
+    # Mutation-proved: set a 300-character hover and all three fail.
+    check(f"{label}'s hover stays short",
+          len(button.toolTip()) <= 200,
+          f"{len(button.toolTip())} characters")
 # THE LABEL IS GENERAL AND THE TOOLTIP IS SPECIFIC, which is the only way
 # four kinds of file fit: naming three of them already needed 272 of the 276
 # pixels a button in this column has.
@@ -337,8 +351,26 @@ check("the Open button does not claim to open only some kinds",
       not any(word in w._open_btn.text().lower()
               for word in ("measurement", "profile", "chart", "picture")),
       w._open_btn.text())
+# AND THE FOUR KINDS ARE NAMED WHERE THE READER CAN REACH THEM — behind the
+# section's own ⓘ, not on the button's hover. That is where the long text goes
+# for a control stacked in a column, which has no room for an icon of its own:
+# measured, the section's ⓘ carries 2,282 characters and names all four.
+#
+# Asked of the button's hover, as it was, this failed four times on a window
+# that is right, and it would have gone on failing however well the four kinds
+# were explained — because the one place it looked is the one place the rule
+# says they must not be.
+_files = w._open_btn.parentWidget()
+while _files is not None and not isinstance(_files, QGroupBox):
+    _files = _files.parentWidget()
+_explained = " ".join(
+    (getattr(h, "_text", "") or h.toolTip() or "")
+    for h in (_files.findChildren(gamut_app.Hint) if _files else [])).lower()
 for word in ("measurement", "profile", "chart", "picture"):
-    check(f"its tooltip names {word}s", word in w._open_btn.toolTip().lower())
+    check(f"the section explains {word}s somewhere a reader can open",
+          word in _explained,
+          f"{len(_explained)} characters of explanation in "
+          f"{_files.title()!r}" if _files else "no section found")
 entries = [w._compare.itemText(i) for i in range(w._compare.count())]
 # EVERY GROUP THE SAME WIDTH. A group whose only wide child is hidden shrinks
 # to its button and drops its ⓘ onto a line of its own, which is what the
@@ -359,8 +391,11 @@ check("Compare with offers pictures too",
       any("picture" in e.lower() for e in entries), " | ".join(entries))
 check("the Close button no longer promises only two",
       "both" not in w._clear_btn.text().lower(), w._clear_btn.text())
-check("Compare with says where charts go instead",
-      "chart" in w._compare.toolTip().lower(), w._compare.toolTip()[:60])
+# THE SAME RULE FOR THE COMPARISON CHOOSER: its hover is one sentence, and
+# where charts go is explained in the section it sits in.
+check("Compare with's hover stays short",
+      len(w._compare.toolTip()) <= 200,
+      f"{len(w._compare.toolTip())} characters")
 
 print("\n=== 10. Close them all really does close them all ===")
 w._open_chart_file(SMALL)
