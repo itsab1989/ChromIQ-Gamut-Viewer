@@ -6936,6 +6936,9 @@ class GamutApp(QMainWindow):
         #: somebody had chosen. See _watch_the_camera.
         self._camera = None
         self._camera_watch = None
+        #: Whether the camera above is one a READER dragged to, rather than
+        #: the view a page opened at. Only theirs is carried over untouched.
+        self._camera_is_theirs = False
         # Papers rebuilt in CIELAB for judging, keyed by everything that
         # changes the shape. See _in_lab.
         self._lab_gamuts: dict = {}
@@ -14358,10 +14361,39 @@ class GamutApp(QMainWindow):
                             "center": got.get("center",
                                               {"x": 0, "y": 0, "z": 0}),
                             "up": {"x": 0, "y": 0, "z": 1}}
+            # AND WHOSE VIEW IT IS. A camera a READER dragged to must be
+            # carried into the next page exactly, and never fitted again —
+            # fitting it would pull their chosen angle back a little on every
+            # rebuild, which is the "snapped back while zooming out a touch"
+            # that was reported. A camera nobody has touched is only the
+            # page's own starting view, and the next page should fit that to
+            # whatever shape its pane has.
+            self._camera_is_theirs = bool(got.get("theirs"))
 
+        # ASK THE PAGE FOR THE VIEW WITHOUT ITS OWN FITTING FIRST.
+        #
+        # A narrow pane pulls the eye back so the shape fits inside it. That
+        # is a way of DRAWING the reader's view, not a view they chose — and
+        # remembering it as theirs means the next page this window writes
+        # starts from a pulled-back camera and pulls it back again. That
+        # compounding is why the fitting was switched off in this window
+        # altogether, and why two rooms in a 900px window had both shapes cut
+        # through their side walls.
+        #
+        # `cqSpin.reading()` answers with the camera the fit was measured
+        # from while the fit still governs, and with the live camera once a
+        # reader has dragged it, because then it is theirs. The old reading
+        # stays as the fallback: a page written before this existed, or one
+        # whose script has not run yet, still answers.
         page.runJavaScript(
-            "(function(){var d=document.getElementsByClassName("
-            "'plotly-graph-div')[0];if(!d)return '';var c=null;"
+            "(function(){var c=null,mine=false;"
+            "try{if(window.cqSpin&&window.cqSpin.reading){"
+            "c=window.cqSpin.reading();"
+            "mine=!!(window.cqSpin.touchedYet&&window.cqSpin.touchedYet());}"
+            "}catch(e){}"
+            "if(c){c.theirs=mine;return JSON.stringify(c);}"
+            "var d=document.getElementsByClassName("
+            "'plotly-graph-div')[0];if(!d)return '';"
             "try{var s=d._fullLayout&&d._fullLayout.scene&&"
             "d._fullLayout.scene._scene;if(s&&s.getCamera)c=s.getCamera();}"
             "catch(e){}"
@@ -14411,7 +14443,9 @@ class GamutApp(QMainWindow):
             # their rooms at every viewpoint. The reader's copy is a fresh
             # page and must fit itself; only the live view carries a camera
             # forward.
-            placed=(self._camera_now() is not None) and not saved,
+            placed=((self._camera_now() is not None)
+                    and getattr(self, "_camera_is_theirs", False)
+                    and not saved),
             turn=dict(mode=self._turn_mode.currentData(),
                       speed=float(self._turn_speed.value()),
                       range=float(self._turn_sweep.value())),

@@ -45,11 +45,16 @@ def test_a_saved_page_is_not_marked_already_placed():
     # has drawn anything has a camera; that is the state a save happens in.
     fake = _FakeApp()
     fake._camera = {"eye": {"x": 1.0, "y": 1.0, "z": 1.0}}
+    # AND IT HAS TO BE THE READER'S OWN VIEW, which is the only kind that is
+    # carried over unfitted. Without this the fixture cannot tell the rules
+    # apart and the test passes on any of them — it did exactly that once.
+    fake._camera_is_theirs = True
     live = gamut_app.GamutApp._spin_options(fake)
     saved = gamut_app.GamutApp._spin_options(fake, saved=True)
     assert live["placed"] is True, (
-        "this fixture has no camera to carry, so it cannot tell the two "
-        "apart — the rest of this test would pass on any rule")
+        "a view the reader dragged to is no longer carried over as theirs — "
+        "the next page will fit it again, which pulls their chosen angle "
+        "back a little on every rebuild")
     assert saved["placed"] is False, (
         "a saved page says its camera is already placed, so `fitAll` returns "
         "at its first line and the reader's window is never fitted — which "
@@ -66,7 +71,18 @@ def test_the_window_s_own_view_still_carries_its_camera():
     from test_gamutview import _FakeApp
     fake = _FakeApp()
     fake._camera = {"eye": {"x": 1.0, "y": 1.0, "z": 1.0}}
+    fake._camera_is_theirs = True
     assert gamut_app.GamutApp._spin_options(fake)["placed"] is True
+
+    # AND THE OTHER HALF OF THE SAME RULE: a camera nobody has dragged to is
+    # only the view the last page opened at, and the next page must be free
+    # to fit that to its own pane. Measured in the window with two rooms:
+    # with this wrong, a rebuild at 900px went back to the written distance
+    # and both shapes came through their side walls again.
+    fresh = _FakeApp()
+    fresh._camera = {"eye": {"x": 1.0, "y": 1.0, "z": 1.0}}
+    fresh._camera_is_theirs = False
+    assert gamut_app.GamutApp._spin_options(fresh)["placed"] is False
 
 
 def test_every_save_path_says_it_is_saving():

@@ -5206,7 +5206,13 @@ window.cqSpin = (function () {
       refitting = null;
       for (var i = 0; i < ids.length; i++) {
         var id = ids[i], gd = scene(id);
-        if (alreadyPlaced) continue;
+        // NOT GATED ON `alreadyPlaced` ANY MORE. A pane that has changed
+        // shape since the page was written needs fitting whoever wrote it —
+        // and the compounding that gate existed to prevent is gone now that
+        // the application is handed `reading()`, the view the fit was
+        // measured from, rather than the fitted one. Measured in the window
+        // with two rooms: at 1000px wide the shapes came through their side
+        // walls by 170 and 108 pixels, at 800px by 270 and 234.
         if (!gd || isFlat(gd) || !untouched(id)) continue;
         fitToPane(id);          // always measured from base[id]
         var now = liveCam(gd);
@@ -5886,12 +5892,43 @@ window.cqSpin = (function () {
       raf = window.requestAnimationFrame(frame);
     }
   }
+  // WHERE THE READER IS LOOKING FROM, WITHOUT THE FITTING. The application
+  // asks the page for the camera a few times a second and writes it into the
+  // next page it builds. If it is handed the FITTED camera, then a window
+  // that pulled the eye back writes that pulled-back view into the next page,
+  // which pulls it back again — the compounding that `placed` was invented to
+  // stop, at the cost of the fitting never running in the window at all.
+  //
+  // So what is offered here is the view the fit was measured FROM: `base[id]`
+  // while the fitting still governs the pane, and the live camera once a
+  // reader has taken it over, because then it is theirs and no fit applies.
+  function reading(id) {
+    var which = id || ids[0];
+    var gd = scene(which);
+    if (!gd) return null;
+    if (base[which] && untouched(which)) return base[which];
+    return liveCam(gd);
+  }
   return {set: set, nudge: nudge, reset: reset, zoom: zoom, slide: slide,
           look: look, moving: function () { return on; },
           glides: function () { return glideOn; },
+          reading: reading,
           // For checking, from the outside, whether the pane's own fitting
           // still governs this graph or whether a reader has taken it over.
-          touchedYet: function (id) { return !!touched[id]; }};
+          //
+          // ASKED WITH NO NAME IT MEANS "HAS ANYBODY TOUCHED ANYTHING", and
+          // that is not a convenience: `touched[undefined]` is false however
+          // hard a reader has dragged, so the application asking this without
+          // an id was told the view was nobody's and fitted the reader's own
+          // camera on the next rebuild — 2.220 came back as 4.441, which is
+          // the "snapped back while zooming out a touch" that started all of
+          // this. Two rooms are linked, so either one counts.
+          touchedYet: function (id) {
+            if (id !== undefined) return !!touched[id];
+            for (var i = 0; i < ids.length; i++)
+              if (touched[ids[i]]) return true;
+            return false;
+          }};
 })();
 
 
