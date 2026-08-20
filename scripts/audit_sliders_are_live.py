@@ -273,6 +273,57 @@ def main() -> int:
         ("Slice it at one lightness", "_slice_at", 70),
     ]
 
+    # ---- LETTING GO OF ONE YOU DID NOT MOVE MUST DO NOTHING --------------
+    #
+    # ASKED FIRST, ON SLIDERS NOTHING HAS TOUCHED YET, and the position is the
+    # whole of it. Run after the drags below, this caught only ONE of the
+    # seven with the fix taken out: a slider that has already been pushed once
+    # has its "the push landed" flag set, and the old code returned on that
+    # flag whether or not the value had moved. The reported case is a handle
+    # nobody has touched since the picture was drawn — which is every slider,
+    # every time somebody opens the window.
+    #
+    # THE ONE CASE A LIVE PUSH CANNOT COVER. A slider that does not move emits
+    # no `valueChanged`, so nothing is pushed, so the release handler used to
+    # fall through to the rebuild that always worked: a press and release on
+    # the handle wrote a whole new page — a second of black for a change
+    # nobody made. Measured on four of them before it was fixed, one page each.
+    #
+    # It is the same blink the live pushes exist to remove, and it hid behind
+    # them: every check here asked what happens when a slider MOVES.
+    print("\n  AND LETTING GO WITHOUT MOVING IT\n")
+    for label, attr, _target in WHICH:
+        slider = getattr(window, attr, None)
+        if slider is None:
+            continue
+        if attr == "_slice_at" and not window._slice_on.isChecked():
+            window._slice_on.setChecked(True)
+            settle(4000)
+        settle(2500)
+        before = window._render_count
+        slider.sliderPressed.emit()
+        slider.sliderReleased.emit()
+        settle(3500)
+        wrote = window._render_count - before
+        print(f"  {label:28s} pages written by letting go: {wrote}"
+              f"   {'BLINKS' if wrote else 'nothing, as it should'}")
+        if wrote:
+            problems.append(
+                f"{label}: letting go of the handle without moving it wrote "
+                f"{wrote} new page(s) — a second of black for a change nobody "
+                f"made")
+
+    # AND PUT THE STATE BACK. Reaching the cross-section's slider means
+    # ticking "Slice it at one lightness", and leaving it ticked replaces the
+    # shapes with a flat cut for everything below — which this file's own
+    # comment says makes ALL SEVEN sliders report dead. A section that tidies
+    # up after itself is the difference between finding a fault and inventing
+    # four.
+    if window._slice_on.isChecked():
+        window._slice_on.setChecked(False)
+        settle(4000)
+
+
     if prove:
         # THE MUTATION: put the OLD wiring back on the one slider that has
         # been fixed -- valueChanged retitles the label and touches nothing
@@ -372,12 +423,14 @@ def main() -> int:
               "removed. It is blind.")
         return 1
 
+    print()
     if problems:
         for line in problems:
             print("  " + line)
         print(f"\n  {len(problems)} problem(s).")
         return 1
-    print("  Clean: every slider moved the picture while its handle was down.")
+    print("  Clean: every slider moved the picture while its handle was down,\n"
+          "  and none of them redrew it for a handle that did not move.")
     return 0
 
 

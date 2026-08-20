@@ -13607,7 +13607,17 @@ class GamutApp(QMainWindow):
         return True
 
     def _after_cut(self) -> None:
-        """Letting go of the cross-section: rebuild only if the push missed."""
+        """Letting go of the cross-section: rebuild only if the push missed.
+
+        AND NOT AT ALL IF IT DID NOT MOVE. This was the one the first pass at
+        that guard missed — the fades, the rings and the detail were given it
+        and the cut was not, so a press and release on this handle still wrote
+        a whole page. Found by the check, in the state it is actually met in:
+        a slider nobody has touched since the picture was drawn.
+        """
+        if self._slice_at.value() == getattr(self, "_drawn_with", {}).get(
+                "cut", self._slice_at.value() + 1):
+            return
         if getattr(self, "_cut_live", False) and self._push_cut():
             self._update_volume()
             self._update_coverage()
