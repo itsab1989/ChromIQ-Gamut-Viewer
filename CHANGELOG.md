@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.43.1
+
+### 🎚 Letting go of a slider you did not move no longer redraws everything
+
+Press a slider's handle and let go without moving it — something you do by
+accident all the time — and the whole picture was thrown away and drawn again.
+A second of black for a change nobody made, on the two fades, the rings, the
+detail and the cross-section.
+
+It is the same blink the live sliders were built to remove, surviving in the
+one place they could not reach: **a handle that does not move sends no signal
+at all**, so nothing was pushed and the release fell through to the old
+rebuild. The window now remembers what the picture was drawn with, and a
+release that changes nothing does nothing.
+
 ## v2.43.0
 
 ### 💬 “Where they agree” now says what an open shell is
