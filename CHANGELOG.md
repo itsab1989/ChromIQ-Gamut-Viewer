@@ -1,5 +1,32 @@
 # Changelog
 
+## v2.45.1
+
+### 💍 "Show rings inside" now draws them when you tick it
+
+Ticking it did nothing at all until you touched some other control. The rings
+appeared the moment you nudged the count slider — and until then the box was
+ticked over a picture with no rings in it.
+
+It came from the fix in v2.43.1 that stopped a slider you press and let go
+*without moving* from throwing the whole picture away. That guard asks "is
+this control already set to what the picture was drawn with?" — and ticking
+the box changes the ring COUNT not at all, so it was answered "nothing to do".
+The picture now remembers whether the rings were showing, as well as how many
+there were. Letting go of an unmoved slider still costs nothing: measured with
+the window's own count of pages written, the rings, detail and fade sliders
+each rebuild **zero** times when released unmoved.
+
+### 💍 …and the rings you drag look exactly like the rings you save
+
+Dragging the count fills the rings in place, without rebuilding — and that
+push was also filling the legend key beside the shape's name, which a rebuilt
+picture leaves as the single short line it is meant to be. Two papers against
+sRGB at 6 rings: the two ways of drawing the same setting differed by 13,538
+pixels. They are identical now, so what you see while dragging is what a page
+you send somebody will show.
+
+
 ## v2.45.0
 
 ### 🪟 Two rooms: side by side, or one above the other — your choice
