@@ -189,6 +189,12 @@ def main() -> int:
     # state a reader is in mid-drag, and it is the state in which the screen
     # and the file are free to disagree.
     win._agree.setValue(62)
+    # AND DETAIL, ALSO THROUGH THE LIVE PATH ONLY. This one waits for the
+    # handle to pause before it pushes — 160 to 520 ms of work on the thread
+    # that draws the window, so firing it every step would make the handle
+    # itself sticky — which means the pump below has to be longer than that
+    # pause or the picture is measured before it has caught up.
+    win._detail.setValue(33)
     pump(6)
 
     if "--prove" in ASKED:
@@ -211,8 +217,21 @@ def main() -> int:
                   "changes nothing and this run tested\n  nothing.")
             return 2
         win._render_options = as_if_nothing_were_faded
-        print("  --prove: the screen stays faded and the page is written as "
-              "though it were not.\n  The check must notice.\n")
+
+        # AND THE OTHER NEW ONE: leave the handle at 33 steps and write the
+        # page from a comparison built at the default. Both faults are the
+        # same shape — a value that reached the screen and not the file — and
+        # a mutation that only exercises one of two new rules leaves the other
+        # untested while the run reports "it can see".
+        from references import reference_gamut
+
+        win._reference = ("sRGB", reference_gamut(
+            "sRGB", white_point=win._white.currentData(), steps=20,
+            space=win._build_space()))
+        print("  --prove: the screen stays faded at 62%, set to 33 steps and "
+              "cut at L* 37,\n  and the pages are written unfaded, at the "
+              "default 20, and cut at 50.\n  The check must notice all "
+              "three.\n")
 
     folder = pathlib.Path(tempfile.mkdtemp(prefix="what-you-save-"))
     out = folder / "saved.html"
@@ -235,6 +254,53 @@ def main() -> int:
     # it -- layout["template"] holds another set, and that is what the first
     # version of this audit was reading.
     axis = ((layout.get("scene") or {}).get("xaxis") or {})
+
+    def _points_at(steps):
+        """How many points the comparison is DRAWN with at *steps*.
+
+        LIKE FOR LIKE, and the first version of this was not. It counted the
+        reference shape's own corners — 6,534 at 33 steps — against the 47,232
+        points the saved page gives it, because what the page holds is a CAGE
+        drawn over that shape: line segments with a gap between them, not a
+        list of corners. Two different quantities, and the check reported the
+        app broken on the strength of it.
+
+        So the comparison is built and drawn the way the window draws it, and
+        counted off the trace. That still catches the fault this is for — a
+        page written at a resolution the reader did not choose — because it is
+        asked at the chosen detail AND at the default, and the two must not be
+        the same number.
+        """
+        from references import reference_gamut
+
+        import ti3gamut
+
+        was = win._reference
+        try:
+            win._reference = ("sRGB", reference_gamut(
+                "sRGB", white_point=win._white.currentData(),
+                steps=int(steps), space=win._build_space()))
+            gamuts, clouds, styles, lost = win._scene_contents()
+            figure = ti3gamut.build_figure(
+                gamuts, win._scene_title(), split=True, patches=clouds,
+                styles=styles, lost=lost, **win._render_options())
+        finally:
+            win._reference = was
+        for trace in figure.data:
+            if str(getattr(trace, "name", "")).startswith("sRGB"):
+                xs = getattr(trace, "x", None)
+                if xs is not None:
+                    return len(xs)
+        return None
+
+    def _comparison_points(drawn):
+        """The points the saved page gives the comparison shape."""
+        for trace in drawn:
+            if str(trace.get("name", "")).startswith("sRGB"):
+                xs = trace.get("x")
+                if isinstance(xs, list):
+                    return len(xs)
+        return None
 
     def _fade_in(meshes):
         """The alpha the saved surfaces carry, or None if none is faded."""
@@ -265,6 +331,17 @@ def main() -> int:
         one("how much of the agreement is left",
             f"{win._agree.value() / 100.0:.3f}",
             _fade_in(surfaces)),
+        # DETAIL IS THE COMPARISON'S OWN RESOLUTION, so what reaches the file
+        # is not a number but a shape of a particular size. Read as a count of
+        # points, and asked BOTH ways: it must match the detail on screen and
+        # must NOT match the default, or a page written from the defaults
+        # would pass whenever the two happened to be close.
+        one("how finely the comparison is built",
+            _points_at(win._detail.value()),
+            _comparison_points(traces)),
+        one("...and it is not simply the default",
+            True,
+            _comparison_points(traces) != _points_at(20)),
         one("how solid the shapes look",
             round(win._opacity.value() / 100.0, 3),
             round(surfaces[0].get("opacity", -1), 3) if surfaces else None),
@@ -293,6 +370,47 @@ def main() -> int:
         got = round(float(lit.get("diffuse", -1)), 4)
         problems += [p for p in (one("how deep the shading is (diffuse)",
                                      expected, got),) if p]
+
+    # ---- AND THE CROSS-SECTION, which is a third arrangement -------------
+    # The last of the four controls that were made live this week. It is a
+    # different picture rather than a changed one -- the shapes are replaced
+    # by a flat cut -- so it needs its own save, and the value that has to
+    # reach the file is the HEIGHT, which the page names in its own caption.
+    print("\n  AND THE CROSS-SECTION IT SAVES\n")
+    win._slice_on.setChecked(True)
+    pump(5)
+    # THROUGH THE LIVE PATH ONLY, again: `valueChanged` is a drag,
+    # `sliderReleased` is what decides whether the window rebuilds.
+    win._slice_at.setValue(37)
+    pump(5)
+    # READ BEFORE THE WRITE, so the mutation below can change what is written
+    # without changing what the screen is asked for afterwards. Patched the
+    # other way round, both sides move together and the check cannot fail.
+    cut_on_screen = win._slice_at.value()
+    cut_file = folder / "saved-cut.html"
+    if "--prove" in ASKED:
+        was_value = win._slice_at.value
+        win._slice_at.value = lambda: 50
+    win._write_scene(*win._scene_contents(), cut_file, controls=True,
+                     carry_viewer=False)
+    if "--prove" in ASKED:
+        win._slice_at.value = was_value
+    pump(2)
+    said = ""
+    if cut_file.exists():
+        _traces, cut_layout = figures_in(cut_file)
+        said = str(((cut_layout.get("title") or {}).get("text")) or "")
+    import re as _re
+
+    named = _re.search(r"L\*\s*=\s*(-?\d+)", said)
+    problems += [x for x in (
+        one("the height the cut is at",
+            cut_on_screen,
+            int(named.group(1)) if named else None),
+    ) if x]
+
+    win._slice_on.setChecked(False)
+    pump(4)
 
     # ---- AND THE RUN'S OWN PAGE, which is a second writing route ---------
     # The same risk, one route further along: the run's threshold hides dots
@@ -406,12 +524,17 @@ def main() -> int:
     if "--prove" in ASKED:
         shutil.rmtree(folder, ignore_errors=True)
         win.close()
-        if any("agreement" in line for line in problems):
-            print("  With the page written as though nothing were faded, the "
-                  "check said so.\n  It can see.")
+        caught = {"the fade": any("agreement" in x for x in problems),
+                  "the detail": any("comparison" in x for x in problems),
+                  "the cut's height": any("height" in x for x in problems)}
+        missed = [what for what, saw in caught.items() if not saw]
+        if not missed:
+            print("  With the pages written unfaded, at the wrong resolution "
+                  "and cut at the wrong\n  height, the check named every one "
+                  "of them. It can see.")
             return 0
-        print("  THE PAGE WAS WRITTEN UNFADED AND THE CHECK SAID NOTHING. "
-              "It is blind.")
+        print(f"  THE CHECK DID NOT NOTICE {', '.join(missed)}. "
+              f"It is blind to that much.")
         return 1
     if problems:
         for line in problems:
