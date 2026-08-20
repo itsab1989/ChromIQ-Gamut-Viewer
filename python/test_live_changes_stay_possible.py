@@ -168,3 +168,48 @@ def test_the_out_of_reach_edge_is_cut_not_stepped():
             f"colours, so the out-of-reach edge is a staircase again")
         checked += 1
     assert checked, "no marked mesh was drawn, so nothing was actually checked"
+
+
+def test_a_figure_reads_per_shape_by_its_own_position():
+    """One shape in a figure always reads entry 0 of ``per_shape``.
+
+    This is the contract that makes a room-per-shape view easy to get wrong,
+    and it did: `_write_two_rooms` builds each room with ONE shape and used to
+    hand it the whole list, so both rooms drew with the first shape's
+    settings. Reported as "when enabling the two rooms the shapes on screen
+    don't keep their visuals from before" -- and the giveaway was that turning
+    it off restored them, which means they were never lost, only never handed
+    over.
+
+    Pinned here because the fix lives at the CALL SITE: whoever builds a
+    figure holding a subset of the shapes has to hand over that subset's
+    settings, and nothing in the renderer can notice if they do not.
+    """
+    import numpy as np
+
+    from gamutview import build_gamut
+
+    rng = np.random.default_rng(7)
+    q = rng.normal(size=(500, 3))
+    q /= np.linalg.norm(q, axis=1)[:, None]
+    lab = q * np.array([34, 44, 40])
+    lab[:, 0] = np.clip(lab[:, 0] * 0.6 + 50, 6, 94)
+    shape = build_gamut(lab)
+
+    both = [{"opacity": 1.0}, {"opacity": 0.3}]
+    fig = ti3gamut.build_figure([("only one", shape)], "", styles=["solid"],
+                                per_shape=both)
+    meshes = [t for t in fig.data if getattr(t, "i", None) is not None]
+    assert meshes, "no surface was drawn, so nothing was checked"
+    assert abs(meshes[0].opacity - 1.0) < 1e-6, (
+        "a lone shape no longer reads entry 0 of per_shape; the two-room "
+        "writer slices the list on that basis and would now hand over the "
+        "wrong settings")
+
+    only_the_second = [both[1]]
+    fig = ti3gamut.build_figure([("only one", shape)], "", styles=["solid"],
+                                per_shape=only_the_second)
+    meshes = [t for t in fig.data if getattr(t, "i", None) is not None]
+    assert abs(meshes[0].opacity - 0.3) < 1e-6, (
+        "handing a figure just one shape's settings no longer works, which is "
+        "exactly how each room is given its own")

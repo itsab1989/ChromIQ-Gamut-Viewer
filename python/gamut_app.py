@@ -15397,6 +15397,20 @@ class GamutApp(QMainWindow):
         # you had, and here is how far it has moved"; room two is simply the
         # other shape. Same trap as the chart above, one line further down.
         drift = options.pop("drift", None)
+        # AND EACH ROOM GETS ITS OWN SHAPE'S SETTINGS, not the first shape's.
+        #
+        # Reported from the window: "when enabling the two rooms the shapes on
+        # screen don't keep their visuals from before, turning it off again
+        # resets the view to how it was before" -- and that second half was
+        # the diagnosis. Nothing was lost; it was never handed over.
+        #
+        # `per_shape` is a list in the order the shapes are DRAWN, and each
+        # room is built with a single shape. Passed the whole list, the
+        # renderer reads entry 0 for the one shape it has, so both rooms drew
+        # with the FIRST shape's settings. Measured with two shapes set
+        # deliberately apart: room two came out at opacity 1.0 where its shape
+        # was set to 0.30, and with no rings where its shape asked for twelve.
+        per_shape = options.pop("per_shape", None)
         figures = []
         for i, (name, gamut) in enumerate(gamuts[:2]):
             # THE SLOT, not just the shape. Judging happens in CIELAB, and
@@ -15412,6 +15426,8 @@ class GamutApp(QMainWindow):
                 lost=[lost[i]] if lost and i < len(lost) else None,
                 chart=self._chart_marked_against(chart, gamut, slot),
                 drift=drift if i == 0 else None,
+                per_shape=([per_shape[i]] if per_shape and i < len(per_shape)
+                           else None),
                 **options)))
         write_side_by_side_html(figures, out,
                                 mode=(colours or self._appearance),
