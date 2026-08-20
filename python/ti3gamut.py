@@ -2974,6 +2974,59 @@ function cqLinkCameras(idA, idB) {
 """
 
 
+#: THE WHEEL ZOOMS WHEREVER IT IS POINTED, including at a shape.
+#:
+#: Reported from the window: "when hovering the mouse over something that
+#: triggers showing a label (srgb comparison in my case just now) i cannot
+#: zoom". Measured on a written page, crossing WHERE the wheel lands against
+#: WHAT is under it -- because the first attempt changed both at once and
+#: proved nothing:
+#:
+#:     centre, on the shape        label shown   camera 2.598 -> 2.598
+#:     centre-ish, off the shape   no label      camera 2.598 -> 0.146
+#:     corner, off the shape       no label      zoomed
+#:     low left, on the shape      label shown   camera 1.501 -> 1.501
+#:
+#: Two places on the shape refuse; two off it work. The wheel is NOT being
+#: swallowed -- all five events land either way -- and taking the label down
+#: first (Plotly.Fx.unhover) does not help, so what blocks it is the hover
+#: PICK being live rather than the label being drawn.
+#:
+#: So the camera is moved here instead of asking the library to move it, which
+#: nothing can refuse. The event is taken in the capture phase and stopped, so
+#: the library's own zoom cannot also run and double it -- measured after: all
+#: four positions zoom, at one rate.
+_WHEEL_JS = """
+(function () {
+  function reach(el) {
+    var s = el._fullLayout && el._fullLayout.scene && el._fullLayout.scene._scene;
+    if (s && s.getCamera) return s.getCamera();
+    return el.layout && el.layout.scene && el.layout.scene.camera;
+  }
+  function arm(el) {
+    el.addEventListener("wheel", function (e) {
+      var c = reach(el);
+      if (!c || !c.eye) return;            // a flat cut has no camera to move
+      var k = e.deltaY > 0 ? 1.1 : 1 / 1.1;
+      e.preventDefault();
+      e.stopPropagation();
+      Plotly.relayout(el, {"scene.camera.eye": {
+        x: c.eye.x * k, y: c.eye.y * k, z: c.eye.z * k}});
+    }, true);
+  }
+  function armAll() {
+    var d = document.getElementsByClassName("plotly-graph-div");
+    for (var i = 0; i < d.length; i++) if (!d[i].__cqWheel) {
+      d[i].__cqWheel = true;
+      arm(d[i]);
+    }
+  }
+  if (document.readyState === "complete") armAll();
+  window.addEventListener("load", armAll);
+})();
+"""
+
+
 #: Turns the shape by itself. Two ways, because they answer two questions: all
 #: the way round is for getting the feel of a shape you have just opened, and a
 #: small swing back and forth is for JUDGING A DENT -- the parallax reads depth
@@ -7593,7 +7646,7 @@ def write_two_views_html(views, out: Path, mode: str = "dark", spin=None,
         background:transparent; color:inherit; }}
  .cq-views button[aria-pressed] {{ border-color:{colours['text']}; }}
 </style></head><body>{switch}{''.join(blocks)}{written}
-<script>{_ORDER_JS}</script><script>{_CAPTION_JS}</script>{turn}{swap}
+<script>{_ORDER_JS}</script><script>{_WHEEL_JS}</script><script>{_CAPTION_JS}</script>{turn}{swap}
 </body></html>"""
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
@@ -7709,7 +7762,7 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
           font-family:Menlo,Consolas,"Courier New",monospace;
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
  .half > div:last-child {{ flex:1 1 auto; min-height:0; }}
-</style></head><body><div class="row">{''.join(blocks)}</div>{written}{resize}{link}<script>{_ORDER_JS}</script><script>{_CAPTION_JS}</script>{_spin_script(ids, ({"flat": True, **(spin or {})} if flat else spin), mode, controls, offer)}</body></html>"""
+</style></head><body><div class="row">{''.join(blocks)}</div>{written}{resize}{link}<script>{_ORDER_JS}</script><script>{_WHEEL_JS}</script><script>{_CAPTION_JS}</script>{_spin_script(ids, ({"flat": True, **(spin or {})} if flat else spin), mode, controls, offer)}</body></html>"""
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
 
@@ -8459,7 +8512,7 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     # makes a see-through shape look like the solid one it is, and a page
     # without any movement in it can still be dragged round by hand. See
     # _ORDER_JS for what it fixes and what it was measured to cost.
-    order = f"<script>{_ORDER_JS}</script>"
+    order = f"<script>{_ORDER_JS}</script><script>{_WHEEL_JS}</script>"
     html = (html.replace("</body>", order + "</body>", 1)
             if "</body>" in html else html + order)
     turn = _spin_script(["scene0"], spin, mode, controls, offer)
