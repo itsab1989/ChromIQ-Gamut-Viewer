@@ -480,3 +480,44 @@ def test_the_window_draws_its_own_scene_with_the_mask():
         f"the window's own scene no longer asks for the mask on the count of "
         f"shapes: {asked.strip()!r}"
     )
+
+
+def test_every_slider_is_wired_to_act_while_it_moves():
+    """No slider may act only when the handle is let go.
+
+    THE CLASS, WHERE THE AUDIT REACHES SEVEN OF NINETEEN.
+    `scripts/audit_sliders_are_live.py` drives seven on a real window, which is
+    the strong evidence and the slow one; this asks all of them, in the gate,
+    of the source. A new slider wired the old way fails here the moment it is
+    added rather than whenever somebody next runs an audit.
+
+    Reported twice in two minutes and then as a rule: "show rings inside slider
+    only updates the viewer when i let go from dragging it - should be live",
+    "same what i just said is true for the details slider", "btw all sliders
+    should work this way".
+
+    ASKED OF THE WHOLE FILE, and that detail is the test's own history: written
+    first against a window of 26 lines after each slider is built, it reported
+    `_cut` as connected to nothing — because its `valueChanged.connect` is 33
+    lines further down. A search that stops short says "not there" in exactly
+    the same words as a search that looked everywhere, which is the mistake
+    this project keeps meeting in new clothes.
+    """
+    text = (ROOT / "gamut_app.py").read_text(encoding="utf-8")
+    built = sorted({m.group(2) or m.group(3) for m in re.finditer(
+        r"(self\.(_[A-Za-z0-9_]+)|(\w+))\s*=\s*NoScrollSlider\(", text)})
+    assert len(built) > 10, (
+        f"only {len(built)} sliders were found in the window, which is fewer "
+        f"than it has — this rule is looking in the wrong place and would "
+        f"pass on almost anything")
+
+    release_only = [name for name in built
+                    if not re.search(
+                        rf"\b{re.escape(name)}\.valueChanged\.connect", text)]
+    assert not release_only, (
+        "These sliders are never connected to `valueChanged`, so nothing can "
+        "happen until the handle is let go:\n  " + "\n  ".join(release_only)
+        + "\n\nConnect it to a handler that changes the picture in place, and "
+          "leave `sliderReleased` for whatever cannot be done live — see "
+          "_on_rings_changed, _push_fade, _on_cut_changed."
+    )
