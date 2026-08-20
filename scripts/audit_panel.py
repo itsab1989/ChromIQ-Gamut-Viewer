@@ -158,6 +158,23 @@ def clipped(widget) -> "tuple | None":
     return None
 
 
+def on_screen(panel) -> set:
+    """Which controls are visible right now, by identity rather than by name.
+
+    Identity, because a dozen rows carry the same words: two `Hint`s reading
+    "hint_axis_left_speed" and "hint_axis_up_speed" are different controls and
+    a set keyed on their text would count them as one. The widgets live as
+    long as the window, so `id()` is stable for the whole run.
+
+    Only meaningful with every fold already open — inside a shut section a
+    control reports `isVisible()` False whether a tickbox has revealed it or
+    not, which is how the first attempt at this measurement could not tell
+    revealed from hidden and answered "nothing is missed" about a question it
+    could not see.
+    """
+    return {id(w) for w in panel.findChildren(QWidget) if w.isVisible()}
+
+
 def audit_once(window, panel, label: str) -> list:
     """Every complaint about the panel as it stands right now."""
     problems = []
@@ -329,6 +346,29 @@ def audit_once(window, panel, label: str) -> list:
             # four correctly-explained controls unexplained.
             if any(abs(b - h.mapToGlobal(h.rect().center()).y()) < 14
                    for h in mine for b in bands):
+                continue
+            # AN ⓘ IN THE SAME SET THAT NAMES THIS CONTROL IS ITS
+            # EXPLANATION, wherever it sits.
+            #
+            # The two clauses above are geometric — an icon on the control's
+            # row, or on its caption — and the lighting controls keep to a
+            # third convention the window has always had: seven sliders
+            # revealed by one tickbox, under ONE ⓘ whose words name every one
+            # of them ("Ambient is light arriving from every direction at
+            # once ... Diffuse is light the surface scatters ... Fresnel adds
+            # a glow around the edges"). Six complaints came out of that, and
+            # the application was right in all six.
+            #
+            # This is not a blanket exemption for "there is an icon nearby":
+            # the ⓘ has to say the control's NAME. A caption reading
+            # "Ambient — light from everywhere" is explained by an ⓘ that
+            # mentions Ambient and by no other.
+            caption = mine[0].text().split("—")[0].split("--")[0].strip()
+            named = any(
+                caption and caption.lower() in h.explanation().lower()
+                for h in group.findChildren(gamut_app.Hint)
+                if h.isVisible() and hasattr(h, "explanation"))
+            if named:
                 continue
             name = attribute.get(id(control)) or control.objectName()
             problems.append(
@@ -800,6 +840,10 @@ def main() -> int:
     available = app.primaryScreen().availableGeometry().width()
     widths = sorted({min(w, available - 40) for w in WIDTHS})
 
+    # WHAT HAS ACTUALLY BEEN ON SCREEN, so the states below can be chosen by
+    # what is still unmeasured rather than by guesswork.
+    covered: set = set()
+
     for appearance in ("dark", "light"):
       # BOTH APPEARANCES. A label that fits is a label that fits, but an ⓘ
       # or a swatch that reads on one background can vanish on the other,
@@ -817,6 +861,7 @@ def main() -> int:
             pump(app, 2)
             label = f"{appearance}/{width}px/{space}"
             problems += audit_once(window, panel, label)
+            covered |= on_screen(panel)
             if shots:
                 panel.grab().save(
                     str(out / f"panel-{appearance}-{width}-{space}.png"))
@@ -847,17 +892,30 @@ def main() -> int:
     # Measured: with one shape open and every tick on, that control reported
     # isVisible() False; with a second shape open it appeared, and its ⓘ was
     # sitting 25 px below it.
+    # AND BACK TO THE DRAWING SPACE PEOPLE ACTUALLY USE. The loop above ends
+    # on the LAST space in the chooser, which is "Ink amounts — a chart on
+    # its own", and this pass then ran there by leftover rather than by
+    # choice — measured: 11 tickboxes enabled in `rgb` against 19 in `lab`,
+    # so the pass written specifically to reach the controls a tick reveals
+    # was doing it in the space that offers the fewest of them.
+    window._space.setCurrentIndex(0)
+    pump(app, 2)
+
     second = HERE.parent / "demo" / "Matte-paper.ti3"
     if second.is_file():
         window._load(second)
         pump(app, 5)
 
     revealed = []
+    revealed_candidates = [t for t in panel.findChildren(QCheckBox)
+                           if t.isEnabled()]
     for tick in panel.findChildren(QCheckBox):
         if tick.isEnabled() and not tick.isChecked():
             tick.setChecked(True)
             revealed.append(tick)
     pump(app, 5)
+    print(f"  {len(revealed_candidates)} tickbox(es) enabled in "
+          f"{window._space.currentData()!r}, the space this pass measures in.")
     print(f"  {len(revealed)} tickbox(es) turned on, to build the controls "
           f"they reveal.")
     extra = 0
@@ -870,10 +928,48 @@ def main() -> int:
             pump(app, 2)
             problems += audit_once(window, panel,
                                    f"{appearance}/{width}px/revealed")
+            covered |= on_screen(panel)
             extra += 1
             if shots:
                 panel.grab().save(
                     str(out / f"panel-{appearance}-{width}-revealed.png"))
+
+    # AND THE STATES WHERE ONE TICK ALONE SHOWS SOMETHING THE OTHERS HIDE.
+    #
+    # The pass above was written because a control revealed by a tickbox was
+    # never built and so counted clean by absence. It ticks every box AT
+    # ONCE, and its own comment says why that is not enough — "a tick can
+    # hide something as well as show it". That is exactly what happens here:
+    # measured on a real window with both papers open, the default state
+    # shows 158 controls and all-ticks-on shows 188, but SIX appear in
+    # neither. With only "Turn it by itself" on, the plain movement controls
+    # are up — two choosers and four ⓘ (hint_axis_left_hint, _speed, _sweep,
+    # hint_axis_up_hint) — and ticking the rest replaces them with the
+    # adjust-them-yourself set. Four of the six are ⓘ icons, which is what
+    # question 3 of this audit exists to look at.
+    #
+    # So rather than guess which combinations matter, this asks each tick on
+    # its own whether it puts anything on screen that no measured state has
+    # shown, and audits only those. On a window with nothing left over it
+    # costs one pump per tickbox and reports zero extra states.
+    alone = 0
+    for tick in revealed_candidates:
+        for other in revealed_candidates:
+            other.setChecked(False)
+        pump(app, 0.5)
+        tick.setChecked(True)
+        pump(app, 1.5)
+        fresh = on_screen(panel) - covered
+        if not fresh:
+            continue
+        alone += 1
+        problems += audit_once(window, panel,
+                               f"only '{tick.text()[:38]}' on")
+        covered |= on_screen(panel)
+        if shots:
+            panel.grab().save(str(out / f"panel-only-{alone}.png"))
+    print(f"  {alone} state(s) where one tick alone shows what the others "
+          f"hide.")
 
     print()
     if prove:
@@ -912,11 +1008,12 @@ def main() -> int:
             print("  " + line)
         print(f"\n{len(problems)} problem(s).")
         return 1
-    checked = 2 * len(widths) * window._space.count() + extra
+    checked = 2 * len(widths) * window._space.count() + extra + alone
     print(f"  Clean: {checked} panel states checked "
           f"(2 appearances × {len(widths)} widths × "
           f"{window._space.count()} spaces, plus {extra} with every tickbox "
-          f"revealed), every control answered for.")
+          f"revealed and {alone} where one tick alone shows what the rest "
+          f"hide), every control answered for.")
     return 0
 
 
