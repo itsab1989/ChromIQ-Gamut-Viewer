@@ -1,5 +1,43 @@
 # Changelog
 
+## v2.43.0
+
+### 💬 “Where they agree” now says what an open shell is
+
+Slide it all the way down and what is left has a hole in it — and turning the
+shape round, you end up looking into that hole. The far wall is lit exactly
+like an outer surface, because a gamut has no separate inside to shade, so it
+reads as a broken skin or as an outer edge in a place it could not be.
+
+**Nothing is wrong with the picture and nothing has been left out**, and now
+the control says so, in the window and on any page you send somebody. It also
+gives the two ways round it: come up one step and the shape is whole and
+merely faint, or use “Where they differ” instead, which leaves the shared bulk
+standing and closed.
+
+Whether that opening should be capped is a separate question about what the
+picture ought to mean, and it is still open.
+
+### 🔍 Two checks that had stopped checking
+
+Run with `--prove`, a check sabotages its own fix and must then fail; if it
+does not, it is blind. Two of the four were sabotaging nothing:
+
+* the two-room drag check disabled a mechanism that was removed back in
+  2.40.1, so it had been refusing a call nobody made ever since;
+* the saved-cross-section check had no sabotage in it at all, and had been
+  reporting itself blind since the day it was written.
+
+Both now aim at the code that is there, and a rule fails by name if any check
+offering `--prove` does not verify that its own sabotage took hold.
+
+### 🔍 And a rule that catches an explanation left stranded
+
+An ⓘ that has slipped onto a line of its own, under the control it explains
+instead of beside it, is now caught. Four earlier attempts measured pixels and
+all four failed — the last because it never reached the control column at all,
+which looks exactly like finding nothing wrong.
+
 ## v2.42.0
 
 ### 🎚 Every slider in the window now follows its handle
