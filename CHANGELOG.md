@@ -1,5 +1,57 @@
 # Changelog
 
+## v2.45.0
+
+### 🪟 Two rooms: side by side, or one above the other — your choice
+
+Two rooms can now be arranged either way, with a chooser that appears beside
+**Both rooms point the same way** as soon as you have two shapes to arrange.
+
+**Side by side** keeps both shapes at the same height, which is what your eye
+needs to compare how far each one reaches: two things at the same height are
+easy to measure against each other, and the same two stacked are not. **One
+above the other** gives each room the whole width instead — the one to choose
+in a tall narrow window, or on a phone, and it lines the two shapes up along
+the lightness axis, so it answers "which of these gets darker" more directly
+than "which of these is wider".
+
+It is remembered between sessions, and it travels into a saved page, so
+whoever you send it to opens it arranged the way you left it.
+
+### 🔭 Every shape now fits the room it is drawn in
+
+Two papers side by side in a narrow window came out with both shapes cut
+straight through the side walls of their rooms. Measured, counting the
+vividly coloured pixels sitting in each room's outermost column, with the
+turning paused and both rooms pinned to the same four viewpoints:
+
+| window | each room | shape through the wall |
+|---|---|---|
+| 1500 | ~541 px | none |
+| 1200 | ~391 px | none |
+| 1000 | ~291 px | 170 and 108 pixels |
+| 900 | ~241 px | 233 and 201 |
+| 800 | ~210 px | 270 and 234 |
+
+**The picture already knew how to fit itself and was never allowed to.** Every
+page this application writes carried a flag saying its view had already been
+placed — true of the window's own view, which carries your camera forward from
+one drawing to the next, and wrongly true of every page you saved. So a file
+opened on a phone, in a window whose shape nobody could have known when it was
+written, never fitted itself to it.
+
+Now it does, in the window and in every page you save: a narrow room shows a
+**smaller** shape rather than a cut one, and nothing you have turned to is
+touched — a view you dragged to is yours, and stays exactly where you left it
+through every rebuild.
+
+### 🔍 A control off the BOTTOM of a saved page is a fault too
+
+Kept from the release before this one and now measured on more pages: both
+page checks ask whether a control can be **reached at all**, rather than only
+whether it is off the left or the right.
+
+
 ## v2.44.0
 
 ### 🪟 Two rooms on a narrow window stopped cutting the shapes in half
