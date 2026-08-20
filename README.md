@@ -1345,7 +1345,7 @@ python scripts/audit_showcase_page.py     # every showcase frame explains itself
 python scripts/audit_follows_the_reader.py  # a page set to "follow you" wears the reader's own colours
 python scripts/audit_the_controls_can_be_shut.py  # whatever you open in a page, you can close again
 python scripts/audit_the_readme_is_true.py  # every link, anchor and picture in the documentation
-python scripts/audit_two_views.py         # a page holding both views offers each what it can honour
+python scripts/audit_two_views.py         # the export tick reaches the file, and each view offers what it can honour
 python scripts/audit_the_cut_opens_where_it_was_saved.py  # a saved cross-section opens at the height it was sent at
 python scripts/audit_sliders_are_live.py  # the picture follows the handle while it is dragged, not on release
 python scripts/audit_a_live_change_is_the_real_thing.py  # a change pushed into the picture on screen draws what a rebuild draws

@@ -140,7 +140,129 @@ def a_page(where: pathlib.Path):
     return out
 
 
+def save_through_the_window(target: str, ticked: bool) -> int:
+    """Build the window, tick the box, press Save. Run as its OWN process.
+
+    A QtWebEngine window and playwright in one process do not survive each
+    other: with this inlined, the whole check died before it printed a single
+    line and still exited 0, which is the worst possible way for a check to
+    fail. The same pairing crashed the unit-test gate outright. So the window
+    half is a subprocess and the browser half never meets it.
+    """
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PyQt6.QtCore import QEventLoop, QTimer
+    from PyQt6.QtWidgets import QApplication, QDialog
+
+    import gamut_app
+    import prefs
+
+    prefs.use_a_scratch_store()
+    # THE WINDOW TELLS YOU IT SAVED, and that sentence is a modal box. Two
+    # drivers hung for ten minutes each on it before this line was written.
+    gamut_app.Notice.warn = staticmethod(lambda *a, **k: None)
+    gamut_app.Notice.say = staticmethod(lambda *a, **k: None)
+
+    app = QApplication.instance() or QApplication(["audit_two_views"])
+    window = gamut_app.GamutApp()
+    window.resize(1400, 900)
+    window.show()
+
+    def settle(ms):
+        loop = QEventLoop()
+        QTimer.singleShot(ms, loop.quit)
+        loop.exec()
+
+    demo = sorted((HERE.parent / "demo").glob("*.ti3"))
+    if not demo:
+        return 2
+    window._load(demo[0])
+    settle(4000)
+    # TWO SHAPES, because a cross-section of one shape is a different picture
+    # and the switch is about comparing.
+    for i in range(window._compare.count()):
+        data = window._compare.itemData(i)
+        if data and data[0] == "space" and data[1] == "sRGB":
+            window._compare.setCurrentIndex(i)
+            window._on_compare_changed()
+            break
+    settle(5000)
+
+    # THE REAL TICK, read through the real dialog, so what is measured is the
+    # control rather than a dictionary somebody typed.
+    dialog = gamut_app.WebPageDialog(window)
+    tick = getattr(dialog, "_both_views", None)
+    if tick is None:
+        return 3
+    tick.setChecked(ticked)
+    chosen = dialog.choices()
+    dialog.deleteLater()
+
+    class Options:
+        def __init__(self, *a, **k):
+            pass
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted.value
+
+        def choices(self):
+            return chosen
+
+    class Files:
+        def __init__(self, *a, **k):
+            pass
+
+        def setAcceptMode(self, *a):
+            pass
+
+        def setDefaultSuffix(self, *a):
+            pass
+
+        def exec(self):
+            return 1
+
+        def selectedFiles(self):
+            return [target]
+
+    window._file_dialog = lambda *a, **k: Files()
+    gamut_app.WebPageDialog = Options
+    window._on_save()
+    settle(4000)
+    window.close()
+    app.processEvents()
+    return 0 if pathlib.Path(target).exists() else 4
+
+
+def from_the_window(where: pathlib.Path, ticked: bool) -> "pathlib.Path | None":
+    """Save a page by pressing the window's own button, with the tick set.
+
+    WHY THIS EXISTS BESIDE `a_page`. Everything else here hands the writer its
+    arguments directly, which proves the writer works and NOTHING about
+    whether a reader can ask for it. Measured the day this was added: the word
+    `both_views` did not occur anywhere in `scripts/` or in any test — the
+    tick in the export dialog was built, plumbed and never once driven. That
+    is exactly the fault `make_sample_pages` warns about in its own first
+    paragraph, "a control that no longer reaches the export", and it had grown
+    around this one while nobody was looking.
+
+    Returns None when the window cannot be driven here, so a machine without
+    a display skips rather than fails.
+    """
+    import subprocess
+
+    out = where / f"from-the-window-{'ticked' if ticked else 'plain'}.html"
+    done = subprocess.run(
+        [sys.executable, str(pathlib.Path(__file__).resolve()),
+         "--save-through-the-window", str(out), "1" if ticked else "0"],
+        capture_output=True, timeout=600)
+    if done.returncode != 0 or not out.exists():
+        return None
+    return out
+
+
 def main() -> int:
+    prove = "--prove" in sys.argv
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -151,6 +273,48 @@ def main() -> int:
 
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
+        # FIRST, THE PATH A READER TAKES: the tick in the export dialog, and
+        # the file that comes out of pressing Save. Everything after this
+        # hands the writer its arguments and cannot see whether the control
+        # reaches it at all.
+        print("  pressing Save through the real export dialog…")
+        # THE MUTATION: ask for the tick ON and set it OFF in the window, so
+        # the control is made not to decide the file. Everything downstream is
+        # untouched, which is the point — this is the fault "a control that no
+        # longer reaches the export" wears.
+        ticked = from_the_window(pathlib.Path(tmp), not prove)
+        plain = from_the_window(pathlib.Path(tmp), False)
+        if prove and ticked is not None and plain is not None:
+            if ticked.read_bytes() != plain.read_bytes():
+                print("  THE MUTATION DID NOT LAND — asking for the tick off "
+                      "produced a different\n  file from asking for it off, "
+                      "so this run tested nothing.")
+                return 2
+        if ticked is None or plain is None:
+            print("  the window could not be driven here, so the reader's own "
+                  "path is skipped.")
+        else:
+            with_it = ticked.read_text(encoding="utf-8").count('data-cq="view"')
+            without = plain.read_text(encoding="utf-8").count('data-cq="view"')
+            print(f"  tick on:  {ticked.stat().st_size // 1024} kB, "
+                  f"{with_it} view-switch button(s)")
+            print(f"  tick off: {plain.stat().st_size // 1024} kB, "
+                  f"{without} view-switch button(s)")
+            if not with_it:
+                problems.append(
+                    "the export dialog's “Carry a cross-section too” was "
+                    "ticked and the saved page has no switch on it — the "
+                    "control does not reach the export")
+            # AND THE OTHER DIRECTION, which is what makes the first mean
+            # anything: untick it and the switch must be gone. A page that
+            # always carries both views would satisfy the rule above while
+            # the tick did nothing whatever.
+            if without:
+                problems.append(
+                    f"the tick was OFF and the saved page still carries "
+                    f"{without} view-switch button(s) — the control is not "
+                    f"what decides it")
+
         page = a_page(pathlib.Path(tmp))
         print(f"  a page with both views: {page.stat().st_size // 1024} kB")
 
@@ -247,6 +411,14 @@ def main() -> int:
                 browser.close()
 
     print()
+    if prove:
+        if any("does not reach the export" in p for p in problems):
+            print("  With the tick made not to decide the file, the audit "
+                  "said so.\n  The check can see.")
+            return 0
+        print("  THE TICK WAS MADE NOT TO DECIDE THE FILE and the audit "
+              "still said nothing.\n  This check is blind.")
+        return 1
     if problems:
         for line in problems:
             print("  " + line)
@@ -258,4 +430,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # THE WINDOW HALF, RUN AS ITS OWN PROCESS. See save_through_the_window:
+    # a QtWebEngine window and playwright do not survive each other, and
+    # inlining it killed the whole check before it printed a line while still
+    # exiting 0.
+    if len(sys.argv) > 3 and sys.argv[1] == "--save-through-the-window":
+        raise SystemExit(save_through_the_window(sys.argv[2],
+                                                 sys.argv[3] == "1"))
     raise SystemExit(main())
