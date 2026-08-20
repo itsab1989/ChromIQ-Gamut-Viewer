@@ -60,6 +60,14 @@ DEFAULT = [
     ("docs/pages/10-a-slice-through-both.html", True),
     ("docs/pages/12-a-cut-each.html", True),
     ("docs/pages/15-one-printer-over-five-years.html", True),
+    # THE TWO PICTURES THE FOLDER DID NOT HOLD UNTIL 2026-08-21, and both of
+    # them carried a fault nobody could see because nothing drew them: two
+    # papers judged against one comparison, and a shape wrapped in a simple
+    # skin. They are in the default list rather than the folder at large
+    # because this run opens every page in three engines and is slow enough
+    # to be chosen deliberately.
+    ("docs/pages/13b-two-papers-and-what-neither-can-print.html", True),
+    ("docs/pages/13c-wrapped-in-a-simple-skin.html", True),
     ("docs/pages/08-without-the-viewer.html", True),
     ("docs/index.html", False),
 ]

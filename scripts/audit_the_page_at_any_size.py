@@ -75,7 +75,14 @@ def main() -> int:
     pages = [pathlib.Path(a).resolve() for a in ASKED_FOR]
     if not pages:
         pages = [ROOT / "docs" / "pages" / "11-everything-handed-over.html",
-                 ROOT / "docs" / "pages" / "04-two-papers.html"]
+                 ROOT / "docs" / "pages" / "04-two-papers.html",
+                 # AND THE TWO KINDS OF PICTURE THAT CARRIED A FAULT NOBODY
+                 # COULD SEE, because no saved page was drawn that way: two
+                 # papers each saying what they cannot print, and a shape
+                 # wrapped in a simple skin.
+                 ROOT / "docs" / "pages"
+                 / "13b-two-papers-and-what-neither-can-print.html",
+                 ROOT / "docs" / "pages" / "13c-wrapped-in-a-simple-skin.html"]
     app = QApplication(sys.argv)
     view = QWebEngineView()
     problems: list = []
