@@ -3926,11 +3926,74 @@ function cqLinkCameras(idA, idB) {
     if (wheelTimer) clearTimeout(wheelTimer);
     wheelTimer = setTimeout(function () { active = null; }, 300);
   }
-  a.addEventListener("mousedown", function () { active = a; }, true);
-  b.addEventListener("mousedown", function () { active = b; }, true);
-  window.addEventListener("mouseup", function () { active = null; }, true);
+  // A GESTURE BELONGS TO THE ROOM IT BEGAN IN, for its whole life.
+  //
+  // Reported from the window: "if i am crossing their seperator while
+  // dragging the one where i started from stops moving and only the other one
+  // still moves". Each 3D scene watches its own element, so crossing the
+  // divider hands the drag over: the first room stops getting movement and
+  // the second starts, with the button still down. Measured on a drag from
+  // x=300 across the seam at x=600: BOTH rooms reported plotly_relayouting --
+  // four times and three -- and they ended up pointing different ways.
+  //
+  // The pointer is captured by the room the press landed in, so every later
+  // move is delivered there whatever it happens to be over. The other room
+  // never sees the drag at all, which is what stops the hand-over.
+  function grab(gd) {
+    return function (e) {
+      active = gd;
+      try { gd.setPointerCapture(e.pointerId); } catch (err) {}
+      // AND THE OTHER ROOM IS TAKEN OUT OF THE POINTER'S WAY for the length
+      // of the gesture. Capturing alone was not enough: a drag that began on
+      // the RIGHT and crossed leftwards stopped turning anything at all,
+      // while the same drag the other way round kept both rooms moving.
+      var other = (gd === a) ? b : a;
+      other.style.pointerEvents = "none";
+    };
+  }
+  function drop(gd) {
+    return function (e) {
+      try { gd.releasePointerCapture(e.pointerId); } catch (err) {}
+    };
+  }
+  function letGoOfBoth() {
+    a.style.pointerEvents = "";
+    b.style.pointerEvents = "";
+  }
+  a.addEventListener("pointerdown", grab(a), true);
+  b.addEventListener("pointerdown", grab(b), true);
+  a.addEventListener("pointerup", drop(a), true);
+  b.addEventListener("pointerup", drop(b), true);
+  window.addEventListener("mouseup", function () {
+    active = null;
+    letGoOfBoth();
+  }, true);
+  window.addEventListener("pointerup", letGoOfBoth, true);
+  window.addEventListener("pointercancel", letGoOfBoth, true);
   a.addEventListener("wheel", function () { arm(a); }, true);
   b.addEventListener("wheel", function () { arm(b); }, true);
+  // AND THE FOLLOWING IS DRIVEN FROM THE GESTURE ITSELF.
+  //
+  // With the pointer captured, the drawing library moves the camera and emits
+  // NOTHING -- measured: not one plotly_relayouting or plotly_relayout during
+  // a whole drag, where the same drag uncaptured emitted seven. The relay
+  // below listens for those events, so on its own the captured room turned
+  // and the other stood still: the hand-over was cured and the following was
+  // lost with it. So while a press is held, the room that holds the pointer
+  // is read directly and the other is told, once per frame.
+  var following = null;
+  function followAlong() {
+    following = null;
+    if (!active) return;
+    var other = (active === a) ? idB : idA;
+    var c = liveCam(active);
+    if (c) Plotly.relayout(other, {"scene.camera": c});
+  }
+  window.addEventListener("pointermove", function () {
+    if (!active || following) return;
+    following = requestAnimationFrame(followAlong);
+  }, true);
+
   function link(src, dstId) {
     function sync() {
       if (active !== src) return;         // only the driven view leads
