@@ -82,7 +82,15 @@ if len(profiles) >= 2:
 
 for kind, first, second in PAIRS:
   print(f"\n  === {kind} ===")
-  win._close_them_all() if hasattr(win, "_close_them_all") else None
+  # CLOSE WHAT IS OPEN BEFORE OPENING THE NEXT PAIR, or the second pair is
+  # measured with FOUR shapes on screen.
+  #
+  # This read `win._close_them_all() if hasattr(win, "_close_them_all")` —
+  # and the window has no such method, so the guard swallowed it and the line
+  # did nothing, every run. A guarded call to a name that does not exist is
+  # worse than a crash: it never fails, it simply is not there. The window's
+  # own "close everything on screen" is `_on_clear`.
+  win._on_clear()
   pump(2)
   win._load(first)
   pump(7)

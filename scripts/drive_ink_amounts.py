@@ -254,10 +254,17 @@ def main() -> int:
           f"picture={w._picture.isEnabled()}")
 
     out = pathlib.Path(os.environ.get("TMPDIR", "/tmp")) / "ink-view.html"
-    w._write_current_page(out) if hasattr(w, "_write_current_page") else None
+    # THE WINDOW'S OWN SAVE ROUTE. This read
+    # `w._write_current_page(out) if hasattr(w, "_write_current_page")`, and
+    # the window has no such method — so the guard swallowed it, nothing was
+    # written, and the fallback below wrote a page with NO SHAPES IN IT.
+    # Check 20 then asked whether that empty page was the ink view. A guarded
+    # call to a name that does not exist never fails and never runs.
+    w._write_scene(*w._scene_contents(), out, controls=True,
+                   carry_viewer=False)
     if not out.exists():
-        from ti3gamut import write_html
-        write_html([], out, "ink", **w._render_options())
+        raise SystemExit("the window saved nothing, so check 20 would be "
+                         "asking its question of a page that does not exist")
     page = out.read_text(errors="replace")
     check("20. the saved page is the ink view, not a Lab one",
           "the axes in the file say Red/Green/Blue",
