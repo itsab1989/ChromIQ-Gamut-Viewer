@@ -29,11 +29,23 @@ WHAT MUST BE TRUE, with the failure direction:
                                         only ever starts on the left proves
                                         half of it.
 
-MEASURED ON THE CAMERAS THEMSELVES, read from the live scene rather than from
-the layout: a scene keeps the camera it is drawing in `_fullLayout.scene._scene`
-and only writes it back to `layout` when the gesture ends, so a check reading
-`layout` would see nothing move until the mouse came up -- which is precisely
-the moment this fault is about.
+MEASURED IN PIXELS, AND THAT CORRECTION MATTERS MORE THAN THE RULE.
+
+This asked `getCamera()` at first, which sounds like the truthful source and is
+not: the linking script WRITES that camera, so the check read its own relay's
+push as movement and called a dead picture alive. It passed a version of the
+page where neither room turned at all -- a regression that shipped -- and it
+passed because the number it watched was one the code under test sets.
+
+So the picture is photographed before and after, and a room counts as turned
+when tens of thousands of its pixels change. A hover label is about a thousand;
+a turn is sixty thousand; there is nothing in between to argue about.
+
+AND THE SHAPES ARE BUILT IN THE RIGHT SPACE. `build_gamut` reads its input as
+XYZ unless told otherwise, and the first version of this page handed it Lab --
+which put the corners at L* -71,327 and, being a different scene entirely,
+behaved differently under the same drag. Two instruments disagreed about one
+tree until that was found.
 """
 from __future__ import annotations
 
@@ -45,20 +57,40 @@ import tempfile
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
 
-#: How far apart two cameras may be and still count as pointing the same way.
-TOGETHER = 1e-3
+#: How many changed pixels count as a room having turned. A hover label is
+#: about a thousand; a turn is sixty thousand.
+TURNED = 20000
 
-CAMERAS = """(function () {
-  var d = document.getElementsByClassName('plotly-graph-div'), o = [];
-  for (var i = 0; i < d.length; i++) {
-    var s = d[i]._fullLayout && d[i]._fullLayout.scene
-            && d[i]._fullLayout.scene._scene;
-    var c = (s && s.getCamera) ? s.getCamera()
-            : (d[i].layout.scene || {}).camera;
-    o.push(c ? [c.eye.x, c.eye.y, c.eye.z] : null);
-  }
-  return JSON.stringify(o);
-})()"""
+#: How far two cameras may sit apart and still show the same face. Measured on
+#: a linked pair: a drag inside one room leaves them 0.0002-0.0009 apart, which
+#: is the relay's own rounding and invisible; the fault reported from the
+#: window left them 0.19 apart, which is a different face entirely.
+APART = 0.01
+
+#: How far apart two pictures may be and still count as pointing the same way,
+#: as a share of the pixels in one room.
+TOGETHER = 0.02
+
+def halves(shot: pathlib.Path):
+    """The two rooms of a photograph, as arrays."""
+    import numpy as np
+    from PIL import Image
+
+    im = Image.open(shot).convert("RGB")
+    wide, tall = im.size
+    return (np.asarray(im.crop((0, 0, wide // 2, tall)), float),
+            np.asarray(im.crop((wide // 2, 0, wide, tall)), float))
+
+
+def moved(before: pathlib.Path, after: pathlib.Path):
+    """How many pixels of each room changed, and whether the two agree."""
+    import numpy as np
+
+    lb, rb = halves(before)
+    la, ra = halves(after)
+    left = int((np.abs(la - lb).max(axis=2) > 12).sum())
+    right = int((np.abs(ra - rb).max(axis=2) > 12).sum())
+    return left, right
 
 
 def a_page(where: pathlib.Path) -> pathlib.Path:
@@ -73,24 +105,54 @@ def a_page(where: pathlib.Path) -> pathlib.Path:
     a[:, 0] = np.clip(a[:, 0] * 0.6 + 52, 5, 95)
     b = q * np.array([40, 34, 60])
     b[:, 0] = np.clip(b[:, 0] * 0.62 + 50, 3, 97)
-    figures = [("left", ti3gamut.build_figure([("left", build_gamut(a))], "")),
-               ("right", ti3gamut.build_figure([("right", build_gamut(b))], ""))]
+    # BUILT IN THE RIGHT SPACE. `build_gamut` reads its input as XYZ unless
+    # told; handing it Lab put this page's corners at L* -71,327 and made it a
+    # different scene from the one the window draws.
+    figures = [("left", ti3gamut.build_figure(
+                    [("left", build_gamut(a, input_space="lab"))], "")),
+               ("right", ti3gamut.build_figure(
+                    [("right", build_gamut(b, input_space="lab"))], ""))]
     out = where / "two-rooms.html"
     ti3gamut.write_side_by_side_html(figures, out, linked=True, controls=False)
     return out
 
 
-def drag(tab, path) -> tuple:
-    """Drag along *path* and hand back the cameras before and after."""
-    before = json.loads(tab.evaluate(CAMERAS))
+#: The two rooms hold different shapes, so "are they pointing the same way"
+#: cannot be asked of their pixels -- only of their cameras. That is the one
+#: question a camera reading answers honestly here: the relay writes it, so it
+#: is useless for "did anything turn" and exact for "do the two agree".
+EYES = """(function () {
+  var d = document.getElementsByClassName('plotly-graph-div'), o = [];
+  for (var i = 0; i < d.length; i++) {
+    var s = d[i]._fullLayout && d[i]._fullLayout.scene
+            && d[i]._fullLayout.scene._scene;
+    var c = (s && s.getCamera) ? s.getCamera()
+            : (d[i].layout.scene || {}).camera;
+    o.push(c ? [c.eye.x, c.eye.y, c.eye.z] : null);
+  }
+  return JSON.stringify(o);
+})()"""
+
+
+def drag(tab, path, shots: pathlib.Path, tag: str) -> tuple:
+    """Drag along *path*, photographing before and after."""
+    before = shots / f"{tag}-before.png"
+    after = shots / f"{tag}-after.png"
+    tab.screenshot(path=str(before))
     tab.mouse.move(path[0], 350)
     tab.mouse.down()
     for x in path[1:]:
         tab.mouse.move(x, 350)
-        tab.wait_for_timeout(120)
+        tab.wait_for_timeout(140)
     tab.mouse.up()
     tab.wait_for_timeout(1200)
-    return before, json.loads(tab.evaluate(CAMERAS))
+    tab.screenshot(path=str(after))
+    eyes = json.loads(tab.evaluate(EYES))
+    apart = (max(abs(x - y) for x, y in zip(eyes[0], eyes[1]))
+             if eyes[0] and eyes[1] else float("inf"))
+    together = apart < APART
+    left, right = moved(before, after)
+    return left, right, together, apart
 
 
 def main() -> int:
@@ -112,6 +174,8 @@ def main() -> int:
 
     problems = []
     with tempfile.TemporaryDirectory() as tmp:
+        shots = pathlib.Path(tmp) / "shots"
+        shots.mkdir()
         page = a_page(pathlib.Path(tmp))
         with sync_playwright() as play:
             browser = play.chromium.launch()
@@ -147,32 +211,28 @@ def main() -> int:
                         d[i].setPointerCapture = function () {
                           throw new Error('capture refused on purpose'); };
                     })()""")
-                before, after = drag(tab, path)
+                left, right, together, apart = drag(
+                    tab, path, shots, f"{name.replace(' ', '-')}")
                 tab.close()
-                moved = [any(abs(x - y) > TOGETHER for x, y in zip(c0, c1))
-                         for c0, c1 in zip(before, after)]
-                same = all(abs(x - y) < TOGETHER
-                           for x, y in zip(after[0], after[1]))
-                print(f"  {name:24s} left {'moved' if moved[0] else 'still':5s}"
-                      f"  right {'moved' if moved[1] else 'still':5s}"
-                      f"  in step: {'yes' if same else 'NO'}")
-                if not any(moved):
+                turned = [left >= TURNED, right >= TURNED]
+                print(f"  {name:24s} left {left:7d} px  right {right:7d} px"
+                      f"   {'both turned' if all(turned) else 'NEITHER TURNED' if not any(turned) else 'ONE ONLY'}"
+                      f"   {'in step' if together else 'OUT OF STEP'}"
+                      f" ({apart:.4f} apart)")
+                if not any(turned):
                     problems.append(
-                        f"{name}: neither room moved at all — the gesture "
-                        f"stops when it leaves the room it began in. KNOWN "
-                        f"AND OPEN: capturing the pointer cured the reported "
-                        f"fault (the rooms running away from each other) in "
-                        f"every direction, and left this one behind, where a "
-                        f"drag from the right across the seam now freezes "
-                        f"instead of diverging. Stopping is the milder fault "
-                        f"and matches what the shape does when you let go "
-                        f"over the walls, but it is not right yet")
-                elif not same:
+                        f"{name}: neither room turned at all — the drag did "
+                        f"nothing but pop a label ({left} and {right} pixels "
+                        f"changed, where a turn is tens of thousands)")
+                elif not all(turned):
                     problems.append(
-                        f"{name}: the two rooms finished pointing different "
-                        f"ways ({[round(v, 3) for v in after[0]]} against "
-                        f"{[round(v, 3) for v in after[1]]}) — the gesture was "
-                        f"taken over instead of staying where it began")
+                        f"{name}: only one room turned ({left} against "
+                        f"{right} pixels) — the other was left behind")
+                elif not together:
+                    problems.append(
+                        f"{name}: the two rooms turned by different amounts "
+                        f"({left} against {right} pixels), so they are no "
+                        f"longer showing the same face")
             browser.close()
 
     print()
