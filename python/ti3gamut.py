@@ -1946,12 +1946,44 @@ def recut_where_they_part(gamuts, lost=None):
     for i, (name, g) in enumerate(gamuts):
         mine = stands[i]
         marked = lost[i] if lost is not None and i < len(lost) else None
+        marked_after = None
         others = [s for j, s in enumerate(skins) if j != i and s is not None]
         same_question = marked is None or (
             len(marked) == len(mine) and np.array_equal(np.asarray(marked, bool),
                                                         mine))
         recut = None
-        if len(others) == len(gamuts) - 1 and others and same_question:
+        # THE MARKING GETS ITS OWN CUT WHEN IT ASKS ITS OWN QUESTION.
+        #
+        # "What can this paper no longer reach" is measured against ONE chosen
+        # shape; the fade is measured against ALL the others. With two shapes
+        # they are the same question and one cut serves both. With two papers
+        # AND a reference — reported from the window as "the coloured part
+        # should have a clearer line instead this zig zag" — they are not, and
+        # this used to give up and leave that shape its old mesh. Measured on
+        # his picture: 118 of the paper's 414 triangles have corners on both
+        # sides of the marking, and each must be painted wholly red or wholly
+        # grey. That staircase IS the zig-zag.
+        #
+        # Rather than guess a new corner's marking, the shape doing the
+        # judging is FOUND — it is one of the shapes on screen, and the mask
+        # is exactly `~contains` of one of them — and then the mesh is cut a
+        # second time along THAT boundary, with the same test that made the
+        # mask answering for every new corner. Exact, not interpolated.
+        judge = None
+        if marked is not None and not same_question:
+            want = np.asarray(marked, bool)
+            for j, skin in enumerate(skins):
+                if j == i or skin is None:
+                    continue
+                try:
+                    if np.array_equal(~skin.contains(np.asarray(g.vertices)),
+                                      want):
+                        judge = skin
+                        break
+                except Exception:      # noqa: BLE001 — a shape that cannot
+                    continue           # answer is simply not the judge
+        if len(others) == len(gamuts) - 1 and others and (same_question
+                                                          or judge is not None):
             try:
                 def outside_them_all(points, others=others):
                     beyond = np.zeros(len(points), bool)
@@ -1961,6 +1993,24 @@ def recut_where_they_part(gamuts, lost=None):
 
                 recut = split_at_crossing(g.vertices, g.faces, g.colors,
                                           mine, outside_them_all)
+                if judge is not None:
+                    # AND AGAIN ALONG THE MARKING'S OWN BOUNDARY. The first
+                    # cut follows where this shape parts from the others; the
+                    # marking parts from one shape somewhere else entirely,
+                    # and a corner on the first curve says nothing about the
+                    # second.
+                    v1, f1, c1, s1 = recut
+
+                    def out_of_reach(points, skin=judge):
+                        return ~skin.contains(points)
+
+                    v2, f2, c2, m2 = split_at_crossing(
+                        v1, f1, c1, out_of_reach(np.asarray(v1)),
+                        out_of_reach)
+                    # THE FADE'S ANSWER FOR THE NEW CORNERS, by the same test
+                    # that gave it to the old ones — never interpolated.
+                    recut = (v2, f2, c2, outside_them_all(np.asarray(v2)))
+                    marked_after = m2
             except Exception:          # noqa: BLE001 — a shape too small to
                 # enclose anything cannot be cut along its boundary either,
                 # and the picture is left exactly as it was.
@@ -1983,7 +2033,11 @@ def recut_where_they_part(gamuts, lost=None):
         # the per-triangle mask cannot disagree with the per-vertex one.
         out_faces.append(s2[f2[:, 0]] if len(f2) else np.zeros(0, bool))
         if out_lost is not None:
-            out_lost.append(None if marked is None else s2)
+            # WHERE THE MARKING WAS CUT ON ITS OWN, it carries its own answer
+            # rather than the fade's — they are different questions and the
+            # whole point of the second cut is that they can differ.
+            out_lost.append(None if marked is None
+                            else (marked_after if judge is not None else s2))
     return out_g, out_faces, out_stands, out_lost
 
 
