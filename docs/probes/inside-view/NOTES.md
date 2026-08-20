@@ -147,3 +147,46 @@ strictly REDUCES the per-frame sorted-triangle count (on page 14 it halved
 frame times, 108.3 → 49.9 ms). Basti's lag report did not reproduce in this
 harness; if it persists on his machine it is likely software rendering or
 window size, and wants measuring THERE rather than guessing here.
+
+## HIS LID, DRAWN AT LAST — 2026-08-20
+
+The verdict above says choosing between the four cures is a design decision.
+It has been parked on that for days, and the reason it could stay parked is
+that the only thing anybody had of Basti's idea was numbers: *0 triangles
+dropped between the two pieces, boundaries a median 2.4 Lab apart.* Numbers
+cannot answer "does this look right", which is the question actually being
+asked.
+
+`what_the_lid_would_look_like.py` draws it. Glossy-paper against sRGB, three
+cameras, three pictures each — as it ships, with the lid, and the lid on its
+own — in `the-lid/`.
+
+**His idea taken literally:** the opening was made by removing the part of the
+paper that agrees with sRGB, so what closes it is the piece of **sRGB's own
+shell that lies inside the paper**. The two share the crossing curve by
+construction. Of the paper's 650 re-cut triangles, 370 stand out and are what
+you see at agreement 0%; of sRGB's 4,998, the 1,273 inside the paper are the
+lid.
+
+**And it looks right.** From above, as it ships, the remainder is three pieces
+whose faceted insides read as torn skin — "shattered", verbatim, and the
+picture is unmistakable. With the lid each piece shows a smooth neutral cut
+face and reads as a solid object sliced open. The lid on its own is one
+coherent surface, no shards. This is what the notes above called "honest,
+reads like a cross-section".
+
+⚠ **It is a prototype and one number says so.** Of the lid's 1,149 corners,
+**322 — 28% — fail a strict containment test against the paper**, although the
+lid's extent lies inside the paper's on every axis (L\* 10.3–90.1 against
+3.9–93.8). The two pieces are classified separately rather than sharing the
+cut, which is exactly what the handover already names as the real fix: **one
+shared cut curve in the re-cut**, so the lid and the opening use the same
+corners instead of two answers to the same question. Shipping it as it stands
+would put a surface a little proud of its own shell.
+
+⚠ And the standing remainder keeps a few wedge-shaped slashes of its own that
+no lid covers — visible on the yellow/orange piece from the front. Those are
+in the paper's shell, not in the opening, and are a separate question.
+
+**Still Basti's to decide.** What this adds is that the decision can now be
+taken by looking rather than by trusting a measurement.
