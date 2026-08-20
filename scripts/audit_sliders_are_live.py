@@ -57,16 +57,36 @@ import prefs                                                 # noqa: E402
 
 prefs.use_a_scratch_store()
 
-ASK = """(function () {
+#: A DIGEST OF THE WHOLE PICTURE, not of one trace.
+#
+# Asking about the rings alone would answer for the rings slider and say
+# nothing about the six others -- the wrong pair, measured well. This reads
+# every trace in every room and records what any of these sliders could
+# change: how many points it has, how many triangles, how solid it is, and a
+# sample of its colours (the fades change colours and nothing else, so a
+# digest without them would call the fade sliders live when they are dead).
+LOOK = """(function () {
   var divs = document.getElementsByClassName('plotly-graph-div');
-  var out = {};
+  var out = [];
   for (var r = 0; r < divs.length; r++) {
     var el = divs[r];
     if (!el || !el.data) continue;
     for (var i = 0; i < el.data.length; i++) {
-      var n = String(el.data[i].name || '');
-      if (n.indexOf('(rings inside)') < 0) continue;
-      out[n] = (el.data[i].x || []).length;
+      var t = el.data[i], c = t.vertexcolor || (t.marker && t.marker.color);
+      var sample = '';
+      if (c && c.length) sample = String(c[0]) + '|' +
+          String(c[Math.floor(c.length / 2)]) + '|' + String(c.length);
+      // AND THE LIGHTING, because the shading slider changes NOTHING ELSE.
+      // Left out, this digest called that slider dead while it was working
+      // perfectly -- a false alarm from asking the wrong question, which is
+      // the same fault as a check that cannot see a real one.
+      var l = t.lighting || {};
+      var lit = [l.ambient, l.diffuse, l.specular, l.roughness,
+                 l.fresnel].join(',');
+      out.push([String(t.name || ''), t.type,
+                (t.x || []).length, (t.i || []).length,
+                t.opacity === undefined ? '' : String(t.opacity), sample,
+                lit]);
     }
   }
   return JSON.stringify(out);
@@ -101,8 +121,20 @@ def main() -> int:
     window._load(profiles[0])
     settle(4000)
 
-    # RINGS MUST BE ON, or there is no trace to change and the question this
-    # asks does not exist.
+    # THE TICKS THAT MAKE THESE SLIDERS MEAN ANYTHING MUST BE ON -- BUT NOT
+    # ALL AT ONCE.
+    #
+    # A slider whose tickbox is off changes nothing, correctly, and dragging
+    # it reports "not live" about a control that is not doing anything: a
+    # false alarm, which costs the same trust as a miss. Measured with the
+    # slice unticked, its slider moved nothing before OR after release.
+    #
+    # AND TICKING THEM ALL IS WORSE. "Slice it at one lightness" replaces the
+    # shapes with a flat cross-section, which has no surfaces, no rings and no
+    # shading -- so with it on, ALL SEVEN sliders were reported dead, including
+    # the two that had just been measured live. The lightness slider therefore
+    # gets its own picture, at the end, and the rest are asked in the picture
+    # they belong to.
     window._rings_on.setChecked(True)
     settle(3000)
 
@@ -114,81 +146,129 @@ def main() -> int:
             answer["v"] = value
             loop.quit()
 
-        window._view.page().runJavaScript(ASK, got)
+        window._view.page().runJavaScript(LOOK, got)
         QTimer.singleShot(4000, loop.quit)
         loop.exec()
-        return answer.get("v") or "{}"
+        return answer.get("v") or "[]"
 
     import json
 
-    before = json.loads(read())
-    if not before:
-        print("  the picture has no rings trace, so nothing can be measured "
-              "here.\n  (a shape must be open and 'Show rings inside' ticked)")
-        return 0
-    print(f"  before the drag: {before}")
+    # A COMPARISON MUST BE OPEN, or three of these sliders have nothing to act
+    # on and would be reported "live" for want of anything to change. His own
+    # screenshots all have one: this is the configuration the reports came
+    # from, not the default.
+    for i in range(window._compare.count()):
+        data = window._compare.itemData(i)
+        if data and data[0] == "space" and data[1] == "sRGB":
+            window._compare.setCurrentIndex(i)
+            break
+    settle(5000)
 
-    slider = window._rings
-    start = slider.value()
-    target = 20 if start < 14 else 6
+    #: Every slider in "How it looks", with a value to drag it to that is far
+    #: enough from the default to change the picture beyond doubt.
+    WHICH = [
+        ("Show rings inside", "_rings", 20),
+        ("Detail", "_detail", 40),
+        ("How solid the shapes are", "_opacity", 45),
+        ("Depth", "_depth", 90),
+        ("Where they agree", "_agree", 0),
+        ("Where they differ", "_differ", 0),
+        ("Slice it at one lightness", "_slice_at", 70),
+    ]
 
     if prove:
-        # THE MUTATION: put the OLD behaviour back -- valueChanged retitles the
-        # label and touches nothing else, which is exactly how this slider was
-        # wired when Basti reported it. If the check still says Clean with this
-        # in force, it is blind and its Clean means nothing.
+        # THE MUTATION: put the OLD wiring back on the one slider that has
+        # been fixed -- valueChanged retitles the label and touches nothing
+        # else, which is exactly how it was when Basti reported it. If this
+        # check still says Clean with that in force, it is blind.
         #
-        # AND THE MUTATION IS PROVEN TO LAND, because a mutation that silently
-        # fails to apply looks identical to a check passing: the label must
-        # still follow the handle (so the wiring was replaced, not destroyed)
-        # while the picture must not.
-        slider.valueChanged.disconnect()
-        slider.valueChanged.connect(
+        # PROVEN TO LAND, because a mutation that silently fails to apply
+        # looks identical to a check passing: after the drag the LABEL must
+        # have followed the handle while the picture did not.
+        window._rings.valueChanged.disconnect()
+        window._rings.valueChanged.connect(
             lambda v: window._rings_lbl.setText(str(v)))
-        print("  --prove: the live handler is disconnected; the label alone "
-              "follows the handle")
-
-    # A REAL DRAG: pressed, held down, moved -- never setValue on its own.
-    slider.setSliderDown(True)
-    slider.sliderPressed.emit()
-    slider.setValue(target)
-    settle(2500)
-    if prove and window._rings_lbl.text() != str(target):
-        print(f"  THE MUTATION DID NOT LAND — the label says "
-              f"{window._rings_lbl.text()!r}, not {str(target)!r}, so this "
-              f"run tested nothing.")
-        return 2
-    during = json.loads(read())
-    print(f"  while it is held at {target}: {during}")
-
-    slider.setSliderDown(False)
-    slider.sliderReleased.emit()
-    settle(3000)
-    after = json.loads(read())
-    print(f"  after letting go: {after}")
+        print("  --prove: the rings slider is back on its old wiring — the "
+              "label alone follows it\n")
 
     problems = []
-    moved = [k for k in before if during.get(k) != before.get(k)]
-    if not moved:
-        problems.append(
-            f"the picture did not change while the handle was down — the "
-            f"rings trace still has {before} points, so this slider is "
-            f"release-only")
-    for key in during:
-        if after.get(key) != during.get(key):
+    print(f"  {'slider':28s} {'during the drag':>16s} {'on release':>12s}")
+    print("  " + "-" * 60)
+
+    for label, attr, target in WHICH:
+        slider = getattr(window, attr, None)
+        if slider is None:
+            problems.append(f"{label}: no slider called {attr}")
+            continue
+        # THE CUT GETS ITS OWN PICTURE, for the reason written above: it
+        # replaces the shapes rather than changing them.
+        if attr == "_slice_at":
+            window._slice_on.setChecked(True)
+            settle(4000)
+        if slider.value() == target:
+            target = slider.minimum() if target != slider.minimum() \
+                else slider.maximum()
+
+        before = json.loads(read())
+        slider.setSliderDown(True)
+        slider.sliderPressed.emit()
+        slider.setValue(target)
+        settle(2500)
+        during = json.loads(read())
+        slider.setSliderDown(False)
+        slider.sliderReleased.emit()
+        settle(3500)
+        after = json.loads(read())
+
+        moved = during != before
+        undone = after != during
+        print(f"  {label:28s} {'yes' if moved else 'NO':>16s} "
+              f"{'kept' if not undone else 'rebuilt':>12s}")
+        # RELEASE-ONLY AND NOTHING-AT-ALL ARE DIFFERENT ANSWERS, and calling
+        # them both "not live" is how a check earns a reputation for crying
+        # wolf. If letting go changed the picture, the digest can plainly see
+        # this slider and the fault is real. If NOTHING changed at any point,
+        # the picture never answered -- the control may be inert in this
+        # state, or this digest may be blind to what it does, and either way
+        # that is a question rather than a finding.
+        if not moved and undone:
             problems.append(
-                f"letting go changed {key} from {during.get(key)} back to "
-                f"{after.get(key)} — the release is undoing the live change")
+                f"{label}: the picture did not change while the handle was "
+                f"down, and rebuilt when it was let go — release-only")
+        elif not moved:
+            problems.append(
+                f"{label}: the picture never changed, before or after the "
+                f"release. Either this control does nothing in the state it "
+                f"was asked in, or this check cannot see what it does — "
+                f"settle which before believing it")
 
     print()
+    if prove:
+        landed = window._rings_lbl.text() == str(
+            window._rings.value())
+        if not landed:
+            print(f"  THE MUTATION DID NOT LAND — the label says "
+                  f"{window._rings_lbl.text()!r} beside a slider at "
+                  f"{window._rings.value()}, so this run tested nothing.")
+            return 2
+        caught = any("Show rings inside" in p for p in problems)
+        print("  the mutation landed (the label followed the handle).")
+        if caught:
+            print("  The audit reported the rings slider as dead, as it must. "
+                  "It can see.")
+            return 0
+        print("  THE AUDIT DID NOT NOTICE a slider with its live handler "
+              "removed. It is blind.")
+        return 1
+
     if problems:
         for line in problems:
             print("  " + line)
         print(f"\n  {len(problems)} problem(s).")
         return 1
-    print("  Clean: the picture followed the handle while it was down, and "
-          "letting go\n  left it exactly where the drag had put it.")
+    print("  Clean: every slider moved the picture while its handle was down.")
     return 0
+
 
 
 if __name__ == "__main__":
