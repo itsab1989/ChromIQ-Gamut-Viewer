@@ -213,3 +213,52 @@ def test_a_figure_reads_per_shape_by_its_own_position():
     assert abs(meshes[0].opacity - 0.3) < 1e-6, (
         "handing a figure just one shape's settings no longer works, which is "
         "exactly how each room is given its own")
+
+
+def test_the_neutral_line_does_not_need_measured_greys():
+    """A shape with no measured greys still shows where neutral runs.
+
+    Asked from the window, of a profile: "i could understand why this can't
+    show the measured grey from just a profile - but is a neutral line
+    impossible as well here?" It is not. The line is a* 0, b* 0 by definition;
+    the measured greys were only ever borrowed for their lightness range, and
+    a shape that was never measured has a range of its own.
+
+    This is also the second half of a decoupling that was only half done: the
+    two ticks were separated in the window when Basti asked for them to be
+    independent, while the drawing still refused to make the line without the
+    greys.
+    """
+    import numpy as np
+
+    from gamutview import build_gamut
+
+    rng = np.random.default_rng(11)
+    q = rng.normal(size=(500, 3))
+    q /= np.linalg.norm(q, axis=1)[:, None]
+    lab = q * np.array([34, 44, 40])
+    lab[:, 0] = np.clip(lab[:, 0] * 0.6 + 50, 6, 94)
+    shape = build_gamut(lab)
+
+    fig = ti3gamut.build_figure([("a profile", shape)], "", styles=["solid"],
+                                neutrals=None, ideal_neutrals=True)
+    lines = [t for t in fig.data
+             if "perfectly neutral" in str(getattr(t, "name", ""))]
+    assert lines, (
+        "no neutral line was drawn for a shape without measured greys, so the "
+        "tick is dead again for every profile")
+
+    # AND IT KEEPS TO THE SHAPE'S OWN RANGE, which is the whole reason it is
+    # not simply drawn from 0 to 100: a line running past a printer's black
+    # and white invites the reading that it "failed" to reach them.
+    zs = [v for v in lines[0].z if v is not None]
+    lightness = np.asarray(shape.vertices)[:, 0]
+    assert min(zs) >= lightness.min() - 1 and max(zs) <= lightness.max() + 1, (
+        f"the neutral line runs {min(zs):.1f}–{max(zs):.1f} where the shape "
+        f"reaches {lightness.min():.1f}–{lightness.max():.1f}")
+
+    off = ti3gamut.build_figure([("a profile", shape)], "", styles=["solid"],
+                                neutrals=None, ideal_neutrals=False)
+    assert not [t for t in off.data
+                if "perfectly neutral" in str(getattr(t, "name", ""))], (
+        "a neutral line was drawn with its tick off")

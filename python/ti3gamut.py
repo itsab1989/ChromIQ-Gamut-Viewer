@@ -311,7 +311,7 @@ def ideal_neutral_axis(lab, steps: int = 48):
 
 
 def _ideal_neutral_trace(measurement, name: str, colour: str,
-                         space: str = "lab"):
+                         space: str = "lab", lab=None):
     """The perfectly neutral line, drawn as a reference rather than as data.
 
     Deliberately quiet — thin, dashed and unmarked — because it is not a
@@ -320,7 +320,16 @@ def _ideal_neutral_trace(measurement, name: str, colour: str,
     """
     import plotly.graph_objects as go
 
-    lab, _labels = neutral_axis(measurement)
+    # A SHAPE WITH NO MEASURED GREYS CAN STILL SHOW WHERE NEUTRAL RUNS.
+    #
+    # Reported from the window, of a profile: "i could understand why this
+    # can't show the measured grey from just a profile - but is a neutral line
+    # impossible as well here?" It is not. The measured greys are only ever
+    # borrowed for their LIGHTNESS RANGE -- the line itself is a* 0, b* 0 by
+    # definition -- and a shape that was never measured still has a range: its
+    # own. Passing `lab` hands that over directly.
+    if lab is None:
+        lab, _labels = neutral_axis(measurement)
     ideal = ideal_neutral_axis(lab)
     if not len(ideal):
         return []
@@ -8989,7 +8998,20 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         if rings_i:
             for trace in _rings(g, name, rings_i, c["wire"], key=c["mark"]):
                 fig.add_trace(trace)
-        if neutrals is not None and i < len(neutrals) and neutrals[i] is not None:
+        # THE PERFECTLY NEUTRAL LINE STANDS ON ITS OWN, and until now it did
+        # not. Basti asked for these two to be settled independently -- "i get
+        # your argument but i'd rather set them independently" -- and the
+        # WINDOW was decoupled while the drawing was not: the line was drawn
+        # only inside the test below, so a shape with no measured greys never
+        # got one however it was ticked. A profile has no greys to show and a
+        # perfectly good lightness range to draw the line over.
+        has_greys = (neutrals is not None and i < len(neutrals)
+                     and neutrals[i] is not None)
+        if ideal_neutrals and not has_greys:
+            for trace in _ideal_neutral_trace(None, name, "#9aa3b2",
+                                              _axes_space, lab=g.vertices):
+                fig.add_trace(trace)
+        if has_greys:
             if ideal_neutrals:
                 # THE REFERENCE GOES DOWN FIRST, so the measured greys are
                 # drawn over it rather than hidden behind it.

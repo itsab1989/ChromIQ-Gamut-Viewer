@@ -15612,8 +15612,11 @@ class GamutApp(QMainWindow):
             per_shape=self._per_shape_list(),
             neutrals=(self._neutral_list() if self._neutral.isChecked()
                       else None),
-            ideal_neutrals=(self._neutral.isChecked()
-                            and self._ideal_neutral.isChecked()),
+            # ITS OWN TICK, AND NOTHING ELSE'S. The window stopped tying
+            # these two together when Basti asked for them to be independent;
+            # this line kept tying them, so the control was independent in
+            # appearance and still could not act alone.
+            ideal_neutrals=self._ideal_neutral.isChecked(),
             chart=self._chart_cloud(),
             chart_look=self._chart_look(),
             drift=self._drift_for_figure(),
