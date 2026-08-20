@@ -72,7 +72,16 @@ LOOK = """(function () {
     var el = divs[r];
     if (!el || !el.data) continue;
     for (var i = 0; i < el.data.length; i++) {
-      var t = el.data[i], c = t.vertexcolor || (t.marker && t.marker.color);
+      // READ THE TRIANGLES FROM _fullData, NOT FROM data.
+      //
+      // The written page packs i/j/k binary, so `el.data[i].i.length` is
+      // undefined and a digest built on it cannot see a mesh gain or lose
+      // triangles at all. That is not a small blind spot: hiding "where they
+      // agree" changes ONLY the face list -- 1,328 triangles to 583, measured
+      // -- so this check called a working slider dead, twice, and the push it
+      // was accusing had already reported success.
+      var t = el.data[i], full = (el._fullData || [])[i] || t;
+      var c = t.vertexcolor || (t.marker && t.marker.color);
       var sample = '';
       if (c && c.length) sample = String(c[0]) + '|' +
           String(c[Math.floor(c.length / 2)]) + '|' + String(c.length);
@@ -83,8 +92,10 @@ LOOK = """(function () {
       var l = t.lighting || {};
       var lit = [l.ambient, l.diffuse, l.specular, l.roughness,
                  l.fresnel].join(',');
+      var faces = (full.i && full.i.length) ? full.i.length
+                : ((t.i && t.i.length) ? t.i.length : 0);
       out.push([String(t.name || ''), t.type,
-                (t.x || []).length, (t.i || []).length,
+                (t.x || []).length, faces,
                 t.opacity === undefined ? '' : String(t.opacity), sample,
                 lit]);
     }
@@ -157,12 +168,51 @@ def main() -> int:
     # on and would be reported "live" for want of anything to change. His own
     # screenshots all have one: this is the configuration the reports came
     # from, not the default.
+    # AND IT MUST ACTUALLY BE LOADED, not merely selected.
+    #
+    # The combo is connected to `activated`, which only a real click emits --
+    # `setCurrentIndex` changes what the box SAYS and loads nothing. Measured
+    # the hard way: with the box reading "sRGB" the window still had
+    # `_reference = None` and one shape on screen, so three of these sliders
+    # were being asked in a picture they cannot act on, and this check called
+    # two of them live on that evidence. The handler is called here for the
+    # same reason the window calls it.
     for i in range(window._compare.count()):
         data = window._compare.itemData(i)
         if data and data[0] == "space" and data[1] == "sRGB":
             window._compare.setCurrentIndex(i)
+            window._on_compare_changed()
             break
-    settle(5000)
+    settle(6000)
+    if window._reference is None:
+        print("  no comparison could be loaded, so the fades and the detail "
+              "have nothing\n  to act on — this run would prove nothing about "
+              "them.")
+        return 2
+    names = [n for n, _g in getattr(window, "_scene_inputs", ([],))[0]]
+    print(f"  the picture holds: {', '.join(names) or '(nothing)'}")
+
+    # HOW MUCH OF THIS SHAPE AGREES WITH THE OTHER, because the two fade
+    # sliders can only act on what exists. If nothing agrees, "where they
+    # agree" has nothing to hide and changing it is CORRECTLY a no-op -- and
+    # a check that calls that "not live" is accusing the window of a fault in
+    # the data. The share is printed so the reader can tell the two apart.
+    agreeing = None
+    try:
+        import ti3gamut as _t
+        pairs = getattr(window, "_scene_inputs", ([],))[0]
+        if len(pairs) > 1:
+            stands = _t.disagreeing_vertices(pairs, _t.surfaces_of(pairs))
+            agreeing = 100.0 * (1.0 - float(stands[0].mean()))
+    except Exception:                                      # noqa: BLE001
+        agreeing = None
+    if agreeing is not None:
+        print(f"  of {names[0]}'s surface, {agreeing:.1f}% lies inside "
+              f"{names[-1]}")
+        if agreeing < 0.5:
+            print("  → almost nothing agrees, so 'where they agree' has "
+                  "nothing to hide here")
+    print()
 
     #: Every slider in "How it looks", with a value to drag it to that is far
     #: enough from the default to change the picture beyond doubt.
