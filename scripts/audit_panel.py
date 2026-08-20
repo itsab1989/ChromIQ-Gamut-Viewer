@@ -76,9 +76,9 @@ ASKED = list(sys.argv[1:])
 sys.argv = ["audit_panel"]
 
 from PyQt6.QtCore import QSettings, Qt                      # noqa: E402
-from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox,  # noqa: E402
-                             QGroupBox, QLabel, QPushButton,
-                             QRadioButton, QScrollArea, QSlider,
+from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCheckBox,  # noqa: E402
+                             QComboBox, QGridLayout, QGroupBox, QLabel,
+                             QPushButton, QRadioButton, QScrollArea, QSlider,
                              QSpinBox, QWidget)
 
 #: Widths to check. The narrowest is the column's own minimum — what somebody
@@ -336,36 +336,60 @@ def audit_once(window, panel, label: str) -> list:
                 f"under {group.title()!r} has its own caption and no "
                 f"explanation on its row")
 
-        # THE OTHER DIRECTION IS STILL NOT ASKED, and this is the honest
-        # record of three attempts that failed rather than a promise.
+        # AND THE OTHER DIRECTION: AN ⓘ WITH NOTHING BESIDE IT.
         #
-        # This file's summary says question 3 is "DOES EVERY ⓘ SIT BESIDE
-        # SOMETHING? An icon on a row of its own explains nothing". The rule
-        # above is its converse -- a control with no ⓘ -- and nothing here
-        # checks the stranded icon. One was reported from the window, under
-        # "Both rooms point the same way", hours after this printed Clean.
+        # Reported from the window, under "Both rooms point the same way",
+        # hours after this file printed Clean.
         #
-        # Tried and taken back out, each proved useless by putting the fault
-        # back on purpose:
+        # FOUR ATTEMPTS AT THIS MEASURED PIXELS AND ALL FOUR FAILED. The
+        # record is worth keeping because every one of them looked reasonable:
         #
         #   "is there a control on this icon's row"    60 false alarms in six
-        #       states -- this panel puts an ⓘ beside a wrapped paragraph
+        #       states -- this panel puts an ⓘ under a wrapped paragraph
         #       everywhere, and none of those has a control on its row;
         #   "...or any label whose row overlaps"       no false alarms and no
         #       detections: with the fault restored it still said Clean;
-        #   "is the icon at the left margin"           measured first (every
-        #       one of 44 visible icons sits at 89-90% across its group, the
-        #       stranded one at 10%), and it STILL said Clean with the fault
-        #       restored.
+        #   "is the icon at the left margin"           every one of 44 visible
+        #       icons sits 89-90% across its group and the stranded one at
+        #       10% -- measured by hand, and the rule STILL said Clean with
+        #       the fault restored;
+        #   walking the layouts from `window.layout()`  0 stranded out of 83
+        #       icons, with the fault in place -- because that walk never
+        #       reaches the control column at all. It is inside a scroll area.
+        #       A rule built on it measures an EMPTY SET and reports Clean
+        #       about nothing, which is the same trap as a fixture that
+        #       yields nothing.
         #
-        # The third result is the interesting one and is where the next
-        # attempt should start: it means that by the time this audit measures,
-        # the icon is NOT at the left margin -- something re-attaches it after
-        # the window is built (_attach_in_layout runs during construction, and
-        # the folds and ticks this audit turns on rebuild rows). So the fault
-        # is real on screen and absent by the time it is measured, which no
-        # rule about position can bridge. What is needed is a measurement
-        # taken in the state the reader has, not in the state the audit makes.
+        # So this one has no pixels in it and starts from each icon rather
+        # than from the window. Every ⓘ is added to a vertical stack and then
+        # MOVED by `_attach_in_layout` into a row with the control above it,
+        # or is put in a row by hand and marked `placed_by_hand`. An icon
+        # still sitting alone on a row of a vertical stack when the window is
+        # finished is one that neither pass reached -- which is exactly what
+        # happened here, because that checkbox lives inside a container widget
+        # and the attaching pass walks layouts and never descends into a
+        # widget's own.
+        #
+        # A GRID IS LEFT ALONE for the same reason `_attach_in_layout` leaves
+        # it alone: there each ⓘ is already in its own column beside its own
+        # control, on purpose.
+        for hint in panel.findChildren(gamut_app.Hint):
+            if hint.isHidden():
+                continue
+            row = _holding_layout(hint)
+            if row is None:
+                problems.append(
+                    f"[{label}] LOST ⓘ  {hint.objectName() or 'an ⓘ'} is not "
+                    f"in any layout its parent owns, so nothing decides where "
+                    f"it sits")
+            elif _is_a_column(row):
+                problems.append(
+                    f"[{label}] STRANDED ⓘ  {hint.objectName() or 'an ⓘ'} "
+                    f"sits alone on a row of a column, under the control it "
+                    f"explains instead of beside it — `_attach_in_layout` "
+                    f"never reached it (a control inside a container widget "
+                    f"is invisible to it), and it is not marked "
+                    f"`placed_by_hand`")
     return problems
 
 
@@ -375,6 +399,83 @@ def audit_once(window, panel, label: str) -> list:
 #: with its asterisks.
 import re as _re
 _MARKDOWN = _re.compile(r"\*\*|__[A-Za-z]|\[[^\]]+\]\(")
+
+
+def _holding_layout(hint):
+    """The layout that directly holds *hint*, found from its own parent.
+
+    NOT BY WALKING FROM THE WINDOW, and that distinction is the whole reason
+    the fourth attempt at this failed: a walk from `window.layout()` never
+    reaches the control column, which lives inside a scroll area, so it finds
+    no icons at all and calls that Clean.
+    """
+    parent = hint.parentWidget()
+    if parent is None or parent.layout() is None:
+        return None
+    seen = set()
+
+    def search(layout):
+        if layout is None or id(layout) in seen:
+            return None
+        seen.add(id(layout))
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item is None:
+                continue
+            if item.layout() is not None:
+                got = search(item.layout())
+                if got is not None:
+                    return got
+                continue
+            if item.widget() is hint:
+                return layout
+        return None
+
+    return search(parent.layout())
+
+
+def _is_a_column(layout) -> bool:
+    """A stack of rows, where a widget on its own IS a row of its own."""
+    if isinstance(layout, QGridLayout):
+        return False
+    return (isinstance(layout, QBoxLayout)
+            and layout.direction() in (QBoxLayout.Direction.TopToBottom,
+                                       QBoxLayout.Direction.BottomToTop))
+
+
+def strand_an_icon(panel) -> str:
+    """Put the reported fault back, in the window that is already built.
+
+    Takes the two-rooms icon out of the row it shares with its checkbox and
+    drops it back into the column underneath — which is precisely where
+    `_attach_in_layout` left it before it was placed by hand. Returns the name
+    of the icon it moved, or "" if it could not move one, so a mutation that
+    matches nothing says so instead of passing.
+    """
+    import gamut_app
+
+    hint = panel.findChild(gamut_app.Hint, "hint_link_hint")
+    if hint is None:
+        return ""
+    row = _holding_layout(hint)
+    if row is None or _is_a_column(row):
+        return ""
+    column = hint.parentWidget().layout()
+    if not _is_a_column(column):
+        return ""
+    row.removeWidget(hint)
+    column.addWidget(hint)
+    hint.setProperty("placed_by_hand", False)
+    # TAKING A WIDGET OUT OF A LAYOUT HIDES IT, and a hidden icon is skipped
+    # by the rule -- correctly, because an explanation for something not on
+    # screen is not stranded, it is absent. Left like that the mutation
+    # sabotages itself: the fault is in place and invisible to the very check
+    # it is meant to provoke.
+    hint.setVisible(True)
+    after = _holding_layout(hint)
+    if after is None or not _is_a_column(after) or hint.isHidden():
+        return ""
+    return hint.objectName()
 
 
 def audit_help(window, panel) -> list:
@@ -559,6 +660,7 @@ def _ancestor(widget, kind):
 
 def main() -> int:
     shots = "--shots" in ASKED
+    prove = "--prove" in ASKED
     # THE WINDOW IN A FONT IT WAS NOT DRAWN IN.
     #
     # gamut_app styles the whole window `font-family: "Inter"`, and the
@@ -774,6 +876,37 @@ def main() -> int:
                     str(out / f"panel-{appearance}-{width}-revealed.png"))
 
     print()
+    if prove:
+        # THE MUTATION, DONE TO THE WINDOW THAT IS ALREADY BUILT rather than
+        # to the source: the icon is taken out of the row it shares with its
+        # checkbox and dropped back into the column underneath, which is
+        # exactly where the attaching pass left it before it was placed by
+        # hand.
+        # THE OPTION HAS TO BE ON, or its icon is hidden and the rule skips
+        # it -- correctly, because an explanation for something not on screen
+        # is not stranded, it is absent. The state the loops above happen to
+        # finish in is not something to rely on.
+        if getattr(window, "_side_by_side", None) is not None:
+            window._side_by_side.setChecked(True)
+            pump(app, 1.5)
+        stranded = strand_an_icon(panel)
+        if not stranded:
+            print("  THE MUTATION DID NOT LAND — no icon could be taken off "
+                  "its row, so this\n  run tested nothing. Look at whether "
+                  "hint_link_hint still shares a row\n  with its checkbox "
+                  "before believing any Clean report from this check.")
+            return 2
+        pump(app, 1.0)
+        caught = [p for p in audit_once(window, panel, "stranded on purpose")
+                  if "STRANDED" in p]
+        if caught:
+            print(f"  --prove: {stranded} was taken off its row, and the "
+                  f"audit named it:\n    {caught[0]}\n  The check can see.")
+            return 0
+        print(f"  --prove: {stranded} was taken off its row and the audit "
+              f"still said nothing.\n  This check is blind.")
+        return 1
+
     if problems:
         for line in problems:
             print("  " + line)
