@@ -1,5 +1,50 @@
 # Changelog
 
+## v2.46.0
+
+### ✂️ What a paper cannot print now has a clean edge, in every picture
+
+With one paper against a comparison the boundary was already a clean cut.
+With **two papers and a comparison** — two papers open, sRGB to compare
+against, each paper showing what it cannot print — it still ran in stair-steps
+along the triangle edges.
+
+The cut had refused that case. "What can this paper no longer reach" is
+measured against **one** chosen shape, while the fade is measured against
+**all** the others, and where those two questions differ the shape was left
+with its old mesh. It now finds the shape doing the judging and cuts a second
+time along that boundary, with the same test answering for every new corner:
+
+| picture | triangles with corners on both sides |
+|---|---|
+| one paper against sRGB | 118 of 414 → **0 of 650** |
+| two papers and sRGB | 118 of 414, unchanged → **0 of 650** |
+
+Nothing about the shape moves — the volume is unchanged to a part in a
+thousand million million — and not one corner that already existed changed its
+answer.
+
+### 🪟 One above the other keeps both rooms on screen
+
+The arrangement added in v2.45.0 asked for two thirds of the window **each**,
+so the second room sat below the fold. They share the height now: at
+1100×950 the two rooms sit at 21–333 and 354–666 of an 833-pixel view, with
+nothing to scroll to.
+
+### 🪨 "Wrap it in a simple skin" no longer looks scattered
+
+It was the light, not the shape. A simple skin is a hull over unevenly spread
+measured points, and **151 of its 414 triangles are needles** — the longest
+edge more than eight times its own width, the worst 714 times — against 40 of
+978 for "Follow the real edge". Smooth shading averages the light across every
+facet meeting at a corner, and across a needle that average is smeared into a
+streak.
+
+The simple skin is lit facet by facet now and comes out clean. Following the
+real edge stays smooth, because a surface that really is curved should not be
+drawn with corners the measurement does not have.
+
+
 ## v2.45.1
 
 ### 💍 "Show rings inside" now draws them when you tick it
