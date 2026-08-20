@@ -452,3 +452,84 @@ def test_a_picture_emptied_by_the_fade_says_so():
 # What remains true and is only untidiness: `_why_not_in_this_space` carries a
 # white-point excuse for ink amounts that is unreachable, because the space can
 # do it. Left alone rather than "tidied" on the strength of the same mistake.
+
+
+def test_a_flat_colour_is_never_handed_over_letter_by_letter():
+    """One colour for a whole surface is not a list of colours.
+
+    `surfaces_for_restyle` hands each surface's colours to a picture already
+    on screen. A shape painted ONE flat colour carries that colour as a
+    string, and Python is perfectly happy to walk a string a character at a
+    time: the surface would have been sent the seven letters of "#1a2b3c" and
+    drawn the colour of "#". Nothing raises, nothing warns, and the shape
+    simply comes out wrong.
+    """
+    class _Trace:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+    class _Figure:
+        def __init__(self, data):
+            self.data = data
+
+    flat = _Trace(type="mesh3d", name="one flat colour",
+                  vertexcolor="#1a2b3c", i=[0], j=[1], k=[2])
+    listed = _Trace(type="mesh3d", name="a colour per corner",
+                    vertexcolor=["rgb(1,2,3)", "rgb(4,5,6)", "rgb(7,8,9)"],
+                    i=[0], j=[1], k=[2])
+    got = ti3gamut.surfaces_for_restyle(_Figure([flat, listed]))
+
+    assert "one flat colour" not in got, (
+        "a surface painted one flat colour was handed over as a list of "
+        "colours; on screen it would have been drawn the colour of its "
+        "first character")
+    assert "a colour per corner" in got, (
+        "a surface with a colour per corner was skipped, so the push that "
+        "should have faded it would have done nothing")
+    assert got["a colour per corner"]["c"] == [
+        "rgb(1,2,3)", "rgb(4,5,6)", "rgb(7,8,9)"]
+
+
+def test_the_triangles_travel_with_the_colours():
+    """A fade at its ends changes geometry, and the push must carry it.
+
+    At either end the faces that would be invisible are dropped so that what
+    is left can go back on the opaque path -- see `_solid_remainder`. A push
+    that sent colours alone would leave the reader a see-through shell where
+    a rebuild gives them a solid one, and the difference only shows up in a
+    picture, never in a signal.
+    """
+    # TWO SHAPES THAT GENUINELY CROSS. One inside the other agrees everywhere
+    # and there is nothing for a fade to drop, so the rule would pass on a
+    # picture that could not have shown the fault.
+    #
+    # AND AT FULL STRENGTH, which is the half that had to be measured rather
+    # than assumed. `_solid_remainder` refuses the job for a shape that is not
+    # fully solid, so the first version of this rule -- written at the opacity
+    # two shapes are drawn at by default -- had IDENTICAL face counts at every
+    # fade and proved nothing whatever about the triangles. A fixture that
+    # cannot show the fault is not a passing test.
+    pair = [("one", _blob((30, 44, 38), seed=4)),
+            ("the other", _blob((36, 38, 46), seed=9))]
+    counts = {}
+    for fade in ({}, {"agree": 0.0}, {"differ": 0.0}):
+        fig = ti3gamut.build_figure(pair, "", split=True, opacity=1.0,
+                                    styles=["solid", "solid"], **fade)
+        got = ti3gamut.surfaces_for_restyle(fig)
+        assert got, f"nothing at all was handed over at {fade or 'full'}"
+        for name, part in got.items():
+            drawn = next(t for t in fig.data
+                         if t.type == "mesh3d" and t.name == name)
+            assert len(part["i"]) == len(drawn.i), (
+                f"{name} at {fade or 'full'}: {len(part['i'])} triangles were "
+                f"handed over where the figure draws {len(drawn.i)} — the "
+                f"picture on screen would keep the old surface")
+            assert len(part["c"]) == len(drawn.vertexcolor)
+        counts[str(fade)] = {n: len(p["i"]) for n, p in got.items()}
+
+    assert counts["{}"] != counts["{'agree': 0.0}"], (
+        f"the fixture never dropped a triangle, so this rule proved nothing "
+        f"about geometry: {counts}")
+    assert counts["{}"] != counts["{'differ': 0.0}"], (
+        f"the fixture never dropped a triangle at the other end either: "
+        f"{counts}")

@@ -1698,6 +1698,48 @@ def _solid_remainder(colours, alphas, faces, opacity):
     return _with_alpha(colours, al), faces
 
 
+def surfaces_for_restyle(figure):
+    """Every drawn surface of *figure*, as a picture already on screen wants it.
+
+    Keyed by the trace's own name, because a trace is found by name and never
+    by position: matching by position once faded the wrong shape.
+
+    WHY THIS LIVES HERE AND NOT IN THE WINDOW. The window pushes a fade into
+    the scene it is already showing rather than writing six megabytes of page
+    and loading it again, and what it pushes has to be what a rebuilt page
+    would have held -- otherwise the live picture and the saved one drift
+    apart, which is this project's oldest recurring fault. Taking both from
+    `build_figure`'s own output is the only arrangement in which they cannot:
+    there is no second implementation to go stale. The check that proves it,
+    in pixels, is `scripts/audit_the_live_fade_is_the_real_thing.py`.
+
+    THE TRIANGLES TRAVEL, not only the colours. At either end of a fade the
+    faces that would be invisible are dropped, so that what is left can go
+    back on the opaque path -- see `_solid_remainder` -- and a push that sent
+    colours alone would leave the reader a see-through shell where a rebuild
+    gives them a solid one.
+    """
+    out = {}
+    for trace in figure.data:
+        if getattr(trace, "type", None) != "mesh3d":
+            continue
+        colours = getattr(trace, "vertexcolor", None)
+        # A SINGLE COLOUR IS NOT A LIST OF THEM, and Python is happy to walk
+        # a string one character at a time. A shape painted one flat colour
+        # would have been handed over as its seven letters, and the surface
+        # would have come out the colour of "#".
+        if colours is None or isinstance(colours, str) or not len(colours):
+            continue
+        name = str(getattr(trace, "name", "") or "")
+        if not name or trace.i is None:
+            continue
+        out[name] = {"c": [str(c) for c in colours],
+                     "i": [int(v) for v in trace.i],
+                     "j": [int(v) for v in trace.j],
+                     "k": [int(v) for v in trace.k]}
+    return out
+
+
 def surfaces_of(gamuts):
     """One reusable containment test per shape, built once.
 

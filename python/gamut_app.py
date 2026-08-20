@@ -8479,9 +8479,8 @@ class GamutApp(QMainWindow):
         self._agree = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._agree.setRange(0, 100)
         self._agree.setValue(100)
-        self._agree.valueChanged.connect(
-            lambda v: self._agree_lbl.setText(self._fade_words(v)))
-        self._agree.sliderReleased.connect(self._redraw)
+        self._agree.valueChanged.connect(self._on_agree_changed)
+        self._agree.sliderReleased.connect(self._after_fade)
         agrow.addWidget(self._agree, 1)
         self._agree_lbl = QLabel("all of it", g_look)
         self._agree_lbl.setFixedWidth(52)
@@ -8532,9 +8531,8 @@ class GamutApp(QMainWindow):
         self._differ = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._differ.setRange(0, 100)
         self._differ.setValue(100)
-        self._differ.valueChanged.connect(
-            lambda v: self._differ_lbl.setText(self._fade_words(v)))
-        self._differ.sliderReleased.connect(self._redraw)
+        self._differ.valueChanged.connect(self._on_differ_changed)
+        self._differ.sliderReleased.connect(self._after_fade)
         dfrow.addWidget(self._differ, 1)
         self._differ_lbl = QLabel("all of it", g_look)
         self._differ_lbl.setFixedWidth(52)
@@ -14872,6 +14870,123 @@ class GamutApp(QMainWindow):
                                              list(line.z)]
         return out
 
+    def _on_agree_changed(self, value: int) -> None:
+        self._agree_lbl.setText(self._fade_words(value))
+        self._push_fade()
+
+    def _on_differ_changed(self, value: int) -> None:
+        self._differ_lbl.setText(self._fade_words(value))
+        self._push_fade()
+
+    def _surfaces_for_live(self) -> dict:
+        """The shapes' surfaces as they would be drawn at this fade.
+
+        Keyed by the trace's own name, because a trace is found by name and
+        never by position -- the reasoning is written out in
+        ``_which_meshes_js``, where matching by position faded the wrong
+        shape.
+
+        THE FIGURE IS BUILT AGAIN, AND THAT IS THE POINT. The colours and the
+        triangles handed over here are the ones `build_figure` would write
+        into a rebuilt page, so the live picture and the page cannot come
+        apart -- there is no second implementation of the fade to drift. What
+        the rebuild costs is not the figure at all: it is writing six
+        megabytes of page and loading it. Measured on the two demo papers,
+        the figure alone is **16-19 ms** at every fade, warm.
+        """
+        stashed = getattr(self, "_scene_inputs", None)
+        if not stashed:
+            return {}
+        gamuts, clouds, styles, lost = stashed
+        # NOTHING TO AGREE WITH. One shape carries no mask, so there is no
+        # fade to push and the caller must fall back to the rebuild.
+        if len(gamuts) < 2:
+            return {}
+        from ti3gamut import build_figure, surfaces_for_restyle
+
+        try:
+            figure = build_figure(gamuts, self._scene_title(), split=True,
+                                  patches=clouds, styles=styles, lost=lost,
+                                  **self._render_options())
+        except Exception:                  # noqa: BLE001 — never on a drag
+            return {}
+        return surfaces_for_restyle(figure)
+
+    def _push_fade(self) -> None:
+        """Fade the picture that is already on screen, as the handle moves.
+
+        Reported of two sliders and then of the lot of them: "should be live",
+        "btw all sliders should work this way". These two were the last that
+        were not, and the reason on file was that a fade changes a shape's
+        TRIANGLES -- at either end the invisible ones are dropped so what is
+        left can be drawn genuinely solid -- and that a written page would not
+        let its triangle list be replaced.
+
+        THAT NOTE WAS WRONG, and how it came to be wrong is worth keeping. It
+        was taken by reading `el.data[i].i`, which a page stores packed binary
+        (`{dtype, bdata}`): no length, no elements, so every reading off it is
+        a constant and "nothing changed" is the only answer such a reading can
+        give. The same mistake has now produced four false verdicts in this
+        project. The decoded lists are in `_fullData`, and a saved page has
+        been replacing them from its own buttons all along -- which was
+        measured in PIXELS before a line of this was written: a page faded by
+        its buttons and a page WRITTEN by Python at that fade come out
+        identical, 0 of 1,008,000 pixels different at 5% and at 40% on both
+        sliders, while a pair that ought to differ differs by 36,419.
+
+        ``_fade_live`` records whether the picture could take it, so letting
+        go rebuilds only when the push did not land -- the same "the page says
+        whether it managed, and a no falls through to the redraw that always
+        worked" the rings and the grid tick use. It cannot land on two rooms,
+        where each room holds one shape and there is nothing to agree with.
+        """
+        self._fade_live = False
+        view = getattr(self, "_view", None)
+        page = view.page() if view is not None else None
+        if page is None:
+            return
+        if not (self._slots or getattr(self, "_run_drawn", False)):
+            return
+        wanted = self._surfaces_for_live()
+        if not wanted:
+            return
+
+        def answered(ok):
+            self._fade_live = bool(ok)
+
+        page.runJavaScript(self._in_every_room(
+            f"var want={json.dumps(wanted)};"
+            "for(var i=0;i<el.data.length;i++){"
+            "var n=String(el.data[i].name||'');"
+            "if(!Object.prototype.hasOwnProperty.call(want,n))continue;"
+            "var w=want[n];"
+            "Plotly.restyle(el,{vertexcolor:[w.c],i:[w.i],j:[w.j],k:[w.k]},"
+            "[i]);did++;}"), answered)
+
+    def _after_fade(self) -> None:
+        """Let go of a fade: rebuild only when the words have to change.
+
+        The picture itself is already right -- it was faded live on every step
+        -- so a rebuild here would be a second of black for nothing. There is
+        one thing the push cannot do, and it is not the drawing: the caption
+        names any shape the fade has taken away entirely ("it agrees with the
+        others everywhere, so nothing of it stands out"), and that sentence is
+        written by Python when the page is built.
+
+        A SHAPE CAN ONLY GO DARK AT AN END OF A SLIDER. Its corners are lit at
+        `agree` where it shares them and at `differ` where it stands out, so
+        every corner is unlit only if one of those is exactly nothing. That
+        makes the test exact rather than a guess: rebuild when either slider
+        is at the bottom now, or was at the bottom when the picture was drawn
+        and has since come off it. Anywhere else the caption a rebuild would
+        write is the caption already on screen.
+        """
+        now = (self._agree.value(), self._differ.value())
+        drawn = getattr(self, "_fade_drawn", (100, 100))
+        if getattr(self, "_fade_live", False) and 0 not in now + drawn:
+            return
+        self._redraw()
+
     def _on_opacity_changed(self, value: int) -> None:
         """Change how solid the shapes look, live, as the slider moves.
 
@@ -15306,6 +15421,11 @@ class GamutApp(QMainWindow):
         *controls* is the reader's strip along the bottom: off for this
         window's own view, on for a page somebody is sent.
         """
+        # THE FADE THE PICTURE ON SCREEN WAS BUILT WITH, recorded here because
+        # this is the one place all four arrangements go through. `_after_fade`
+        # compares against it to decide whether letting go of a fade needs a
+        # rebuild at all; see the reasoning there.
+        self._fade_drawn = (self._agree.value(), self._differ.value())
         if self._slice_on.isChecked():
             # A CROSS-SECTION IS DRAWN FLAT, LOOKING DOWN. There is no camera,
             # so no movement settings travel with it and the strip leaves out
@@ -15344,32 +15464,29 @@ class GamutApp(QMainWindow):
                                   notes=notes, colours=colours)
         else:
             # WHAT THIS SCENE WAS DRAWN FROM.
-            #
-            # Kept for a live push that is NOT built yet, and the reason it is
-            # not is worth leaving here: a slider that changes a shape's
-            # GEOMETRY cannot yet update the picture in place, because a
-            # written page carries a mesh's triangle list binary
-            # (el.data[i].i is {dtype, bdata, _inputArray}) and neither
-            # Plotly.restyle nor assigning the arrays and calling
-            # Plotly.redraw replaced them. Measured with the agreement hidden:
-            # the figure said 583 triangles, the page stayed at 978, and the
-            # push still reported success. Anything that trusts that answer
-            # leaves the wrong picture standing.
-            #
-            # Colours, solidity, shading and the rings ARE pushed in place --
-            # see _on_rings_changed -- because none of them touches the face
-            # list. What is missing is a way to replace it; until there is
-            # one, the fades and the detail rebuild on release, which is
-            # slower and correct.
             self._scene_inputs = (list(gamuts), clouds, styles, lost)
             write_html(gamuts, out, self._scene_title(),
-                       # SPLIT WHETHER OR NOT IT IS FADED RIGHT NOW. The
-                       # reader gets a slider for the agreement, and a trace
-                       # that was never written into the page cannot be faded
-                       # by anybody -- so the two halves travel whenever the
-                       # control is being handed over, even at full strength
-                       # where the picture is identical either way.
-                       split=bool(controls and len(gamuts) > 1
+                       # SPLIT WHETHER OR NOT IT IS FADED RIGHT NOW, AND FOR
+                       # THIS WINDOW AS WELL AS FOR A PAGE SOMEBODY IS SENT.
+                       #
+                       # A trace that was never written cannot be faded by
+                       # anybody, so the mask travels whenever the control is
+                       # being handed over -- and this window hands it over
+                       # too, on two sliders of its own. It used to rebuild
+                       # the entire page when one of them was let go, which
+                       # is a second of black for a change the saved page had
+                       # been making live all along; now the same mask lets
+                       # the window push the fade into the picture on screen.
+                       # See `_push_fade`, and `window.cqFade` in ti3gamut.
+                       #
+                       # AT FULL STRENGTH IT COSTS NOTHING VISIBLE, which had
+                       # to be measured rather than assumed, because carrying
+                       # the mask also forces the shapes to be re-cut along
+                       # their crossing and that changes the triangle count.
+                       # Two real papers, one fixed camera, the picture with
+                       # the mask against the picture without: **0 of
+                       # 1,008,000 pixels different**, worst channel 0.
+                       split=bool(len(gamuts) > 1
                                   and (offer is None
                                        or offer.get("agree", True))),
                        spin=self._spin_options(glide),

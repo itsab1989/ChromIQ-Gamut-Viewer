@@ -184,6 +184,31 @@ def main() -> int:
         loop.exec()
         return answer.get("v") or "[]"
 
+    def steady(tries=10):
+        """Read once the page has stopped changing under us.
+
+        A REBUILD IS NOT INSTANT, and this is the difference between a
+        finding and an artefact. Letting go of a slider that rebuilds writes
+        a six-megabyte page and loads it; asked at a fixed 3.5 seconds, the
+        digest caught a scene that was still coming up and reported a shape
+        with **nought triangles and a single colour** where the finished page
+        has 566 and 827. That reads exactly like "the rebuild disagrees with
+        the live push", and it was the reading that disagreed -- proved by
+        building the same figure in Python, which answers 566 either way.
+
+        So the picture is read until two readings in a row match. That is the
+        only way "letting go did not undo it" can be measured at all, and
+        that is one of the three things this check exists to prove.
+        """
+        last = read()
+        for _ in range(tries):
+            settle(1500)
+            now = read()
+            if now == last:
+                return now
+            last = now
+        return last
+
     import json
 
     # A COMPARISON MUST BE OPEN, or three of these sliders have nothing to act
@@ -295,16 +320,16 @@ def main() -> int:
             target = slider.minimum() if target != slider.minimum() \
                 else slider.maximum()
 
-        before = json.loads(read())
+        before = json.loads(steady())
         slider.setSliderDown(True)
         slider.sliderPressed.emit()
         slider.setValue(target)
         settle(2500)
-        during = json.loads(read())
+        during = json.loads(steady())
         slider.setSliderDown(False)
         slider.sliderReleased.emit()
         settle(3500)
-        after = json.loads(read())
+        after = json.loads(steady())
 
         moved = during != before
         undone = after != during
