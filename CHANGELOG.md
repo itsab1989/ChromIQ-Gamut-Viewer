@@ -1,5 +1,47 @@
 # Changelog
 
+## v2.40.2
+
+One user-facing fix, in the two-view page that 2.40.1 introduced.
+
+### 📍 A saved cross-section opens at the height it was sent at
+
+A page written with the cut at L\* 50 opened it at **L\* 8** — the bottom of the
+range — while carrying the right answer, `at: 21` of 43 levels, in its own
+settings all along. A cut saved on its own was always right; only the page
+that holds both views was wrong.
+
+The strip is built **first for the shapes**, where there is no cross-section
+and the height is 0 by default. That 0 was stored as the reader's remembered
+choice and restored a moment later when they switched to the cut, over the top
+of the height the page was saved at. A view with no cut has no business
+remembering one.
+
+`scripts/audit_the_cut_opens_where_it_was_saved.py` checks both kinds of page
+and is mutation-proved in both directions. It had to be its own check: written
+as a rule inside `audit_two_views.py` it could not be made to fail even with
+the fault deliberately restored, because that page's invented shape has a
+lightness range narrow enough that the saved height and the bottom of the range
+round to the same number.
+
+### And two checks that were lying to me
+
+Neither changes the application, and both were reporting faults that did not
+exist:
+
+**The lightness slider was working all along.** A page packs any sizeable array
+binary, so `t.x.length` is `undefined` and every reading taken from it is the
+same constant — which is why "Slice it at one lightness" was reported for hours
+as changing nothing before or after the release. Read from `_fullData`, where
+the library decodes them, it behaves exactly like the other release-only
+sliders. The inventory now has no unknowns in it.
+
+**Invented shapes hide faults.** A made-up ball concealed a real fault from a
+check three times in one night. The seam check and the two-view check now draw
+the demo papers, which have awkward proportions, dents and a full lightness
+range.
+
+
 ## v2.40.1
 
 **2.40.0 shipped a regression and this is the fix for it.** Two rooms could
