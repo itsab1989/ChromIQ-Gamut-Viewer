@@ -437,3 +437,18 @@ def test_a_picture_emptied_by_the_fade_says_so():
     assert fig.layout.title.text.strip() == "Measured gamut", (
         f"a picture with nothing missing still explained itself: "
         f"{fig.layout.title.text!r}")
+
+
+# INK AMOUNTS AND THE WHITE POINT: I WAS WRONG, AND THE TREE WAS RIGHT.
+#
+# Measured that D50 and D65 draw the same picture in ink amounts, concluded the
+# chooser could not act, and took its capability away -- whereupon
+# test_ink_amounts_still_read_colour_against_a_white failed and explained why:
+# a chart drawn in ink amounts is still PAINTED through a profile and still
+# COUNTED against a paper, and both read a colour against a white. The control
+# acts on the NUMBERS, not on the drawing, so a measurement of the picture
+# could never have seen it. Measure the right pair.
+#
+# What remains true and is only untidiness: `_why_not_in_this_space` carries a
+# white-point excuse for ink amounts that is unreachable, because the space can
+# do it. Left alone rather than "tidied" on the strength of the same mistake.
