@@ -36,9 +36,23 @@ import gamut_app
 # parts that are about reading charts run on any machine.
 #
 #     GAMUT_DEMO=~/my-profiling-folder python scripts/drive_chart.py
-DEMO = Path(os.environ.get("GAMUT_DEMO", Path(ROOT) / "demo-data"))
-MEASUREMENT = next(iter(sorted(DEMO.glob("*.ti3"))), None)
+#: THE REPOSITORY'S OWN DEMO FOLDER, because the default was a folder that
+#: does not exist. `demo-data` is in no checkout, so this script could not be
+#: run by anybody without knowing to set GAMUT_DEMO first — the same shape of
+#: fault as a check that stops on its first picture: not a wrong answer, no
+#: answer. `demo/` has held the pair it wants all along.
+DEMO = Path(os.environ.get("GAMUT_DEMO", Path(ROOT) / "demo"))
 PROFILE = next(iter(sorted(DEMO.glob("*.icc"))), None)
+#: AND THE MEASUREMENT THAT GOES WITH THAT PROFILE, by stem. Taking the first
+#: `.ti3` alphabetically picks `Glossy-paper-months-later.ti3` beside
+#: `Glossy-paper.icc` — a pair that does not belong together, and this file
+#: says two lines further down that sharing a stem is the point.
+MEASUREMENT = None
+if PROFILE is not None:
+    beside = DEMO / f"{PROFILE.stem}.ti3"
+    MEASUREMENT = beside if beside.is_file() else None
+if MEASUREMENT is None:
+    MEASUREMENT = next(iter(sorted(DEMO.glob("*.ti3"))), None)
 CHARTS = Path(os.environ.get(
     "GAMUT_CHARTS", Path(os.environ.get("TMPDIR", "/tmp")) / "gamut-charts"))
 CHARTS.mkdir(parents=True, exist_ok=True)
