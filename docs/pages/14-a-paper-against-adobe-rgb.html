@@ -5005,6 +5005,34 @@ window.addEventListener('load', function () {
   })();
 });
 </script><script>
+(function () {
+  function reach(el) {
+    var s = el._fullLayout && el._fullLayout.scene && el._fullLayout.scene._scene;
+    if (s && s.getCamera) return s.getCamera();
+    return el.layout && el.layout.scene && el.layout.scene.camera;
+  }
+  function arm(el) {
+    el.addEventListener("wheel", function (e) {
+      var c = reach(el);
+      if (!c || !c.eye) return;            // a flat cut has no camera to move
+      var k = e.deltaY > 0 ? 1.1 : 1 / 1.1;
+      e.preventDefault();
+      e.stopPropagation();
+      Plotly.relayout(el, {"scene.camera.eye": {
+        x: c.eye.x * k, y: c.eye.y * k, z: c.eye.z * k}});
+    }, true);
+  }
+  function armAll() {
+    var d = document.getElementsByClassName("plotly-graph-div");
+    for (var i = 0; i < d.length; i++) if (!d[i].__cqWheel) {
+      d[i].__cqWheel = true;
+      arm(d[i]);
+    }
+  }
+  if (document.readyState === "complete") armAll();
+  window.addEventListener("load", armAll);
+})();
+</script><script>
 window.cqSpin = (function () {
   var ids = [], on = false, raf = null, last = 0, held = 0;
   var axes = {turn: {mode: "swing", speed: 8, range: 60, phase: 0},
