@@ -397,3 +397,46 @@ def test_a_step_with_two_ends_of_one_name_carries_the_dates():
     text = inspect.getsource(gamut_app.TimelineDialog._fill_pictures)
     assert "step.before_on" in text and "step.after_on" in text
     assert "if before == after" in text
+
+
+def test_only_CHOOSING_a_comparison_may_ask_for_a_file():
+    """A setting that changes must not be wired to the handler that chooses.
+
+    `_on_compare_changed` is what runs when somebody PICKS a comparison from
+    the box, and picking one that lives in a file means being asked which
+    file — it calls `_file_dialog(...).exec()`. That is right for a click on
+    the box and wrong for everything else.
+
+    THE DETAIL SLIDER WAS WIRED TO IT. Letting go of Detail, with a profile or
+    a picture as the comparison, put a file chooser on screen — twice,
+    measured — asking the reader to find again the very file already drawn in
+    front of them. Cancel put the box back to "Nothing" and took the shape off
+    the screen.
+
+    `_rebuild_reference` exists for exactly this and says so in its own
+    docstring: it "never opens a file dialog: this runs in response to a
+    setting being changed". The white point and the drawing space have always
+    used it.
+
+    THIS IS WRITTEN AS A RULE ABOUT THE CLASS, not about the one slider that
+    was found. Any control wired to the choosing handler in future fails here
+    with the reason, which is the only way a fault like this does not come
+    back through a different control.
+    """
+    text = (ROOT / "gamut_app.py").read_text(encoding="utf-8")
+    wired = re.findall(r"self\.(\w+)\.(\w+)\.connect\(\s*"
+                       r"(?:lambda[^:]*:\s*)?self\._on_compare_changed",
+                       text)
+    unexpected = [(w, s) for w, s in wired
+                  if not (w == "_compare" and s == "activated")]
+    assert not unexpected, (
+        "These controls are wired to the handler that CHOOSES a comparison, "
+        "which opens a file dialog when the comparison lives in a file:\n  "
+        + "\n  ".join(f"self.{w}.{s}" for w, s in unexpected)
+        + "\n\nA control that changes a SETTING belongs on _rebuild_reference "
+          "instead — see _on_detail_released, and _on_white_changed before it."
+    )
+    assert wired, (
+        "nothing is wired to _on_compare_changed at all, so this rule is "
+        "no longer measuring anything — the box that chooses a comparison "
+        "must still be connected to it")

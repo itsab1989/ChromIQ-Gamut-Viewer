@@ -8393,7 +8393,7 @@ class GamutApp(QMainWindow):
         self._detail.setValue(20)
         self._detail.valueChanged.connect(
             lambda v: self._detail_lbl.setText(f"{v} steps"))
-        self._detail.sliderReleased.connect(self._on_compare_changed)
+        self._detail.sliderReleased.connect(self._on_detail_released)
         detrow.addWidget(self._detail, 1)
         self._detail_lbl = QLabel("20 steps", g_look)
         self._detail_lbl.setFixedWidth(64)
@@ -13453,6 +13453,36 @@ class GamutApp(QMainWindow):
             "measured chart, or a small verification chart, will look like "
             "this. For a true picture, open a full profiling measurement: "
             "those usually hold several hundred patches or more.")
+
+    def _on_detail_released(self) -> None:
+        """A finer or rougher comparison — rebuilt, never asked for again.
+
+        THIS SLIDER USED TO OPEN A FILE DIALOG. It was wired straight to
+        `_on_compare_changed`, which is the handler for CHOOSING a comparison
+        — and choosing one that lives in a file means being asked which file.
+        So with a profile, a measurement or a picture as the comparison,
+        letting go of Detail put a file chooser on screen (twice, measured)
+        asking the reader to find again the very file already drawn in front
+        of them. Any answer but the same file silently swapped the comparison;
+        Cancel put the box back to "Nothing" and took the shape off the
+        screen altogether.
+
+        `_rebuild_reference` is the one for a SETTING that changed, and its
+        own docstring says why: it "never opens a file dialog: this runs in
+        response to a setting being changed, and being asked for a file again
+        because you changed the white point would be baffling". The white
+        point and the drawing space have always gone through it. Detail is a
+        setting in exactly the same sense and never should have been an
+        exception.
+
+        (A comparison read from a file has no detail to change — its shape
+        comes from the file. Rebuilding it is a few milliseconds of work that
+        changes nothing, which is the right price for having one path that is
+        always correct.)
+        """
+        self._rebuild_reference()
+        self._chart_profile_offer()
+        self._redraw()
 
     def _on_white_changed(self) -> None:
         """A different white point: the charts and the comparison both move.
