@@ -8758,6 +8758,67 @@ class GamutApp(QMainWindow):
         side_hint.setObjectName("hint_side_hint")
         lv.addWidget(side_hint)
 
+        # WHICH WAY THE TWO ROOMS ARE ARRANGED. Asked for in as many words:
+        # "or can we give the option to choose whether the user wants
+        # left/right or top/bottom split?"
+        #
+        # Both are worth having and neither is right for everybody. Side by
+        # side puts the two shapes at the same height, which is what the eye
+        # needs to compare how FAR each one reaches. One above the other gives
+        # each the full width, which is what a tall narrow window has to
+        # spare, and it lines the two up along the lightness axis instead.
+        #
+        # In the same container as the camera link, so both disappear together
+        # when there is only one shape and there is nothing to arrange.
+        self._rooms_row = QWidget(g_look)
+        _rr = QHBoxLayout(self._rooms_row)
+        _rr.setContentsMargins(0, 0, 0, 0)
+        _rr.setSpacing(6)
+        _rooms_caption = QLabel("Arranged", self._rooms_row)
+        _rooms_caption.setObjectName("hint")
+        self._rooms_way = NoScrollComboBox(self._rooms_row)
+        self._rooms_way.addItem("Side by side", "beside")
+        self._rooms_way.addItem("One above the other", "above")
+        # A HOVER IS READ ON THE WAY PAST, so it stays short; the long version
+        # is behind the ⓘ. Asked for in as many words.
+        self._rooms_way.setToolTip(
+            "Whether the two rooms sit next to each other or one above the "
+            "other. Needs Two rooms, side by side ticked.")
+        self._rooms_way.activated.connect(lambda _i: self._redraw())
+        _rr.addWidget(_rooms_caption, 0)
+        _rr.addWidget(self._rooms_way, 1)
+        rooms_hint = Hint(
+            "Which way the two rooms are laid out, once you have them.\n\n"
+            "SIDE BY SIDE keeps both shapes at the same height, and that "
+            "is what your eye needs to compare how far each one reaches: "
+            "two things at the same height are easy to measure against "
+            "each other, and the same two stacked are not.\n\n"
+            "ONE ABOVE THE OTHER gives each room the whole width "
+            "instead. That is the one to choose in a tall narrow window, "
+            "or on a phone, where half the width is not much of a room — "
+            "and it lines the two shapes up along the lightness axis, so "
+            "it answers \"which of these gets darker\" more directly "
+            "than it answers \"which of these is wider\".\n\n"
+            "Either way both rooms are drawn to one shared scale, so "
+            "their sizes can honestly be compared, and neither "
+            "arrangement changes a single measurement.\n\n"
+            "You do not have to choose this to keep the shapes whole. "
+            "Whichever way round they are, each room pulls its view back "
+            "far enough that the shape fits inside it — a narrow room "
+            "shows a smaller shape rather than a cut one.\n\n"
+            "It needs Two rooms, side by side ticked first, and that "
+            "needs two shapes to show. It travels into a saved page as "
+            "well, so whoever you send it to opens it arranged the way "
+            "you left it.", self._rooms_row)
+        rooms_hint.setObjectName("hint_rooms_way_hint")
+        # BY HAND, for the same reason the camera link's ⓘ is: this row lives
+        # inside a container widget, and the pass that puts every other ⓘ on
+        # its control's row walks layouts and never descends into one.
+        _rr.addWidget(rooms_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        rooms_hint.setProperty("placed_by_hand", True)
+        rooms_hint.follow(self._rooms_way)
+        lv.addWidget(self._rooms_row)
+
         # A CONTAINER, hidden as a whole. Hiding the check box on its own left
         # its spacing behind, so the option under it sat seven pixels lower
         # than every other option in this group -- small, and the sort of
@@ -11457,6 +11518,10 @@ class GamutApp(QMainWindow):
             ("chart_out_dot", self._chart_out_dot, "slider", 55),
             ("chart_out_opacity", self._chart_out_opacity, "slider", 100),
             ("chart_show_outside", self._chart_show_outside, "check", True),
+            # WHICH WAY THE TWO ROOMS ARE ARRANGED. Remembered like every
+            # other setting: a choice that will not stay through a restart is
+            # worse than not offering it.
+            ("rooms_way", self._rooms_way, "combo", "beside"),
             ("chart_skin", self._chart_skin, "combo", "none"),
             ("chart_skin_colour", self._chart_skin_colour, "combo", "grey"),
             ("chart_skin_opacity", self._chart_skin_opacity, "slider", 30),
@@ -13874,6 +13939,10 @@ class GamutApp(QMainWindow):
         "_tilt_sweep": "as _spin_on",
         "_link_cameras": "only ever visible with two rooms, which ink amounts "
                          "cannot produce, so it is hidden rather than dead",
+        "_rooms_way": "which way the two rooms are arranged is a fact about "
+                      "the page's layout, not about the space the shapes are "
+                      "drawn in; like _link_cameras it is hidden altogether "
+                      "when there are not two rooms to arrange",
         "_detail": "changes how finely a gamut is BUILT, and the shapes are "
                    "still built in ink amounts even though they are not "
                    "drawn — the patch counts are measured against them",
@@ -15399,6 +15468,10 @@ class GamutApp(QMainWindow):
             self._side_by_side.blockSignals(False)
         linked_useful = can_split and self._side_by_side.isChecked()
         self._link_row.setVisible(linked_useful)
+        # THE ARRANGEMENT GOES THE SAME WAY. With one shape there are no rooms
+        # to arrange, and a chooser for something that is not on screen is the
+        # thing this window treats as worse than a missing control.
+        self._rooms_row.setVisible(linked_useful)
         # ONE SHAPE HAS NOTHING TO AGREE WITH, so the slider is dead until a
         # second arrives -- and it says why rather than simply refusing to
         # move. Left live it would be a control that does nothing, which this
@@ -15995,6 +16068,11 @@ class GamutApp(QMainWindow):
                                 mode=(colours or self._appearance),
                                 linked=self._link_cameras.isChecked(),
                                 spin=self._spin_options(glide, saved=saved),
+                                # WHICH WAY ROUND, carried into the file as
+                                # well as shown on screen: a page arrives
+                                # arranged the way it was sent.
+                                stacked=(self._rooms_way.currentData()
+                                         == "above"),
                                 controls=controls, offer=offer, notes=notes)
 
     #: The controls that can belong to one shape rather than all of them, as

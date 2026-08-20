@@ -98,21 +98,35 @@ def test_every_save_path_says_it_is_saving():
         assert "saved" in text, f"{name} cannot be told it is saving"
 
 
-def test_the_rooms_are_never_stacked():
-    # Asked for in as many words. Two rooms are two rooms at every width; the
-    # narrow case is answered by pulling the eye back, not by giving up on
-    # side by side.
+def test_no_WIDTH_ever_stacks_the_rooms():
+    # Asked for in as many words: "Never stack — zoom the camera out instead
+    # so the shape fits a narrow room." A narrow window is answered by
+    # pulling the eye back, never by rearranging the page behind somebody's
+    # back.
+    #
+    # STACKING ITSELF IS NOW A CHOICE — "or can we give the option to choose
+    # whether the user wants left/right or top/bottom split?" — and that rule
+    # is `test_the_rooms_can_be_arranged`. What must never come back is the
+    # page deciding it by measuring the window.
     import re
     text = (_ROOT / "python" / "ti3gamut.py").read_text(encoding="utf-8")
-    where = text[text.index("def write_side_by_side_html"):][:6000]
+    # THE WHOLE FUNCTION, NOT A FIXED SLICE OF IT. Six thousand characters
+    # reached the CSS until a comment was added above it, and then this rule
+    # reported "the rooms are no longer a row" about a row that was still
+    # there. Fourth time a fixed-size window has said "not there" in exactly
+    # the words a real absence uses.
+    start = text.index("def write_side_by_side_html")
+    end = text.index("\ndef ", start + 10)
+    where = text[start:end]
     # NOT "the word column is absent" — `body` stacks the row above the
     # strip and each `.half` stacks its caption above its picture, both
     # rightly. The question is whether a WIDTH RULE turns the row of rooms
     # into a column, and only that.
     rules = re.findall(r"@media[^{]*\{\{(.*?)\}\}", where, re.S)
     assert not any("flex-direction:column" in rule for rule in rules), (
-        "a width rule stacks the two rooms — that is not two rooms side by "
-        "side, which is what the control promises")
+        "a width rule stacks the two rooms — the arrangement is the reader's "
+        "choice, and a page that rearranges itself by measuring the window "
+        "takes it away from them")
     assert ".row  {{ display:flex" in where, "the rooms are no longer a row"
 
 

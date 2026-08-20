@@ -540,6 +540,10 @@ class _FakeApp:
                      # heading for.
                      "_drift_by"):
             setattr(self, name, None)
+        # WHICH WAY THE TWO ROOMS ARE ARRANGED — and this one is READ rather
+        # than listed: `_write_two_rooms` asks it which way round to write the
+        # page, so a bare None fails with 'NoneType has no currentData'.
+        self._rooms_way = _Value("beside")
         self._light_sliders = {k: (None,) for k, *_ in gamut_app.LIGHT_CONTROLS}
         # The movement controls are read, not just listed, so these answer.
         # Two rooms look up the slot each shape came from, so that the

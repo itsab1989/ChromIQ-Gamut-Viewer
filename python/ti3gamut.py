@@ -7846,7 +7846,7 @@ def write_two_views_html(views, out: Path, mode: str = "dark", spin=None,
 def write_side_by_side_html(pages, out: Path, mode: str = "dark",
                             linked: bool = True, spin=None,
                             controls: bool = True, offer=None,
-                            notes: str = "") -> Path:
+                            notes: str = "", stacked: bool = False) -> Path:
     """Two scenes in one page, each with its own shape, side by side.
 
     Overlaying two gamuts is the right way to see where one reaches past the
@@ -7862,7 +7862,26 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
     """
     import plotly.io as pio
 
+    # ONE ABOVE THE OTHER, WHEN THAT IS WHAT WAS ASKED FOR. Both
+    # arrangements are worth having: side by side keeps the two shapes at the
+    # same height, which is what the eye needs to compare how far each one
+    # reaches; one above the other gives each the whole width, which is what a
+    # tall narrow window has to spare. Neither is a way of avoiding a cut
+    # shape -- each room pulls its own view back far enough for that,
+    # whichever way round they are, so this is a choice about reading rather
+    # than a repair. 68vh because `scripts/check_layout.py` asks that the
+    # first picture hold 55-85% of the first screen, and 56vh measured 51-54%.
     colours = static_palette(mode)
+    # SINGLE BRACES. This is a plain string that is INTERPOLATED into the
+    # f-string below, so doubling them the way the surrounding CSS does puts
+    # `{{` into the page and the rule never applies -- which it did, and both
+    # arrangements came out identical.
+    stack_css = ("" if not stacked else
+                 " .row  { flex-direction:column; max-height:none; }\n"
+                 " .half { min-height:68vh; }\n"
+                 " .half + .half { border-left:none;\n"
+                 "                 border-top:1px solid "
+                 + colours["grid"] + "; }")
     blocks, first_id = [], None
     ids = []
     flat = False                       # set per page; safe when there are none
@@ -7948,6 +7967,7 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
  @media (max-width:820px) {{ .gtitle {{ font-size:11px !important; }} }}
  .half {{ flex:1 1 0; min-width:0; display:flex; flex-direction:column; }}
  .half + .half {{ border-left:1px solid {colours['grid']}; }}
+{stack_css}
  /* THE ROOMS STAY SIDE BY SIDE AT EVERY WIDTH — asked for in as many
     words: "Never stack — zoom the camera out instead so the shape fits a
     narrow room. This keeps side by side at every width, which is what the

@@ -229,6 +229,8 @@ NEEDS = {
     # the few controls the window does NOT remember between sessions — its
     # colouring is remembered and the tick that draws the cloud is not.
     "drift_by": "_drift_draw",
+    # THE ARRANGEMENT NEEDS TWO ROOMS TO ARRANGE.
+    "rooms_way": "side_by_side",
     # THE SEVEN LIGHTING SLIDERS. "Set the lighting myself" hides them until
     # it is ticked; before the visibility test learned to switch a
     # prerequisite on, every one of them was listed and then skipped as "not
