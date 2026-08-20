@@ -41,6 +41,7 @@ be pointed at a real one.
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import sys
 import tempfile
@@ -52,6 +53,15 @@ sys.path.insert(0, str(HERE.parent / "python"))
 TURNING = {"play", "speed", "faster", "slower", "lr", "ud", "sweep"}
 #: What belongs to any picture at all.
 EITHER = {"home", "in", "out", "more"}
+
+#: Where the cut says it is sitting, and where the page was saved at.
+WHERE = """(function () {
+  var s = window.cqSettings || {}, c = s.cuts || null;
+  var says = document.querySelector('[data-cq="cut-at"]');
+  return JSON.stringify({
+    saved: c ? Math.round(c.levels[c.at || 0]) : null,
+    says: says ? says.textContent.replace(/[^0-9-]/g, "") : null});
+})()"""
 
 STRIP = """(function () {
   var out = [];
@@ -67,11 +77,21 @@ STRIP = """(function () {
 })()"""
 
 
-def a_page(where: pathlib.Path):
-    """One page carrying the shells and a cut, written by the real writer."""
+def a_shape():
+    """The shape these pages are drawn from."""
     import numpy as np
     import ti3gamut
     from gamutview import build_gamut
+
+    # THE REAL MEASUREMENT WHERE THERE IS ONE. A made-up ball gave this page
+    # a lightness range so narrow that the height it was saved at and the
+    # bottom of the range rounded to the same number -- so the check could not
+    # tell them apart, and a mutation that genuinely broke the saved height
+    # (proved on the demo paper: L* 50 became L* 8) slipped past it.
+    demo = HERE.parent / "demo" / "Glossy-paper.ti3"
+    if demo.is_file():
+        measured = ti3gamut.read_measurement(demo)
+        return build_gamut(measured.lab, input_space="lab")
 
     rng = np.random.default_rng(9)
     q = rng.normal(size=(700, 3))
@@ -84,7 +104,14 @@ def a_page(where: pathlib.Path):
     # space -- corners at L* -71,327, no rings, and `slice_levels` returning
     # None, which is what made this page's cut unslidable and looked like a
     # fault in the writer.
-    shape = build_gamut(lab, input_space="lab")
+    return build_gamut(lab, input_space="lab")
+
+
+def a_page(where: pathlib.Path):
+    """One page carrying the shells and a cut, written by the real writer."""
+    import ti3gamut
+
+    shape = a_shape()
 
     scene = ti3gamut.build_figure([("a paper", shape)], "Measured gamut")
 
@@ -171,6 +198,14 @@ def main() -> int:
                     problems.append(
                         f"{name}: the shells offer none of the turning "
                         f"controls, which is what a camera is for")
+                # WHERE THE CUT OPENS IS CHECKED ELSEWHERE, and it had to
+                # be. A rule for it here could not be made to fail even with
+                # the fault deliberately restored: this page's invented shape
+                # has a lightness range narrow enough that the saved height
+                # and the bottom of the range round to the same number. It
+                # lives in audit_the_cut_opens_where_it_was_saved.py, on the
+                # demo paper, where the two are eight and fifty.
+
                 # AND THE CUT MUST OFFER THE ONE CONTROL THAT IS ITS OWN.
                 # Switching to a cross-section that cannot be moved is the
                 # half of "manipulate each view in a way that makes sense for

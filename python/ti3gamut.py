@@ -5859,7 +5859,16 @@ window.cqSpinControls = function (settings) {
     try {
       localStorage.setItem(STORE, JSON.stringify(
         {running: running, both: both, speeds: speeds, picture: picture,
-         shapes: dressed, cutAt: cutAt, agreeAt: agreeAt, ranges: ranges,
+         // THE CUT'S HEIGHT IS ONLY WORTH REMEMBERING WHEN THERE IS A CUT.
+         //
+         // On a page carrying both views, the strip is built first for the
+         // SHAPES, where there is no cross-section and cutAt is 0 by
+         // default. Storing that 0 and restoring it a moment later, when the
+         // reader switches to the cut, threw away the height the page was
+         // saved at: a page written at L* 50 opened its cut at L* 8, the
+         // bottom of the range, while carrying at: 21 all along.
+         shapes: dressed, agreeAt: agreeAt, ranges: ranges,
+         ...(cuts ? {cutAt: cutAt} : {}),
          chosen: chosen, carries: carries,
          differAt: differAt,
          mode: mode, turn: turn.mode, tilt: tilt.mode}));
