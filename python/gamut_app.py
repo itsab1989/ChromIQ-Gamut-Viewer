@@ -2906,6 +2906,53 @@ class WebPageDialog(QDialog):
         if not self._for_a_cloud or not self._shows.get("camera", True):
             self._glide.setChecked(False)
             self._glide.hide()
+        # AND THE PAGE MAY CARRY BOTH VIEWS, with a switch between them.
+        #
+        # Asked for from the window: "could the exported web viewer files get
+        # a toggle to switch between the view of the shells and the sliced
+        # view ... the other controls would then have to update accordingly
+        # so the user can manipulate each view in a way that makes sense for
+        # it". The writer, the switch and the per-view strip are built; this
+        # is the question that reaches them.
+        self._both_views = QCheckBox(
+            "Carry a cross-section too, with a switch", self)
+        self._both_views.setChecked(False)
+        rows.addWidget(self._both_views, 3, 0, 1, 2)
+        # NOT WHERE THERE IS NOTHING TO SWITCH BETWEEN. A page already saved
+        # flat IS the cross-section, and a picture with no camera has no
+        # shapes view to switch back to -- the same rule the glide above
+        # follows, for the same reason.
+        if not self._shows.get("camera", True):
+            self._both_views.setChecked(False)
+            self._both_views.hide()
+        both_hint = Hint(
+            "Puts BOTH pictures in the one file — the shapes as you see them "
+            "here, and a flat cross-section through them — with a switch "
+            "along the bottom that moves between the two.\n\n"
+            "WHY IT IS WORTH THE SPACE. The two answer different questions "
+            "and neither replaces the other. The shapes show you how much "
+            "colour there is and where it runs out; a cut through them at one "
+            "lightness shows exactly how far each one reaches in every "
+            "direction at that lightness, which is genuinely hard to judge by "
+            "eye from a solid you are turning around. Sending both means the "
+            "person reading it can ask either question without you having to "
+            "guess in advance which one they wanted.\n\n"
+            "THE CONTROLS FOLLOW THE VIEW. On the shapes they can turn, tip "
+            "and zoom; on the cut those disappear — a flat picture has no "
+            "angle to be seen from — and the lightness controls take their "
+            "place, so the cut can be moved up and down through the shapes "
+            "rather than being stuck where you left it.\n\n"
+            "WHAT IT COSTS: about a tenth more file. The viewer that draws "
+            "the picture is the bulk of the page and travels once either way; "
+            "the second view adds only its own outlines.\n\n"
+            "It needs shapes with a camera — a page saved as a cross-section "
+            "already IS that view, so there would be nothing to switch to, "
+            "and this is simply not offered there.", self)
+        both_hint.setObjectName("hint_both_views")
+        rows.addWidget(both_hint, 3, 2)
+        if self._both_views.isHidden():
+            both_hint.hide()
+
         glide_hint = Hint(
             "Whether a drag ends the way a real object would. With this on, "
             "letting go of the shape leaves it turning for about a second, "
@@ -3570,6 +3617,11 @@ class WebPageDialog(QDialog):
                 # BEHAVES before they touch anything, and it applies just as
                 # much to a page saved with no controls at all.
                 "glide": self._glide.isChecked(),
+                # WHETHER THE PAGE CARRIES BOTH PICTURES. Like glide, this is
+                # about what the page IS rather than which controls it hands
+                # out, so it sits beside the offers rather than inside them.
+                "both_views": (self._both_views.isChecked()
+                               and not self._both_views.isHidden()),
                 # EVERY SWITCH ANSWERED, INCLUDING THE ONES NOT SHOWN. A
                 # name missing from this dict falls to whatever default the
                 # writer has, and for most of them that default is "offer it"
@@ -13076,6 +13128,7 @@ class GamutApp(QMainWindow):
                               glide=chosen.get("glide", False),
                               colours=chosen.get("colours"),
                               carry_viewer=chosen["carry_viewer"],
+                              both_views=chosen.get("both_views", False),
                               notes=(self._readout_text()
                                      if chosen["numbers"] else ""))
         except OSError as exc:
@@ -15236,7 +15289,7 @@ class GamutApp(QMainWindow):
     def _write_scene(self, gamuts, clouds, styles, lost, out, *,
                      controls: bool = False, carry_viewer: bool = True,
                      notes: str = "", offer=None, glide: bool = False,
-                     colours: str = None) -> bool:
+                     colours: str = None, both_views: bool = False) -> bool:
         """Write whatever is on screen, whichever of the four it is.
 
         ONE PLACE, BECAUSE THERE WERE TWO AND THEY DISAGREED. This window can
@@ -15277,6 +15330,14 @@ class GamutApp(QMainWindow):
                                  controls=controls, offer=offer, notes=notes,
                                  carry_viewer=carry_viewer)
             return True
+        if both_views and gamuts:
+            # BOTH PICTURES IN ONE FILE, with a switch. Only from the single
+            # scene: two rooms are already two pictures, and a cross-section
+            # is the very view this would switch to.
+            self._write_both_views(gamuts, out, clouds, styles, lost,
+                                   controls=controls, offer=offer,
+                                   glide=glide, notes=notes, colours=colours)
+            return False
         if self._side_by_side.isChecked() and len(gamuts) >= 2:
             self._write_two_rooms(gamuts, out, clouds, lost,
                                   controls=controls, offer=offer, glide=glide,
@@ -15361,6 +15422,48 @@ class GamutApp(QMainWindow):
                                 linked=self._link_cameras.isChecked(),
                                 spin={"cuts": cuts} if cuts else None,
                                 controls=controls, offer=offer, notes=notes)
+
+    def _write_both_views(self, gamuts, out, clouds, styles, lost, *,
+                          controls: bool = False, offer=None,
+                          glide: bool = False, notes: str = "",
+                          colours: str = None) -> None:
+        """One page holding the shapes AND a cut through them, with a switch.
+
+        Asked for from the window: "could the exported web viewer files get a
+        toggle to switch between the view of the shells and the sliced view".
+
+        THE CUT IS GIVEN ITS LEVELS, which is what lets the reader move it.
+        Worked out the same way the two-pane cut page works them out -- once,
+        from the shapes together, so there is one list of heights rather than
+        one per shape -- and carried in the page's settings, where the strip
+        looks for them. Without them a reader could switch to the cut and then
+        be stuck at whatever lightness it was saved at, which is half of what
+        was asked for.
+        """
+        from ti3gamut import (build_figure, build_slice_figure, slice_levels,
+                              write_two_views_html)
+
+        lightness = float(self._slice_at.value())
+        cuts = slice_levels(gamuts[:2], include=lightness)
+        if cuts is not None:
+            cuts["title"] = ""
+            cuts["at"] = min(range(len(cuts["levels"])),
+                             key=lambda i: abs(cuts["levels"][i] - lightness))
+        shapes = build_figure(
+            gamuts, self._scene_title(), patches=clouds, styles=styles,
+            lost=lost,
+            split=bool(controls and len(gamuts) > 1
+                       and (offer is None or offer.get("agree", True))),
+            **self._render_options(colours))
+        cut = build_slice_figure(
+            gamuts, lightness, "", mode=(colours or self._appearance),
+            extent=(cuts["extent"] if cuts else None),
+            slidable=cuts is not None)
+        write_two_views_html(
+            [("The shapes", shapes), ("A cut through them", cut)], out,
+            mode=(colours or self._appearance),
+            spin={**self._spin_options(glide), "cuts": cuts},
+            controls=controls, offer=offer, notes=notes)
 
     def _write_two_rooms(self, gamuts, out, clouds, lost,
                          controls: bool = False, offer=None,
