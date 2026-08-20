@@ -264,6 +264,21 @@ def test_the_neutral_line_does_not_need_measured_greys():
         "a neutral line was drawn with its tick off")
 
 
+def _blob(scale, seed=4, n=400):
+    """A gamut of a given size in every direction, for nesting one in another."""
+    import numpy as np
+
+    from gamutview import build_gamut
+
+    rng = np.random.default_rng(seed)
+    q = rng.normal(size=(n, 3))
+    q /= np.linalg.norm(q, axis=1)[:, None]
+    q *= rng.uniform(0.55, 1, size=(n, 1)) ** (1 / 3)
+    lab = q * np.array(scale)
+    lab[:, 0] = np.clip(lab[:, 0] * 0.6 + 52, 4, 96)
+    return build_gamut(lab, input_space="lab")
+
+
 def _ball(z_spread, seed=3):
     """A gamut as tall as *z_spread* in L*, and always wide in a*/b*."""
     import numpy as np
@@ -380,3 +395,45 @@ def test_an_even_room_is_labelled_evenly():
     along = [scene.xaxis.nticks, scene.yaxis.nticks, scene.zaxis.nticks]
     assert max(along) - min(along) <= 4, (
         f"an ordinary gamut's sides were labelled very differently: {along}")
+
+
+def test_a_picture_emptied_by_the_fade_says_so():
+    """An empty picture must not look like a broken one.
+
+    Two identical measurements agree everywhere, so hiding what they agree on
+    hides all of them and the page comes up showing nothing but its walls.
+    That is the honest answer and it is indistinguishable from a fault. The
+    tooltip explains it three scrolls away; the picture now says it itself,
+    which is what this file already did for a drift cloud whose dots fall
+    below the threshold.
+    """
+    same = [("one", _ball(30.0, seed=4)), ("the same again", _ball(30.0, seed=4))]
+    fig = ti3gamut.build_figure(same, "Measured gamut",
+                                styles=["solid", "solid"], agree=0.0,
+                                split=True)
+    said = fig.layout.title.text
+    assert "nothing is left" in said, (
+        f"an emptied picture said only {said!r}, which reads as a fault")
+
+    # ONE SHAPE GONE IS NAMED, rather than lumped in with the rest: a shape
+    # lying wholly inside the others disappears while the others stay.
+    #
+    # AND IT REALLY HAS TO BE INSIDE. Written first with two shapes that
+    # differed only in lightness, they crossed in a*/b* and neither vanished
+    # -- the fixture was wrong and the assertion looked like a fault in the
+    # code.
+    nested = [("the small one", _blob((16, 24, 20))),
+              ("the big one", _blob((40, 58, 50)))]
+    fig = ti3gamut.build_figure(nested, "Measured gamut",
+                                styles=["solid", "solid"], agree=0.0,
+                                split=True)
+    said = fig.layout.title.text
+    assert "the small one is not drawn" in said, (
+        f"the shape that vanished was not named: {said!r}")
+
+    # AND A PICTURE THAT IS FINE SAYS NOTHING, or the note becomes noise.
+    fig = ti3gamut.build_figure(same, "Measured gamut",
+                                styles=["solid", "solid"], split=True)
+    assert fig.layout.title.text.strip() == "Measured gamut", (
+        f"a picture with nothing missing still explained itself: "
+        f"{fig.layout.title.text!r}")

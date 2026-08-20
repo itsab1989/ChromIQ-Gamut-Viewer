@@ -8856,6 +8856,32 @@ def write_html(gamuts, out: Path, title: str, **kwargs) -> Path:
 ROOM_CEILING = 2.6
 
 
+def _say_what_is_missing(title, hidden_note, emptied, names):
+    """The caption, with a word about anything the picture no longer holds.
+
+    A picture that has been emptied by a setting looks exactly like one that
+    went wrong, and the reader cannot tell which from looking. This is the
+    same courtesy the drift cloud already had when its dots fell below the
+    threshold: say it on the picture, where the question is asked.
+    """
+    parts = [title] if title else []
+    if hidden_note:
+        parts.append(hidden_note)
+    if emptied:
+        if len(emptied) >= len(names) and names:
+            parts.append("nothing is left to show: every shape here agrees "
+                         "with the others everywhere, so hiding what they "
+                         "agree on hides all of it")
+        elif len(emptied) == 1:
+            parts.append(f"{emptied[0]} is not drawn: it agrees with the "
+                         f"others everywhere, so nothing of it stands out")
+        else:
+            parts.append(f"{len(emptied)} shapes are not drawn: they agree "
+                         f"with the others everywhere, so nothing of them "
+                         f"stands out")
+    return " — ".join(parts)
+
+
 def _room_shape(extent):
     """The proportions of the drawn room, scaled so the longest side is 1.
 
@@ -8936,6 +8962,9 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
     # the start, and refuses the job for the one case it cannot answer -- a
     # chart, a second paper and a reference together, where a new corner's
     # marking cannot be worked out -- leaving that shape its old mesh.
+    #: Shapes the fade has taken away entirely, named beside the caption so an
+    #: empty picture explains itself.
+    _emptied = []
     marked = any(m is not None for m in (lost or ()))
     if len(gamuts) > 1 and (split or marked or agree < 1.0 or differ < 1.0):
         gamuts, splits, stands, lost = recut_where_they_part(gamuts, lost)
@@ -8992,16 +9021,31 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # shape -- against the 66 kB a second copy of the mesh would have
         # cost, and a page nobody can fade has no use for it at all.
         stand = (standing if (split and standing is not None) else None)
+        # A SHAPE THE FADE HAS TAKEN AWAY ENTIRELY IS WORTH SAYING SO.
+        #
+        # With "where they agree" at nothing, a shape lying wholly inside the
+        # others has no part left that stands out -- and two identical
+        # measurements leave the picture EMPTY but for its walls. That is the
+        # honest answer and it looks exactly like a fault. The tooltip says so
+        # three scrolls away; the picture itself said nothing.
+        #
+        # ASKED OF THE FADE, NOT OF THE TRIANGLES. A shape faded to nothing
+        # usually keeps every triangle it had -- `_solid_remainder` refuses to
+        # drop them when none would be left -- so counting faces finds
+        # nothing. What makes it invisible is that no corner of it is lit.
+        if alphas is not None and not np.asarray(alphas, float).any():
+            _emptied.append(name)
         if marked is not None:
             fig.add_trace(_mesh_lost(
                 g, name, base_i, marked, c["kept"], depth_i, light=light,
                 alphas=alphas, stand=stand,
                 lost_in_their_own_colours=lost_in_their_own_colours))
         elif how in ("solid", "solid+mesh"):
-            fig.add_trace(_mesh(g, name, opacity=base_i,
-                                paint=paint_i, index=i, depth=depth_i,
-                                page=c["page"], light=light, alphas=alphas,
-                                stand=stand))
+            _surface = _mesh(g, name, opacity=base_i,
+                             paint=paint_i, index=i, depth=depth_i,
+                             page=c["page"], light=light, alphas=alphas,
+                             stand=stand)
+            fig.add_trace(_surface)
             fig.add_trace(_legend_proxy(
                 name, _legend_swatch(_paint_vertices(g, paint_i, i)
                                      or g.colors, c["page"]), name))
@@ -9330,7 +9374,8 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             # eleven dots cannot otherwise be told apart from a printer that
             # is nearly perfect, and this is the kind of picture people
             # forward to somebody else.
-            f"{title} — {_hidden_note}" if _hidden_note else title, c),
+            _say_what_is_missing(title, _hidden_note, _emptied,
+                                 [n for n, _g in gamuts]), c),
         scene=dict(
             xaxis_title=_axes["x"], yaxis_title=_axes["y"],
             zaxis_title=_axes["z"],
