@@ -5001,6 +5001,34 @@ window.addEventListener('load', function () {
   })();
 });
 </script><script>
+(function () {
+  function reach(el) {
+    var s = el._fullLayout && el._fullLayout.scene && el._fullLayout.scene._scene;
+    if (s && s.getCamera) return s.getCamera();
+    return el.layout && el.layout.scene && el.layout.scene.camera;
+  }
+  function arm(el) {
+    el.addEventListener("wheel", function (e) {
+      var c = reach(el);
+      if (!c || !c.eye) return;            // a flat cut has no camera to move
+      var k = e.deltaY > 0 ? 1.1 : 1 / 1.1;
+      e.preventDefault();
+      e.stopPropagation();
+      Plotly.relayout(el, {"scene.camera.eye": {
+        x: c.eye.x * k, y: c.eye.y * k, z: c.eye.z * k}});
+    }, true);
+  }
+  function armAll() {
+    var d = document.getElementsByClassName("plotly-graph-div");
+    for (var i = 0; i < d.length; i++) if (!d[i].__cqWheel) {
+      d[i].__cqWheel = true;
+      arm(d[i]);
+    }
+  }
+  if (document.readyState === "complete") armAll();
+  window.addEventListener("load", armAll);
+})();
+</script><script>
 window.cqSpin = (function () {
   var ids = [], on = false, raf = null, last = 0, held = 0;
   var axes = {turn: {mode: "swing", speed: 8, range: 60, phase: 0},
@@ -6064,6 +6092,18 @@ window.cqSpinControls = function (settings) {
   var cuts = settings.cuts || null;
   if (cuts && !(cuts.levels && cuts.levels.length > 1)) cuts = null;
   if (!on("cut", true)) cuts = null;
+  // AND A SCENE HAS NO CROSS-SECTION TO SLIDE.
+  //
+  // On a page holding both views the levels are carried once, for the whole
+  // page, so the strip built them for the shells as well -- cut, cut-at,
+  // cut-up and cut-down offered over a three-dimensional shape that has no
+  // cut to move. That is exactly the lie the line above refuses in the other
+  // direction, where a flat picture is not offered the turning controls.
+  //
+  // Only the LIGHTNESS controls go: the ΔE hider on a drift page is also
+  // called "cut" and belongs on a scene, and it is built from the traces'
+  // own data rather than from these levels.
+  if (!flat) cuts = null;
   var cutAt = cuts ? (cuts.at || 0) : 0;
 
   // TAKING THE COLOUR OUT OF SOMETHING, PROPERLY.
@@ -6596,7 +6636,16 @@ window.cqSpinControls = function (settings) {
     try {
       localStorage.setItem(STORE, JSON.stringify(
         {running: running, both: both, speeds: speeds, picture: picture,
-         shapes: dressed, cutAt: cutAt, agreeAt: agreeAt, ranges: ranges,
+         // THE CUT'S HEIGHT IS ONLY WORTH REMEMBERING WHEN THERE IS A CUT.
+         //
+         // On a page carrying both views, the strip is built first for the
+         // SHAPES, where there is no cross-section and cutAt is 0 by
+         // default. Storing that 0 and restoring it a moment later, when the
+         // reader switches to the cut, threw away the height the page was
+         // saved at: a page written at L* 50 opened its cut at L* 8, the
+         // bottom of the range, while carrying at: 21 all along.
+         shapes: dressed, agreeAt: agreeAt, ranges: ranges,
+         ...(cuts ? {cutAt: cutAt} : {}),
          chosen: chosen, carries: carries,
          differAt: differAt,
          mode: mode, turn: turn.mode, tilt: tilt.mode}));
@@ -7081,7 +7130,18 @@ window.cqSpinControls = function (settings) {
           + "standing is only where they differ. Two papers drawn over each "
           + "other are mostly the same paper: the part they share is the bulk "
           + "of both, it is drawn twice, and it sits in front of the very "
-          + "thing you are comparing them to see.")
+          + "thing you are comparing them to see. "
+          // THE SAME EXPLANATION AS THE WINDOW'S, SHORTENED TO A TOOLTIP.
+          // Four reports of one thing -- "shattered", "the outer edge from
+          // the inside" -- and the measurement said the picture is right:
+          // what is left at the bottom is an OPEN shell, and its far wall is
+          // lit like an outside because there is no separate inside to shade.
+          // Capping the opening is a design decision nobody has taken; saying
+          // so costs nothing and answers the question where it is asked.
+          + "At the very bottom what is left is an open shell, so from some "
+          + "angles you are looking into it and its far wall reads as an "
+          + "outer surface — that is the shape being hollow, not broken. "
+          + "Come up one press and it is whole again, merely faint.")
         + '<span class="cq-num" data-cq="agree-at">100%</span>'
         + button("agree-more", "+",
           "Bring the shared part back. At the top nothing is changed at all "
