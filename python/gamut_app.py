@@ -11700,6 +11700,14 @@ class GamutApp(QMainWindow):
         # and a no falls through to the redraw that always worked.
         if key == "rings" and getattr(self, "_rings_live", False):
             return
+        # AND WHATEVER THE PUSH DID, A VALUE THAT HAS NOT MOVED SINCE THE
+        # PICTURE WAS DRAWN NEEDS NO PICTURE. Letting go of the rings slider
+        # without moving it rebuilt the page every time, because no movement
+        # means no push, and no push means `_rings_live` is False.
+        if key in getattr(self, "_drawn_with", {}):
+            control = {"rings": self._rings, "detail": self._detail}.get(key)
+            if control is not None and control.value() == self._drawn_with[key]:
+                return
         self._redraw()
 
     def _set_paint(self, which: str) -> None:
@@ -13694,6 +13702,9 @@ class GamutApp(QMainWindow):
         follow, because those are worked out in Python and no push can carry
         them.
         """
+        if self._detail.value() == getattr(self, "_drawn_with", {}).get(
+                "detail", self._detail.value() + 1):
+            return          # let go without moving it; see `_write_scene`
         if getattr(self, "_detail_live", False) and self._push_detail():
             self._chart_profile_offer()
             self._update_volume()
@@ -15234,6 +15245,11 @@ class GamutApp(QMainWindow):
         """
         now = (self._agree.value(), self._differ.value())
         drawn = getattr(self, "_fade_drawn", (100, 100))
+        # NOTHING MOVED, NOTHING TO DO. A press and release on the handle is
+        # not a change, and rebuilding for it is a second of black for
+        # nothing — see `_write_scene`, where the drawn values are recorded.
+        if now == drawn:
+            return
         if getattr(self, "_fade_live", False) and 0 not in now + drawn:
             return
         self._redraw()
@@ -15672,11 +15688,24 @@ class GamutApp(QMainWindow):
         *controls* is the reader's strip along the bottom: off for this
         window's own view, on for a page somebody is sent.
         """
-        # THE FADE THE PICTURE ON SCREEN WAS BUILT WITH, recorded here because
-        # this is the one place all four arrangements go through. `_after_fade`
-        # compares against it to decide whether letting go of a fade needs a
-        # rebuild at all; see the reasoning there.
+        # WHAT THE PICTURE ON SCREEN WAS BUILT WITH, recorded here because this
+        # is the one place all four arrangements go through.
+        #
+        # LETTING GO OF A SLIDER YOU DID NOT MOVE USED TO REBUILD THE WHOLE
+        # PAGE. Measured on four of them — the two fades, the rings and the
+        # detail — a press and release with no movement wrote a new page every
+        # time: a second of black for a change nobody made. It is the same
+        # blink the live pushes were built to remove, surviving in the one case
+        # they cannot cover, because a slider that does not move emits no
+        # `valueChanged` and so never pushes anything.
+        #
+        # So every release handler asks this first: is the value already the
+        # one the picture was drawn with? Then there is nothing to do.
         self._fade_drawn = (self._agree.value(), self._differ.value())
+        self._drawn_with = {
+            "agree": self._agree.value(), "differ": self._differ.value(),
+            "rings": self._rings.value(), "detail": self._detail.value(),
+            "cut": self._slice_at.value()}
         if self._slice_on.isChecked():
             # A CROSS-SECTION IS DRAWN FLAT, LOOKING DOWN. There is no camera,
             # so no movement settings travel with it and the strip leaves out

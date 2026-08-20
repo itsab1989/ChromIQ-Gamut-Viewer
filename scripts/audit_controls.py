@@ -86,8 +86,8 @@ LEAVE_ALONE = {
 
 def main() -> int:
     from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox,
-                                 QGroupBox, QPushButton, QRadioButton,
-                                 QScrollArea, QSlider)
+                                 QGroupBox, QLabel, QPushButton,
+                                 QRadioButton, QScrollArea, QSlider)
     from PyQt6.QtCore import QSettings
 
     import gamut_app
@@ -167,12 +167,36 @@ def main() -> int:
         "{'scene.camera.eye':{x:2.1,y:0.4,z:0.8}})&&'ok';})()")
     pump(3)
 
+    # WHAT THE WINDOW KEEPS EACH CONTROL UNDER, so a slider can be named.
+    #
+    # A QSlider has no text, so every one of them came out as the placeholder
+    # "a slider" in one list and as "NoScrollSlider" in the other. The report
+    # then said "82 controls touched, 33 rebuild the whole picture" without
+    # saying WHICH — and this file exists because Basti asked for exactly that:
+    # "audit for which options this is true so i don't have to check every
+    # single one myself". Twenty-five anonymous rows are not an answer to that.
+    attribute = {id(v): k for k, v in vars(win).items()}
+
+    def _named(control):
+        """The words beside a slider, or failing that what the code calls it."""
+        row = control.parentWidget()
+        spot = row.layout() if row is not None else None
+        if spot is not None:
+            for i in range(spot.count()):
+                item = spot.itemAt(i)
+                widget = item.widget() if item is not None else None
+                if isinstance(widget, QLabel) and widget.text().strip():
+                    return widget.text().strip()
+        return attribute.get(id(control), "") or "a slider"
+
     rows, sliders = [], []
     for kind in (QCheckBox, QRadioButton, QComboBox, QSlider):
         for control in column.findChildren(kind):
             if isinstance(control, gamut_app.Hint) or control.isHidden():
                 continue
             name = (control.text() if hasattr(control, "text") else "") or ""
+            if isinstance(control, QSlider) and not name:
+                name = _named(control)
             if isinstance(control, QComboBox):
                 name = "▾ " + (control.currentText()[:26] or "a chooser")
             if name.strip() in LEAVE_ALONE:
@@ -189,8 +213,7 @@ def main() -> int:
                 if isinstance(control, QSlider):
                     before = control.value()
                     lo, hi = control.minimum(), control.maximum()
-                    sliders.append((where, name or "a slider", lo, hi,
-                                    control.value()))
+                    sliders.append((where, name, lo, hi, control.value()))
                     step = max(1, (hi - lo) // 4)
                     control.setValue(min(hi, before + step))
                     control.sliderReleased.emit()
