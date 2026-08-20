@@ -1,108 +1,107 @@
-"""Two rooms on a narrow window must stop being two rooms.
+"""A saved page must fit itself to the window it is opened in.
 
-WHY THIS EXISTS, measured rather than argued. `write_side_by_side_html` lays
-its two rooms out as a flex row — `.half {flex:1 1 0}` — with no width below
-which they stop dividing the window. On a phone that gives each room half of
-390px, and a 3D box is fitted to the room's HEIGHT, so the shape has nowhere
-to go but through the side walls.
+WHY THIS EXISTS. Two papers side by side on a phone came out with both shapes
+cut straight through the side walls of their rooms — 80 to 155 vividly
+coloured pixels in each room's outermost column, at every viewpoint, measured
+with the spin paused and both rooms pinned to the same four cameras.
 
-The page was photographed in chromium with the spin PAUSED and both rooms
-pinned to the same four cameras, counting the vividly coloured pixels (the
-shape; type and gridlines are grey) in each room's outermost column:
+THE MACHINERY WAS ALREADY THERE AND NEVER RAN. `fitToPane` pulls the eye back
+by as far as the pane is out of shape, capped at twice, always from the view
+the page was written with. Measured against what the shapes actually need:
 
-    window   each room   coloured pixels on a side wall
-    390       195 px     80–155, at EVERY angle, in BOTH rooms
-    620       310 px     13–91,  at every angle, in both rooms
-    820       410 px     0–75,   at two angles of four
-    1024      512 px     0
-    1440      720 px     0
+    room 195 x 654 (out of shape 3.35)   needs 2.00x   ← the cap, exactly
+    room 310 x 660 (out of shape 2.13)   needs 1.30x
+    room 410 x 700 (out of shape 1.71)   needs 1.15x
 
-A single-room page at the same widths is clean, which is what says this is
-the split and not the scene. Two narrower-window rules were already in this
-stylesheet — the modebar hidden at 1024, the titles shrunk at 820 — so the
-narrowness was known; halving the width was never undone.
+So the law was right. What was wrong is that every saved page said it had
+already been placed: `_spin_options` set `placed` from "does this window have
+a camera", which it always does once anything is drawn, and `fitAll` returns
+at its first line when that is true. Measured before the fix: the same page
+opened at 390, 620 and 1440 px put its eye at 2.598 every single time — the
+written distance, never fitted. After it: 5.196 at 390, 5.188 at 620, 2.598
+at 1440, and no shape touches a wall at any width or viewpoint.
 
-The height is part of the fix and not a taste: stacked, the FIRST room is the
-first screen, and `scripts/check_layout.py` asks that a picture hold 55–85%
-of it. At 56vh each room measured 51–54% and failed that check at four sizes
-in both engines. 68vh clears it at every size.
-
-This is a gate rule rather than another browser audit because the failure
-arrives with a REWRITE of the stylesheet, and would then wait for somebody to
-run a browser by hand.
+The flag itself is right for the WINDOW's own view, which really does carry
+its camera from the page before it, and that is why the fix is a distinction
+rather than a deletion: asked for in as many words — "Never stack — zoom the
+camera out instead so the shape fits a narrow room. This keeps side by side
+at every width, which is what the option promises."
 """
+import inspect
 import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-
-def _a_two_room_page(tmp_path):
-    from test_gamutview import rgb_cube
-    from ti3gamut import build_figure, build_gamut, write_side_by_side_html
-    _, xyz = rgb_cube(5)
-    g = build_gamut(xyz, white_point="D65")
-    pages = [(n, build_figure([(n, g)], "")) for n in ("one", "two")]
-    out = write_side_by_side_html(pages, tmp_path / "two-rooms.html")
-    return out.read_text(encoding="utf-8")
+_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
-def _the_narrow_rule(css: str) -> str:
-    """The whole `@media (max-width:1000px)` block, brace for brace.
-
-    NOT a fixed slice of it. A 400-character window stopped before the rule
-    it was looking for and reported it missing — which is the same mistake as
-    the 26-line window that found a slider connected to nothing, and the
-    1400-character one that found no `split`. A SEARCH THAT STOPS SHORT SAYS
-    "NOT THERE" IN EXACTLY THE SAME WORDS AS ONE THAT LOOKED EVERYWHERE.
-    """
-    head = "@media (max-width:1000px)"
-    assert head in css, (
-        "the two rooms divide the window at every width again — at 390px "
-        "that is 195px each, and the shape is cut by both walls at every "
-        "angle")
-    rest = css.split(head, 1)[1]
-    depth, out = 0, []
-    for ch in rest:
-        out.append(ch)
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                break
-    block = "".join(out)
-    assert depth == 0 and len(block) > 40, "the narrow rule is empty"
-    return block
+def test_a_saved_page_is_not_marked_already_placed():
+    import gamut_app
+    from test_gamutview import _FakeApp
+    # WITH A CAMERA, WHICH IS THE WHOLE POINT. Asked of a stub that has none,
+    # `placed` is False whatever the rule says — and this test passed against
+    # the old rule put back on purpose, proving nothing at all. A window that
+    # has drawn anything has a camera; that is the state a save happens in.
+    fake = _FakeApp()
+    fake._camera = {"eye": {"x": 1.0, "y": 1.0, "z": 1.0}}
+    live = gamut_app.GamutApp._spin_options(fake)
+    saved = gamut_app.GamutApp._spin_options(fake, saved=True)
+    assert live["placed"] is True, (
+        "this fixture has no camera to carry, so it cannot tell the two "
+        "apart — the rest of this test would pass on any rule")
+    assert saved["placed"] is False, (
+        "a saved page says its camera is already placed, so `fitAll` returns "
+        "at its first line and the reader's window is never fitted — which "
+        "is how two rooms on a phone cut both shapes in half")
+    assert "placed" in live, "the live view no longer says either way"
 
 
-def test_the_rooms_stack_before_they_get_too_narrow(tmp_path):
-    stacked = _the_narrow_rule(_a_two_room_page(tmp_path))
-    assert "flex-direction:column" in stacked, (
-        "the narrow-window rule no longer stacks the rooms")
-    assert "max-height:none" in stacked, (
-        "stacked rooms still capped at 80vh would squeeze both into one "
-        "screen, which is the cramped picture this fix exists to undo")
+def test_the_window_s_own_view_still_carries_its_camera():
+    # THE FAILURE DIRECTION THAT MATTERS: switching this off everywhere would
+    # bring back "the shape jumped around after i moved it. when i let go it
+    # seemed like it snapped back while zooming out a touch" — every rebuild
+    # would fit the camera it had just been handed, again.
+    import gamut_app
+    from test_gamutview import _FakeApp
+    fake = _FakeApp()
+    fake._camera = {"eye": {"x": 1.0, "y": 1.0, "z": 1.0}}
+    assert gamut_app.GamutApp._spin_options(fake)["placed"] is True
 
 
-def test_a_stacked_room_is_big_enough_to_be_a_picture(tmp_path):
-    stacked = _the_narrow_rule(_a_two_room_page(tmp_path))
-    tall = [line for line in stacked.splitlines() if "min-height:" in line]
-    assert tall, "a stacked room has no height floor at all"
-    vh = int(tall[0].split("min-height:")[1].split("vh")[0])
-    # check_layout wants 55-85% of the first screen; a couple of points go to
-    # the caption and the legend under each room.
-    assert 57 <= vh <= 85, (
-        f"a stacked room asks for {vh}vh of the screen — check_layout wants "
-        f"the picture between 55% and 85% of the first screen, and it is "
-        f"measured a point or two under whatever this says")
+def test_every_save_path_says_it_is_saving():
+    # Three writers reach `_spin_options`, and a page saved through any of
+    # them is a fresh page in somebody else's window.
+    src = inspect.getsource(__import__("gamut_app").GamutApp._write_scene)
+    assert "saved: bool = False" in inspect.signature(
+        __import__("gamut_app").GamutApp._write_scene).__str__().replace(
+        "'", "") or "saved" in src, "the writer cannot be told it is saving"
+    for name in ("_write_two_rooms", "_write_both_views"):
+        text = inspect.getsource(getattr(__import__("gamut_app").GamutApp,
+                                         name))
+        assert "saved" in text, f"{name} cannot be told it is saving"
 
 
-def test_the_wide_layout_is_untouched(tmp_path):
-    # THE FAILURE DIRECTION THAT MATTERS MOST: 'fixing' the phone by stacking
-    # everywhere would throw away the whole point of two rooms.
-    css = _a_two_room_page(tmp_path)
-    before = css.split("@media (max-width:1000px)", 1)[0]
-    assert ".row" in before and "display:flex" in before
-    assert "flex-direction:column" not in before.split(".row", 1)[1][:200], (
-        "the rooms are stacked at every width now, which is not two rooms")
+def test_the_rooms_are_never_stacked():
+    # Asked for in as many words. Two rooms are two rooms at every width; the
+    # narrow case is answered by pulling the eye back, not by giving up on
+    # side by side.
+    import re
+    text = (_ROOT / "python" / "ti3gamut.py").read_text(encoding="utf-8")
+    where = text[text.index("def write_side_by_side_html"):][:6000]
+    # NOT "the word column is absent" — `body` stacks the row above the
+    # strip and each `.half` stacks its caption above its picture, both
+    # rightly. The question is whether a WIDTH RULE turns the row of rooms
+    # into a column, and only that.
+    rules = re.findall(r"@media[^{]*\{\{(.*?)\}\}", where, re.S)
+    assert not any("flex-direction:column" in rule for rule in rules), (
+        "a width rule stacks the two rooms — that is not two rooms side by "
+        "side, which is what the control promises")
+    assert ".row  {{ display:flex" in where, "the rooms are no longer a row"
+
+
+def test_the_fit_is_still_capped_where_it_was_measured():
+    text = (_ROOT / "python" / "ti3gamut.py").read_text(encoding="utf-8")
+    assert "Math.min(2, h / w)" in text, (
+        "the fitting law changed: a 195x654 room needs exactly twice, "
+        "measured, and anything less leaves the shape through the wall")

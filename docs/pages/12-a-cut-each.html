@@ -22,36 +22,11 @@
  @media (max-width:820px) { .gtitle { font-size:11px !important; } }
  .half { flex:1 1 0; min-width:0; display:flex; flex-direction:column; }
  .half + .half { border-left:1px solid #262626; }
- /* TWO ROOMS OF HALF A PHONE ARE TWO ROOMS OF NOTHING, and the shape does
-    not stay inside one. Measured on this page, spin paused and both rooms
-    pinned to the same four cameras, counting the vividly coloured pixels
-    (the shape; type and gridlines are grey) in each room's outermost column:
-
-        window   each room   coloured pixels on a side wall
-        390       195 px     80-155, at EVERY angle, in BOTH rooms
-        620       310 px     13-91,  at every angle, in both rooms
-        820       410 px     0-75,   at two angles of four
-        1024      512 px     0
-        1440      720 px     0
-
-    A single-room page at the same widths is clean, so this is the split and
-    not the scene: a 3D box is fitted to the room's HEIGHT, and half a narrow
-    window leaves the shape nowhere to go but through the wall. The modebar
-    was already turned off at 1024 and the titles shrunk at 820 for the same
-    narrowness -- what was never done was to stop halving the width. Below
-    that the rooms stack, each gets the whole width, and the page scrolls to
-    the second one the way it already scrolls to the controls. */
- @media (max-width:1000px) {
-   .row { flex-direction:column; max-height:none; }
-   /* 68vh, not half the screen: stacked, the first room IS the first screen,
-      and `check_layout` asks that a picture hold 55-85% of it -- the rule
-      that caught a WebKit scene collapsing to a third of an iPad. At 56vh
-      each room measured 51-54% and failed it at four sizes in both engines,
-      which was this layout being honest about a picture too small to read. */
-   .half { min-height:68vh; }
-   .half + .half { border-left:none;
-                    border-top:1px solid #262626; }
- }
+ /* THE ROOMS STAY SIDE BY SIDE AT EVERY WIDTH — asked for in as many
+    words: "Never stack — zoom the camera out instead so the shape fits a
+    narrow room. This keeps side by side at every width, which is what the
+    option promises." The fitting is `fitToPane` below; what was wrong was
+    its ceiling, not the idea. */
  .cap  { height:22px; line-height:22px; padding:0 10px; font-size:12px;
           color:#8a8a8a; background:#111111;
           font-family:Menlo,Consolas,"Courier New",monospace;
@@ -5024,6 +4999,21 @@ window.cqSpin = (function () {
     if (!w || !h) return;
     // A pane that is wider than it is tall wants the written view back --
     // which matters when a window is dragged narrow and then wide again.
+    // HOW FAR BACK. Measured on two rooms side by side, walking the eye back
+    // from the written view until no coloured pixel touched a wall, at four
+    // viewpoints with the spin paused:
+    //
+    //     room 195 x 654 (out of shape 3.35)   needs 2.00x
+    //     room 310 x 660 (out of shape 2.13)   needs 1.30x
+    //     room 410 x 700 (out of shape 1.71)   needs 1.15x
+    //
+    // — which is what this line already gave, and the ceiling of two is the
+    // narrowest case exactly. The reason two rooms on a phone were cut in
+    // half anyway is that THIS NEVER RAN on a saved page: see `placed`.
+    //
+    // The pull is still taken from the view the page was written with, never
+    // from the last fit, so dragging a window narrower twice cannot compound
+    // it — which is a fault this already had once.
     var pull = (h <= w) ? 1 : Math.min(2, h / w);
     whileWeMoveIt(function () {
       setCam(gd, {eye: {x: from.eye.x * pull, y: from.eye.y * pull,

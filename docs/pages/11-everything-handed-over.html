@@ -5171,6 +5171,21 @@ window.cqSpin = (function () {
     if (!w || !h) return;
     // A pane that is wider than it is tall wants the written view back --
     // which matters when a window is dragged narrow and then wide again.
+    // HOW FAR BACK. Measured on two rooms side by side, walking the eye back
+    // from the written view until no coloured pixel touched a wall, at four
+    // viewpoints with the spin paused:
+    //
+    //     room 195 x 654 (out of shape 3.35)   needs 2.00x
+    //     room 310 x 660 (out of shape 2.13)   needs 1.30x
+    //     room 410 x 700 (out of shape 1.71)   needs 1.15x
+    //
+    // — which is what this line already gave, and the ceiling of two is the
+    // narrowest case exactly. The reason two rooms on a phone were cut in
+    // half anyway is that THIS NEVER RAN on a saved page: see `placed`.
+    //
+    // The pull is still taken from the view the page was written with, never
+    // from the last fit, so dragging a window narrower twice cannot compound
+    // it — which is a fault this already had once.
     var pull = (h <= w) ? 1 : Math.min(2, h / w);
     whileWeMoveIt(function () {
       setCam(gd, {eye: {x: from.eye.x * pull, y: from.eye.y * pull,
@@ -8327,5 +8342,5 @@ window.cqSpinControls = function (settings) {
   settled();
 };
 
-window.addEventListener('load', function () {var s = {"on": true, "glide": false, "placed": true, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "swing", "speed": 4.0, "range": 22.0}, "ids": ["scene0"], "ink": "#e6e6e6", "paper": "#111111", "mode": "dark", "show": {"play": true, "speed": false, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true, "opacity": true, "wires": true, "grey": true, "views": true, "fullscreen": true, "picture": true, "cut": true, "agree": true, "sweep": true, "speed_each": true, "grid": true, "labels": true, "key": true, "appearance": true}, "palettes": {"dark": {"page": "#111111", "plot": "#141414", "grid": "#262626", "caption": "#8a8a8a", "text": "#e6e6e6", "axis": "#333333", "kept": "rgb(68,74,87)", "wire": "#9aa3b2", "mark": "#9aa3b2"}, "light": {"page": "#efebe6", "plot": "#f7f4ef", "grid": "#e0ddd7", "caption": "#7a7570", "text": "#22211f", "axis": "#d0ccc6", "kept": "rgb(176,180,188)", "wire": "#a8a4a0", "mark": "#7a7570"}, "none": {"page": "rgba(0,0,0,0)", "plot": "rgba(0,0,0,0)", "grid": "rgba(0,0,0,0)", "caption": "#8a8a8a", "text": "#8a8a8a", "axis": "rgba(0,0,0,0)", "kept": "rgb(120,124,132)", "wire": "#9aa3b2", "mark": "#9aa3b2"}, "slate": {"page": "#727272", "plot": "#7a7a7a", "grid": "#8f8f8f", "caption": "#242424", "text": "#151515", "axis": "#8f8f8f", "kept": "rgb(126,126,126)", "wire": "#414141", "mark": "#242424"}, "ink": {"page": "#ffffff", "plot": "#ffffff", "grid": "#c8c8c8", "caption": "#000000", "text": "#000000", "axis": "#c8c8c8", "kept": "rgb(190,190,190)", "wire": "#606060", "mark": "#000000"}}, "schemes": ["dark", "light", "follow", "none", "slate", "ink"]};window.cqSettings = s;window.cqSpin.set(s);window.cqSpinControls(s);});</script></body>
+window.addEventListener('load', function () {var s = {"on": true, "glide": false, "placed": false, "turn": {"mode": "round", "speed": 7.0, "range": 60.0}, "tilt": {"mode": "swing", "speed": 4.0, "range": 22.0}, "ids": ["scene0"], "ink": "#e6e6e6", "paper": "#111111", "mode": "dark", "show": {"play": true, "speed": false, "lr": true, "ud": true, "reset": true, "remember": true, "zoom": true, "move": true, "notes": true, "opacity": true, "wires": true, "grey": true, "views": true, "fullscreen": true, "picture": true, "cut": true, "agree": true, "sweep": true, "speed_each": true, "grid": true, "labels": true, "key": true, "appearance": true}, "palettes": {"dark": {"page": "#111111", "plot": "#141414", "grid": "#262626", "caption": "#8a8a8a", "text": "#e6e6e6", "axis": "#333333", "kept": "rgb(68,74,87)", "wire": "#9aa3b2", "mark": "#9aa3b2"}, "light": {"page": "#efebe6", "plot": "#f7f4ef", "grid": "#e0ddd7", "caption": "#7a7570", "text": "#22211f", "axis": "#d0ccc6", "kept": "rgb(176,180,188)", "wire": "#a8a4a0", "mark": "#7a7570"}, "none": {"page": "rgba(0,0,0,0)", "plot": "rgba(0,0,0,0)", "grid": "rgba(0,0,0,0)", "caption": "#8a8a8a", "text": "#8a8a8a", "axis": "rgba(0,0,0,0)", "kept": "rgb(120,124,132)", "wire": "#9aa3b2", "mark": "#9aa3b2"}, "slate": {"page": "#727272", "plot": "#7a7a7a", "grid": "#8f8f8f", "caption": "#242424", "text": "#151515", "axis": "#8f8f8f", "kept": "rgb(126,126,126)", "wire": "#414141", "mark": "#242424"}, "ink": {"page": "#ffffff", "plot": "#ffffff", "grid": "#c8c8c8", "caption": "#000000", "text": "#000000", "axis": "#c8c8c8", "kept": "rgb(190,190,190)", "wire": "#606060", "mark": "#000000"}}, "schemes": ["dark", "light", "follow", "none", "slate", "ink"]};window.cqSettings = s;window.cqSpin.set(s);window.cqSpinControls(s);});</script></body>
 </html>

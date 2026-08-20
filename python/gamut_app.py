@@ -13215,6 +13215,7 @@ class GamutApp(QMainWindow):
             # four arrangements this window can show wrote a different picture
             # than the one on screen, from a button that says "this view".
             self._write_scene(gamuts, clouds, styles, lost, target,
+                              saved=True,
                               controls=chosen.get("controls", True),
                               offer=chosen.get("offer"),
                               glide=chosen.get("glide", False),
@@ -14381,7 +14382,8 @@ class GamutApp(QMainWindow):
         # for a reason that has nothing to do with what they check.
         return getattr(self, "_camera", None)
 
-    def _spin_options(self, glide: bool = False) -> dict:
+    def _spin_options(self, glide: bool = False,
+                      saved: bool = False) -> dict:
         """What the page's turning engine should be doing, right now.
 
         *glide* is the one setting here that is NOT a reading of this window:
@@ -14397,7 +14399,19 @@ class GamutApp(QMainWindow):
             # fit it again -- see the note beside fitAll. Only true for the
             # window's own view, and only once there is a camera to carry:
             # the first draw of a session is a fresh page like any other.
-            placed=self._camera_now() is not None,
+            #
+            # AND *SAVED* IS THE OTHER HALF OF THAT SENTENCE, which was
+            # missing. This asked only whether THIS WINDOW has a camera, which
+            # it always has once anything is drawn -- so every page anybody
+            # saved said "already placed" and switched off the fitting whose
+            # entire purpose is a window whose shape nobody knew when the page
+            # was written. Measured: a two-room page opened at 390, 620 and
+            # 1440 px put its eye at 2.598 every time, the written distance,
+            # never fitted -- and the shapes came through the side walls of
+            # their rooms at every viewpoint. The reader's copy is a fresh
+            # page and must fit itself; only the live view carries a camera
+            # forward.
+            placed=(self._camera_now() is not None) and not saved,
             turn=dict(mode=self._turn_mode.currentData(),
                       speed=float(self._turn_speed.value()),
                       range=float(self._turn_sweep.value())),
@@ -15681,7 +15695,8 @@ class GamutApp(QMainWindow):
     def _write_scene(self, gamuts, clouds, styles, lost, out, *,
                      controls: bool = False, carry_viewer: bool = True,
                      notes: str = "", offer=None, glide: bool = False,
-                     colours: str = None, both_views: bool = False) -> bool:
+                     colours: str = None, both_views: bool = False,
+                     saved: bool = False) -> bool:
         """Write whatever is on screen, whichever of the four it is.
 
         ONE PLACE, BECAUSE THERE WERE TWO AND THEY DISAGREED. This window can
@@ -15745,11 +15760,12 @@ class GamutApp(QMainWindow):
             # scene: two rooms are already two pictures, and a cross-section
             # is the very view this would switch to.
             self._write_both_views(gamuts, out, clouds, styles, lost,
+                                   saved=saved,
                                    controls=controls, offer=offer,
                                    glide=glide, notes=notes, colours=colours)
             return False
         if self._side_by_side.isChecked() and len(gamuts) >= 2:
-            self._write_two_rooms(gamuts, out, clouds, lost,
+            self._write_two_rooms(gamuts, out, clouds, lost, saved=saved,
                                   controls=controls, offer=offer, glide=glide,
                                   notes=notes, colours=colours)
         else:
@@ -15779,7 +15795,7 @@ class GamutApp(QMainWindow):
                        split=bool(len(gamuts) > 1
                                   and (offer is None
                                        or offer.get("agree", True))),
-                       spin=self._spin_options(glide),
+                       spin=self._spin_options(glide, saved=saved),
                        # NO FLOATING STRIP IN THIS WINDOW. It has its own
                        # movement controls, and a second set over the picture
                        # is two controls for one thing that can disagree.
@@ -15833,7 +15849,8 @@ class GamutApp(QMainWindow):
     def _write_both_views(self, gamuts, out, clouds, styles, lost, *,
                           controls: bool = False, offer=None,
                           glide: bool = False, notes: str = "",
-                          colours: str = None) -> None:
+                          colours: str = None,
+                          saved: bool = False) -> None:
         """One page holding the shapes AND a cut through them, with a switch.
 
         Asked for from the window: "could the exported web viewer files get a
@@ -15869,13 +15886,14 @@ class GamutApp(QMainWindow):
         write_two_views_html(
             [("The shapes", shapes), ("A cut through them", cut)], out,
             mode=(colours or self._appearance),
-            spin={**self._spin_options(glide), "cuts": cuts},
+            spin={**self._spin_options(glide, saved=saved), "cuts": cuts},
             controls=controls, offer=offer, notes=notes)
 
     def _write_two_rooms(self, gamuts, out, clouds, lost,
                          controls: bool = False, offer=None,
                          glide: bool = False, notes: str = "",
-                         colours: str = None) -> None:
+                         colours: str = None,
+                         saved: bool = False) -> None:
         """One page, two scenes, each holding a single shape.
 
         Each is built by the same code that builds the single view, so the two
@@ -15942,7 +15960,7 @@ class GamutApp(QMainWindow):
         write_side_by_side_html(figures, out,
                                 mode=(colours or self._appearance),
                                 linked=self._link_cameras.isChecked(),
-                                spin=self._spin_options(glide),
+                                spin=self._spin_options(glide, saved=saved),
                                 controls=controls, offer=offer, notes=notes)
 
     #: The controls that can belong to one shape rather than all of them, as
