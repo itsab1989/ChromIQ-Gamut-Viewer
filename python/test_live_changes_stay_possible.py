@@ -326,3 +326,57 @@ def test_a_flat_gamut_is_scaled_to_fit_its_picture():
     assert np.allclose(got, want, atol=0.02), (
         f"the proportions were changed: drawn {got.round(3).tolist()} against "
         f"the shape's own {want.round(3).tolist()}")
+
+
+def test_a_short_axis_gets_fewer_numbers_along_it():
+    """A lopsided room must not write its labels on top of one another.
+
+    Seen on two of the awkward shapes -- a gamut with one patch far out in a*,
+    and one covering only the midtones -- where the L* numbers came out as a
+    single unreadable blob down the left of the picture. The drawing library
+    puts about as many ticks on every axis whatever its length on screen, so
+    the short side of a lopsided room is where they collide.
+
+    The labels are drawn inside the WebGL canvas, not as page text, so no
+    selector can measure them and this asks the layout instead: the short side
+    must be given fewer than the long one, and never fewer than three, which
+    is the least that still says what an axis is.
+    """
+    import numpy as np
+
+    from gamutview import build_gamut
+
+    rng = np.random.default_rng(7)
+    q = rng.normal(size=(400, 3))
+    q /= np.linalg.norm(q, axis=1)[:, None]
+    lab = q * np.array([30, 40, 36])
+    lab[:, 0] = np.clip(lab[:, 0] * 0.6 + 50, 5, 95)
+    lab = np.vstack([lab, [[50.0, 120.0, 10.0]]])       # one patch far out
+    fig = ti3gamut.build_figure(
+        [("one patch far out", build_gamut(lab, input_space="lab"))], "")
+
+    scene = fig.layout.scene
+    along = {"x": scene.xaxis.nticks, "y": scene.yaxis.nticks,
+             "z": scene.zaxis.nticks}
+    assert all(n is not None for n in along.values()), (
+        "no tick counts were asked for, so a short axis will crowd again")
+    assert min(along.values()) >= 3, (
+        f"an axis was left with {min(along.values())} numbers, which cannot "
+        f"say what it is")
+    assert along["z"] < along["x"], (
+        f"the short side (L*, {along['z']}) was given as many numbers as the "
+        f"long one (a*, {along['x']}), which is what made them collide")
+
+
+def test_an_even_room_is_labelled_evenly():
+    """And a shape that is not lopsided gets the same treatment on every side.
+
+    The rule is about proportion, not about singling out an axis: an ordinary
+    gamut is a little wider than it is tall, so its sides should differ by a
+    little and no more.
+    """
+    fig = ti3gamut.build_figure([("a normal paper", _ball(30.0))], "")
+    scene = fig.layout.scene
+    along = [scene.xaxis.nticks, scene.yaxis.nticks, scene.zaxis.nticks]
+    assert max(along) - min(along) <= 4, (
+        f"an ordinary gamut's sides were labelled very differently: {along}")

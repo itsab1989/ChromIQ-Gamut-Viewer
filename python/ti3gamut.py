@@ -9278,6 +9278,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
     # divided by one number, so nothing is squashed; a picture under the
     # ceiling is left entirely alone, which is every ordinary gamut.
     _room = None
+    _ticks = None
     if not _pinned and aspect == "data":
         _corners = [np.asarray(_to_plot_space(np.asarray(g.vertices, float),
                                               _axes_space), float)
@@ -9300,6 +9301,22 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                 _ratio = _ratio * (ROOM_CEILING / _ratio.max())
                 _room = dict(x=float(_ratio[0]), y=float(_ratio[1]),
                              z=float(_ratio[2]))
+            # AND A SHORT SIDE GETS FEWER NUMBERS ALONG IT.
+            #
+            # The drawing library puts about the same number of ticks on every
+            # axis whatever its length on screen, so the short side of a
+            # lopsided room ends up with its labels written on top of one
+            # another. Seen on two of the awkward shapes: a gamut with one
+            # patch far out in a*, and one covering only the midtones, both
+            # came out with the L* numbers as a single unreadable blob down
+            # the left of the picture.
+            #
+            # Asked in proportion to how long each side is actually drawn --
+            # nine along the longest, fewer along the others, never below
+            # three, which is enough to say what an axis is.
+            _ticks = dict(zip(("x", "y", "z"), (
+                max(3, int(round(9 * side / _ratio.max())))
+                for side in _ratio)))
 
     _axes = AXES[_axes_space]
     fig.update_layout(
@@ -9317,6 +9334,9 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         scene=dict(
             xaxis_title=_axes["x"], yaxis_title=_axes["y"],
             zaxis_title=_axes["z"],
+            xaxis_nticks=(_ticks["x"] if _ticks else None),
+            yaxis_nticks=(_ticks["y"] if _ticks else None),
+            zaxis_nticks=(_ticks["z"] if _ticks else None),
             aspectmode=("manual" if (_pinned or _room) else aspect),
             # WHEN THE BOX IS PINNED THE PROPORTIONS ARE PINNED TOO. With
             # aspectmode "data" the drawing library still works the shape of
