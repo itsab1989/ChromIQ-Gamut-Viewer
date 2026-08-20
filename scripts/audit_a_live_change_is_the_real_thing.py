@@ -441,6 +441,17 @@ def main() -> int:
                     sent[which] = 0.85 if value < 0.8 else 0.2
                 built = a_page(where, f"built-{which}-{value}", shapes, **fade)
                 want = arrays(shapes, **sent)
+                # PROVEN TO LAND. The mutation here is the DATA handed over,
+                # which looks as though it cannot fail to apply -- and that is
+                # exactly the assumption that let two other checks in this
+                # tree run for weeks sabotaging nothing. If a neighbouring
+                # value happens to produce the same arrays, --prove would be
+                # comparing a picture with itself and calling that proof.
+                if prove and want == arrays(shapes, **fade):
+                    print(f"  THE MUTATION DID NOT LAND at {label} {value}: "
+                          f"the arrays for a different\n  fade are identical "
+                          f"to the right ones, so this run tested nothing.")
+                    return 2
                 live, did, _sat = shoot(browser, full,
                                         f"live-{which}-{value}",
                                         where, want=want)
@@ -514,6 +525,11 @@ def main() -> int:
                     # draws a picture close enough to pass a careless eye.
                     sent = 20 if steps != 20 else 29
                 built = detail_page(where, steps)
+                if prove and detail_arrays(sent) == detail_arrays(steps):
+                    print(f"  THE MUTATION DID NOT LAND at detail {steps}: "
+                          f"the arrays for {sent}\n  steps are identical to "
+                          f"the right ones, so this run tested nothing.")
+                    return 2
                 live, did, _sat = shoot(browser, opened,
                                         f"live-detail-{steps}", where,
                                         want=detail_arrays(sent),
@@ -567,6 +583,11 @@ def main() -> int:
                     # step away is the picture a careless check would accept.
                     sent = 35 if L != 35 else 50
                 built = cut_page(where, L, flat)
+                if prove and cut_arrays(sent, flat) == cut_arrays(L, flat):
+                    print(f"  THE MUTATION DID NOT LAND at L* {L}: the arrays "
+                          f"for L* {sent} are\n  identical to the right ones, "
+                          f"so this run tested nothing.")
+                    return 2
                 live, did, sat = shoot(browser, opened_cut, f"live-cut-{L}",
                                        where, want=cut_arrays(sent, flat),
                                        script=PUSH_FLAT)

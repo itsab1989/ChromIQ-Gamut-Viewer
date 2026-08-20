@@ -80,3 +80,52 @@ def test_there_are_checks_to_find():
         "trivially on an empty list, so this says the folder is being read at "
         "all."
     )
+
+
+def test_every_mutation_test_proves_its_own_mutation_landed():
+    """A check that offers --prove must verify the sabotage actually bit.
+
+    TWO OF THE FOUR WERE SABOTAGING NOTHING, and both had been for a long
+    time.
+
+    `audit_two_rooms_drag` disabled `setPointerCapture`. Pointer capture was
+    the fix for about a day; 2.40.1 removed it again because capturing the
+    pointer stopped both rooms turning at all. From that commit on, the
+    mutation refused a call nobody made — so the rooms stayed in step exactly
+    as they should and the check announced itself blind, which was true of a
+    mechanism that no longer existed and made every Clean report above it
+    worth nothing.
+
+    `audit_the_cut_opens_where_it_was_saved` had no mutation at all. `--prove`
+    re-ran the ordinary pass, found nothing wrong, and printed "this check is
+    blind" — every time, since the day it was written, about a fault it never
+    restored.
+
+    Neither failure is visible from the outside: a mutation that matches
+    nothing and a check that is genuinely blind print the same words. The only
+    thing that tells them apart is the check ASKING whether its own sabotage
+    took hold, and saying so in those terms when it did not.
+
+    THIS RULE IS ABOUT THE CLASS, deliberately. Every one of these was written
+    carefully by somebody who believed the mutation applied. What is needed is
+    not more care but a place where the question is asked automatically.
+    """
+    unproved = []
+    for script in sorted(_SCRIPTS.glob("*.py")):
+        text = script.read_text(encoding="utf-8")
+        if '"--prove" in sys.argv' not in text and "def prove(" not in text:
+            continue
+        if "DID NOT LAND" not in text.upper():
+            unproved.append(script.name)
+
+    assert not unproved, (
+        "These checks offer --prove and never ask whether the sabotage "
+        "landed:\n  " + "\n  ".join(unproved)
+        + "\n\nA mutation aimed at code that has since been deleted matches "
+          "nothing, changes nothing, and reports the check as blind — which "
+          "is indistinguishable from a check that really is blind. Ask "
+          "whether it took hold, say so in those words (\"THE MUTATION DID "
+          "NOT LAND\") and return non-zero, so the two answers cannot be "
+          "confused. See audit_two_rooms_drag, where this had been silently "
+          "true since v2.40.1."
+    )
