@@ -322,6 +322,24 @@ def main() -> int:
         """
         w._on_clear()
         w._compare.setCurrentIndex(0)          # "Nothing — this one on its own"
+        # AND TWO MORE THINGS CLEAR DOES NOT PUT BACK, both found by adding a
+        # page in the middle of this run and watching FIVE LATER PAGES change:
+        #
+        #   * HOW THE SHAPE IS WORKED OUT. A page drawn as a simple skin left
+        #     the chooser on "hull", and every page after it was written as a
+        #     hull too — visible as `"flatshading":true` in two pages that are
+        #     not skins at all;
+        #   * WHERE THE READER IS LOOKING FROM. A page that turns leaves the
+        #     camera where the turning stopped, and the window writes the
+        #     camera it remembers into the next page: every later page moved
+        #     from the standard 1.5, 1.5, 1.5 to wherever page 13c finished.
+        #
+        # A generator writing twenty-five unrelated pictures must not depend
+        # on the order they are written in.
+        if w._mode.count():
+            w._mode.setCurrentIndex(0)         # "Follow the real edge"
+        w._camera = None                       # back to the standard view
+        w._camera_is_theirs = False
         w._on_compare_changed()
         pump(0.6)
         assert w._reference is None, (
@@ -719,6 +737,83 @@ def main() -> int:
     # mean. It is also the more useful question of the two: a paper drifts,
     # and "what can this batch no longer reproduce" is something a printer
     # asks about their own stock rather than about somebody else's.
+    # ------------------------------------------------------------------
+    # 13b AND 13c — THE TWO PICTURES THIS SET DID NOT HOLD.
+    #
+    # Both of the faults reported from the window on 2026-08-21 lived in
+    # configurations no sample page covered, which is exactly why every check
+    # that reads these pages passed while they were broken. Measured across
+    # the 23 pages before these two were added: NONE was drawn as a simple
+    # skin, and exactly one showed what a paper cannot print — with a single
+    # paper, which is the case that already worked.
+    #
+    #   * the out-of-reach boundary ran in stair-steps when TWO papers and a
+    #     comparison were open together, because the clean cut refused that
+    #     case;
+    #   * a simple skin looked scattered, because a hull is full of needles
+    #     and smooth shading smears the light along them.
+    #
+    # A page each. From here on they are sized, opened in three engines,
+    # driven and photographed by everything that reads this folder.
+    # ------------------------------------------------------------------
+    print("\n13b — two papers and a comparison, each showing what it cannot print")
+    fresh()
+    w._load(GLOSSY)
+    pump(2.0)
+    w._load(MATTE)
+    pump(2.5)
+    for i in range(w._compare.count()):
+        got = w._compare.itemData(i)
+        if got and got[0] == "space" and "sRGB" in w._compare.itemText(i):
+            w._compare.setCurrentIndex(i)
+            w._on_compare_changed()
+            break
+    pump(2.0)
+    w._show_lost.setChecked(True)
+    pump(3.0)
+    spin(on=False)
+    p = page("13b-two-papers-and-what-neither-can-print.html")
+    save_to(p, numbers=True, offer=EVERY_CONTROL)
+    made.append(("13b", p))
+    body = p.read_text(encoding="utf-8")
+    check("13b", "both papers say what is out of reach and what is within",
+          body.count("red is out of reach") >= 2,
+          "with two papers judged against one comparison, each of them "
+          "carries its own answer")
+    check("13b", "and there are three shapes in the picture",
+          body.count('"type":"mesh3d"') >= 2)
+    # THE POINT OF THE PAGE: the cut, not the staircase. A shape re-cut along
+    # the marking's own boundary has more corners than the one it was built
+    # from — 209 became 681 when this was measured — so a page that still
+    # holds the original count never had the cut.
+    marks = re.findall(r'"stand":"([01]+)"', body)
+    check("13b", "the shapes were re-cut along the boundary they are marked by",
+          bool(marks) and max((len(m) for m in marks), default=0) > 400,
+          f"masks of {[len(m) for m in marks]} points — an uncut paper has "
+          f"about 209")
+
+    print("\n13c — a shape wrapped in a simple skin")
+    fresh()
+    w._load(GLOSSY)
+    pump(2.5)
+    for i in range(w._mode.count()):
+        if w._mode.itemData(i) == "hull":
+            w._mode.setCurrentIndex(i)
+            w._mode.activated.emit(i)
+            break
+    pump(3.0)
+    spin(on=True, turn="round", turn_speed=6)
+    p = page("13c-wrapped-in-a-simple-skin.html")
+    save_to(p, numbers=True, offer=EVERY_CONTROL)
+    made.append(("13c", p))
+    body = p.read_text(encoding="utf-8")
+    check("13c", "the skin is lit facet by facet",
+          '"flatshading":true' in body,
+          "a hull is full of needles and smooth shading smears the light "
+          "along them, which is the streaking reported from the window")
+    check("13c", "and it is still one closed shape",
+          body.count('"type":"mesh3d"') >= 1)
+
     print("\n13 — what a paper can no longer reproduce, months later")
     fresh()
     w._load(GLOSSY)
