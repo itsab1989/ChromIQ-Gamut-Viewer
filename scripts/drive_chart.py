@@ -266,15 +266,39 @@ if cloud:
     name, lab, marked, ink = cloud
     check("with a mask of what falls outside", marked is not None
           and len(marked) == len(lab))
-    check("and it marks some but not all", 0 < int(marked.sum()) < len(marked),
-          str(None if marked is None else int(marked.sum())))
+    # THE MASK MUST AGREE WITH THE SENTENCE ABOVE IT, which is the invariant
+    # that holds for ANY chart. This asked for "some but not all" out of
+    # reach — and the chart this script writes for itself is one whose every
+    # patch sits inside the profile it is placed through. The window says so
+    # in as many words: "Every patch sits inside the profile it was placed
+    # through — which is what should happen, and is a check of the chart
+    # rather than of your printer." So the check demanded a fault of a
+    # deliberately faultless fixture, and reported 0.
+    #
+    # Asked this way it cannot go vacuous and it catches the thing worth
+    # catching: the words under the picture and the dots in it disagreeing.
+    # Measured on the verification chart, where there IS something outside:
+    # 151 outside in the words and 151 marked, against an absolute white; 0
+    # and 0 against the paper's own; and back to 151 and 151.
+    import re as _re
+
+    _said = _re.search(r"(\d+) inside, (\d+) on the edge, (\d+) outside",
+                       w._chart_rows.text())
+    check("the dots marked out of reach are the number the words give",
+          _said is not None and int(marked.sum()) == int(_said.group(3)),
+          f"words {_said.group(3) if _said else '?'}, "
+          f"dots {int(marked.sum())}")
 import ti3gamut
 fig = ti3gamut.build_figure([("x", w._slots[0][1])], "t", chart=cloud)
 names = [t.name for t in fig.data if t.name]
 check("the page carries a 'to be printed' trace",
       any("to be printed" in n for n in names), str(names))
-check("and a separate 'outside' one",
-      any("outside" in n for n in names), str(names))
+# AND AN 'OUTSIDE' TRACE EXACTLY WHEN THERE IS SOMETHING TO PUT IN IT. Asked
+# unconditionally, this failed on a chart that is wholly inside its profile —
+# where a trace of nought patches would be a legend entry naming an empty set.
+check("an 'outside' trace exists exactly when something is outside",
+      any("outside" in n for n in names) == bool(int(marked.sum())),
+      f"{int(marked.sum())} outside, traces {names}")
 check("no trace calls the chart a gamut or a surface",
       not any(getattr(t, "type", "") == "mesh3d" and "verification" in (t.name or "")
               for t in fig.data))
@@ -378,11 +402,33 @@ entries = [w._compare.itemText(i) for i in range(w._compare.count())]
 from PyQt6.QtWidgets import QGroupBox
 w._close_chart()
 pump(1.0)
-col = w._open_btn.parent().parent()
+# THE COLUMN, WHICH IS ONE LEVEL FURTHER UP THAN THIS USED TO REACH.
+#
+# `w._open_btn.parent().parent()` is the button's OWN group box, and a group
+# contains no other groups — so `widths` came out EMPTY and the rule below
+# failed on nothing at all. A measurement of an empty set reported as a
+# verdict, which is the third time this project has been caught by one.
+col = w._open_btn.parentWidget().parentWidget().parentWidget()
+
+# AND ONLY THE GROUPS THAT SIT IN THE COLUMN, not the ones nested inside them.
+#
+# "What this is telling you" lives inside "One device over time" and measures
+# 329 against everybody else's 365 — because it is indented, which is what a
+# sub-panel should be. Counting it made "every group is the same width" false
+# by design.
+def _in_the_column(group):
+    parent = group.parentWidget()
+    while parent is not None and parent is not col:
+        if isinstance(parent, QGroupBox):
+            return False
+        parent = parent.parentWidget()
+    return True
+
+
 widths = {g.title(): g.width() for g in col.findChildren(QGroupBox)
-          if g.title() and g.isVisible()}
+          if g.title() and g.isVisible() and _in_the_column(g)}
 check("every visible group fills the column",
-      len(set(widths.values())) == 1,
+      bool(widths) and len(set(widths.values())) == 1,
       ", ".join(f"{t}={x}" for t, x in widths.items()))
 check("the chart section says what it is for before anything is open",
       ".ti1" in w._chart_note.text(), w._chart_note.text())
