@@ -1,5 +1,38 @@
 # Changelog
 
+## v2.41.0
+
+### 🎚 “Where they agree” and “Where they differ” follow the handle
+
+Both fades used to wait for you to let go and then rebuild the whole page —
+about a second of black for a change you were in the middle of choosing. They
+now change the picture as you drag, like the rings, the solidity and the
+shading before them.
+
+**The reason they were not live was a mistake in a measurement.** A note in the
+code said a page on screen would not let a shape's triangles be replaced, and
+that note was taken by asking the page how many triangles it had — from the
+place where a page keeps its arrays packed, where the answer is always the
+same number whatever you do. It will let them be replaced. It always would.
+
+What the window sends is what a rebuilt page would have held, taken from the
+very same drawing code, so the live picture and a page you save cannot drift
+apart. Working the picture out costs 16–19 ms; it was never that which made a
+redraw slow.
+
+**Letting go still redraws at either end of a slider, and only there** — that
+is where a shape can vanish entirely, and the sentence explaining why it is
+missing is written when the page is built.
+
+Proved in pixels rather than argued: the shapes drawn while you drag are the
+shapes a rebuild draws, at both ends and in between, on a real paper against
+sRGB — 0 of 984,000 pixels different, and 11,640 to 53,219 when the check is
+deliberately fed the wrong fade, so it can see.
+
+`scripts/audit_the_live_fade_is_the_real_thing.py` is the new check, and it
+measures its own shapes before it will report anything: two earlier versions
+of it looked perfect while testing only colours.
+
 ## v2.40.2
 
 One user-facing fix, in the two-view page that 2.40.1 introduced.
