@@ -6096,6 +6096,18 @@ window.cqSpinControls = function (settings) {
   var cuts = settings.cuts || null;
   if (cuts && !(cuts.levels && cuts.levels.length > 1)) cuts = null;
   if (!on("cut", true)) cuts = null;
+  // AND A SCENE HAS NO CROSS-SECTION TO SLIDE.
+  //
+  // On a page holding both views the levels are carried once, for the whole
+  // page, so the strip built them for the shells as well -- cut, cut-at,
+  // cut-up and cut-down offered over a three-dimensional shape that has no
+  // cut to move. That is exactly the lie the line above refuses in the other
+  // direction, where a flat picture is not offered the turning controls.
+  //
+  // Only the LIGHTNESS controls go: the ΔE hider on a drift page is also
+  // called "cut" and belongs on a scene, and it is built from the traces'
+  // own data rather than from these levels.
+  if (!flat) cuts = null;
   var cutAt = cuts ? (cuts.at || 0) : 0;
 
   // TAKING THE COLOUR OUT OF SOMETHING, PROPERLY.
