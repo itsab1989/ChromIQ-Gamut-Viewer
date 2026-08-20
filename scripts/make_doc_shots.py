@@ -154,7 +154,8 @@ def the_controls():
     is precisely the case this script exists for.
     """
     from PyQt6.QtCore import QSettings
-    from PyQt6.QtWidgets import QApplication, QScrollArea
+    from PyQt6.QtWidgets import (QApplication, QGroupBox,
+                                 QScrollArea)
 
     import gamut_app
 
@@ -184,6 +185,31 @@ def the_controls():
     if anchor is None:
         raise SystemExit("the window has no _outline_paint — has the row "
                          "been renamed? This picture is framed on it.")
+
+    # OPEN THE SECTION FIRST, or there is nothing to scroll to.
+    #
+    # This script could not run at all: "Outline colour is not on screen in
+    # the grab", every time. The row is not missing and is not renamed —
+    # "How it looks" is FOLDED SHUT, so the whole group's inner widget is
+    # hidden and no amount of scrolling can bring a child of it into view.
+    # Measured: the row reported visible=False, hidden=False, enabled=True,
+    # with its container hidden and the group's `_fold_open` False.
+    #
+    # `audit_panel` learned this one long ago and opens every folded section
+    # before it measures anything — "a hidden widget has no size and makes no
+    # complaint". This is the same lesson arriving at a second script, which
+    # is what a shared helper would have prevented.
+    opened = 0
+    for box in window.findChildren(QGroupBox):
+        if (hasattr(box, "_refold") and not getattr(box, "_fold_open", True)
+                and box.isAncestorOf(anchor)):
+            box._fold_open = True
+            box._refold()
+            opened += 1
+    if opened:
+        pump(1.5)
+        print(f"    opened {opened} folded section(s) to reach the row")
+
     for scroll in window.findChildren(QScrollArea):
         if scroll.isAncestorOf(anchor):
             scroll.ensureWidgetVisible(anchor, 0, 40)
