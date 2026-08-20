@@ -1748,6 +1748,40 @@ def traces_for_restyle(figure):
     return out
 
 
+def frame_for_relayout(figure):
+    """The caption and BOTH WHOLE AXES of a flat cross-section.
+
+    A cut is drawn to FILL its frame, so moving it up or down changes the axes
+    as well as the outlines -- at L* 30 the picture runs from -114.8 to 50.4
+    across, and at L* 70 from -52.2 to 103.0. A push that sent the outlines
+    alone would draw the new cut inside the old frame, which reads as the
+    shape sliding sideways rather than the reader moving the cut. And the
+    caption names the height, so it travels too or the picture and the
+    sentence over it disagree.
+
+    THE WHOLE AXIS, NOT ITS RANGE. Written as the two ranges and the caption
+    -- which is what the axes visibly consist of -- three heights out of five
+    matched a rebuild exactly and two were out by eleven thousand pixels. The
+    picture said what the reasoning had missed: every GRIDLINE stood in a
+    different place and every tick number with it, because the spacing between
+    them is worked out per axis and is not implied by the range. The two that
+    failed were the two whose spacing differed from the height the page was
+    opened at; the three that passed had simply landed on the same spacing.
+
+    That is the whole argument for measuring a picture in pixels rather than
+    reasoning about what a change touches.
+    """
+    got = {}
+    title = getattr(getattr(figure.layout, "title", None), "text", None)
+    if title is not None:
+        got["title.text"] = title
+    for axis in ("xaxis", "yaxis"):
+        span = getattr(getattr(figure.layout, axis, None), "range", None)
+        if span is not None:
+            got[f"{axis}.range"] = [float(v) for v in span]
+    return got
+
+
 def surfaces_for_restyle(figure):
     """Every drawn surface of *figure*, as a picture already on screen wants it.
 

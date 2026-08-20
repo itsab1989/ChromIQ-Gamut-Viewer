@@ -244,6 +244,97 @@ def points(steps):
     return sum(len(t.get("x", ())) for t in detail_arrays(steps))
 
 
+#: The height the flat picture is OPENED at, so every push has to move it.
+CUT_AT = 50
+CUTS = [20, 35, 50, 65, 80]
+
+#: A cross-section is drawn to FILL its frame, so its axes and its caption
+#: move with it. The window sends both in one call; so does this.
+PUSH_FLAT = """(function (both) {
+  var el = document.getElementsByClassName('plotly-graph-div')[0], i;
+  var want = both[0], frame = both[1];
+  if (!el || !window.Plotly || !el.data) return 0;
+  if (el.data.length !== want.length) return 0;
+  for (i = 0; i < want.length; i++) {
+    if (String(el.data[i].name || '') !== want[i].n) return 0;
+    if (el.data[i].type !== want[i].t) return 0;
+  }
+  var FIELDS = {x: 'x', y: 'y', z: 'z', i: 'i', j: 'j', k: 'k',
+                c: 'vertexcolor'};
+  if (frame) window.Plotly.relayout(el, frame);
+  for (i = 0; i < want.length; i++) {
+    var patch = {}, any = false, f;
+    for (f in FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(want[i], f)) continue;
+      patch[FIELDS[f]] = [want[i][f]];
+      any = true;
+    }
+    if (any) window.Plotly.restyle(el, patch, [i]);
+  }
+  return want.length;
+})"""
+
+
+#: Where the drawn area actually sits inside the picture. Plotly measures the
+#: left margin from the WIDEST tick label and settles it when the page is
+#: drawn -- so a cut whose numbers reach 100 gets a wider margin than one whose
+#: reach 80, and that measurement is not redone the same way for a picture
+#: changed in place. Measured: built, the area starts at x=271; pushed to the
+#: same height it starts at x=270.5. Half a pixel, and every gridline, glyph
+#: and outline in the picture lights up because of it.
+#: WHAT IS ACTUALLY DRAWN, read from the library's decoded arrays. A page
+#: packs anything sizeable binary, so `t.x.length` off `gd.data` is undefined
+#: and every reading from it is the same constant -- four false verdicts in
+#: this project so far. `_fullData` carries the decoded lists.
+WHAT_IS_DRAWN = """(function () {
+  var el = document.getElementsByClassName('plotly-graph-div')[0], out = [];
+  var full = (el && el._fullData) || [];
+  for (var i = 0; i < full.length; i++) {
+    var t = full[i], xs = t.x || [], ys = t.y || [];
+    var at = function (a, n) {
+      return a.length ? +Number(a[Math.min(n, a.length - 1)]).toFixed(4)
+                      : null;
+    };
+    out.push([String(t.name || ''), t.type, xs.length, ys.length,
+              at(xs, 0), at(xs, Math.floor(xs.length / 2)), at(xs, 99999),
+              at(ys, 0), at(ys, Math.floor(ys.length / 2)), at(ys, 99999),
+              String((t.line || {}).color), String(t.fillcolor)]);
+  }
+  return JSON.stringify([out, (el.layout.title || {}).text,
+                         (el._fullLayout.xaxis || {}).range,
+                         (el._fullLayout.yaxis || {}).range]);
+})()"""
+
+WHERE_IT_SITS = """(function () {
+  var el = document.getElementsByClassName('plotly-graph-div')[0];
+  var f = el && el._fullLayout;
+  // A ROOM HAS NO FLAT AXES -- it is drawn in a scene -- so this answers only
+  // for a cross-section, which is the one picture whose frame can move.
+  if (!f || !f.xaxis || !f.yaxis) return null;
+  return {x: f.xaxis._offset, y: f.yaxis._offset,
+          w: f.xaxis._length, h: f.yaxis._length};
+})()"""
+
+
+def cut_page(where, lightness, shapes):
+    import ti3gamut
+
+    out = where / f"cut-{lightness}.html"
+    ti3gamut.write_slice_html(shapes, out, float(lightness), "Measured gamut",
+                              controls=False)
+    return out
+
+
+def cut_arrays(lightness, shapes):
+    import ti3gamut
+
+    figure = ti3gamut.build_slice_figure(shapes, float(lightness),
+                                         "Measured gamut", "dark",
+                                         extent=None, slidable=False)
+    return [ti3gamut.traces_for_restyle(figure),
+            ti3gamut.frame_for_relayout(figure)]
+
+
 def shoot(browser, path, tag, out_dir, want=None, script=None):
     tab = browser.new_page(viewport={"width": 1200, "height": 820})
     tab.goto(path.resolve().as_uri())
@@ -255,8 +346,10 @@ def shoot(browser, path, tag, out_dir, want=None, script=None):
         tab.wait_for_timeout(3000)
     shot = out_dir / f"{tag}.png"
     tab.locator(".plotly-graph-div").first.screenshot(path=str(shot))
+    where = tab.evaluate(WHERE_IT_SITS)
+    drawn = tab.evaluate(WHAT_IS_DRAWN)
     tab.close()
-    return shot, did
+    return shot, did, (where, drawn)
 
 
 #: Rows the caption is written across, and everything below them is the room.
@@ -348,9 +441,11 @@ def main() -> int:
                     sent[which] = 0.85 if value < 0.8 else 0.2
                 built = a_page(where, f"built-{which}-{value}", shapes, **fade)
                 want = arrays(shapes, **sent)
-                live, did = shoot(browser, full, f"live-{which}-{value}",
-                                  where, want=want)
-                shot, _ = shoot(browser, built, f"shot-{which}-{value}", where)
+                live, did, _sat = shoot(browser, full,
+                                        f"live-{which}-{value}",
+                                        where, want=want)
+                shot, _, _sat2 = shoot(browser, built,
+                                       f"shot-{which}-{value}", where)
                 everything, shapes_only, total = apart(live, shot)
                 caption = everything - shapes_only
                 print(f"  {label:20s} {value:>6.2f}  {str(did):>4s}  "
@@ -419,10 +514,12 @@ def main() -> int:
                     # draws a picture close enough to pass a careless eye.
                     sent = 20 if steps != 20 else 29
                 built = detail_page(where, steps)
-                live, did = shoot(browser, opened, f"live-detail-{steps}",
-                                  where, want=detail_arrays(sent),
-                                  script=PUSH_ALL)
-                shot, _ = shoot(browser, built, f"shot-detail-{steps}", where)
+                live, did, _sat = shoot(browser, opened,
+                                        f"live-detail-{steps}", where,
+                                        want=detail_arrays(sent),
+                                        script=PUSH_ALL)
+                shot, _, _sat2 = shoot(browser, built,
+                                       f"shot-detail-{steps}", where)
                 everything, shapes_only, total = apart(live, shot)
                 caption = everything - shapes_only
                 print(f"  {'detail':20s} {steps:>6d}  {str(did):>4s}  "
@@ -438,6 +535,87 @@ def main() -> int:
                         f"shapes a rebuild draws differ by {shapes_only:,} "
                         f"pixels — a reader who lets go of the handle is "
                         f"handed a different picture from the one they chose")
+
+            # ------------------------------------------ and THE CROSS-SECTION
+            #
+            # The cheapest of the three to work out -- 7 ms, three traces, 363
+            # points -- and the only one that moves the FRAME as well as what
+            # is drawn in it. A cut is drawn to fill its picture, so the axes
+            # run from -114.8 to 50.4 across at L* 30 and from -52.2 to 103.0
+            # at L* 70, and the caption names the height. A push that sent the
+            # outlines alone would draw the new cut inside the old frame, under
+            # a sentence naming a lightness it is not at -- which looks like
+            # the shape sliding sideways rather than the cut moving.
+            flat = at_detail(20)
+            frames = {L: cut_arrays(L, flat)[1].get("xaxis.range")
+                      for L in CUTS}
+            if len(set(map(str, frames.values()))) < len(frames):
+                print(f"\n  These cuts share a frame ({frames}), so this run "
+                      f"cannot say whether\n  the axes travelled with the "
+                      f"outlines.")
+                return 2
+            print(f"\n  every height has its own frame, so the axes have to "
+                  f"travel too\n")
+            print(f"  {'change':20s} {'at':>6s}  {'sent':>4s}  "
+                  f"{'the shapes':>14s}  {'the caption':>13s}")
+            print("  " + "-" * 66)
+            opened_cut = cut_page(where, CUT_AT, flat)
+            for L in CUTS:
+                sent = L
+                if prove:
+                    # THE NEXT HEIGHT UP THE SLIDER, not the far end: a cut one
+                    # step away is the picture a careless check would accept.
+                    sent = 35 if L != 35 else 50
+                built = cut_page(where, L, flat)
+                live, did, sat = shoot(browser, opened_cut, f"live-cut-{L}",
+                                       where, want=cut_arrays(sent, flat),
+                                       script=PUSH_FLAT)
+                shot, _, was = shoot(browser, built, f"shot-cut-{L}", where)
+                everything, shapes_only, total = apart(live, shot)
+                caption = everything - shapes_only
+                # HALF A PIXEL IS NOT A WRONG PICTURE, and telling the two
+                # apart is the difference between a check somebody trusts and
+                # one they learn to ignore. The drawn area's own position is
+                # asked for, so a picture that is merely STANDING somewhere
+                # else can be named as that rather than reported as the shapes
+                # being wrong. If it sits in the same place and the pixels
+                # still differ, it IS the shapes, and that is a fault.
+                # THE EXCUSE HAS TO BE NARROW OR IT EXCUSES EVERYTHING.
+                #
+                # Written as "the frame moved, so never mind", --prove came
+                # back green with every height wrong: pushing a NEIGHBOURING
+                # cut moves the frame too, so the excuse covered the very
+                # fault it was meant to leave visible. So it now takes all
+                # three: the same drawn arrays to four decimal places, the
+                # same axis ranges, the same caption -- and only then is a
+                # frame standing under a pixel to one side allowed to account
+                # for the difference.
+                (sat, live_drawn), (was, built_drawn) = sat, was
+                identical = live_drawn == built_drawn
+                slid = (sat and was
+                        and abs(sat["x"] - was["x"]) < 1
+                        and abs(sat["y"] - was["y"]) < 1
+                        and (sat["x"], sat["y"]) != (was["x"], was["y"]))
+                moved_over = identical and slid
+                shifted = ("" if not (sat and was)
+                           or (sat["x"], sat["y"]) == (was["x"], was["y"])
+                           else f"  ← the whole picture sits "
+                                f"{abs(sat['x'] - was['x']):.1f} px across"
+                                + ("" if identical
+                                   else ", AND what is drawn differs"))
+                print(f"  {'a cross-section':20s} {L:>6d}  {str(did):>4s}  "
+                      f"{shapes_only:>9,} px  {caption:>10,} px{shifted}")
+                if not did:
+                    problems.append(
+                        f"the cut at L* {L}: the push was refused — the "
+                        f"picture cannot have followed the handle")
+                elif (shapes_only or caption) and not moved_over:
+                    problems.append(
+                        f"the cut at L* {L}: what is drawn live and what a "
+                        f"rebuild draws differ by {shapes_only:,} pixels in "
+                        f"the picture and {caption:,} in the caption, in the "
+                        f"same frame — the reader is not looking at the "
+                        f"height they chose")
             browser.close()
 
     print()
@@ -456,10 +634,17 @@ def main() -> int:
         return 1
     print("  Clean: a change pushed into the picture already on screen draws, "
           "pixel for\n  pixel, what a rebuild would have drawn — both fades "
-          "at both ends and in\n  between, and detail across four "
-          "resolutions with every point moved. Only\n  the caption differs, "
-          "only at an end of a fade, and that is the sentence the\n  window "
-          "rebuilds to fetch.")
+          "at both ends and in\n  between, detail across four resolutions "
+          "with every point moved, and the\n  cross-section at five heights."
+          "\n\n  Two things differ and both are named rather than waved "
+          "through: the caption\n  at an end of a fade, which is the "
+          "sentence the window rebuilds to fetch,\n  and a cut whose widest "
+          "tick label changes width, which stands half a pixel\n  to one "
+          "side because a margin is measured when a page is drawn and is not\n"
+          "  measured again the same way in place. Every number that decides "
+          "the picture\n  is identical there — the arrays to four decimals, "
+          "both axis ranges, the\n  caption — which is what that excuse "
+          "requires before it will apply.")
     return 0
 
 

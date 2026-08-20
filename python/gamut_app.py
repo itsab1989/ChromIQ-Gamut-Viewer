@@ -6861,8 +6861,20 @@ _DETAIL_JS = """
     if (String(el.data[i].name || '') !== want[i].n) return false;
     if (el.data[i].type !== want[i].t) return false;
   }
+  // THE FRAME FIRST, WHEN THERE IS ONE, and the order was measured rather
+  // than chosen. A flat cross-section is drawn to fill its picture, so moving
+  // it up or down moves the axes as well -- and its caption names the height
+  // it was cut at. Sent without them the new outlines would be drawn inside
+  // the old frame, under a sentence naming a lightness they are not at.
+  //
+  // Sent AFTER the outlines, one height in five came out ten thousand pixels
+  // away from what a rebuild draws: the spacing between gridlines is settled
+  // from whatever is on the axis at the moment it is asked, so the outlines
+  // arrived first and the axis was worked out around the wrong ones. Frame
+  // first, and that height matches to the pixel.
   var FIELDS = {x: 'x', y: 'y', z: 'z', i: 'i', j: 'j', k: 'k',
                 c: 'vertexcolor'};
+  if (frame) window.Plotly.relayout(el, frame);
   for (i = 0; i < want.length; i++) {
     var patch = {}, any = false, f;
     for (f in FIELDS) {
@@ -8201,9 +8213,8 @@ class GamutApp(QMainWindow):
         self._slice_at = NoScrollSlider(Qt.Orientation.Horizontal, g_look)
         self._slice_at.setRange(0, 100)
         self._slice_at.setValue(50)
-        self._slice_at.valueChanged.connect(
-            lambda v: self._slice_lbl.setText(f"L* {v}"))
-        self._slice_at.sliderReleased.connect(self._redraw)
+        self._slice_at.valueChanged.connect(self._on_cut_changed)
+        self._slice_at.sliderReleased.connect(self._after_cut)
         srow.addWidget(self._slice_at, 1)
         self._slice_lbl = QLabel("L* 50", g_look)
         self._slice_lbl.setFixedWidth(46)
@@ -13521,6 +13532,67 @@ class GamutApp(QMainWindow):
     #: rebuilds) and shorter than a pause a person would call a wait.
     DETAIL_SETTLES_AFTER = 150
 
+    def _on_cut_changed(self, value: int) -> None:
+        """Move the cross-section as the handle moves. No waiting at all.
+
+        The cheapest of the live controls by a long way -- **7 ms** to work
+        out, three traces, 363 points -- so unlike Detail this needs no pause
+        to hide behind and fires on every step.
+
+        A CUT IS DRAWN TO FILL ITS FRAME, so the axes move with it and the
+        caption names the height. Those travel too; see `frame_for_relayout`.
+        Sending the outlines alone would draw the new cut inside the old
+        frame, which reads as the shape sliding sideways rather than the
+        reader moving the cut.
+        """
+        self._slice_lbl.setText(f"L* {value}")
+        self._push_cut()
+
+    def _push_cut(self) -> bool:
+        self._cut_live = False
+        view = getattr(self, "_view", None)
+        page = view.page() if view is not None else None
+        if page is None or getattr(self, "_run_drawn", False):
+            return False
+        # ONLY THE ONE ARRANGEMENT THIS WAS WORKED OUT FOR. Two cuts side by
+        # side are two pictures; the tick being off means there is no cut on
+        # screen at all. Both fall back to the rebuild that has always worked.
+        if not self._slice_on.isChecked() or self._side_by_side.isChecked():
+            return False
+        gamuts, _clouds, _styles, _lost = self._scene_contents()
+        if not gamuts:
+            return False
+        from ti3gamut import (build_slice_figure, frame_for_relayout,
+                              traces_for_restyle)
+
+        try:
+            figure = build_slice_figure(
+                gamuts, float(self._slice_at.value()), self._scene_title(),
+                self._appearance, extent=None, slidable=False)
+        except Exception:                  # noqa: BLE001 — never on a drag
+            return False
+        wanted = traces_for_restyle(figure)
+        if not wanted:
+            return False
+
+        def answered(ok):
+            self._cut_live = bool(ok)
+
+        page.runJavaScript(
+            f"(function(want,frame){{{_DETAIL_JS}}})"
+            f"({json.dumps(wanted)},"
+            f"{json.dumps(frame_for_relayout(figure))})", answered)
+        return True
+
+    def _after_cut(self) -> None:
+        """Letting go of the cross-section: rebuild only if the push missed."""
+        if getattr(self, "_cut_live", False) and self._push_cut():
+            self._update_volume()
+            self._update_coverage()
+            self._update_drift()
+            return
+        self._redraw()
+
     def _on_detail_changed(self, value: int) -> None:
         self._detail_lbl.setText(f"{value} steps")
         self._detail_soon.start(self.DETAIL_SETTLES_AFTER)
@@ -13573,8 +13645,8 @@ class GamutApp(QMainWindow):
             self._detail_live = bool(ok)
 
         page.runJavaScript(
-            f"(function(want){{{_DETAIL_JS}}})({json.dumps(wanted)})",
-            answered)
+            f"(function(want,frame){{{_DETAIL_JS}}})"
+            f"({json.dumps(wanted)},null)", answered)
         return True
 
     def _on_detail_released(self) -> None:
