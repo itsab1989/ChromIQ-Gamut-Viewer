@@ -45,6 +45,10 @@ OFFSCREEN = os.environ.get("QT_QPA_PLATFORM", "offscreen") == "offscreen"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
+#: TAKEN BEFORE QT IS GIVEN A TIDY sys.argv. Overwriting it below is what the
+#: window needs; reading a flag out of it afterwards finds nothing, silently —
+#: a `--prove` written that way ran the ORDINARY pass and reported Clean.
+ASKED = list(sys.argv[1:])
 sys.argv = ["audit_what_you_save"]
 
 import prefs                                                   # noqa: E402
@@ -155,6 +159,17 @@ def main() -> int:
     pump(6)
     win._open_chart_file(demo / "verification-chart-480.ti1")
     pump(7)
+    # A SECOND SHAPE, so the two fades have something to act on. They are the
+    # newest of the controls that change the picture without writing a page,
+    # and they are the ones with most to go wrong: what they push is a colour
+    # per corner and a triangle list, worked out here in Python.
+    for i in range(win._compare.count()):
+        data = win._compare.itemData(i)
+        if data and data[0] == "space" and data[1] == "sRGB":
+            win._compare.setCurrentIndex(i)
+            win._on_compare_changed()
+            break
+    pump(6)
 
     # A STATE NOBODY WOULD REACH BY ACCIDENT, set only through the controls
     # that no longer write a page. Distinctive values, so a file written from
@@ -168,7 +183,36 @@ def main() -> int:
     win._chart_out_dot.setValue(96)           # 9.6 across
     win._chart_out_opacity.setValue(21)
     win._grid_on.setChecked(False)
+    # THE FADE, THROUGH THE LIVE PATH ONLY. `valueChanged` is what a drag
+    # emits; `sliderReleased` is what the window uses to decide whether it
+    # must rebuild. Setting the value without the release is exactly the
+    # state a reader is in mid-drag, and it is the state in which the screen
+    # and the file are free to disagree.
+    win._agree.setValue(62)
     pump(6)
+
+    if "--prove" in ASKED:
+        # THE MUTATION: leave the screen faded and write the page as though it
+        # were not. That is this check's whole subject in one line — the
+        # screen is right, the reader's copy is not, and nobody finds out
+        # until somebody else opens the file.
+        real_options = win._render_options
+
+        def as_if_nothing_were_faded(*a, **k):
+            got = dict(real_options(*a, **k))
+            got["agree"] = 1.0
+            return got
+
+        landed = as_if_nothing_were_faded().get("agree") != \
+            real_options().get("agree")
+        if not landed:
+            print("  THE MUTATION DID NOT LAND — the fade was already at the "
+                  "top, so writing\n  the page as though nothing were faded "
+                  "changes nothing and this run tested\n  nothing.")
+            return 2
+        win._render_options = as_if_nothing_were_faded
+        print("  --prove: the screen stays faded and the page is written as "
+              "though it were not.\n  The check must notice.\n")
 
     folder = pathlib.Path(tempfile.mkdtemp(prefix="what-you-save-"))
     out = folder / "saved.html"
@@ -192,6 +236,18 @@ def main() -> int:
     # version of this audit was reading.
     axis = ((layout.get("scene") or {}).get("xaxis") or {})
 
+    def _fade_in(meshes):
+        """The alpha the saved surfaces carry, or None if none is faded."""
+        for mesh in meshes:
+            colours = mesh.get("vertexcolor")
+            if not isinstance(colours, list):
+                continue
+            for colour in colours:
+                text = str(colour)
+                if text.startswith("rgba("):
+                    return text[:-1].rsplit(",", 1)[-1].strip()
+        return None
+
     def one(what, on_screen, in_the_file):
         print(f"      {what:38s} screen {on_screen!r:>10}   "
               f"file {in_the_file!r:>10}   "
@@ -202,6 +258,13 @@ def main() -> int:
 
     print("\n  WHAT THE SCREEN SAYS, AND WHAT THE FILE SAYS\n")
     problems = [p for p in (
+        # THE FADE HAS TO BE IN THE FILE, and it shows as an alpha on every
+        # corner of the surface it acts on. Read off the colours rather than
+        # off a setting, because a setting recorded and never drawn would
+        # pass a check of settings and hand the reader a different picture.
+        one("how much of the agreement is left",
+            f"{win._agree.value() / 100.0:.3f}",
+            _fade_in(surfaces)),
         one("how solid the shapes look",
             round(win._opacity.value() / 100.0, 3),
             round(surfaces[0].get("opacity", -1), 3) if surfaces else None),
@@ -337,6 +400,19 @@ def main() -> int:
                 f"picture ({left} left, {right} right)")
 
     print()
+    # THE MUTATION'S OWN VERDICT COMES FIRST. Put after the report below, that
+    # report's `return 1` wins and --prove exits as a failure while having
+    # done exactly what it was asked to do.
+    if "--prove" in ASKED:
+        shutil.rmtree(folder, ignore_errors=True)
+        win.close()
+        if any("agreement" in line for line in problems):
+            print("  With the page written as though nothing were faded, the "
+                  "check said so.\n  It can see.")
+            return 0
+        print("  THE PAGE WAS WRITTEN UNFADED AND THE CHECK SAID NOTHING. "
+              "It is blind.")
+        return 1
     if problems:
         for line in problems:
             print("  " + line)
