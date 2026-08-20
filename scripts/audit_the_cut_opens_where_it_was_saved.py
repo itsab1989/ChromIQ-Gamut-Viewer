@@ -46,6 +46,19 @@ sys.path.insert(0, str(HERE.parent / "python"))
 #: The height the page is written at, chosen to sit well away from both ends.
 SAVED_AT = 50.0
 
+#: THE FAULT, PUT BACK ON PURPOSE. The cure was to stop a view that has no
+#: cross-section from remembering a cut height at all: the strip is built
+#: first for the shapes, where the height is 0 by default, and that 0 was
+#: stored as the reader's remembered choice and restored a moment later over
+#: the top of the height the page was saved at.
+#:
+#: ⚠ THIS CHECK HAD NO MUTATION AT ALL. `--prove` re-ran the ordinary pass,
+#: found nothing wrong -- correctly, because nothing had been broken -- and
+#: announced "this check is blind". It had been saying so since the day it was
+#: written, about a fault it never restored. A `--prove` that changes nothing
+#: is worse than none: it reads as a checked box.
+WITH_THE_FAULT_BACK = ("...(cuts ? {cutAt: cutAt} : {}),", "cutAt: cutAt,")
+
 WHERE = """(function () {
   var s = window.cqSettings || {}, c = s.cuts || null;
   var says = document.querySelector('[data-cq="cut-at"]');
@@ -64,6 +77,22 @@ def the_paper():
     if not demo.is_file():
         return None
     return build_gamut(ti3gamut.read_measurement(demo).lab, input_space="lab")
+
+
+def put_the_fault_back(page: pathlib.Path) -> bool:
+    """Rewrite a written page so it remembers a cut height it has not got.
+
+    Done to the FILE rather than to the module, because a page carries its own
+    copy of the script and that copy is what a reader runs. Returns whether
+    the swap actually landed -- a mutation that quietly matches nothing is the
+    fault this whole exercise is about.
+    """
+    was, now = WITH_THE_FAULT_BACK
+    text = page.read_text(encoding="utf-8")
+    if was not in text:
+        return False
+    page.write_text(text.replace(was, now), encoding="utf-8")
+    return True
 
 
 def pages(where: pathlib.Path, paper):
@@ -107,6 +136,17 @@ def main() -> int:
     problems = []
     with tempfile.TemporaryDirectory() as tmp:
         made = pages(pathlib.Path(tmp), paper)
+        if prove:
+            landed = [put_the_fault_back(page) for page, _s in made.values()]
+            if not all(landed):
+                print("  THE MUTATION DID NOT LAND — the line it rewrites is "
+                      "not in the written\n  page any more, so this run "
+                      "tested nothing. Look at what replaced it\n  before "
+                      "believing any Clean report from this check.")
+                return 2
+            print("  --prove: both pages have been rewritten to remember a "
+                  "cut height even\n  when they hold no cut. The cut must "
+                  "now open in the wrong place.\n")
         with sync_playwright() as play:
             browser = play.chromium.launch()
             for name, (page, switch) in made.items():
