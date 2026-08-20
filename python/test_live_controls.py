@@ -440,3 +440,43 @@ def test_only_CHOOSING_a_comparison_may_ask_for_a_file():
         "nothing is wired to _on_compare_changed at all, so this rule is "
         "no longer measuring anything — the box that chooses a comparison "
         "must still be connected to it")
+
+
+def test_the_window_draws_its_own_scene_with_the_mask():
+    """The flag the live fades stand on, pinned where it is actually set.
+
+    `test_a_fade_push_cannot_arrive_with_more_corners_than_the_picture_has`
+    proves what happens without the mask — 209 corners drawn, 445 pushed. This
+    proves the window asks for it, which is the half a rule about
+    `build_figure` cannot see.
+
+    IT USED TO BE GATED ON `controls`, i.e. only pages that hand a reader the
+    fade buttons were re-cut, and the window's own view was not. That was
+    right while only a saved page could be faded. The window has two fade
+    sliders of its own now, so the same reasoning applies to it — and putting
+    the gate back would break both of them in a way that shows up as a
+    mis-painted surface rather than as an error.
+    """
+    text = (ROOT / "gamut_app.py").read_text(encoding="utf-8")
+    at = text.index("            write_html(gamuts, out, self._scene_title(),")
+    # PAST THE REASONING, TO THE ARGUMENT. There are twenty lines of comment
+    # between the call and the flag, and a fixed-size slice that stops short
+    # of it reports "no split at all" — which reads as the fault and is the
+    # test measuring nothing.
+    where = text.find("split=", at)
+    assert 0 < where < at + 4000, (
+        "the window's own scene no longer passes `split` at all")
+    asked = text[where:text.index("\n", text.index(")", where))]
+    assert "controls" not in asked, (
+        f"the window's own scene is drawn with the mask only when it is "
+        f"handing over controls: {asked.strip()!r}\n\n"
+        f"Its own two fade sliders push a colour per corner into the picture "
+        f"already on screen, and the re-cut is what makes the number of "
+        f"corners the same before and after. Without it the push arrives at a "
+        f"picture of a different size — 445 colours for 209 corners, "
+        f"measured — and paints it wrongly with nothing to say so."
+    )
+    assert "len(gamuts) > 1" in asked, (
+        f"the window's own scene no longer asks for the mask on the count of "
+        f"shapes: {asked.strip()!r}"
+    )

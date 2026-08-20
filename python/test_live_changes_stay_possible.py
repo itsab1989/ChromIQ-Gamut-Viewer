@@ -592,3 +592,55 @@ def test_detail_moves_every_point_it_is_asked_to_move():
     assert len(set(seen.values())) == len(seen), (
         f"detail did not change how many points the picture holds ({seen}), "
         f"so nothing here proves the points travel")
+
+
+def test_a_fade_push_cannot_arrive_with_more_corners_than_the_picture_has():
+    """The scene on screen and a faded push must agree how many points exist.
+
+    THE INVARIANT THE LIVE FADES STAND ON, and nothing named it until this.
+
+    `_push_fade` sends a colour per corner and a triangle list. It does NOT
+    send the corners themselves — there is no need, because a fade moves
+    nothing. That is only true if the picture on screen was drawn with the
+    shapes ALREADY re-cut along their crossing, because the re-cut inserts new
+    corners along that line.
+
+    Measured on a real paper against sRGB, drawn solid:
+
+        without the mask   209 corners at full strength, 445 once faded
+        with the mask      445 at every fade
+
+    So a window that drew its scene without the mask would hand 445 colours to
+    a mesh with 209 corners, on the first nudge of either fade slider. The
+    window therefore passes `split=True` for its own view — see `_write_scene`
+    — and this rule is here because that flag reads like a detail about saved
+    pages and is not one.
+
+    THE FIXTURE PROVES ITSELF: the same pair is built both ways, and the
+    unmasked one MUST disagree with itself across fades, or this rule is
+    passing on a shape that could not have shown the fault.
+    """
+    from references import reference_gamut
+
+    pair = [("a paper", _blob((34, 46, 40), seed=4)),
+            ("sRGB", reference_gamut("sRGB", steps=12))]
+
+    def corners(split, agree):
+        fig = ti3gamut.build_figure(pair, "", split=split, agree=agree,
+                                    styles=["solid", "mesh"], opacity=1.0)
+        return [len(t.x) for t in fig.data if t.type == "mesh3d"]
+
+    masked = {agree: corners(True, agree) for agree in (1.0, 0.5, 0.0)}
+    bare = {agree: corners(False, agree) for agree in (1.0, 0.5, 0.0)}
+
+    assert bare[1.0] != bare[0.5], (
+        f"these shapes keep the same corners with and without the re-cut "
+        f"({bare}), so this rule cannot show the fault it exists for — pick "
+        f"a pair that genuinely crosses")
+
+    counts = {tuple(v) for v in masked.values()}
+    assert len(counts) == 1, (
+        f"a scene drawn with the mask changes how many corners it has when "
+        f"faded ({masked}) — a live fade push sends one colour per corner and "
+        f"no corners, so it would arrive at a picture of a different size and "
+        f"paint it wrongly with nothing to say so")
