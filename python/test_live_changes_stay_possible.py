@@ -262,3 +262,67 @@ def test_the_neutral_line_does_not_need_measured_greys():
     assert not [t for t in off.data
                 if "perfectly neutral" in str(getattr(t, "name", ""))], (
         "a neutral line was drawn with its tick off")
+
+
+def _ball(z_spread, seed=3):
+    """A gamut as tall as *z_spread* in L*, and always wide in a*/b*."""
+    import numpy as np
+
+    from gamutview import build_gamut
+
+    rng = np.random.default_rng(seed)
+    q = rng.normal(size=(400, 3))
+    q /= np.linalg.norm(q, axis=1)[:, None]
+    lab = q * np.array([z_spread, 46, 40])
+    lab[:, 0] += 55
+    return build_gamut(lab, input_space="lab")
+
+
+def test_an_ordinary_gamut_keeps_the_library_s_own_proportions():
+    """Nothing is imposed on a picture that already fits.
+
+    The room is sized in Lab units on purpose -- that is why a wide gamut
+    looks wide -- so the ceiling added for flat gamuts must not touch anything
+    below it. Measured when it was written: a normal shape covered exactly the
+    same pixels before and after, 53,544 of them.
+    """
+    fig = ti3gamut.build_figure([("a normal paper", _ball(30.0))], "")
+    scene = fig.layout.scene
+    assert scene.aspectmode == "data", (
+        f"an ordinary gamut is no longer left to the library's own "
+        f"proportions (aspectmode is {scene.aspectmode!r})")
+    assert scene.aspectratio.x is None, (
+        "a ratio was imposed on a picture that did not need one")
+
+
+def test_a_flat_gamut_is_scaled_to_fit_its_picture():
+    """A gamut with almost no lightness range must not spill over the edges.
+
+    Measured by flattening a gamut step by step and looking at where the ink
+    landed: a room whose longest side is 2.60 still fits, one at 3.27 is cut
+    off at two edges with the axis titles pushed out of the picture. A chart
+    covering only the midtones does this.
+    """
+    fig = ti3gamut.build_figure([("almost flat", _ball(1.5))], "")
+    scene = fig.layout.scene
+    assert scene.aspectmode == "manual", (
+        "a flat gamut was left to size its own room, which overflows")
+    sides = [scene.aspectratio.x, scene.aspectratio.y, scene.aspectratio.z]
+    assert max(sides) <= ti3gamut.ROOM_CEILING + 1e-6, (
+        f"the room is {max(sides):.2f} long, past the {ti3gamut.ROOM_CEILING} "
+        f"that was measured to fit")
+
+    # AND ITS PROPORTIONS ARE UNTOUCHED, which is the whole point: the sides
+    # are divided by one number, so a wide gamut still looks wide.
+    import numpy as np
+
+    corners = np.asarray(_ball(1.5).vertices, float)
+    real = np.array([corners[:, i].max() - corners[:, i].min()
+                     for i in range(3)])
+    # the drawn axes are (a*, b*, L*) where the shape's columns are (L*, a*, b*)
+    real = np.array([real[1], real[2], real[0]])
+    want = real / real.max()
+    got = np.array(sides) / max(sides)
+    assert np.allclose(got, want, atol=0.02), (
+        f"the proportions were changed: drawn {got.round(3).tolist()} against "
+        f"the shape's own {want.round(3).tolist()}")

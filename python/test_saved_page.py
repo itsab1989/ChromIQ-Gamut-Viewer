@@ -1885,9 +1885,36 @@ def test_the_room_keeps_its_shape_when_only_the_greys_are_left(tmp_path):
                                 drift=(lab, rng.uniform(0, 6, n), "d", None,
                                        True))
     assert fig.layout.scene.aspectmode == "manual"
-    assert fig.layout.scene.aspectratio.x == 1.0
-    assert fig.layout.scene.aspectratio.y > 0
-    assert fig.layout.scene.aspectratio.z > 0
+    sides = [fig.layout.scene.aspectratio.x, fig.layout.scene.aspectratio.y,
+             fig.layout.scene.aspectratio.z]
+    assert all(side > 0 for side in sides)
+
+    # THE SHAPE OF THE ROOM IS WHAT THIS GUARDS, not which side happens to be
+    # the 1. It used to say `x == 1.0`, because the ratio was divided by x;
+    # dividing by the LONGEST side instead -- so that a room can never be
+    # drawn larger than the picture holding it -- leaves the proportions
+    # identical and moves the 1 to whichever side is longest. Asserting the
+    # convention rather than the property would have failed on a change that
+    # kept every promise this test was written for.
+    assert abs(max(sides) - 1.0) < 1e-9, (
+        f"the longest side is {max(sides)}, so the room is drawn larger than "
+        f"the picture that holds it")
+    assert max(sides) <= ti3gamut.ROOM_CEILING, (
+        "a pinned room may not exceed what was measured to fit either")
+
+    # AND IT IS THE SAME ROOM WHATEVER IS SHOWN, which is the fault reported:
+    # with only the greys left the ranges collapse, and a room worked out
+    # from them would be a sliver.
+    greys = lab[np.abs(lab[:, 1:]).max(axis=1) < 3]
+    if len(greys) > 3:
+        only = ti3gamut.build_figure(
+            [], "x", mode="dark", space="lab", grid=True,
+            drift=(lab, rng.uniform(0, 6, n), "d", None, True))
+        again = [only.layout.scene.aspectratio.x,
+                 only.layout.scene.aspectratio.y,
+                 only.layout.scene.aspectratio.z]
+        assert all(abs(a - b) < 1e-9 for a, b in zip(sides, again)), (
+            "the room changed shape when the picture did")
 
 
 def test_every_drift_cloud_has_its_box_pinned(tmp_path):

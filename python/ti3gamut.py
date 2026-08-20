@@ -8850,6 +8850,23 @@ def write_html(gamuts, out: Path, title: str, **kwargs) -> Path:
                             controls=controls, offer=offer)
 
 
+#: How long the longest side of the drawn room may be before it is scaled
+#: down. Measured rather than chosen: a room 2.60 long still fits its picture
+#: and one 3.27 long spills over two edges of it.
+ROOM_CEILING = 2.6
+
+
+def _room_shape(extent):
+    """The proportions of the drawn room, scaled so the longest side is 1.
+
+    *extent* is ((x0, x1), (y0, y1), (z0, z1)) in the space being drawn.
+    """
+    sides = [max(hi - lo, 1e-9) for lo, hi in extent]
+    longest = max(sides)
+    return dict(x=sides[0] / longest, y=sides[1] / longest,
+                z=sides[2] / longest)
+
+
 def build_figure(gamuts, title: str, opacity: float | None = None,
                  points: bool = False, patches=None,
                  aspect: str = "data", styles=None, lost=None,
@@ -9237,6 +9254,53 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
     from gamutview import AXES
     # The axes are named for the space the gamuts were built in, so a
     # picture can never be read against the wrong labels.
+    # A ROOM THAT WOULD BE DRAWN LARGER THAN ITS PICTURE IS SCALED DOWN, and
+    # NOTHING ELSE IS TOUCHED.
+    #
+    # Left to itself the drawing library sizes the room in data units with no
+    # ceiling: each side is its range divided by the mean of the three. That
+    # is right and is kept -- it is why a wide gamut looks wide -- but it has
+    # no limit, and past a point the room is drawn bigger than the picture
+    # holding it. Measured by flattening a gamut step by step and looking at
+    # where the ink lands:
+    #
+    #     L* spread 30   longest side 1.21   fits
+    #     L* spread  5   longest side 2.19   fits
+    #     L* spread  3   longest side 2.60   fits
+    #     L* spread 1.5  longest side 3.27   SPILLS OVER THE EDGE
+    #
+    # -- the shape cut off at two edges, the axis titles pushed out of the
+    # picture, one label left reading "na". A chart covering only the midtones
+    # does this.
+    #
+    # So the sides are worked out here, and only if the longest exceeds what
+    # was measured to fit is the whole set scaled down to it. Proportions are
+    # divided by one number, so nothing is squashed; a picture under the
+    # ceiling is left entirely alone, which is every ordinary gamut.
+    _room = None
+    if not _pinned and aspect == "data":
+        _corners = [np.asarray(_to_plot_space(np.asarray(g.vertices, float),
+                                              _axes_space), float)
+                    for _n, g in gamuts
+                    if getattr(g, "vertices", None) is not None
+                    and len(g.vertices)]
+        if _corners:
+            _all = np.vstack(_corners)
+            _sides = np.array([max(_all[:, i].max() - _all[:, i].min(), 1e-9)
+                               for i in range(3)])
+            # THE LIBRARY NORMALISES BY THE GEOMETRIC MEAN, not the plain
+            # one, and the difference decides whether this rule ever fires.
+            # Checked against what it actually produced: a normal gamut came
+            # out 1.21, 1.05, 0.79 and a flat one 3.27, 2.85, 0.11 -- both
+            # sets multiply to 1.00, which the arithmetic mean does not give.
+            # Written with the plain mean this clamp computed 1.56 where the
+            # page said 3.27, and so never fired on the very case it was for.
+            _ratio = _sides / max(float(np.exp(np.log(_sides).mean())), 1e-9)
+            if _ratio.max() > ROOM_CEILING:
+                _ratio = _ratio * (ROOM_CEILING / _ratio.max())
+                _room = dict(x=float(_ratio[0]), y=float(_ratio[1]),
+                             z=float(_ratio[2]))
+
     _axes = AXES[_axes_space]
     fig.update_layout(
         # A caption, not a headline. Plotly's default title is large and
@@ -9253,7 +9317,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         scene=dict(
             xaxis_title=_axes["x"], yaxis_title=_axes["y"],
             zaxis_title=_axes["z"],
-            aspectmode="manual" if _pinned else aspect,
+            aspectmode=("manual" if (_pinned or _room) else aspect),
             # WHEN THE BOX IS PINNED THE PROPORTIONS ARE PINNED TOO. With
             # aspectmode "data" the drawing library still works the shape of
             # the room out from the ranges it decides to use, so fixing the
@@ -9265,13 +9329,23 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             #
             # Given the ratio outright, the room keeps its shape whatever is
             # switched on, and everything drawn beside it stays where it is.
-            aspectratio=(dict(
-                x=1.0,
-                y=(_pinned[1][1] - _pinned[1][0]) / max(
-                    _pinned[0][1] - _pinned[0][0], 1e-9),
-                z=(_pinned[2][1] - _pinned[2][0]) / max(
-                    _pinned[0][1] - _pinned[0][0], 1e-9))
-                if _pinned else None),
+            # AND THE LARGEST SIDE IS THE ONE, NOT THE FIRST.
+            #
+            # Dividing by x alone leaves the ratio bigger than 1 whenever
+            # another side is longer, and a room drawn larger than the box
+            # holding it spills over the edges. Found by drawing a gamut that
+            # is nearly flat -- a chart covering only the midtones -- where
+            # the drawing library's own "data" proportions came out
+            # x=3.27, y=2.85, z=0.11 against a normal shape's 1.21, 1.05,
+            # 0.79: the shape was cut off at two edges of the picture, the
+            # axis titles were pushed out of it, and one label was left
+            # reading "na".
+            #
+            # Dividing every side by the longest keeps the proportions exactly
+            # -- nothing is squashed, which is the whole point of measuring in
+            # Lab units -- and only changes how big the room is drawn.
+            aspectratio=(_room_shape(_pinned) if _pinned
+                         else (_room if _room else None)),
             # START A LITTLE FURTHER BACK, AND ABOVE. Plotly's default camera
             # frames the data tightly, which on a wide, flat gamut crops the
             # corners and opens on a close-up of the middle. Pulling the eye
