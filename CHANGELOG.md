@@ -1,5 +1,72 @@
 # Changelog
 
+## v2.40.1
+
+**2.40.0 shipped a regression and this is the fix for it.** Two rooms could
+not be turned at all: the pointer capture added to keep a drag in the room it
+began in also kept the events away from the drawing library, so neither room
+moved. If you have 2.40.0, take this one.
+
+Everything else here came from spending a night doing what had not been done
+before — building shapes chosen to be awkward, drawing them, and **looking at
+the pictures** rather than reasoning about trace data.
+
+### 🔁 Two rooms turn again, and now land on the same face exactly
+
+Measured in pixels, which is what found it:
+
+    capture on    inside one room   left 759 px changed, right 0
+    capture off   inside one room   left 79,034, right 76,171
+
+The check that should have caught it measured `getCamera()` — a number the
+linking script itself **writes** — so it read its own relay's push as movement
+and called a dead picture alive. It photographs the page now: pixels answer
+"did it turn", cameras answer only "do the two agree".
+
+That instrument then showed the linking had never been exact. The relay ran
+only while the library reported movement, so the tail of every gesture was
+lost: the two rooms finished **1.09, 1.12, 0.79 and 4.15 apart** on eye
+vectors about 2.6 long. One push when the gesture ends makes it **0.0000 in
+every journey**, from either side, crossing the divider or not — better than
+before 2.40.0, where that drift was the original complaint.
+
+### 📐 A gamut with almost no lightness range stays inside its picture
+
+A chart covering only the midtones was drawn cut off at two edges, with the
+axis titles pushed out and one label left reading "na". Measured by flattening
+a gamut step by step: a room whose longest side is 2.60 fits, one at 3.27
+spills. The room is now scaled down only past that ceiling, every side divided
+by one number so nothing is squashed — an ordinary gamut covers exactly the
+same 53,544 pixels as before.
+
+### 🔢 A short axis gets fewer numbers along it
+
+The library puts about as many ticks on every axis whatever its length on
+screen, so the short side of a lopsided room wrote its labels on top of one
+another — an unreadable blob down the left of the picture on both a gamut with
+one patch far out and one covering only the midtones. Ticks now follow how
+long each side is actually drawn: on the spike that becomes a clean
+"60, 40, −20, 0".
+
+### 💬 A picture the fade has emptied says so
+
+Two identical measurements agree everywhere, so hiding what they agree on
+leaves nothing but the walls — the honest answer, and indistinguishable from a
+fault. The picture now says it beside its caption: *"nothing is left to show:
+every shape here agrees with the others everywhere"*, or, when one shape lies
+wholly inside another, *"the small one is not drawn: it agrees with the others
+everywhere"*.
+
+### And the trap underneath several of these
+
+`build_gamut` reads its input as XYZ unless told otherwise. Handed Lab, it
+builds a shape in the wrong space silently — corners at L\* −71,327 — and that
+one wrong assumption produced four convincing false faults in a day: rings
+that returned nothing, a cut with no levels to slide through, a cap probe
+reporting rim sizes of 47,726 in a space that ends near 200, and two of my own
+tests passing **vacuously** on empty output.
+
+
 ## v2.40.0
 
 Everything here came from one evening: the first time the application was
