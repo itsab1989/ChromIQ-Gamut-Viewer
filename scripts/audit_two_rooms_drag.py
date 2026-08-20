@@ -29,6 +29,16 @@ WHAT MUST BE TRUE, with the failure direction:
                                         only ever starts on the left proves
                                         half of it.
 
+⚠ AND A MUTATION GOES STALE AS QUIETLY AS ANYTHING ELSE. This sabotaged
+`setPointerCapture`, which WAS the fix for about a day -- 2.40.1 took it out
+again, because capturing the pointer stopped both rooms turning at all. From
+that commit onwards the mutation refused a call nobody made, the rooms stayed
+in step exactly as they should, and `--prove` announced the check was blind:
+true of a mechanism that no longer existed, and it made every Clean report
+above it worth nothing. It now cuts the CAMERA RELAY -- every link this page
+has ends in `Plotly.relayout(other, {"scene.camera": ...})` -- and counts what
+it dropped, so a mutation that fails to bite says so instead of passing.
+
 MEASURED IN PIXELS, AND THAT CORRECTION MATTERS MORE THAN THE RULE.
 
 This asked `getCamera()` at first, which sounds like the truthful source and is
@@ -222,18 +232,49 @@ def main() -> int:
                     }""", timeout=40000)
                 tab.wait_for_timeout(1200)
                 if prove:
-                    # THE MUTATION: give the pointer back, which is what let
-                    # the second room take the gesture over. Proven to land by
-                    # the capture being refused afterwards.
+                    # THE MUTATION: CUT THE RELAY, which is the thing that
+                    # makes the two rooms one gesture. Every link this page
+                    # has -- the live one during a drag, and the settling push
+                    # when the button comes up -- ends in the same call,
+                    # `Plotly.relayout(other, {"scene.camera": ...})`, so
+                    # dropping exactly those patches sabotages the mechanism
+                    # whatever shape it is written in.
+                    #
+                    # IT USED TO SABOTAGE `setPointerCapture`, AND THAT WENT
+                    # STALE WITHOUT A SOUND. Pointer capture WAS the fix for
+                    # about a day; 2.40.1 took it out again, because capturing
+                    # the pointer stopped both rooms turning at all. From that
+                    # commit onwards the mutation refused a call nobody made,
+                    # the rooms stayed in step exactly as they should, and the
+                    # check reported itself blind -- which it was, about a
+                    # mechanism that no longer existed. A mutation has to be
+                    # aimed at the code that is there now.
                     tab.evaluate("""(function () {
-                      var d = document.getElementsByClassName(
-                          'plotly-graph-div');
-                      for (var i = 0; i < d.length; i++)
-                        d[i].setPointerCapture = function () {
-                          throw new Error('capture refused on purpose'); };
+                      window.__cqDropped = 0;
+                      var real = window.Plotly.relayout;
+                      window.Plotly.relayout = function (gd, patch) {
+                        if (patch && typeof patch === 'object'
+                            && Object.prototype.hasOwnProperty.call(
+                                patch, 'scene.camera')) {
+                          window.__cqDropped++;
+                          return Promise.resolve(gd);
+                        }
+                        return real.apply(this, arguments);
+                      };
                     })()""")
                 left, right, together, apart = drag(
                     tab, path, shots, f"{name.replace(' ', '-')}")
+                # PROVEN TO LAND, not assumed. A mutation that silently fails
+                # to apply looks exactly like a check that passes, and this
+                # one did for weeks.
+                if prove:
+                    dropped = tab.evaluate("window.__cqDropped || 0")
+                    if not dropped:
+                        print(f"  {name}: THE MUTATION DID NOT LAND — not one "
+                              f"camera relay was cut, so this journey tested "
+                              f"nothing.")
+                        tab.close()
+                        return 2
                 tab.close()
                 turned = [left >= TURNED, right >= TURNED]
                 print(f"  {name:24s} left {left:7d} px  right {right:7d} px"
