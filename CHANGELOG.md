@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.50.2
+
+### 💾 Two rooms can be saved without the viewer, which the box had been promising
+
+**Put the 3D viewer inside the file** was offered when the picture is two
+rooms side by side, and the answer was thrown away. The file came out about
+five megabytes whether the box was ticked or not.
+
+| | |
+|---|---|
+| carrying the viewer | 5,149 kB |
+| fetching it instead | **419 kB** |
+
+The smaller file draws both rooms exactly as before — each shape, its axes,
+its name, and the movement strip beneath them — and carries the same "did not
+arrive" notice every other fetching page has, including the walk through three
+addresses.
+
+The same applies to **two cross-sections side by side**, which had the answer
+in its hands and passed it to something that could not take it.
+
 ## v2.50.1
 
 ### 🖼 The page really does move on to another address now
