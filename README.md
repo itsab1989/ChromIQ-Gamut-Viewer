@@ -321,6 +321,25 @@ reaches further into the cyans" is simply visible:
 **Show rings inside** stacks cross-sections within the cage, which is what
 shows whether your mid-tones or your highlights are the tight part.
 
+### Closing the hole the fade leaves
+
+*Where they agree* fades away the part both shapes reach, and what is left of
+the front shape is an open shell: the fade parts it along the curve where the
+two surfaces cross, so you are looking in through the opening at that shape's
+own far wall. **Close where it is cut** puts a lid over the opening, built
+from the other shape's surface rather than a flat plane — the hole is the
+shape of the other gamut, and only that shape closes it without bulging out
+through the surface or sinking away from it.
+
+It is off unless you ask for it, and the tick dims itself wherever there is
+nothing to close rather than accepting a click and answering with nothing: it
+wants two shapes, *Where they agree* below full, and at least one of the two
+drawn as a surface. A cross-section, two rooms, a run of profiles, or a
+picture marking out-of-reach colours is a different construction, and the tick
+says which one is in the way. A saved page carries the lid exactly as the
+window drew it — the reader can still fade the shapes, but the lid is fixed as
+saved.
+
 ### Every shape, styled its own way
 
 **Set this for** aims the appearance controls at *all shapes together*, the
