@@ -211,8 +211,8 @@ def main() -> int:
             time.sleep(0.005)
 
     pump(3)
-    profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                      .glob("showme-*/printer-*.icc"))
+    import demo_profiles
+    profiles = demo_profiles.the_run_of_profiles()
     if len(profiles) < 2:
         print("  no demo profiles to drive the window with")
         return 1

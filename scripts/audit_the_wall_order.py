@@ -89,8 +89,8 @@ def main() -> int:
                 n += 2
         return lit, round(steps / max(1, n), 3)
 
-    profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                      .glob("showme-*/printer-*.icc"))
+    import demo_profiles
+    profiles = demo_profiles.the_run_of_profiles()
     if len(profiles) < 2:
         print("  no demo profiles to draw")
         return 1

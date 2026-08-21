@@ -97,8 +97,8 @@ def main() -> int:
             time.sleep(0.005)
 
     pump(3)
-    profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                      .glob("showme-*/printer-*.icc"))
+    import demo_profiles
+    profiles = demo_profiles.the_run_of_profiles()
     demo = HERE.parent / "demo"
     chart = demo / "verification-chart-480.ti1"
 

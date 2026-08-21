@@ -213,8 +213,8 @@ def through_the_window(folder):
             time.sleep(0.005)
 
     pump(2.5)
-    profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                      .glob("showme-*/printer-*.icc"))
+    import demo_profiles
+    profiles = demo_profiles.the_run_of_profiles()
     if len(profiles) < 2:
         demo = HERE.parent / "demo"
         win.close()

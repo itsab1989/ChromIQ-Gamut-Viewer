@@ -156,8 +156,8 @@ def the_pages(where: pathlib.Path) -> tuple:
     pump(2.5)
     win._set_appearance("dark")
     pump(1.5)
-    profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                      .glob("showme-*/printer-*.icc"))
+    import demo_profiles
+    profiles = demo_profiles.the_run_of_profiles()
     panel = win._timeline
     panel.add(list(profiles[:3]))
     pump(12)

@@ -35,8 +35,8 @@ app = QApplication(sys.argv)
 gamut_app.Notice.warn = staticmethod(lambda *a, **k: None)
 gamut_app.Notice.say = staticmethod(lambda *a, **k: None)
 
-profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                  .glob("showme-*/printer-*.icc"))
+import demo_profiles
+profiles = demo_profiles.the_run_of_profiles()
 chart = HERE.parent / "demo" / "verification-chart-480.ti1"
 
 

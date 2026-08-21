@@ -108,8 +108,8 @@ def main() -> int:
         except (TypeError, ValueError):
             return {}
 
-    profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                      .glob("showme-*/printer-*.icc"))
+    import demo_profiles
+    profiles = demo_profiles.the_run_of_profiles()
     if not profiles:
         print("  no demo profiles to drive the window with")
         return 1

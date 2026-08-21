@@ -73,8 +73,8 @@ problems = []
 #: these sentences -- two MEASUREMENTS of a chart, and two PROFILES -- and the
 #: chooser sits above both. Only the measurement one was ever read.
 import tempfile
-profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                  .glob("showme-*/printer-*.icc"))
+import demo_profiles
+profiles = demo_profiles.the_run_of_profiles()
 PAIRS = [("two measurements", FORK / "demo" / "Glossy-paper.ti3",
           FORK / "demo" / "Matte-paper.ti3")]
 if len(profiles) >= 2:

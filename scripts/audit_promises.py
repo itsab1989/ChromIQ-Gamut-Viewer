@@ -98,8 +98,8 @@ def main() -> int:
     # and a slider dragged over an empty scene changes nothing for an honest
     # reason -- which would have made this audit pass by drawing no picture.
     import tempfile
-    profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                      .glob("showme-*/printer-*.icc"))
+    import demo_profiles
+    profiles = demo_profiles.the_run_of_profiles()
     if profiles:
         win._load(profiles[0])
         pump(6)

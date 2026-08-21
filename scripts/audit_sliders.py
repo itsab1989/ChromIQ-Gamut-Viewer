@@ -186,8 +186,8 @@ def main() -> int:
         return got[0] if got else "no answer"
 
     pump(3)
-    profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                      .glob("showme-*/printer-*.icc"))
+    import demo_profiles
+    profiles = demo_profiles.the_run_of_profiles()
     if len(profiles) < 2:
         print("  no demo profiles to drive the window with — "
               "run scripts/make_demo_profiles.py first")

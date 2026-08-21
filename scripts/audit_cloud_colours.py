@@ -91,8 +91,8 @@ def picture():
 
 
 pump(3)
-profiles = sorted(pathlib.Path(tempfile.gettempdir())
-                  .glob("showme-*/printer-*.icc"))
+import demo_profiles
+profiles = demo_profiles.the_run_of_profiles()
 win._load(profiles[0])
 pump(7)
 win._load(profiles[-1])
