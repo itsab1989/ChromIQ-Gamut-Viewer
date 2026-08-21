@@ -8461,20 +8461,6 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         # button." So after twelve seconds without a viewer the page fetches
         # the NEXT address on its own, and again after that, until the list is
         # done -- the reader has to do nothing at all.
-        "  var reaching = 0;\n"
-        "  var reach = window.setInterval(function () {\n"
-        "    if (window.Plotly) { window.clearInterval(reach); return; }\n"
-        "    if (reaching >= hosts.length - 1) { window.clearInterval(reach); return; }\n"
-        "    reaching += 1;\n"
-        "    if (told) told.textContent = 'It is trying: ' + hosts[reaching];\n"
-        "    var nxt = document.createElement('script');\n"
-        "    nxt.src = hosts[reaching] + (hosts[reaching].indexOf('?') < 0 ? '?' : '&')\n"
-        "              + 'cq-next=' + reaching;\n"
-        "    nxt.crossOrigin = 'anonymous';\n"
-        "    if (" + _js(sri) + ") nxt.integrity = " + _js(sri) + ";\n"
-        "    nxt.onload = function () { window.cqViewerCame(); };\n"
-        "    document.head.appendChild(nxt);\n"
-        "  }, 12000);\n"
         "  // TRY AGAIN WITHOUT LOSING THE PAGE, which is the thing a reader\n"
         "  // on a phone actually wants. Being told to reload when the line is\n"
         "  // fine is useless advice, and an interrupted download -- switching\n"
@@ -8491,6 +8477,48 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "  var says = note && note.querySelector('[data-cq=\\\"tries\\\"]');\n"
         "  var told = note && note.querySelector('[data-cq=\\\"where\\\"]');\n"
         "  if (told) told.textContent = 'It tried to fetch: ' + " + _js(src) + ";\n"
+        # ⚠ ONE FETCH AT A TIME, AND ONLY AFTER THE LAST ONE FAILED.
+        #
+        # This first moved on after twelve seconds whatever was happening, and
+        # that BROKE the page it was meant to mend. The viewer is about 5 MB
+        # and a phone takes longer than twelve seconds over it, so a second
+        # copy was started while the first was still coming. Both arrived: the
+        # first drew the picture, the second re-initialised the library
+        # underneath it and the picture went. Reported exactly so: "for a
+        # split second i see the viewer with the shape as expected but it
+        # vanishes and then shows the message again."
+        #
+        # So the next address is asked for when the one before it ERRORS, and
+        # never while a request is still outstanding. The long stop is a last
+        # resort at forty-five seconds, not a schedule.
+        "  var reaching = 0, waiting = true;\n"
+        "  function nextHost(why) {\n"
+        "    if (window.Plotly || !waiting) return;\n"
+        "    if (reaching >= hosts.length - 1) { waiting = false; return; }\n"
+        "    reaching += 1;\n"
+        "    if (told) told.textContent = 'It is trying: ' + hosts[reaching];\n"
+        "    var nxt = document.createElement('script');\n"
+        "    nxt.src = hosts[reaching] + (hosts[reaching].indexOf('?') < 0 ? '?' : '&')\n"
+        "              + 'cq-next=' + reaching;\n"
+        "    nxt.crossOrigin = 'anonymous';\n"
+        "    if (" + _js(sri) + ") nxt.integrity = " + _js(sri) + ";\n"
+        "    nxt.onload = function () { waiting = false; window.cqViewerCame(); };\n"
+        "    nxt.onerror = function () { nextHost('failed'); };\n"
+        "    document.head.appendChild(nxt);\n"
+        "  }\n"
+        "  window.cqTryTheNext = nextHost;\n"
+        # ⚠ START FROM THE RECORD, NOT FROM THE TAG. The viewer's own tag is
+        # in the head and runs long before anything down here exists, so an
+        # `onerror` on it cannot call a function defined at the end of the
+        # body. But a failure that happened before the notice existed is
+        # already REMEMBERED (`cqNoViewerWanted`), and that record is here for
+        # the reading. If the first address has already failed, the next one
+        # is asked for at once rather than after a wait.
+        "  if (!window.Plotly && window.cqNoViewerWanted) nextHost('the first failed');\n"
+        "  window.setTimeout(function () {\n"
+        "    if (!window.Plotly) nextHost('nothing yet');\n"
+        "  }, 45000);\n"
+
         "  if (button) button.addEventListener('click', function () {\n"
         "    if (window.Plotly) { window.cqViewerCame(); return; }\n"
         "    tries += 1;\n"

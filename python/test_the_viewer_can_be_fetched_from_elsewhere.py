@@ -132,8 +132,20 @@ def test_it_moves_on_without_being_asked(page_without_the_viewer):
         "hangs is left pressing a button that cannot help")
     assert "'cq-next=' + reaching" in body, (
         "the page re-asks the same address rather than the next one")
-    assert "}, 12000);" in body, (
-        "no timer drives the move to the next address")
+    # ⚠ ONE FETCH AT A TIME, and this is the assertion that matters most.
+    # The first version moved on after twelve seconds WHATEVER was happening,
+    # and broke the page it was meant to mend: the viewer is about 5 MB, a
+    # phone takes longer than that over it, so a second copy was started while
+    # the first was still coming. Both arrived, the second re-initialised the
+    # library under the first, and the picture vanished. Reported exactly so.
+    assert "}, 12000);" not in body, (
+        "the page is back on a SCHEDULE — it will start a second copy of the "
+        "viewer while the first is still downloading, and the picture will "
+        "appear and then vanish")
+    assert "nxt.onerror = function () { nextHost('failed'); }" in body, (
+        "the next address is not chained to the previous one's failure")
+    assert "if (window.Plotly || !waiting) return;" in body, (
+        "nothing stops a second fetch while one is outstanding")
 
 
 def test_the_notice_names_the_address_it_could_not_reach(
