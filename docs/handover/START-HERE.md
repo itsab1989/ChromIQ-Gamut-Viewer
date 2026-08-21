@@ -546,7 +546,23 @@ claims. Put it before a hostile reviewer before shipping.
 All six that were left ran in the foreground and came back clean:
 `audit_showcase_page`, `audit_the_controls_can_be_shut`,
 `audit_the_page_at_any_size`, `audit_the_switch_changes_nothing`,
-`check_layout`, `drive_all_combinations` (65,836 checks, 0 broken).
+`check_layout`, `drive_all_combinations` (65,836 checks, 0 broken). Re-run
+2026-08-22 and unchanged: 65,808 in Phase A over 6,912 combinations, 28
+more in Phase B.
+
+⚠ **NUMBERS IN PROSE ROT, AND ONLY SOME OF THEM CAN BE GUARDED.** Three were
+found stale by reading, not by any rule: the suite was called 851 tests when
+it is 1,017, the showcase pages were called ten when the script writes 25, and
+these checks were called 60,076 when they are 65,836. The first two are asked
+now by `audit_the_readme_is_true` — `--collect-only` counts in 0.37s, and the
+pages are counted on the disk. **The third cannot be**: knowing it costs the
+heaviest run in the repository. It will rot again, and the only defence is
+that it is written in two places that agree.
+
+⚠ **AND A RULE WRITTEN FOR A CASE MUST BE TRIED AGAINST THAT CASE.** The page
+rule first read `([0-9,]+) showcase pages` — and the sentence that prompted it
+said "ten". Putting the old wording back printed "0 counted" and reported
+Clean. It reads words as well as figures now.
 **Do not run them again as a sweep** — run one when you have changed
 something it looks at.
 
