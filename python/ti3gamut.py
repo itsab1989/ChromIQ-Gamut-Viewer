@@ -8347,11 +8347,37 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         # second one over the first.
         "  if (window.cqDrawn) return;\n"
         "  if (!document.querySelector('.js-plotly-plot')) {\n"
+        # ⚠ THE INSTRUCTIONS MAY NOT BE PARSED YET, and saying "drawn" when
+        # nothing was drawn is how a page ends up blank for ever. The viewer's
+        # own tag BLOCKS the parser, and the drawing sits after it — so when a
+        # mirror arrives while the first address is still hanging, there is no
+        # `#cq-draw` to run. Measured: Plotly present, the notice correctly
+        # hidden, and NOUGHT canvases. `cqDrawn` was set anyway, so nothing
+        # tried again.
+        # ⚠ ALL OF THEM, NOT THE FIRST. With `defer` on the viewer's tag
+        # EVERY page comes through here -- the inline calls run before the
+        # viewer exists, throw, and this is what runs them again -- so a page
+        # with two draw calls in it would come out with half a picture and no
+        # error to say so. Nothing writes such a page today (two rooms and
+        # two cuts always carry the viewer inside them), but "today" is not a
+        # guarantee, and half a picture is the kind of fault that gets shipped.
+        "    var draw = document.querySelectorAll('script[data-cq-draw]');\n"
+        "    if (!draw.length) {\n"
+        "      if (!window.cqWaitingToDraw) {\n"
+        "        window.cqWaitingToDraw = window.setInterval(function () {\n"
+        "          if (document.querySelector('script[data-cq-draw]')) {\n"
+        "            window.clearInterval(window.cqWaitingToDraw);\n"
+        "            window.cqWaitingToDraw = 0;\n"
+        "            window.cqViewerCame();\n"
+        "          }\n"
+        "        }, 250);\n"
+        "      }\n"
+        "      return;\n"
+        "    }\n"
         "    window.cqDrawn = true;\n"
-        "    var draw = document.getElementById('cq-draw');\n"
-        "    if (draw) {\n"
+        "    for (var i = 0; i < draw.length; i++) {\n"
         "      var run = document.createElement('script');\n"
-        "      run.text = draw.textContent;\n"
+        "      run.text = draw[i].textContent;\n"
         "      document.body.appendChild(run);\n"
         "    }\n"
         "  }\n"
@@ -8359,11 +8385,54 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "</script>\n")
 
     hooks = (
+        # \u26a0 `defer`, SO ONE ADDRESS THAT NEVER ANSWERS CANNOT STOP THE PAGE.
+        #
+        # A plain `<script src>` BLOCKS the parser until the request settles,
+        # and an address that hangs settles when it feels like it. Measured
+        # with a first address that answered nothing for six seconds:
+        # `document.readyState` stuck at "loading" the whole time, `#cq-draw`
+        # NOT IN THE DOM, and every script after the tag unparsed. So a mirror
+        # that arrives during the wait -- from the last resort, or from the
+        # reader pressing the button, which does exist because the notice is
+        # written above the tag -- has NOTHING TO DRAW: `cqViewerCame` finds
+        # no `#cq-draw` and can only poll until the hang ends.
+        #
+        # With `defer` the same measurement parses the rest of the document at
+        # 39 ms and reaches "interactive". The inline call that draws still
+        # runs before the viewer exists and throws -- harmless, and it is
+        # `cqViewerCame` that draws for every arrival anyway.
+        #
+        # WHAT `defer` IS NOT FOR, because it was proposed as the cure and is
+        # not one: a dynamically added `<script src>` is fetched and run
+        # perfectly well while a parser-blocking script is pending. Measured
+        # in this engine: the blocking script hung five seconds, the added one
+        # was requested at 1.29 s and had run by 1.05 s of page time. The
+        # fallback was not starved by the parser. It was never called.
+        ' defer'
         ' onerror="window.cqNoViewer&&cqNoViewer(&#39;The viewer could not be '
         'reached at all \u2014 the browser reported the download as '
         'failed. If it fails every time rather than now and then, something '
         'between you and it is refusing the request: a content blocker, a '
-        'company proxy, or a network that does not allow this address.&#39;)"'
+        'company proxy, or a network that does not allow this address.&#39;)'
+        # \u26a0 AND THE WALK TO THE NEXT ADDRESS STARTS HERE, which is the whole
+        # repair. It used to start from `cqNoViewerWanted`: the notice lived
+        # at the END of the body, so this handler ran before the div existed,
+        # `cqNoViewer` could only REMEMBER the failure, and the note script
+        # read that record on the way past and moved on to the mirror.
+        #
+        # MOVING THE NOTICE ABOVE THIS TAG SILENTLY KILLED THAT. The div now
+        # exists when this fires, so `cqNoViewer` shows it and remembers
+        # nothing; the flag stays false and the one line that reads it has
+        # already run. Measured, first address refused outright: the notice
+        # appeared at 0.3 s and NOT ONE mirror was ever requested -- the
+        # second and third addresses were dead code until the forty-five
+        # second last resort. Reported as "it never works for me. i only ever
+        # get this info but not the real view."
+        #
+        # So the failure now starts the walk directly, and does not depend on
+        # anything downstream having a record of it.
+        ';window.cqTryTheNext&&cqTryTheNext(&#39;the first address '
+        'failed&#39;)"'
         ' onload="window.cqViewerCame&&cqViewerCame()"')
 
     tag = re.search(r'<script[^>]*\bsrc="[^"]*plot[^"]*"', html)
@@ -8410,8 +8479,17 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
     # place with nothing left to ask it to draw: the notice disappears, the
     # page goes blank, and the reader is worse off than before. Measured in
     # both engines -- viewer arrived, notice gone, picture never drawn.
+    # EVERY draw call is named, and the first keeps the `id` it has always
+    # had so nothing that looks for `#cq-draw` by name is left hunting.
+    _named = [0]
+
+    def _name_the_draw(hit):
+        _named[0] += 1
+        first = ' id="cq-draw"' if _named[0] == 1 else ""
+        return f"<script{first} data-cq-draw>" + hit.group(2)
+
     html = re.sub(r'(<script[^>]*>)(\s*(?:window\.PLOTLYENV|Plotly\.newPlot))',
-                  r'<script id="cq-draw">\2', html, count=1)
+                  _name_the_draw, html)
 
     note = (
         # ⚠ `hidden` LOSES TO AN INLINE `display`. The browser's own rule
@@ -8525,9 +8603,15 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         # So the next address is asked for when the one before it ERRORS, and
         # never while a request is still outstanding. The long stop is a last
         # resort at forty-five seconds, not a schedule.
-        "  var reaching = 0, waiting = true;\n"
+        # AND ONE WALK, however many things ask for one. The tag's `onerror`
+        # starts it now, and the last resort can ask again while that first
+        # mirror is still coming -- which without this guard fetches a second
+        # five-megabyte copy alongside the first, and both arriving is the
+        # "for a split second i see the viewer and then it vanishes" fault
+        # again, from a different direction.
+        "  var reaching = 0, waiting = true, inflight = false;\n"
         "  function nextHost(why) {\n"
-        "    if (window.Plotly || !waiting) return;\n"
+        "    if (window.Plotly || !waiting || inflight) return;\n"
         "    if (reaching >= hosts.length - 1) { waiting = false; return; }\n"
         "    reaching += 1;\n"
         "    if (told) told.textContent = 'It is trying: ' + hosts[reaching];\n"
@@ -8536,18 +8620,19 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "              + 'cq-next=' + reaching;\n"
         "    nxt.crossOrigin = 'anonymous';\n"
         "    if (" + _js(sri) + ") nxt.integrity = " + _js(sri) + ";\n"
-        "    nxt.onload = function () { waiting = false; window.cqViewerCame(); };\n"
-        "    nxt.onerror = function () { nextHost('failed'); };\n"
+        "    inflight = true;\n"
+        "    nxt.onload = function () {\n"
+        "      inflight = false; waiting = false; window.cqViewerCame();\n"
+        "    };\n"
+        "    nxt.onerror = function () { inflight = false; nextHost('failed'); };\n"
         "    document.head.appendChild(nxt);\n"
         "  }\n"
         "  window.cqTryTheNext = nextHost;\n"
-        # ⚠ START FROM THE RECORD, NOT FROM THE TAG. The viewer's own tag is
-        # in the head and runs long before anything down here exists, so an
-        # `onerror` on it cannot call a function defined at the end of the
-        # body. But a failure that happened before the notice existed is
-        # already REMEMBERED (`cqNoViewerWanted`), and that record is here for
-        # the reading. If the first address has already failed, the next one
-        # is asked for at once rather than after a wait.
+        # A FAILURE THAT HAPPENED BEFORE THIS RAN, which is now only possible
+        # if this block ever ends up BELOW the viewer's tag again. While it
+        # sits above it the tag's own `onerror` calls `cqTryTheNext` directly
+        # and nothing is remembered -- see the hooks. This is the belt to that
+        # brace, and it is cheap: `nextHost` refuses to start a second walk.
         "  if (!window.Plotly && window.cqNoViewerWanted) nextHost('the first failed');\n"
         "  window.setTimeout(function () {\n"
         "    if (!window.Plotly) nextHost('nothing yet');\n"
@@ -8599,7 +8684,18 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "    document.head.appendChild(again);\n"
         "  });\n"
         "})();</script>\n")
-    at = html.rfind("</body>")
+    # ⚠ ABOVE THE VIEWER'S OWN TAG, NOT AT THE END OF THE PAGE. That tag is
+    # a plain `<script src>`, which BLOCKS the parser until the request
+    # settles — so everything written after it is unparsed while the fetch is
+    # outstanding. Put the notice and its timers at the end and none of them
+    # exist during the one failure they were written for: measured, an address
+    # that never answers gave fifty seconds with `#cq-noviewer` NOT IN THE DOM
+    # at all — no notice, no retry button, no thirty-second word, no walk to
+    # the next address. A blank dark page, indefinitely.
+    #
+    # Moved above it, the machinery is armed before the wait begins.
+    where = re.search(r'<script[^>]*\bsrc="[^"]*plot[^"]*"', html)
+    at = where.start() if where else html.rfind("</body>")
     return html[:at] + note + html[at:] if at > 0 else html + note
 
 

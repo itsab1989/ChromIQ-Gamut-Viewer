@@ -1811,7 +1811,11 @@ def test_a_page_that_fetches_its_viewer_offers_a_way_to_try_again(tmp_path):
     # THE RETRY MUST REDRAW, or it puts the library in place with nothing left
     # asking it to draw anything: notice gone, page blank, reader worse off.
     assert 'id="cq-draw"' in body
-    assert "document.getElementById('cq-draw')" in body
+    # ⚠ EVERY draw call, not the first. `defer` on the viewer's tag means the
+    # inline calls all run before the viewer exists and throw, so this is the
+    # ONLY thing that ever draws — running one of two would be half a picture.
+    assert 'data-cq-draw' in body
+    assert "document.querySelectorAll('script[data-cq-draw]')" in body
     # and it must fetch a fresh address, or a cached failure is served again
     assert "cq-retry=" in body
 

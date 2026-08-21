@@ -107,8 +107,14 @@ def test_arriving_late_draws_the_picture_rather_than_uncovering_nothing(
     assert "if (!document.querySelector('.js-plotly-plot')) {" in inside, (
         "cqViewerCame does not draw when there is no picture yet, so a viewer "
         "that arrives late leaves a blank page")
-    assert "var draw = document.getElementById('cq-draw');" in inside, (
-        "cqViewerCame never reaches for the drawing instructions")
+    assert "var draw = document.querySelectorAll('script[data-cq-draw]');" \
+        in inside, ("cqViewerCame never reaches for the drawing instructions")
+    # ⚠ ALL OF THEM. `defer` on the viewer's tag means EVERY load comes
+    # through here, so re-running only the first draw call would leave a
+    # two-scene page with half a picture and nothing said about it.
+    assert "for (var i = 0; i < draw.length; i++)" in inside, (
+        "cqViewerCame runs one draw call, not every one — a page with two "
+        "scenes in it would come out half drawn")
     assert "if (window.cqDrawn) return;" in inside, (
         "nothing stops cqViewerCame drawing twice — the watchdog polls every "
         "quarter second and the retry's onload fires as well, and drawing is "
@@ -142,10 +148,64 @@ def test_it_moves_on_without_being_asked(page_without_the_viewer):
         "the page is back on a SCHEDULE — it will start a second copy of the "
         "viewer while the first is still downloading, and the picture will "
         "appear and then vanish")
-    assert "nxt.onerror = function () { nextHost('failed'); }" in body, (
-        "the next address is not chained to the previous one's failure")
-    assert "if (window.Plotly || !waiting) return;" in body, (
+    assert "nxt.onerror = function () { inflight = false; nextHost('failed'); }" \
+        in body, (
+            "the next address is not chained to the previous one's failure")
+    assert "if (window.Plotly || !waiting || inflight) return;" in body, (
         "nothing stops a second fetch while one is outstanding")
+
+
+def test_the_first_failure_starts_the_walk_itself(page_without_the_viewer):
+    """The tag that fails must ASK for the next address, not just say so.
+
+    ⚠ THIS FILE WAS ENTIRELY GREEN WHILE THE WALK WAS DEAD CODE. The walk used
+    to start from a record: the notice lived at the END of the body, so the
+    tag's `onerror` ran before the div existed, `cqNoViewer` could only
+    remember the failure in `cqNoViewerWanted`, and the note script read that
+    record on the way past and moved on to the mirror.
+
+    MOVING THE NOTICE ABOVE THE TAG SILENTLY KILLED IT. The div now exists
+    when `onerror` fires, so `cqNoViewer` shows it and remembers nothing; the
+    flag stays false, and the one line that reads it has already run. Driven
+    in a real browser against a local server, first address refused outright:
+    the notice appeared at 0.3 s and NOT ONE mirror was ever requested. Every
+    assertion above passed on that page, because every word in it was right.
+
+    So what is checked is the CALL, on the tag, where the failure happens.
+    """
+    body = page_without_the_viewer
+    spot = body.find('src="https://cdn.plot.ly')
+    assert spot > 0, "the page has no viewer tag to fail"
+    tag = body[body.rfind("<script", 0, spot):body.index(">", spot)]
+    assert "cqTryTheNext" in tag, (
+        "the viewer's own tag does not start the walk when it fails — the "
+        "second and third addresses are dead code until the last resort")
+    # AND THE FUNCTION IT CALLS MUST BE DEFINED BEFORE THE TAG, or the call is
+    # a no-op that no string test would ever notice.
+    assert 0 < body.find("window.cqTryTheNext = nextHost;") < spot, (
+        "cqTryTheNext is defined after the tag that calls it, so the first "
+        "failure cannot reach it")
+
+
+def test_the_viewers_tag_does_not_block_the_parser(page_without_the_viewer):
+    """An address that never answers must not stop the rest of the page.
+
+    A plain `<script src>` blocks the parser until the request settles, and an
+    address that hangs settles when it feels like it. Measured in a real
+    browser with a first address that answered nothing for six seconds:
+    `document.readyState` stuck at "loading" the whole time and `#cq-draw` was
+    NOT IN THE DOM — so a mirror arriving during the wait had nothing to draw.
+    With `defer` the same measurement parsed the rest at 39 ms and reached
+    "interactive".
+    """
+    body = page_without_the_viewer
+    spot = body.find('src="https://cdn.plot.ly')
+    assert spot > 0, "the page has no viewer tag"
+    tag = body[body.rfind("<script", 0, spot):body.index(">", spot)]
+    assert re.search(r"\s(defer|async)[\s>=]", tag + ">"), (
+        "the viewer's tag blocks the parser — one address that hangs leaves "
+        "the drawing instructions unparsed and the page blank with no way "
+        "back")
 
 
 def test_the_notice_names_the_address_it_could_not_reach(
