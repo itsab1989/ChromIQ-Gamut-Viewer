@@ -1063,16 +1063,48 @@ def test_the_light_can_be_moved_around_and_above():
     assert below["z"] < 0
 
 
-def test_the_light_stays_the_same_distance_however_it_is_placed():
-    """Only the direction should change: moving a lamp closer would change the
-    brightness, which is what the intensity controls are for."""
+def test_the_lamp_is_placed_on_two_scales_and_not_one():
+    """Sideways far, upwards near — and the reason is measured, not a taste.
+
+    This test used to assert the opposite: that the lamp keeps ONE distance
+    however it is placed, "so only the direction matters". That rule is what
+    made both lamp sliders useless. The drawing library does not take this as
+    a point in the room; it maps it through the inverse of the projection as a
+    homogeneous point, so a large radius converges on a projective point at
+    infinity — the SAME limit from either sign — and the lamp ends up glued to
+    the camera axis. Measured on a real paper, driving the page directly:
+
+        the lamp above against the same lamp below, at reach 1: 229,586 px
+                                            at 2, 10, 100 and 2000:      0
+
+    and swinging the bearing right round at the height the window opens with
+    gave 0 px at the old reach and 228,038 px once the upward reach came back
+    to 1.
+
+    So: the sideways reach stays constant, which is what keeps a bearing
+    meaning a bearing; the height is on its own, much smaller scale, which is
+    what keeps above and below two different places.
+    """
     import math
 
     from ti3gamut import light_position
-    lengths = [math.dist((0, 0, 0), (p["x"], p["y"], p["z"]))
-               for p in (light_position(d, h)
-                         for d, h in ((0, 0), (90, 0.5), (200, -0.8), (330, 1)))]
-    assert max(lengths) - min(lengths) < 1e-6, lengths
+
+    flat = [math.hypot(p["x"], p["y"])
+            for p in (light_position(d, 0.0) for d in (0, 90, 200, 330))]
+    assert max(flat) - min(flat) < 1e-6, (
+        f"the lamp changes its distance as it swings round: {flat} — then the "
+        f"bearing changes the brightness as well as the modelling")
+    assert flat[0] > 50, (
+        f"the lamp is only {flat[0]:.1f} from the middle sideways, which is "
+        f"inside the shape")
+
+    up = light_position(0, 1.0)["z"]
+    down = light_position(0, -1.0)["z"]
+    assert up > 0 > down, "up and down are not on opposite sides any more"
+    assert abs(up) < 10, (
+        f"the lamp is {up:.0f} above, which is far enough for the drawing "
+        f"library to treat above and below as the same projective limit — "
+        f"the fault that made the height slider do nothing")
 
 
 # --- two cross-sections, side by side ---------------------------------------

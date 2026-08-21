@@ -1481,24 +1481,45 @@ def light_position(direction_deg: float, height: float) -> dict:
 
     Plotly wants x, y and z. Asking somebody for three coordinates to place a
     lamp is asking them to solve a puzzle; asking which side it shines from
-    and how high it is, is asking a question about a room. The radius is fixed
-    and large so only the DIRECTION matters -- moving a light nearer a shape
-    of this size would change the brightness rather than the modelling, which
-    is what the intensity controls are for.
+    and how high it is, is asking a question about a room.
+
+    ⚠ THE REACH IS NOT ONE NUMBER, AND THE COMMENT THAT SAID IT WAS COST BOTH
+    OF THESE SLIDERS THEIR MEANING. It used to read: "The radius is fixed and
+    large so only the DIRECTION matters." It is the other way round. The
+    drawing library does not take this as a point in the room: it maps it
+    through the inverse of the projection as a HOMOGENEOUS point, so as the
+    radius grows the lamp converges on a projective point at infinity — the
+    same limit from either sign — and ends up glued to the camera axis.
+    Measured on a real paper, driving the page directly:
+
+        the lamp above against the same lamp below, at reach    1: 229,586 px
+                                                            at 2, 10, 100
+                                                            and 2000:      0
+
+    At the reach this used (2000) the two lamp sliders moved nothing at all:
+    swinging the bearing right round at the height the window opens with gave
+    0 px. With the upward reach brought back to 1 the same swing gives
+    228,038 px, and with 500 sideways, 227,769.
+
+    So the two directions get their own scales: far enough sideways to keep
+    the bearing meaning a bearing, close enough vertically that up and down
+    are different places rather than the same limit.
     """
     import math
 
     radians = math.radians(direction_deg)
-    reach = 2000.0
+    sideways, upwards = 500.0, 1.0
     lift = max(-1.0, min(1.0, height))
     flat = math.sqrt(max(0.0, 1.0 - lift * lift))
-    return dict(x=reach * flat * math.cos(radians),
-                y=reach * flat * math.sin(radians),
-                z=reach * lift)
+    return dict(x=sideways * flat * math.cos(radians),
+                y=sideways * flat * math.sin(radians),
+                z=upwards * lift)
 
 
-#: Where the light hangs when nobody has moved it: overhead.
-_LIGHT_OVERHEAD = dict(x=0, y=0, z=2000)
+#: Where the light hangs when nobody has moved it: overhead. At the same
+#: scale as `light_position` above — a z of 2000 here is the same projective
+#: limit, which is what made "overhead" and "underneath" the same picture.
+_LIGHT_OVERHEAD = dict(x=0, y=0, z=1)
 
 
 def _weld(points, colours, faces, sides=None):
