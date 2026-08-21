@@ -1,5 +1,56 @@
 # Changelog
 
+## v2.48.0
+
+### 🩹 Two shapes over each other came out blotchy
+
+Two shapes drawn over each other came out covered in **blotchy dark
+mottling** — irregular patches all across the part where they overlap. It has
+been there the whole time.
+
+A triangle's front is decided by the order of its three corners, and that
+order is what the page turns into the normal it sorts by. Nothing upstream
+promised neighbours agree: the convex hull hands its triangles back however
+each one fell out, and the six faces of the ink-amounts shape are worked out
+independently. A gamut read from an ICC profile was never affected — it
+arrives correctly wound. Measured on a real paper:
+
+| | |
+|---|---|
+| the paper's 414 triangles | **207 one way, 207 the other** |
+| sRGB's 6,348 | **3,174 and 3,174** |
+| how many of the paper's faces the page put in the wrong group | **204 of 414** |
+
+Exactly half is the signature of nobody ever having asked.
+
+The page has a step that draws the far wall of a see-through shape before the
+near one, so the shape reads as solid rather than as a jumble. It decides
+which faces are the far wall from each triangle's own winding — so on a mesh
+that disagrees with itself, half of them go in the wrong group. That is the
+mottling. Every shape is now settled to one winding as it is built.
+
+| | |
+|---|---|
+| two see-through shapes, before against after | **28,861 pixels different** |
+| the same page drawn twice, as a control | **0** |
+| a gamut read from an ICC profile | already correct; unchanged |
+
+**What changed for you:** overlapping shapes look clean. Nothing measured
+moves — the volumes, the ΔE figures and every number beside the picture are
+what they were.
+
+### 🔦 The chart's skin and the shapes are lit facet by facet
+
+A shape stretched over measured points has long thin triangles in it, and
+smoothing the light across them made the surface look speckled rather than
+solid. Both the shapes and the chart's own skin are now lit one flat facet at
+a time, which is what they are.
+
+### 🎚 A tick that could not do anything no longer offers to
+
+The drift marker's tick box was offered where there was no pair of profiles
+for it to act on. It is dimmed there now, with the reason in its hover.
+
 ## v2.47.0
 
 ### 💡 The lamp you place was nailed to the camera, and both its controls were dead
