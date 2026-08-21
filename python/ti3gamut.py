@@ -8217,17 +8217,34 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "  if (line && why) line.textContent = why;\n"
         "  n.hidden = false;\n"
         "};\n"
+        # ⚠ AND IT MUST DRAW, NOT ONLY UNCOVER. Hiding the notice is half
+        # the job. When the viewer turns up LATE the inline call that draws
+        # has already run and thrown, so there is no picture waiting behind
+        # the notice -- only the instructions for one. Taking the notice away
+        # then uncovers a BLANK page, which is worse than the notice was. The
+        # retry button knew this and ran the drawing again; every OTHER way
+        # the viewer can arrive did not.
         "window.cqViewerCame = function () {\n"
         "  window.cqNoViewerWanted = false;\n"
         "  var n = document.getElementById('cq-noviewer');\n"
         "  if (n) n.hidden = true;\n"
+        "  if (!document.querySelector('.js-plotly-plot')) {\n"
+        "    var draw = document.getElementById('cq-draw');\n"
+        "    if (draw) {\n"
+        "      var run = document.createElement('script');\n"
+        "      run.text = draw.textContent;\n"
+        "      document.body.appendChild(run);\n"
+        "    }\n"
+        "  }\n"
         "};\n"
         "</script>\n")
 
     hooks = (
         ' onerror="window.cqNoViewer&&cqNoViewer(&#39;The viewer could not be '
         'reached at all \u2014 the browser reported the download as '
-        'failed.&#39;)"'
+        'failed. If it fails every time rather than now and then, something '
+        'between you and it is refusing the request: a content blocker, a '
+        'company proxy, or a network that does not allow this address.&#39;)"'
         ' onload="window.cqViewerCame&&cqViewerCame()"')
 
     tag = re.search(r'<script[^>]*\bsrc="[^"]*plot[^"]*"', html)
@@ -8287,6 +8304,13 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "min-height:44px\">Try to fetch the viewer again</button>"
         "<span data-cq=\"tries\" style=\"margin-left:.7rem;opacity:.75\">"
         "</span>"
+        # THE ADDRESS IT ACTUALLY TRIED. Without it "could not be reached"
+        # cannot be acted on by anybody: the reader cannot check whether that
+        # one address is blocked for them, and neither can whoever they
+        # report it to. Reported from a real window: "this never works for me.
+        # i only ever get this info but not the real view."
+        "<p data-cq=\"where\" style=\"margin:1rem 0 0;opacity:.55;"
+        "font-size:.85rem;word-break:break-all\"></p>"
         "</div></div>\n"
         "<script>(function () {\n"
         "  // A FAILURE THAT HAPPENED BEFORE THIS EXISTED is acted on now.\n"
@@ -8323,6 +8347,8 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "  var note = document.getElementById('cq-noviewer');\n"
         "  var button = note && note.querySelector('[data-cq=\\\"retry\\\"]');\n"
         "  var says = note && note.querySelector('[data-cq=\\\"tries\\\"]');\n"
+        "  var told = note && note.querySelector('[data-cq=\\\"where\\\"]');\n"
+        "  if (told) told.textContent = 'It tried to fetch: ' + " + _js(src) + ";\n"
         "  if (button) button.addEventListener('click', function () {\n"
         "    if (window.Plotly) { window.cqViewerCame(); return; }\n"
         "    tries += 1;\n"
