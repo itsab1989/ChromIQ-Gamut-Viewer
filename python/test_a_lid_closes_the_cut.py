@@ -326,3 +326,48 @@ def test_the_quick_caster_answers_exactly_as_the_slow_one_does(papers):
         wrong = int((~np.isclose(slow, quick, equal_nan=True)).sum())
         assert wrong == 0, (
             f"{name}: the index answers {wrong} of {len(u)} rays differently")
+
+
+def test_the_lid_cannot_run_away(papers):
+    """It is a thing to LOOK at, and it has to be carried in a saved page.
+
+    The tolerance is a share of how far the lid falls, and two measurements of
+    one paper lie about a tenth of a Lab apart over most of their shared
+    surface — so any share of that is microscopic and the splitting runs away:
+    48,666 lid triangles at a hundredth of the drop, 11,840 at a tenth, for a
+    volume nobody reads off the lid. The numbers beside the picture come from
+    the SHAPES and never from here.
+
+    A ceiling checked once a round is not a ceiling: splitting an edge adds up
+    to two triangles to every face using it, so a round begun at 7,999 ended
+    at 32,000. The worst-sagging edges are taken first, up to what fits.
+    """
+    from references import reference_gamut
+    biggest = 0
+    for name, other in (("sRGB", reference_gamut("sRGB", steps=24)),
+                        ("Adobe RGB (1998)",
+                         reference_gamut("Adobe RGB (1998)", steps=24)),
+                        ("months later", papers["Glossy-paper-months-later"])):
+        corners, skin, lid = _cap(papers["Glossy-paper"], other, 0)
+        assert len(lid) > len(skin), (
+            f"against {name} the lid is no finer than the piece it caps, so "
+            f"the refinement is not running at all and this proves nothing")
+        assert len(lid) <= 8000, (
+            f"against {name} the lid is {len(lid):,} triangles; the ceiling is "
+            f"8,000 and a page has to carry every one of them")
+        biggest = max(biggest, len(lid))
+    assert biggest >= 4000, (
+        f"the biggest lid is only {biggest:,} triangles — nothing came near "
+        f"the ceiling, so this is not testing that it holds")
+    # AND THE ORDINARY CASE MUST NOT BE LIVING AT THE CEILING. Once a hard
+    # bound exists, the tolerance stops changing the SIZE — anything finer is
+    # simply trimmed to 8,000 — so a test that only watched the bound would
+    # not notice the tolerance going back to a hundredth of the drop, which
+    # costs twice the time for the same picture. The commonest comparison
+    # there is should finish well clear of it: measured 4,389 at a twentieth
+    # of the drop, against 13,051 at a hundredth.
+    _c, _s, lid = _cap(papers["Glossy-paper"],
+                       reference_gamut("sRGB", steps=24), 0)
+    assert len(lid) < 6000, (
+        f"the paper against sRGB needs {len(lid):,} lid triangles and is "
+        f"being trimmed to fit; the tolerance is finer than it is worth")

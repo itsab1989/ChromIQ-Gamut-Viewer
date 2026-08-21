@@ -1408,7 +1408,8 @@ def _where_the_ray_leaves(vertices, faces, centre, directions, *,
 
 
 def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
-                  under=None, clearance=0.02, sag=None, rounds=6, smooth=6):
+                  under=None, clearance=0.02, sag=None, rounds=6, smooth=6,
+                  most=8000):
     """A lid for an open piece, made from the piece's own rim.
 
     WHAT THIS IS FOR. Fade "where they agree" to nothing and what is left of a
@@ -1553,8 +1554,22 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
         inside = np.ones(len(kept), bool)
         inside[np.asarray(rim, int)] = False
         far = drop[inside] if inside.any() else drop
-        sag = max(1e-3, 0.01 * float(np.median(far)) if len(far) else 1e-3)
+        # A TWENTIETH OF HOW FAR THE LID FALLS. It was a hundredth, and the
+        # difference is entirely triangles and not accuracy: on the paper
+        # against sRGB, 1% gives 13,051 lid triangles for +0.16% of volume and
+        # 5% gives 2,941 for +0.16% — the same answer at a fifth of the size.
+        sag = max(1e-4, 0.05 * float(np.median(far)) if len(far) else 1e-4)
+    # ⚠ AND A CEILING, BECAUSE THIS IS A THING TO LOOK AT. Two measurements
+    # of one paper lie a tenth of a Lab apart over most of their shared
+    # surface, so ANY share of that drop is microscopic and the splitting runs
+    # away: 48,666 lid triangles at a hundredth, 11,840 at a tenth. None of it
+    # is worth having. The numbers beside the picture are worked out from the
+    # SHAPES and never from this lid, so what a coarser lid costs is a per
+    # cent or two of a volume nobody reads off it — against a page that has to
+    # carry and draw fifty thousand triangles it does not need.
     for _round in range(int(rounds)):
+        if len(lid_faces) >= int(most):
+            break
         want = {}
         for tri in lid_faces:
             for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
@@ -1570,6 +1585,19 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
         take = hangs > float(sag)
         if not take.any():
             break
+        # A HARD BOUND, and not a look before each round. Splitting an edge
+        # adds at most two triangles to each face that uses it, so a round
+        # begun under the ceiling can end at four times it: checking only at
+        # the top let a lid of 7,999 become 32,000. The worst-sagging edges
+        # are worth the most, so they are taken first and the rest wait for a
+        # round that has room -- or never come, which is the point.
+        room = max(0, (int(most) - len(lid_faces)) // 2)
+        if take.sum() > room:
+            worst = np.argsort(np.where(take, hangs, -np.inf))[::-1][:room]
+            take = np.zeros(len(hangs), bool)
+            take[worst] = True
+            if not take.any():
+                break
         fresh = {}
         added = []
         for t in np.flatnonzero(take):
