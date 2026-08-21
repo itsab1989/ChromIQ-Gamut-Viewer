@@ -244,3 +244,46 @@ def test_the_notice_does_not_lean_on_the_hidden_attribute(page_without_the_viewe
     assert "display:none" in tag.replace(" ", ""), (
         "the notice does not start hidden by its own style, so it is on "
         "screen before anything decides whether it should be")
+
+
+def test_a_two_room_page_can_be_saved_without_the_viewer_too(tmp_path):
+    """The tick was offered on a two-room page and quietly ignored.
+
+    `write_side_by_side_html` wrote the library into the file whatever the box
+    said — five megabytes either way — and never added the did-not-arrive
+    notice, because it never asked. A control offered where it cannot act is
+    exactly what this window keeps taking out, and this one had been lying for
+    as long as two rooms have existed.
+
+    Measured through the real writer: 5,149 kB carrying it, 419 kB fetching
+    it, and the rendered page draws BOTH rooms with the movement strip.
+    """
+    import ti3gamut
+    from gamutview import build_gamut
+    from references import reference_gamut
+    paper_file = _DEMO / "Glossy-paper.ti3"
+    if not paper_file.is_file():
+        pytest.skip("no demo paper")
+    paper = build_gamut(ti3gamut.read_measurement(paper_file).lab,
+                        input_space="lab")
+    srgb = reference_gamut("sRGB", steps=16)
+    # (caption, figure) pairs, which is what the writer walks
+    pages = [("Glossy-paper",
+              ti3gamut.build_figure([("Glossy-paper", paper)], "Glossy-paper")),
+             ("sRGB", ti3gamut.build_figure([("sRGB", srgb)], "sRGB"))]
+    sizes = {}
+    for carry in (True, False):
+        out = tmp_path / f"rooms-{carry}.html"
+        ti3gamut.write_side_by_side_html(pages, out, carry_viewer=carry)
+        sizes[carry] = out.stat().st_size
+        body = out.read_text(encoding="utf-8")
+        assert body.count("Plotly.newPlot") >= 2, (
+            f"carry={carry}: only {body.count('Plotly.newPlot')} picture(s) — "
+            f"a two-room page must draw both rooms")
+        assert ("cq-noviewer" in body) is (not carry), (
+            f"carry={carry}: the did-not-arrive notice is "
+            f"{'present' if 'cq-noviewer' in body else 'missing'}, which is "
+            f"backwards — only a page that FETCHES the viewer needs it")
+    assert sizes[False] * 4 < sizes[True], (
+        f"saving without the viewer gave {sizes[False]:,} bytes against "
+        f"{sizes[True]:,} carrying it — the tick is being ignored again")

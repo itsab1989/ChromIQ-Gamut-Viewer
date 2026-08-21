@@ -7974,7 +7974,7 @@ window.cqSpinControls = function (settings) {
 
 def write_two_views_html(views, out: Path, mode: str = "dark", spin=None,
                          controls: bool = True, offer=None,
-                         notes: str = "") -> Path:
+                         notes: str = "", carry_viewer: bool = True) -> Path:
     """One page holding the shells AND a cut through them, with a switch.
 
     Asked for from the window: "could the exported web viewer files get a
@@ -8008,7 +8008,18 @@ def write_two_views_html(views, out: Path, mode: str = "dark", spin=None,
         fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), showlegend=False)
         if not flat:
             fig.update_layout(scene=dict(domain=dict(x=[0, 1], y=[0, 1])))
-        div = pio.to_html(fig, include_plotlyjs=(i == 0), full_html=False,
+        # ⚠ THE READER'S CHOICE REACHES HERE TOO. This wrote the library
+        # into the file whatever the box said, so "save without the 3D
+        # viewer" was offered on a two-room page and quietly ignored:
+        # the file came out five megabytes either way. A control that
+        # cannot act is exactly what this window keeps taking out.
+        # Only the FIRST pane carries or fetches it; the others share
+        # whichever arrives.
+        div = pio.to_html(
+            fig,
+            include_plotlyjs=(("inline" if carry_viewer else "cdn")
+                              if i == 0 else False),
+            full_html=False,
                           div_id=f"scene{i}",
                           config={"displaylogo": False, "responsive": True,
                                   "scrollZoom": True, **_MODEBAR_ONLY})
@@ -8113,7 +8124,8 @@ def write_two_views_html(views, out: Path, mode: str = "dark", spin=None,
 def write_side_by_side_html(pages, out: Path, mode: str = "dark",
                             linked: bool = True, spin=None,
                             controls: bool = True, offer=None,
-                            notes: str = "", stacked: bool = False) -> Path:
+                            notes: str = "", stacked: bool = False,
+                            carry_viewer: bool = True) -> Path:
     """Two scenes in one page, each with its own shape, side by side.
 
     Overlaying two gamuts is the right way to see where one reaches past the
@@ -8175,7 +8187,15 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
         fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), showlegend=False)
         if not flat:
             fig.update_layout(scene=dict(domain=dict(x=[0, 1], y=[0, 1])))
-        div = pio.to_html(fig, include_plotlyjs=(i == 0), full_html=False,
+        # ⚠ THE READER'S CHOICE REACHES HERE TOO. This wrote the library into
+        # the file whatever the box said, so "save without the 3D viewer" was
+        # offered on a two-room page and quietly ignored — five megabytes
+        # either way. Only the FIRST pane carries or fetches it; the others
+        # share whichever arrives.
+        div = pio.to_html(fig,
+                          include_plotlyjs=(("inline" if carry_viewer else "cdn")
+                                            if i == 0 else False),
+                          full_html=False,
                           div_id=f"scene{i}",
                           config={"displaylogo": False, "responsive": True,
                                   "scrollZoom": True, **_MODEBAR_ONLY})
@@ -8257,6 +8277,13 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
  .half > div:last-child {{ flex:1 1 auto; min-height:0; }}
 </style></head><body><div class="row">{''.join(blocks)}</div>{written}{resize}{link}<script>{_ORDER_JS}</script><script>{_WHEEL_JS}</script><script>{_CAPTION_JS}</script>{_spin_script(ids, ({"flat": True, **(spin or {})} if flat else spin), mode, controls, offer)}</body></html>"""
+    # AND IF IT HAS TO FETCH THE VIEWER, IT SAYS SO WHEN IT CANNOT GET IT.
+    # The same notice every other page gets: the walk through three addresses,
+    # the retry, and the word after thirty seconds. It re-runs EVERY drawing
+    # script rather than the first, which is what a two-room page needs — see
+    # `_say_if_the_viewer_never_arrives`.
+    if not carry_viewer:
+        html = _say_if_the_viewer_never_arrives(html, mode)
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
 

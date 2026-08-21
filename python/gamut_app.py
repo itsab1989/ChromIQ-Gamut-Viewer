@@ -16132,7 +16132,8 @@ class GamutApp(QMainWindow):
         if self._side_by_side.isChecked() and len(gamuts) >= 2:
             self._write_two_rooms(gamuts, out, clouds, lost, saved=saved,
                                   controls=controls, offer=offer, glide=glide,
-                                  notes=notes, colours=colours)
+                                  notes=notes, colours=colours,
+                                  carry_viewer=carry_viewer)
         else:
             # WHAT THIS SCENE WAS DRAWN FROM.
             self._scene_inputs = (list(gamuts), clouds, styles, lost)
@@ -16215,7 +16216,8 @@ class GamutApp(QMainWindow):
         write_side_by_side_html(pages, out, mode=(colours or self._appearance),
                                 linked=self._link_cameras.isChecked(),
                                 spin={"cuts": cuts} if cuts else None,
-                                controls=controls, offer=offer, notes=notes)
+                                controls=controls, offer=offer, notes=notes,
+                                carry_viewer=carry_viewer)
 
     def _write_both_views(self, gamuts, out, clouds, styles, lost, *,
                           controls: bool = False, offer=None,
@@ -16264,7 +16266,8 @@ class GamutApp(QMainWindow):
                          controls: bool = False, offer=None,
                          glide: bool = False, notes: str = "",
                          colours: str = None,
-                         saved: bool = False) -> None:
+                         saved: bool = False,
+                         carry_viewer: bool = True) -> None:
         """One page, two scenes, each holding a single shape.
 
         Each is built by the same code that builds the single view, so the two
@@ -16337,7 +16340,8 @@ class GamutApp(QMainWindow):
                                 # arranged the way it was sent.
                                 stacked=(self._rooms_way.currentData()
                                          == "above"),
-                                controls=controls, offer=offer, notes=notes)
+                                controls=controls, offer=offer, notes=notes,
+                                carry_viewer=carry_viewer)
 
     #: The controls that can belong to one shape rather than all of them, as
     #: key → (widget, how to read it). Anything not here is window-wide by
