@@ -8316,7 +8316,15 @@ class GamutApp(QMainWindow):
             "it is what you get with this switched off. Moving it lower "
             "throws longer shadows across the surface, which can make a "
             "shallow dent easier to see.\n\n"
-            "Every one of them moves the picture as you drag.", g_look)
+            "TWO OF THEM WAIT FOR THE SHINE. Roughness and Fresnel shape the "
+            "highlight, and there is almost none until Specular is up: at the "
+            "0.08 it starts at, dragging either of them from one end to the "
+            "other changes not a single pixel — measured. Take Specular past "
+            "about a quarter of its range and both come to life. The shine is "
+            "left low on purpose: it washes the shape towards white, and "
+            "washing out the colours is the one thing this picture must not "
+            "do.\n\n"
+            "The rest move the picture the moment you drag them.", g_look)
         light_hint.setObjectName("hint_light_hint")
         lv.addWidget(light_hint)
         self._light_rows.append(light_hint)
