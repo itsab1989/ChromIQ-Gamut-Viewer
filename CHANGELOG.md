@@ -1,5 +1,32 @@
 # Changelog
 
+## v2.50.1
+
+### 🖼 The page really does move on to another address now
+
+**v2.50.0 said it did, and that was not true of its own code.** The walk from
+one address to the next was never started: nothing called it except a
+forty-five second last resort. Every part of it was written, and none of it
+ran.
+
+It is started by the failure itself now. Measured against a local server, with
+every request logged:
+
+| what happens | what the page asks for |
+|---|---|
+| the first address refuses | then the second, and nothing else |
+| every address refuses | all three, automatically, within a third of a second |
+| the button pressed three times | a different one of the three each press |
+
+The picture arrives in each case where an address answers, and the message
+stays with a sensible wording where none does.
+
+### 🐢 A slow first fetch no longer leaves nothing to draw
+
+The instructions for the picture used to wait behind the viewer's own
+download, so a viewer that arrived by another route had nothing to draw. They
+are ready within a twentieth of a second now, whatever the download is doing.
+
 ## v2.50.0
 
 ### 🖼 A page that fetched its viewer showed the message even when the viewer arrived
