@@ -155,3 +155,132 @@ def test_the_hover_is_short_enough_to_read_going_past():
         f"way past and the long version belongs behind the ⓘ")
     assert "Needs" in words, (
         "the hover does not say what the control needs before it can act")
+
+
+# ---------------------------------------------------------------------------
+# THE OFFER ITSELF, which this file was named for and did not test. A hostile
+# reading gutted `_apply_closing_availability` to "always enabled, no reason"
+# and disconnected the tick from the drawing entirely, and ALL 1,006 tests
+# still passed. Both are covered below.
+# ---------------------------------------------------------------------------
+
+
+class _Tick:
+    """Just enough of a checkbox to be dimmed and given a reason."""
+
+    def __init__(self):
+        self.on, self.enabled, self.tip = False, True, ""
+
+    def isChecked(self):          # noqa: N802 — Qt's spelling
+        return self.on
+
+    def setEnabled(self, yes):    # noqa: N802
+        self.enabled = bool(yes)
+
+    def setToolTip(self, text):   # noqa: N802
+        self.tip = text
+
+
+class _Slider:
+    def __init__(self, v):
+        self._v = v
+
+    def value(self):
+        return self._v
+
+
+class _Box:
+    def __init__(self, on=False):
+        self._on = on
+
+    def isChecked(self):          # noqa: N802
+        return self._on
+
+
+class _Combo:
+    def __init__(self, data):
+        self._data = data
+
+    def currentData(self):        # noqa: N802
+        return self._data
+
+    def currentText(self):        # noqa: N802
+        return self._data
+
+
+def _window(shapes=2, agree=30, differ=100, style="solid", second="solid",
+            rooms=False, slice_on=False, run=False, marking=None):
+    """The real availability rule, run against stub controls."""
+    import gamut_app
+    who = type("Stub", (), {})()
+    who._close_cut = _Tick()
+    who._agree, who._differ = _Slider(agree), _Slider(differ)
+    who._style_mine, who._style_second = _Combo(style), _Combo(second)
+    who._side_by_side, who._slice_on = _Box(rooms), _Box(slice_on)
+    who._run_drawn = run
+    who._scene_inputs = ([None] * shapes, None, None, marking)
+    gamut_app.GamutApp._apply_closing_availability(who)
+    return who._close_cut
+
+
+def test_the_tick_is_offered_exactly_where_the_drawing_can_act():
+    """Every condition the drawing tests, and no paraphrase of one.
+
+    The drawing asks for two shapes, `agree` below full, a shape drawn as a
+    surface, no out-of-reach marking, and a single-room picture. This used to
+    ask for two shapes and ANY fade, which left the tick inviting a click and
+    answering with nothing in four separate states.
+    """
+    assert _window().enabled, "the plain case is not offered"
+    cases = {
+        "one shape": dict(shapes=1),
+        "three shapes": dict(shapes=3),
+        "nothing faded": dict(agree=100),
+        "only the differ fade": dict(agree=100, differ=30),
+        "both drawn as outlines": dict(style="mesh", second="mesh"),
+        "two rooms": dict(rooms=True),
+        "a cross-section": dict(slice_on=True),
+        "a run of profiles": dict(run=True),
+        "what is out of reach is marked": dict(marking=[object(), None]),
+    }
+    for why, how in cases.items():
+        tick = _window(**how)
+        assert not tick.enabled, (
+            f"the tick is offered with {why}, where the drawing draws nothing")
+        assert tick.tip and len(tick.tip) <= 200, (
+            f"with {why} the tick gives no reason, or one too long to read "
+            f"going past ({len(tick.tip)} characters)")
+    # AND IT MUST NOT BE DIMMED WHERE IT WORKS: one outline is enough, since
+    # the other shape still gets its lid.
+    assert _window(second="mesh").enabled, (
+        "one shape drawn as an outline should not take the other's lid away")
+
+
+def test_the_tick_reaches_the_drawing():
+    """Disconnecting it passed every other test in the suite.
+
+    `cap=` is handed to `build_figure` at the call site rather than through
+    `_render_options`, so there is nothing to read back off an object — the
+    wiring is the source line, and this is what watches it.
+    """
+    body = (pathlib.Path(__file__).resolve().parent
+            / "gamut_app.py").read_text(encoding="utf-8")
+    assert "cap=self._close_cut.isChecked()," in body, (
+        "the tick no longer reaches the drawing: build_figure is being told "
+        "something other than what the reader ticked")
+
+
+def test_it_is_remembered_between_sessions():
+    """Being absent from the table is invisible to every other test.
+
+    `_persisted()` is checked for controls it LISTS — that each round-trips —
+    and never for whether a control is listed at all. So a new option simply
+    left out is remembered by nobody and noticed by nothing: this one was, for
+    a day, because a multi-part edit died on an assertion before it reached
+    that line.
+    """
+    body = (pathlib.Path(__file__).resolve().parent
+            / "gamut_app.py").read_text(encoding="utf-8")
+    assert '("close_cut", self._close_cut, "check", False)' in body, (
+        "the lid's tick is not in `_persisted()`, so it comes back unticked "
+        "however the reader left it")

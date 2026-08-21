@@ -772,7 +772,7 @@ _ACCENT_L_CAP = 0.92
 _LAST_CAP: "tuple | None" = None
 
 
-def cap_over_the_cut(gamuts, stands, which, centre=(50.0, 0.0, 0.0)):
+def cap_over_the_cut(gamuts, stands, which, centre=None):
     """The piece of the OTHER shape that closes this one's opening.
 
     WHY. Fade "where they agree" away and what is left of a shape has a hole
@@ -817,6 +817,18 @@ def cap_over_the_cut(gamuts, stands, which, centre=(50.0, 0.0, 0.0)):
     else:
         _LAST_CAP = (key, {})
     done = _LAST_CAP[1]
+    # ⚠ THE MIDDLE IS NOT ALWAYS (50, 0, 0). That is the neutral point of
+    # CIELAB, and the reader chooses the space: an XYZ gamut spans 0 to about
+    # 1, so a middle at fifty is nowhere near it, every ray leaves from
+    # outside the shape, and `close_the_cut` refuses — silently, because the
+    # refusal is caught and turned into "no lid". Measured in XYZ: the shape
+    # covers 0.0006 of the view from (50,0,0) against the 12.5664 of a full
+    # one. So Lab keeps its own neutral point, and any other space is given
+    # the middle of the shape the lid is made from, which is the shape every
+    # ray has to reach.
+    if centre is None:
+        centre = ((50.0, 0.0, 0.0) if getattr(theirs, "space", "lab") == "lab"
+                  else np.asarray(theirs.vertices, float).mean(axis=0))
     middle = np.asarray(centre, float)
     try:
         corners, _skin, lid = close_the_cut(
@@ -9651,8 +9663,14 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # `marked` is the per-shape out-of-reach mask here, NOT the bool
         # of the same name above the loop -- asking `not marked` on an
         # array raises, and did.
+        # ⚠ AND ONLY OVER A SHAPE THAT IS DRAWN AS A SURFACE. An outline is
+        # asked for so the reader can see THROUGH it; a lid is an opaque
+        # sheet, and laid inside a wire cage it fills in the very thing the
+        # outline was chosen to keep open — measured, 70,512 lit pixels where
+        # the picture without it has none, and nothing in the key to say what
+        # the coloured solid is.
         if (cap and agree < 1.0 and standing is not None
-                and marked is None):
+                and marked is None and how in ("solid", "solid+mesh")):
             _lid = cap_over_the_cut(gamuts, stands, i)
             if _lid is not None:
                 _corners, _faces, _colours = _lid
@@ -9661,6 +9679,14 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                     i=_faces[:, 0], j=_faces[:, 1], k=_faces[:, 2],
                     vertexcolor=_colours, flatshading=True,
                     opacity=float(base_i), name=f"{name} — where it is cut",
+                    # ⚠ ON THE SHAPE'S OWN ROW, NOT A ROW OF ITS OWN. A saved
+                    # page keys the reader's controls on `legendgroup || name`
+                    # (see `_spin_script`), so a lid with neither became a
+                    # FOURTH row beside two shapes — and fading the paper down
+                    # left its lid at full strength inside a 5% shell, which
+                    # is the one thing this window's rule about one row per
+                    # thing exists to stop.
+                    legendgroup=name,
                     showlegend=False, hoverinfo="skip",
                     lighting=_lighting(depth_i, base_i),
                     **({"lightposition": light} if light else {})))

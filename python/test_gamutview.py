@@ -573,6 +573,10 @@ class _FakeApp:
         # go on describing the same drawing they always did.
         self._agree = _Value(100)
         self._differ = _Value(100)
+        # The lid over what the fade opens. Off, like the window's own
+        # default: a stub that answered True would describe a picture with a
+        # lid in it, which is not the one these tests are about.
+        self._close_cut = _Value(False)
         self._turn_mode, self._turn_speed, self._turn_sweep = (
             _Value("swing"), _Value(8), _Value(60))
         self._tilt_mode, self._tilt_speed, self._tilt_sweep = (

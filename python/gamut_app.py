@@ -11574,6 +11574,7 @@ class GamutApp(QMainWindow):
             ("show_lost", self._show_lost, "check", False),
             ("lost_in_colour", self._lost_in_colour, "check", False),
             ("agree", self._agree, "slider", 100),
+            ("close_cut", self._close_cut, "check", False),
             ("differ", self._differ, "slider", 100),
             ("relative", self._relative, "check", False),
             ("manual_light", self._manual_light, "check", False),
@@ -15123,14 +15124,43 @@ class GamutApp(QMainWindow):
         # working perfectly.
         stashed = getattr(self, "_scene_inputs", None)
         shapes = len(stashed[0]) if stashed else 0
-        faded = self._agree.value() < 100 or self._differ.value() < 100
-        can = shapes == 2 and faded
+        # ⚠ EVERY CONDITION THE DRAWING ITSELF TESTS, and not a paraphrase.
+        # This asked for two shapes and ANY fade; the drawing asks for two
+        # shapes, `agree` below full, a shape drawn as a surface, no
+        # out-of-reach marking, and a single-room picture. Driven, the
+        # difference showed as a tick that invited a click and did nothing in
+        # four separate states — a lid over the DIFFER fade, over two rooms,
+        # over a cross-section, and in CIE XYZ.
+        faded = self._agree.value() < 100
+        solid = any(str(w.currentData() or w.currentText()).lower().startswith(
+                        ("solid", "shape"))
+                    for w in (getattr(self, "_style_mine", None),
+                              getattr(self, "_style_second", None))
+                    if w is not None)
+        alone = not (self._side_by_side.isChecked()
+                     or self._slice_on.isChecked()
+                     or getattr(self, "_run_drawn", False))
+        marking = bool(stashed and any(m is not None for m in (stashed[3] or ())))
+        can = shapes == 2 and faded and solid and alone and not marking
         self._close_cut.setEnabled(can)
         if can:
             self._close_cut.setToolTip(
                 "Puts a lid over the hole the fade leaves, made from the "
                 "other shape's own surface. Needs two shapes and Where they "
                 "agree below full.")
+        elif not alone:
+            self._close_cut.setToolTip(
+                "Not while the picture is a cross-section, two rooms, or a "
+                "run of profiles — the opening this closes belongs to one "
+                "room with two shapes in it.")
+        elif marking:
+            self._close_cut.setToolTip(
+                "Not while what is out of reach is marked: that paints the "
+                "very faces this would cover, and the two would fight.")
+        elif not solid:
+            self._close_cut.setToolTip(
+                "Needs a shape drawn as a surface. An outline is there to be "
+                "seen through, and a lid would fill it in.")
         elif shapes != 2:
             self._close_cut.setToolTip(
                 "Needs exactly two shapes. One has nothing to agree with; "
