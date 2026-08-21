@@ -8453,6 +8453,28 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "It is about 5 MB, so this can happen on a slow connection. Leave the "
         "page open and it may still appear.');\n"
         "  }, 30000);\n"
+        # ⚠ AND IT MOVES ON BY ITSELF. Asking a reader to press a button is
+        # no use when the first address does not REFUSE the request but simply
+        # never answers: nothing fires, the notice sits there, and pressing
+        # only re-asks the address that is already hanging. Reported from a
+        # phone: "i still get this and nothing there changes when i click the
+        # button." So after twelve seconds without a viewer the page fetches
+        # the NEXT address on its own, and again after that, until the list is
+        # done -- the reader has to do nothing at all.
+        "  var reaching = 0;\n"
+        "  var reach = window.setInterval(function () {\n"
+        "    if (window.Plotly) { window.clearInterval(reach); return; }\n"
+        "    if (reaching >= hosts.length - 1) { window.clearInterval(reach); return; }\n"
+        "    reaching += 1;\n"
+        "    if (told) told.textContent = 'It is trying: ' + hosts[reaching];\n"
+        "    var nxt = document.createElement('script');\n"
+        "    nxt.src = hosts[reaching] + (hosts[reaching].indexOf('?') < 0 ? '?' : '&')\n"
+        "              + 'cq-next=' + reaching;\n"
+        "    nxt.crossOrigin = 'anonymous';\n"
+        "    if (" + _js(sri) + ") nxt.integrity = " + _js(sri) + ";\n"
+        "    nxt.onload = function () { window.cqViewerCame(); };\n"
+        "    document.head.appendChild(nxt);\n"
+        "  }, 12000);\n"
         "  // TRY AGAIN WITHOUT LOSING THE PAGE, which is the thing a reader\n"
         "  // on a phone actually wants. Being told to reload when the line is\n"
         "  // fine is useless advice, and an interrupted download -- switching\n"
@@ -8463,6 +8485,7 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "  // integrity hash is over the CONTENT, not the address, so a query\n"
         "  // string cannot break it.\n"
         "  var tries = 0;\n"
+        "  var hosts = " + _js_list(mirrors) + ";\n"
         "  var note = document.getElementById('cq-noviewer');\n"
         "  var button = note && note.querySelector('[data-cq=\\\"retry\\\"]');\n"
         "  var says = note && note.querySelector('[data-cq=\\\"tries\\\"]');\n"
@@ -8477,7 +8500,6 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         # A DIFFERENT HOST EACH GO, not the same one again. The first address
         # has already failed however many times the reader has pressed this,
         # and pressing it once more is the definition of no answer.
-        "    var hosts = " + _js_list(mirrors) + ";\n"
         "    var where = hosts[(tries - 1) % hosts.length];\n"
         "    again.src = where + (where.indexOf('?') < 0 ? '?' : '&')\n"
         "                + 'cq-retry=' + tries;\n"

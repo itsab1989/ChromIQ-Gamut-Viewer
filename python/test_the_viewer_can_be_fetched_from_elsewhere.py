@@ -115,6 +115,27 @@ def test_arriving_late_draws_the_picture_rather_than_uncovering_nothing(
         "not instant, so the second call would put a picture over the first")
 
 
+def test_it_moves_on_without_being_asked(page_without_the_viewer):
+    """A button is no use when the address does not refuse, it just hangs.
+
+    Reported from a phone: "i still get this and nothing there changes when i
+    click the button." Nothing fires when a request is black-holed rather than
+    refused — no `onerror`, so the button stays disabled and pressing it only
+    re-asks the address that is already hanging. The page now fetches the NEXT
+    address on its own every twelve seconds until the list is done. Driven in
+    a browser, touching nothing: cdn.plot.ly, then jsdelivr at about 12 s,
+    then unpkg at about 24 s.
+    """
+    body = page_without_the_viewer
+    assert "reaching >= hosts.length - 1" in body, (
+        "the page never moves on by itself — a reader whose first address "
+        "hangs is left pressing a button that cannot help")
+    assert "'cq-next=' + reaching" in body, (
+        "the page re-asks the same address rather than the next one")
+    assert "}, 12000);" in body, (
+        "no timer drives the move to the next address")
+
+
 def test_the_notice_names_the_address_it_could_not_reach(
         page_without_the_viewer):
     # BOTH: the address it started with, shown as soon as the notice opens,
