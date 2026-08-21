@@ -409,6 +409,7 @@ def main() -> int:
     wide = max(len(r[1]) for r in rows)
     last = None
     faults = []
+    excused = []
     for where, name, lo, hi, verdict, why in rows:
         if where != last:
             print(f"\n  {where}")
@@ -422,6 +423,7 @@ def main() -> int:
         if OFFSCREEN and name.startswith(("turn_", "tilt_")):
             print("           ^ not answerable without a screen: the "
                   "browser throttles its animation loop away")
+            excused.append(name)
             continue
         faults.append(f"{name} in “{where}”: {verdict}")
 
@@ -436,8 +438,23 @@ def main() -> int:
               f"hand.")
         win.close()
         return 1
-    print("  Clean: every slider that can act live does, and the ones that "
-          "recompute say so.")
+    # SAY WHAT WAS NOT LOOKED AT, in the summary and not only beside the
+    # slider it happened to. A run with four sliders excused printed the same
+    # single word -- "Clean" -- as a run that judged all of them, and the
+    # sweep's record says 22 of 22 clean without saying how any of them was
+    # run. The movement sliders are the ones that go unjudged, and they are
+    # the ones a saved page is made of. audit_what_you_save.py already says
+    # this properly; this is the same sentence.
+    if excused:
+        print(f"  Clean AS FAR AS IT WAS LOOKED AT: every slider judged here "
+              f"acts live, and the ones that recompute say so.")
+        print(f"  {len(excused)} slider(s) were NOT judged -- "
+              f"{', '.join(excused)} -- because a browser with no screen "
+              f"throttles its animation loop away. Run this with "
+              f"QT_QPA_PLATFORM= to include them.")
+    else:
+        print("  Clean: every slider that can act live does, and the ones "
+              "that recompute say so.")
     win.close()
     pump(0.3)
     return 0
