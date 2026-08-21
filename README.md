@@ -1316,6 +1316,7 @@ python scripts/audit_sliders.py           # which sliders act under the hand, in
 python scripts/audit_controls.py          # which controls rebuild the page, and which restyle
 python scripts/audit_crossed_shapes.py    # Set this for x how it is drawn, all 13 crossings
 python scripts/audit_the_shape_on_screen.py <dir>   # renders the shape and reads the picture back
+python scripts/audit_the_notice_really_hides.py     # the did-not-arrive notice, rendered
 python scripts/audit_what_you_save.py     # the file against the screen it came from
 python scripts/audit_comes_back.py        # what a restart keeps, picture included
 python scripts/audit_readable.py          # every word, in both appearances, measured

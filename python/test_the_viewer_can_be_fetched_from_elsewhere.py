@@ -157,3 +157,30 @@ def test_the_notice_names_the_address_it_could_not_reach(
         'reached" cannot be acted on by anybody')
     assert "It is trying: " in page_without_the_viewer, (
         "a retry does not say which address it has moved on to")
+
+
+def test_the_notice_does_not_lean_on_the_hidden_attribute(page_without_the_viewer):
+    """`hidden` LOSES to an inline `display`, and that hid the picture.
+
+    The notice was written `<div id="cq-noviewer" hidden style="…display:
+    flex;…">`. The browser's own rule is `[hidden] { display: none }` at
+    ordinary specificity and an inline style beats it — so the notice was on
+    screen from the moment the parser reached it, for ever, and `n.hidden =
+    true` was a no-op. The picture was drawn and intact BEHIND it: measured,
+    the plot at 1,314 ms and the notice covering it at 1,365 ms.
+
+    ⚠ EVERY OTHER TEST OF THIS PAGE STILL PASSED, because they ask whether
+    words appear in the HTML and every word was right. Only rendering the page
+    can see it, and that is `scripts/audit_the_notice_really_hides.py` — this
+    is the cheap half, watching the shape of the tag.
+    """
+    body = page_without_the_viewer
+    spot = body.find('id="cq-noviewer"')
+    assert spot > 0, "the notice is not in the page at all"
+    tag = body[spot:body.index(">", spot)]
+    assert " hidden" not in tag, (
+        "the notice is using the `hidden` attribute again, which an inline "
+        "`display` overrides — it will sit on top of the picture for ever")
+    assert "display:none" in tag.replace(" ", ""), (
+        "the notice does not start hidden by its own style, so it is on "
+        "screen before anything decides whether it should be")

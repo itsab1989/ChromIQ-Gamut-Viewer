@@ -8327,7 +8327,7 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "  if (!n) { window.cqNoViewerWanted = why || true; return; }\n"
         "  var line = n.querySelector('[data-cq=\\\"why\\\"]');\n"
         "  if (line && why) line.textContent = why;\n"
-        "  n.hidden = false;\n"
+        "  n.style.display = 'flex';\n"
         "};\n"
         # ⚠ AND IT MUST DRAW, NOT ONLY UNCOVER. Hiding the notice is half
         # the job. When the viewer turns up LATE the inline call that draws
@@ -8339,7 +8339,7 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "window.cqViewerCame = function () {\n"
         "  window.cqNoViewerWanted = false;\n"
         "  var n = document.getElementById('cq-noviewer');\n"
-        "  if (n) n.hidden = true;\n"
+        "  if (n) n.style.display = 'none';\n"
         # ONCE, HOWEVER MANY THINGS NOTICE AT ONCE. The watchdog polls every
         # quarter second and the retry's onload fires as well, so both can
         # call this for the same arrival -- and the drawing is not instant, so
@@ -8414,8 +8414,23 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
                   r'<script id="cq-draw">\2', html, count=1)
 
     note = (
-        "<div id=\"cq-noviewer\" hidden style=\"position:fixed;inset:0;"
-        "display:flex;align-items:center;justify-content:center;"
+        # ⚠ `hidden` LOSES TO AN INLINE `display`. The browser's own rule
+        # is `[hidden] { display: none }` at ordinary specificity, and an
+        # inline style beats it — so this div carried `hidden` AND
+        # `display:flex`, and was on screen from the moment the parser
+        # reached it, for ever. `n.hidden = true` was a no-op.
+        #
+        # THE PICTURE WAS BEHIND IT ALL ALONG. Measured: the plot drawn at
+        # 1,314 ms, this notice covering it at 1,365 ms — 51 ms of picture
+        # and then an opaque sheet. Every symptom reported came from this
+        # one line: "i see the shape a split second and then the message is
+        # back", the notice showing its DEFAULT wording rather than any
+        # reason, and "nothing changes when i click the button" — the
+        # button does nothing because the viewer is already there.
+        #
+        # The display is driven directly now, and `hidden` is not used.
+        "<div id=\"cq-noviewer\" style=\"position:fixed;inset:0;"
+        "display:none;align-items:center;justify-content:center;"
         f"background:{c['page']};color:{c['text']};z-index:9;"
         "font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"
         "\"><div style=\"max-width:34rem;padding:2rem;text-align:left\">"
