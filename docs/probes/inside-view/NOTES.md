@@ -357,3 +357,58 @@ Pictures in `the-lid-that-fits/`: three cameras × (as it ships / with the lid
 scattered" report seen from outside — the torn far wall of the open shell
 showing through the skin, which is a different fault from the needles that
 flat shading cured. With the lid it is one continuous surface.
+
+## 2026-08-21 — the seam is in the WRONG PLACE, by up to 15 Lab
+
+Found by looking at the lid on its own and asking why its rim had a sawtooth.
+Basti asked "did those last shapes really look as expected?" — they did not,
+and three pictures saying "the hollow is filled" had stopped me looking.
+
+**The rim IS the crossing curve where it has a corner.** Every seam corner sits
+on both surfaces: 0.0001 Lab off sRGB, 0.0000 off the paper. The corners are
+right.
+
+**It is the segments BETWEEN them that are wrong.** `recut_where_they_part`
+decides where two shapes part by classifying the CORNERS of each triangle and
+splitting the edges whose ends disagree. It never asks what happens INSIDE a
+facet. A triangle whose three corners all stand outside sRGB can still have
+sRGB bulging up through its middle, and there the boundary jumps straight
+across the facet instead of following the crossing. Sampled along each seam
+segment, paper minus sRGB should be 0 all the way:
+
+    segment 92.99 Lab long   +0.18 .. +1.04    (fine)
+    segment 81.95 Lab long  -13.68 .. -0.48    WRONG by 13.7
+    segment 71.08 Lab long  -15.23 .. -0.80    WRONG by 15.2
+    segment 49.42 Lab long   -1.01 .. +0.17    (fine)
+    segment 45.81 Lab long  -12.27 .. -0.53    WRONG by 12.3
+    the four shortest        -0.000 .. +0.000  (exactly on it)
+
+A negative gap means the paper is INSIDE sRGB there, so the standing piece is
+drawn bulging into ground where the paper does not reach past sRGB at all.
+
+**It is not sRGB's coarseness.** The seam is IDENTICAL at every reference
+resolution — 118 corners, 9 kinks, 93 Lab longest edge — from 1,452 triangles
+to 60,492. One seam corner per crossed PAPER edge, and no more.
+
+**Crossed over every demo paper and three references** (>1 Lab counts as
+straying; the share is of the seam's total length):
+
+    Glossy-paper              vs sRGB              29.8%   worst 14.64
+    Glossy-paper-months-later vs sRGB              29.2%   worst 13.59
+    Matte-paper               vs sRGB               9.4%   worst  4.27
+    all three                 vs Adobe RGB (1998)   0.0%   worst  0.22
+    all three                 vs Display P3         0.0%   worst  0.14
+
+It bites against **sRGB only** — the default reference, and the one Basti was
+looking at when he reported the zig-zag. The wider references are genuinely
+clean, not unmeasured: they still report 0.1–0.2 Lab rather than a flat zero.
+
+⚠ THE SAME NUMBER WAS ALREADY IN `close_the_cut`'s DOCSTRING — "1.9% of one
+hole's area, by as much as 15.4 Lab" — as the reason the lid is held under the
+skin. It was measured and worked around for the lid without anyone noticing it
+is also a fault in the shape the application draws today.
+
+**The fix is to split inside a facet too**, where the gap between the two
+surfaces changes sign within a triangle rather than only along its edges.
+Refining the seam by adding points ALONG it does nothing: the corners are
+already right.
