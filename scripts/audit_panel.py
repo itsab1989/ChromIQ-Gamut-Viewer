@@ -86,6 +86,11 @@ from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCheckBox,  # noqa: E402
 #: where a *centred* label can still be wrong even though nothing is clipped.
 WIDTHS = (1200, 1560, 1900)
 
+#: How long a HOVER tooltip may be, in characters. Asked for in as many words:
+#: the hover stays short and names the outcome and the prerequisite; the long
+#: version goes behind the ⓘ, which is why every control here has one.
+HOVER_LIMIT = 200
+
 #: How many pixels of shortfall count as cut off. Qt's own elision kicks in at
 #: one pixel, but a text width computed from font metrics can disagree with the
 #: renderer's by a fraction, and a whole-pixel margin keeps this from crying
@@ -584,6 +589,54 @@ def audit_hover(panel) -> list:
             problems.append(
                 f"[hover] SILENT  {button.text().strip()!r} says nothing when "
                 f"it is hovered")
+
+    # AND NOT AN ESSAY EITHER, which is the same rule from the other side: the
+    # hover stays short and the long version goes behind the ⓘ.
+    #
+    # MEASURED BEFORE IT WAS WRITTEN, so it starts green instead of crying
+    # about the window as it stands: of 66 controls carrying a hover tooltip,
+    # not one is over the limit. This rule buys nothing today. It is here
+    # because of HOW the limit gets broken -- the ⓘ beside these same controls
+    # runs to two and a half thousand characters, and the way this goes wrong
+    # is one of those pasted into the hover by somebody in a hurry.
+    #
+    # WHAT THAT COSTS, driven rather than counted: the one 2,485-character
+    # tooltip in the window opens a box 481 x 562 px -- over half the height
+    # of this screen, dropped over the panel unasked by a pointer merely
+    # passing across. That is the picture this number is standing in for.
+    #
+    # HIDDEN CONTROLS ARE NOT ASKED. "Remove the selected one" carries 530
+    # characters and is deliberately never shown (see gamut_app.py, where it
+    # is kept as an object so tests and audits naming it keep working). A rule
+    # that fires on what no pointer can reach teaches people to ignore it, and
+    # this audit has been burned by a noisy rule before -- see the
+    # seventeen-complaint version in audit_the_readme_is_true.
+    looked = 0
+    for x in panel.findChildren((QPushButton, QCheckBox, QRadioButton,
+                                 QComboBox)):
+        if x.isHidden():
+            continue
+        text = " ".join(_re.sub(r"<[^>]+>", "", x.toolTip()).split())
+        if not text:
+            continue
+        looked += 1
+        if len(text) > HOVER_LIMIT:
+            name = (x.text().strip() if hasattr(x, "text") and x.text()
+                    else x.objectName() or type(x).__name__)
+            problems.append(
+                f"[hover] ESSAY  {name!r} answers a hover with {len(text)} "
+                f"characters; the limit is {HOVER_LIMIT} and the long version "
+                f"belongs behind its ⓘ")
+
+    # AND IT MUST BE ABLE TO SEE THEM. A measurement that cannot reach the
+    # controls looks exactly like one that found nothing wrong, which has cost
+    # this project four separate days. The panel carries dozens; if this ever
+    # examines a handful, the folds did not open or the panel was not built,
+    # and the silence above means nothing.
+    if looked < 20:
+        problems.append(
+            f"[hover] BLIND  only {looked} control(s) with a hover tooltip "
+            f"were reachable, so \"none is too long\" says nothing")
     # TWO ⓘ ON ONE ROW IS ONE OF THEM POINTING AT THE WRONG THING. Every
     # icon belongs to exactly one control; a row with several has collected
     # the icons of controls that were hidden when they were placed. Four of
