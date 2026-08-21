@@ -1255,6 +1255,105 @@ def face_the_same_way(faces, vertices=None, centre=None):
     return f
 
 
+def _rays_onto(vertices, faces, centre, *, rows=24, cols=48):
+    """A caster that only tries the triangles a ray could possibly meet.
+
+    WHY. Asking every triangle about every ray is fine once and ruinous in a
+    loop: capping one cut calls it for every corner, again for every round of
+    splitting and again for every smoothing pass, and it is linear in the
+    other shape's triangle count. Measured before this existed: 2.5 s at the
+    detail the window opens with, 8 s at the highest, and 43 s on sRGB
+    against Display P3 — against 0.03 s for the cut that precedes it.
+
+    HOW. Seen from *centre* every triangle covers a patch of the sky, so the
+    sky is divided into a grid of directions and each triangle is filed under
+    every cell that its own cap of sky reaches — the smallest cap around its
+    middle direction that still holds all three corners, widened by half a
+    cell. A ray then tries only its own cell's list. The cap can only ever
+    offer TOO MANY candidates, never too few, so the answer is exactly the
+    answer without it — which is what the test asserts, on every shape.
+    """
+    import numpy as np
+
+    v = np.asarray(vertices, float) - np.asarray(centre, float)
+    f = np.asarray(faces, int)
+    corners = v[f]  # (M, 3, 3)
+    unit = corners / np.maximum(1e-12, np.linalg.norm(corners, axis=2,
+                                                      keepdims=True))
+    # EACH TRIANGLE GETS A CAP OF SKY IT CANNOT ESCAPE, and not a box drawn
+    # round its three corners. The corners' own latitudes do not bound the
+    # patch: the arc BETWEEN two corners bulges, and can reach further from
+    # the equator than either end of it. A box from the corners is therefore
+    # too small, it drops candidates, and the caster quietly returns a
+    # different answer -- measured on the paper's 414 big facets, which is
+    # exactly where the bulge is worst. A cap around the middle direction,
+    # wide enough to hold all three corners, cannot be too small.
+    axis = unit.sum(axis=1)
+    axis /= np.maximum(1e-12, np.linalg.norm(axis, axis=1, keepdims=True))
+    reach = np.arccos(np.clip(np.einsum("ijk,ik->ij", unit, axis), -1, 1)).max(axis=1)
+    lat_mid = (np.arange(rows) + 0.5) * (np.pi / rows)
+    lon_mid = (np.arange(cols) + 0.5) * (2 * np.pi / cols) - np.pi
+    la, lo = np.meshgrid(lat_mid, lon_mid, indexing="ij")
+    middles = np.stack([np.sin(la) * np.cos(lo), np.sin(la) * np.sin(lo),
+                        np.cos(la)], axis=-1).reshape(-1, 3)
+    # HALF A CELL'S OWN WIDTH ON TOP, so a cap that only clips a cell's corner
+    # is still filed there.
+    margin = 0.5 * float(np.hypot(np.pi / rows, 2 * np.pi / cols))
+    buckets: dict = {}
+    for lo_i in range(0, len(f), 512):
+        block = slice(lo_i, lo_i + 512)
+        close = (middles @ axis[block].T
+                 >= np.cos(np.minimum(np.pi, reach[block] + margin))[None, :])
+        for cell, t in zip(*np.nonzero(close)):
+            buckets.setdefault(int(cell), []).append(lo_i + int(t))
+    filed = {k: np.asarray(w, int) for k, w in buckets.items()}
+    a0, e1, e2 = (corners[:, 0], corners[:, 1] - corners[:, 0],
+                  corners[:, 2] - corners[:, 0])
+
+    def ask(directions, *, and_where=False):
+        d = np.asarray(directions, float)
+        d = d / np.maximum(1e-12, np.linalg.norm(d, axis=1, keepdims=True))
+        out = np.full(len(d), np.nan)
+        which = np.full(len(d), -1, int)
+        where = np.zeros((len(d), 2))
+        la = np.floor(np.arccos(np.clip(d[:, 2], -1, 1)) / np.pi * rows).astype(int)
+        lo = np.floor((np.arctan2(d[:, 1], d[:, 0]) + np.pi)
+                      / (2 * np.pi) * cols).astype(int)
+        np.clip(la, 0, rows - 1, out=la)
+        np.clip(lo, 0, cols - 1, out=lo)
+        cell = la * cols + lo
+        for key in np.unique(cell):
+            mine = np.flatnonzero(cell == key)
+            tris = filed.get(int(key))
+            if tris is None:
+                continue
+            rays = d[mine]
+            p = np.cross(rays[:, None, :], e2[tris][None, :, :])
+            det = np.einsum("ijk,jk->ij", p, e1[tris])
+            ok = np.abs(det) > 1e-12
+            inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+            sv = -a0[tris][None, :, :] * np.ones((len(rays), 1, 1))
+            u = np.einsum("ijk,ijk->ij", sv, p) * inv
+            q = np.cross(sv, e1[tris][None, :, :])
+            vv = np.einsum("ijk,ik->ij", q, rays) * inv
+            hit = ok & (u >= -1e-9) & (vv >= -1e-9) & (u + vv <= 1 + 1e-9)
+            dist = np.einsum("ijk,jk->ij", q, e2[tris]) * inv
+            hit &= dist > 1e-9
+            far = np.where(hit, dist, np.inf)
+            nearest = far.argmin(axis=1)
+            rows_ = np.arange(len(rays))
+            best = far[rows_, nearest]
+            found = np.isfinite(best)
+            out[mine] = np.where(found, best, np.nan)
+            if and_where:
+                which[mine] = np.where(found, tris[nearest], -1)
+                where[mine, 0] = np.where(found, u[rows_, nearest], 0.0)
+                where[mine, 1] = np.where(found, vv[rows_, nearest], 0.0)
+        return (out, which, where) if and_where else out
+
+    return ask
+
+
 def _where_the_ray_leaves(vertices, faces, centre, directions, *,
                           and_where=False):
     """How far along each direction the mesh's surface is, from *centre*.
@@ -1309,7 +1408,7 @@ def _where_the_ray_leaves(vertices, faces, centre, directions, *,
 
 
 def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
-                  under=None, clearance=0.02, sag=0.25, rounds=6, smooth=6):
+                  under=None, clearance=0.02, sag=None, rounds=6, smooth=6):
     """A lid for an open piece, made from the piece's own rim.
 
     WHAT THIS IS FOR. Fade "where they agree" to nothing and what is left of a
@@ -1353,6 +1452,15 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
     ray. A corner whose slide would turn a triangle inside out is put back:
     a folded lid is one that passes through itself.
 
+    ⚠ AND *sag* IS A SHARE OF THE GAP, NOT A NUMBER OF Lab. It was 0.25 Lab
+    flat, which is a fine tolerance on two shapes about 20 Lab apart and a
+    useless one on two that are 2 Lab apart — and the second is the
+    application's headline comparison, one paper measured months later against
+    itself. Measured on that pair with the flat tolerance: 46.9% and 97.8%
+    too much volume, with no structural symptom at all. Left as None it is
+    one per cent of how far the lid actually drops, so the error stays the
+    same share of the answer whatever the shapes.
+
     Returns (corners, the piece's triangles, the lid's triangles). The corners
     are shared, so the two can be drawn as one closed solid, and every
     triangle is wound the same way round (`face_the_same_way`).
@@ -1362,6 +1470,12 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
     kept, welded, _where = weld_by_position(vertices, faces)
     middle = np.asarray(centre, float)
 
+    # BUILT ONCE, ASKED HUNDREDS OF TIMES. The floor and the ceiling do not
+    # move, and every corner, every round of splitting and every smoothing
+    # pass casts against them again.
+    floor_of = _rays_onto(other_vertices, other_faces, middle)
+    roof_of = _rays_onto(under[0], under[1], middle) if under is not None else None
+
     def onto_the_floor(points):
         """Slide points down their own rays until they meet the other shape."""
         rays = np.asarray(points, float) - middle
@@ -1369,9 +1483,9 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
         alive = reach > 1e-9
         if not alive.all():
             rays = np.where(alive[:, None], rays, np.array([1.0, 0.0, 0.0]))
-        far = _where_the_ray_leaves(other_vertices, other_faces, middle, rays)
-        if under is not None:
-            ceiling = _where_the_ray_leaves(under[0], under[1], middle, rays)
+        far = floor_of(rays)
+        if roof_of is not None:
+            ceiling = roof_of(rays)
             far = np.where(np.isfinite(ceiling),
                            np.minimum(far, ceiling - clearance), far)
         # A direction the other shape does not answer for keeps the piece's
@@ -1380,8 +1494,37 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
         unit = rays / np.maximum(1e-12, np.linalg.norm(rays, axis=1, keepdims=True))
         return middle + unit * far[:, None]
 
-    lid = onto_the_floor(kept)
+    # ⚠ A PIECE WITH NO RIM IS ALREADY CLOSED, AND MUST BE LEFT ALONE.
+    # When one shape lies wholly inside another nothing is cut away, so the
+    # "piece" is the whole skin and it has no hole to cap. Capping it anyway
+    # builds a SECOND closed shell inside the first, and since neither shares
+    # an edge with the other every check here still passes: no edge is left
+    # open, none is used more than twice, and each shell is wound outward on
+    # its own. The volume then comes out as skin PLUS lid instead of skin
+    # MINUS lid. Measured on two shapes that ship in `demo/` — Matte-paper
+    # lies entirely inside Glossy-paper, 0 of its 222 corners outside — the
+    # answer was 1,341,108 against a true 180,432: SIX HUNDRED AND FORTY-THREE
+    # PER CENT out, with a clean bill of health from every test.
     rim = sorted({i for loop in boundary_loops(welded) for i in loop})
+    if not rim:
+        return kept, welded, np.zeros((0, 3), int)
+    # ⚠ AND THE RAYS MUST MEAN SOMETHING. Everything here rests on the other
+    # shape being a height field seen from *centre* — one distance for each
+    # direction. A centre outside it, or a shape that folds, and the "floor"
+    # a ray lands on is not the floor at all. A gamut of only the light
+    # patches of a chart does not contain (50, 0, 0); asked to cap that, this
+    # used to return 126 + 3,232 triangles with 13 of the piece's own facing
+    # inward and still call itself closed. `covers_the_sphere_once` reads
+    # 0.9128 of a full view there, and it was written for exactly this and
+    # then never consulted.
+    covered = covers_the_sphere_once(other_vertices, other_faces, middle)
+    if abs(covered - 4.0 * np.pi) > 1e-2:
+        raise ValueError(
+            f"the shape being capped against covers {covered:.4f} of the view "
+            f"from {tuple(np.round(middle, 3))}, not {4 * np.pi:.4f} — the "
+            f"middle is outside it or it folds, and sliding corners down "
+            f"their rays onto it would land them anywhere")
+    lid = onto_the_floor(kept)
     # ONLY THE SEAM IS SHARED, and it is shared BY BEING THE SAME CORNERS.
     # The seam keeps the piece's own numbering, so its corners cannot drift
     # apart however the lid is worked on afterwards — there is nothing to keep
@@ -1405,6 +1548,12 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
 
     # ---- THE SAG. Split whichever lid edge hangs furthest from the floor,
     # never a seam edge, and drop the new corner onto the floor as well.
+    if sag is None:
+        drop = np.linalg.norm(lid - kept, axis=1)
+        inside = np.ones(len(kept), bool)
+        inside[np.asarray(rim, int)] = False
+        far = drop[inside] if inside.any() else drop
+        sag = max(1e-3, 0.01 * float(np.median(far)) if len(far) else 1e-3)
     for _round in range(int(rounds)):
         want = {}
         for tri in lid_faces:
