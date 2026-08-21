@@ -766,6 +766,92 @@ _ACCENT_BANDS = (
 _ACCENT_L_CAP = 0.92
 
 
+#: The last cap worked out, kept for the same reason the last re-cut is: a
+#: fade slider asks for the whole picture again on every step of a drag, and
+#: this depends on the two SHAPES and not on where the handle sits.
+_LAST_CAP: "tuple | None" = None
+
+
+def cap_over_the_cut(gamuts, stands, which, centre=(50.0, 0.0, 0.0)):
+    """The piece of the OTHER shape that closes this one's opening.
+
+    WHY. Fade "where they agree" away and what is left of a shape has a hole
+    in it. Turned round, you look INTO the hole and its far wall is lit
+    exactly like an outside, because there is no separate inside to shade --
+    so it reads as torn skin. Reported as "this one looks scattered".
+
+    WHAT CLOSES IT is the part of the other shape that lies inside this one:
+    the two really do meet along that curve, so the lid is a true surface and
+    not a made-up flat disc. See `close_the_cut` for how it is built and why
+    the seam cannot come apart.
+
+    ⚠ TWO SHAPES ONLY. With three, "the floor" is wherever the ray next meets
+    ANY of the others, which is a different construction from this one -- so
+    rather than cap it against one arbitrary neighbour and be quietly wrong,
+    it declines and the window dims the control.
+
+    Returns (corners, lid triangles, colours) or None when there is nothing
+    to cap.
+    """
+    global _LAST_CAP
+    from gamutview import _rays_onto, close_the_cut
+
+    if len(gamuts) != 2 or stands is None:
+        return None
+    standing = np.asarray(stands[which], bool)
+    if not standing.any() or standing.all():
+        return None                     # no hole: nothing cut away, or all
+    mine = gamuts[which][1]
+    theirs = gamuts[1 - which][1]
+    faces = np.asarray(mine.faces, int)
+    keep = standing[faces].all(axis=1)
+    if keep.sum() < 4:
+        return None
+    # ⚠ ONE ENTRY PER SHAPE, NOT ONE ENTRY. Both shapes in a pair are capped,
+    # so a single slot is evicted by the other on every call and the cache
+    # never hits: measured, 4,104 ms per repeat against 4,105 for the first.
+    key = _what_was_cut_last(gamuts, None)
+    if _LAST_CAP is not None and _LAST_CAP[0] == key:
+        if int(which) in _LAST_CAP[1]:
+            return _LAST_CAP[1][int(which)]
+    else:
+        _LAST_CAP = (key, {})
+    done = _LAST_CAP[1]
+    middle = np.asarray(centre, float)
+    try:
+        corners, _skin, lid = close_the_cut(
+            mine.vertices, faces[keep], theirs.vertices, theirs.faces, middle,
+            under=(mine.vertices, mine.faces))
+    except ValueError:
+        # A shape the middle is not inside cannot be capped this way, and
+        # close_the_cut says so rather than guessing. The picture keeps its
+        # opening, which is what it had before this option existed.
+        done[int(which)] = None
+        return None
+    if not len(lid):
+        done[int(which)] = None
+        return None
+    # PAINTED IN THE OTHER SHAPE'S OWN COLOURS, read where each ray leaves it.
+    # The lid IS that shape's surface, so the reader is looking at the very
+    # colours where the two part company -- the same instinct as "is there a
+    # way to turn this magenta out-of-reach section into the real colors".
+    # THROUGH THE INDEXED CASTER, not the brute-force one: this asks about
+    # every corner of the lid, and the plain caster tries every triangle of
+    # the other shape for every one of them.
+    rays = corners - middle
+    _far, hit, where = _rays_onto(theirs.vertices, theirs.faces,
+                                  middle)(rays, and_where=True)
+    paint = np.asarray(theirs.colors, float)
+    tri = np.asarray(theirs.faces, int)[np.maximum(hit, 0)]
+    colours = (paint[tri[:, 0]]
+               + where[:, 0:1] * (paint[tri[:, 1]] - paint[tri[:, 0]])
+               + where[:, 1:2] * (paint[tri[:, 2]] - paint[tri[:, 0]]))
+    colours[hit < 0] = 0.5
+    answer = (corners, lid, np.clip(colours, 0.0, 1.0))
+    done[int(which)] = answer
+    return answer
+
+
 def _accent_vertices(gamut) -> list:
     """Every vertex tinted into the application's own accent family.
 
@@ -8399,11 +8485,27 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "    again.crossOrigin = 'anonymous';\n"
         "    if (" + _js(sri) + ") again.integrity = " + _js(sri) + ";\n"
         "    again.onload = function () {\n"
+        "      window.clearTimeout(waited);\n"
         # THE DRAWING IS cqViewerCame'S JOB NOW, for every way the viewer can
         # turn up and not just this one. Doing it here as well drew twice.
         "      window.cqViewerCame();\n"
         "    };\n"
+        # ⚠ A REQUEST THAT HANGS MUST NOT LOCK THE BUTTON. It is disabled on
+        # the way in and only `onerror` puts it back -- so a network that
+        # BLACK-HOLES the request rather than refusing it leaves the button
+        # dead for ever, and the address never advances. Reported from a real
+        # window: "trying to fetch the viewer again does not change the
+        # address. it always states the same." The test that said otherwise
+        # re-enabled the button by hand between presses, so it proved the
+        # walking and not that a person can reach the second press.
+        "    var waited = window.setTimeout(function () {\n"
+        "      if (window.Plotly) return;\n"
+        "      button.disabled = false;\n"
+        "      if (says) says.textContent = 'no reply from that one — "
+        "press again to try the next';\n"
+        "    }, 20000);\n"
         "    again.onerror = function () {\n"
+        "      window.clearTimeout(waited);\n"
         "      button.disabled = false;\n"
         "      if (says) says.textContent =\n"
         "        'still no luck (' + tries + (tries === 1 ? ' try' : ' tries')\n"
@@ -9357,7 +9459,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                  light=None, grid: bool = True, space=None,
                  chart_look=None, agree: float = 1.0, differ: float = 1.0,
                  split: bool = False, drift=None, camera=None,
-                 lost_in_their_own_colours: bool = False):
+                 lost_in_their_own_colours: bool = False, cap: bool = False):
     """One self-contained page: plotly.js is inlined, so it works offline.
 
     *opacity* overrides the default (opaque alone, semi-transparent when two
@@ -9489,6 +9591,29 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # nothing. What makes it invisible is that no corner of it is lit.
         if alphas is not None and not np.asarray(alphas, float).any():
             _emptied.append(name)
+        # ---- THE LID OVER WHAT THE FADE OPENED.
+        #
+        # Only where there IS an opening: at full strength nothing is taken
+        # away and the shape is whole, so a lid would be a second skin lying
+        # on the first. Drawn before the shape itself so the shape's own
+        # transparency composites over it, which is the order a closed solid
+        # would give.
+        # `marked` is the per-shape out-of-reach mask here, NOT the bool
+        # of the same name above the loop -- asking `not marked` on an
+        # array raises, and did.
+        if (cap and agree < 1.0 and standing is not None
+                and marked is None):
+            _lid = cap_over_the_cut(gamuts, stands, i)
+            if _lid is not None:
+                _corners, _faces, _colours = _lid
+                fig.add_trace(go.Mesh3d(
+                    x=_corners[:, 1], y=_corners[:, 2], z=_corners[:, 0],
+                    i=_faces[:, 0], j=_faces[:, 1], k=_faces[:, 2],
+                    vertexcolor=_colours, flatshading=True,
+                    opacity=float(base_i), name=f"{name} — where it is cut",
+                    showlegend=False, hoverinfo="skip",
+                    lighting=_lighting(depth_i, base_i),
+                    **({"lightposition": light} if light else {})))
         if marked is not None:
             fig.add_trace(_mesh_lost(
                 g, name, base_i, marked, c["kept"], depth_i, light=light,
