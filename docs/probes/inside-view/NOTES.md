@@ -190,3 +190,49 @@ in the paper's shell, not in the opening, and are a separate question.
 
 **Still Basti's to decide.** What this adds is that the decision can now be
 taken by looking rather than by trusting a measurement.
+
+
+## 2026-08-21 — the shared cut, measured, and why the rim cannot be capped
+
+Basti handed the decision over ("i trust your ruling on those"). Three things
+were measured before ruling, all headless, all on Glossy-paper against sRGB at
+agreement 0%.
+
+**1. The prototype's named fault is gone.** `recut_where_they_part` now cuts a
+mesh along another surface's boundary and works every new corner out with the
+same test that made the mask (built this week for the out-of-reach zig-zag).
+Re-cutting both shapes that way and taking the piece of sRGB inside the paper:
+every corner that fails a strict containment test is **on** the paper's
+surface — median distance **0.000 Lab, worst 0.000** — where a cut puts them.
+The 322 corners that stood proud are not there any more.
+
+**2. But the two rims are still two curves.** Each shape is cut against the
+OTHER's surface, so the rims are two polygonal approximations of one curve:
+
+    no corner shared exactly; median 0.88 Lab apart, worst 33.3
+    within 0.25 Lab (~2 px): 19.3% of the opening's rim
+    within 1.0 Lab (~6 px):  54.8%
+    within 5.0 Lab (~30 px): 88.6%
+
+Shipping that would trade torn skin for a badly stitched seam.
+
+**3. And the opening cannot simply be capped from its own rim.** A cap built
+from the rim shares the boundary by construction, and it does close the shape:
+the rim walks into **18 closed loops** over 354 edges, and with a cap on it
+there are **0 edges used once**. It looks wrong, though, and one number says
+why — the big loop is 249 corners, 125.7 Lab across, and strays **34.9 Lab out
+of its own best-fit plane, 28% of its width**. It is not a slice through the
+shape; it is where two shells cross, and it wanders. A fan from its middle
+cuts across the shape, and a triangulation in its best-fit plane would too.
+(The other loops are nearly flat: 6%, 8%, 1%.)
+
+**So Basti's idea is geometrically the right one after all.** The surface that
+naturally spans that rim IS sRGB's own shell, because the rim lies on it. What
+is left to build is exactly what the handover named: ONE SHARED CUT CURVE —
+the intersection polyline inserted into BOTH meshes, so the lid and the
+opening use the same corners rather than two answers to the same question.
+Not "cut each against the other", which is what is there now.
+
+Instruments for all three: `scratch/attribute/sharedcut.py`, `capit.py`,
+`loops.py` (kept out of the repo; they are twenty minutes to rewrite from
+these numbers).
