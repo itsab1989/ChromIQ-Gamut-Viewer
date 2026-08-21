@@ -359,15 +359,16 @@ def test_the_lid_cannot_run_away(papers):
     assert biggest >= 4000, (
         f"the biggest lid is only {biggest:,} triangles — nothing came near "
         f"the ceiling, so this is not testing that it holds")
-    # AND THE ORDINARY CASE MUST NOT BE LIVING AT THE CEILING. Once a hard
-    # bound exists, the tolerance stops changing the SIZE — anything finer is
-    # simply trimmed to 8,000 — so a test that only watched the bound would
-    # not notice the tolerance going back to a hundredth of the drop, which
-    # costs twice the time for the same picture. The commonest comparison
-    # there is should finish well clear of it: measured 4,389 at a twentieth
-    # of the drop, against 13,051 at a hundredth.
+    # ⚠ AND THE ORDINARY CASE *DOES* LIVE AT THE CEILING NOW, which an
+    # earlier version of this test forbade. That rule was mine and its premise
+    # went when the lid was set clear of the other shape's surface: the floor
+    # it follows is no longer that shape exactly, so it takes more splitting
+    # to follow. Keeping the rule would have meant coarsening the tolerance,
+    # and the NARROW pairs cannot afford that — two measurements of one paper
+    # go from +0.96% of a ray count to +26.76% as the tolerance is loosened.
+    # What matters is that it is BOUNDED and lands in the right place, and
+    # both of those are checked here and in the volume test above.
     _c, _s, lid = _cap(papers["Glossy-paper"],
                        reference_gamut("sRGB", steps=24), 0)
-    assert len(lid) < 6000, (
-        f"the paper against sRGB needs {len(lid):,} lid triangles and is "
-        f"being trimmed to fit; the tolerance is finer than it is worth")
+    assert 0 < len(lid) <= 8000, (
+        f"the paper against sRGB needs {len(lid):,} lid triangles")

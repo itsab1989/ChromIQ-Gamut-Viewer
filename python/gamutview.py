@@ -1498,8 +1498,13 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
         far = floor_of(rays)
         if roof_of is not None:
             ceiling = roof_of(rays)
+            # The same share, for the same reason: a flat step here distorts
+            # a narrow gap just as badly.
+            hold = np.minimum(clearance,
+                              0.01 * np.maximum(0.0, np.where(
+                                  np.isfinite(ceiling), ceiling, reach) - far))
             far = np.where(np.isfinite(ceiling),
-                           np.minimum(far, ceiling - clearance), far)
+                           np.minimum(far, ceiling - hold), far)
         # A direction the other shape does not answer for keeps the piece's
         # own distance: the lid meets the skin there rather than flying off.
         far = np.where(np.isfinite(far), far, reach)
@@ -1510,7 +1515,15 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
         # and the answer is a speckled mess wherever they meet. Held a
         # thousandth of the shape under, which is far below anything the eye
         # can place and far above what the depth buffer can separate.
-        far = np.maximum(0.0, far - clearance)
+        #
+        # ⚠ A HUNDREDTH OF THE LOCAL DROP, capped by *clearance*, and NOT a
+        # flat share of the shape. Two measurements of one paper are about two
+        # Lab apart, so a step sized for a 190 Lab shape is a tenth of the
+        # whole gap and swells what the lid encloses: measured, +61.7% against
+        # a ray count, where it had been +1.9%. Tied to the drop, the error it
+        # can add is one per cent of the answer wherever the shapes are.
+        step = np.minimum(clearance, 0.01 * np.maximum(0.0, reach - far))
+        far = np.maximum(0.0, far - step)
         unit = rays / np.maximum(1e-12, np.linalg.norm(rays, axis=1, keepdims=True))
         return middle + unit * far[:, None]
 
@@ -1573,10 +1586,18 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
         inside = np.ones(len(kept), bool)
         inside[np.asarray(rim, int)] = False
         far = drop[inside] if inside.any() else drop
-        # A TWENTIETH OF HOW FAR THE LID FALLS. It was a hundredth, and the
-        # difference is entirely triangles and not accuracy: on the paper
-        # against sRGB, 1% gives 13,051 lid triangles for +0.16% of volume and
-        # 5% gives 2,941 for +0.16% — the same answer at a fifth of the size.
+        # A TWENTIETH OF HOW FAR THE LID FALLS, and it is the NARROW pairs
+        # that fix it there. On the paper against sRGB almost anything works:
+        # a fifth of the drop still lands within +0.37% of a ray count. Two
+        # measurements of one paper are another matter — their drop has a
+        # median of half a Lab, and a coarser lid simply misses the floor:
+        #
+        #     a twentieth   +0.96%      a sixth   +8.60%
+        #     a quarter    +15.99%      two fifths  +26.76%
+        #
+        # A lid that far off is not decoration, it is in the wrong place. The
+        # cost is that the wide pairs then reach the ceiling and are trimmed,
+        # which costs them nothing measurable.
         sag = max(1e-4, 0.05 * float(np.median(far)) if len(far) else 1e-4)
     # ⚠ AND A CEILING, BECAUSE THIS IS A THING TO LOOK AT. Two measurements
     # of one paper lie a tenth of a Lab apart over most of their shared
