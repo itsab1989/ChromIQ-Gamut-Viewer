@@ -142,9 +142,18 @@ GAMUTVIEW_NO_ARGYLL=1 ../gv-venv/bin/python -m pytest -q
 ```
 
 At the time of writing: **1017 passed**, and **1013 passed + 4 skipped**.
-Version **2.50.3** (released, 11 assets). Five releases on 2026-08-21:
-v2.49.0, v2.50.0, v2.50.1 (correcting a false claim in v2.50.0), v2.50.2
-and v2.50.3.
+Version **2.50.4** (released, 11 assets). Six releases on 2026-08-21:
+v2.49.0, v2.50.0, v2.50.1 (correcting a false claim in v2.50.0), v2.50.2,
+v2.50.3 and v2.50.4.
+
+⚠ **ASK THE QUESTION IN THE STATE HE IS IN, NOT THE ONE THE WINDOW STARTS
+IN.** v2.50.3's shortened hovers grew back the moment a tickbox was turned on
+— 188 characters to 946, and a menu to 2,132 — because several controls keep a
+copy of their own tooltip taken before the shortening pass runs. Every check
+that looked at a freshly-opened window said Clean. Two papers open and the
+tickboxes on is where it showed. Fixed in v2.50.4; the rule that catches it is
+in `scripts/audit_the_panel_hovers_stay_short.py`, and it had to stop skipping
+hidden controls before it could see the very fault it was written for.
 
 ⚠ **A HOVER TOOLTIP AND AN ⓘ ARE TWO PLACES TO PUT THE SAME WALL.** v2.50.3
 took 2,494 characters off a hovered label and put them behind the ⓘ where the
