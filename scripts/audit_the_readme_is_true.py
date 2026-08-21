@@ -129,6 +129,50 @@ def slugs_of(text: str) -> set:
     return out
 
 
+def the_loops_it_promises(problems: list) -> int:
+    """"Seventeen loops over seven pages" — still seventeen, still loops?
+
+    THE DISTINCTION THIS ENCODES, which cost a careful half hour to find and
+    would cost it again: the motion set carries EIGHTEEN pictures and
+    SEVENTEEN loops. `g9-as-a-film-poster.webp` is a still on purpose. Counting
+    the pictures makes the sentence look wrong by one when it is right, so the
+    count asks each file whether it actually moves — an animated WebP carries
+    an ANIM chunk in its header and a still does not.
+
+    THE README SAYS "seventeen MORE" and means the same seventeen: the loop it
+    shows above that line, hero-turning.webp, is not one of the set.
+
+    An empty set is refused rather than agreed with.
+    """
+    spelled = {"seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+               "sixteen": 16, "fifteen": 15}
+    index = ROOT / "docs" / "MOTION.md"
+    if not index.is_file():
+        return 0
+    named = set()
+    for page in [index] + sorted((ROOT / "docs" / "motion").glob("page-*.md")):
+        for src in re.findall(r'src="([^"]+)"', page.read_text(encoding="utf-8")):
+            named.add((page.parent / src).resolve())
+    moving = [f for f in named
+              if f.is_file() and b"ANIM" in f.read_bytes()[:64]]
+    if not moving:
+        problems.append("MOTION.md names no moving picture at all, so the "
+                        "number it promises was not checked")
+        return 0
+    for where in (index, ROOT / "README.md"):
+        text = where.read_text(encoding="utf-8")
+        for said in re.findall(r"\b([A-Za-z]+)\s+(?:more\s+)?loops\b", text):
+            claimed = spelled.get(said.lower())
+            if claimed is None:
+                continue
+            if claimed != len(moving):
+                problems.append(
+                    f"{where.name} says {said} loops and the set holds "
+                    f"{len(moving)} that actually move "
+                    f"({len(named)} pictures, the rest still)")
+    return len(moving)
+
+
 def the_pages_it_promises(problems: list) -> int:
     """The README says how many showcase pages there are. Are there?
 
@@ -344,6 +388,9 @@ def main() -> int:
     counted = the_count_it_promises(problems)
     print(f"  {counted} test(s) counted, against the number the README prints")
     pages = the_pages_it_promises(problems)
+    loops = the_loops_it_promises(problems)
+    print(f"  {loops} moving picture(s) counted in the set, against the "
+          f"number promised")
     print(f"  {pages} showcase page(s) counted, against the number it "
           f"promises")
     print()
