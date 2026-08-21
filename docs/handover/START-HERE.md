@@ -569,9 +569,13 @@ Verdict that day: nothing had changed, and rebuilding would have committed
 churn as an update. `08-slice` and `22-choosing` came back byte-identical, so
 the encoder itself is deterministic — it is the rendering that moves.
 
-⚠ **`make_doc_shots.py` IGNORES ITS ARGUMENTS** and rebuilds all four of its
-pictures whatever you ask it for. Asking it what it knew is what modified
-three files.
+⚠ **`make_doc_shots.py` TOOK AN UNKNOWN WORD TO MEAN "ALL FOUR"** — fixed
+2026-08-22. It accepts `controls`, `page`, `colours` and `dialog`, and
+anything else used to fall through to remaking everything, which is how
+asking it what it knew (`make_doc_shots.py zzz`) modified three pictures. It
+refuses now and exits 1. **The note here first said it "ignores its
+arguments", which was wrong** — it read them all along, and only the unknown
+case misbehaved.
 
 ⚠ **NUMBERS IN PROSE ROT, AND ONLY SOME OF THEM CAN BE GUARDED.** Three were
 found stale by reading, not by any rule: the suite was called 851 tests when

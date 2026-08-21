@@ -491,6 +491,18 @@ def main() -> int:
     elif which == "dialog":
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         the_dialog()
+    elif which:
+        # A WORD IT DOES NOT KNOW MEANT "DO ALL FOUR". Asking this script what
+        # it knew -- `make_doc_shots.py zzz` -- rebuilt every picture it owns
+        # and left three of them modified in the tree. Nothing was lost, since
+        # a rebuild of unchanged code draws the same thing, but a tool whose
+        # answer to "I do not understand you" is to do the most work it can is
+        # one nobody can explore safely.
+        print(f"nothing matches {which!r}; known:")
+        for part in ("controls", "page", "colours", "dialog"):
+            print(f"  {part}")
+        print("\n  and no argument at all remakes all four.")
+        return 1
     else:
         import subprocess
         print("Remaking the README pictures that go stale:")
