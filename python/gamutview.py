@@ -1171,6 +1171,302 @@ def covers_the_sphere_once(vertices, faces, centre):
     return float(np.abs(2.0 * np.arctan2(top, bottom)).sum())
 
 
+def face_the_same_way(faces, vertices=None, centre=None):
+    """Wind every triangle the same way round, so the skin has one outside.
+
+    WHY IT IS WORTH DOING. A triangle's front is decided by the order of its
+    three corners, and that order is what a renderer turns into the normal it
+    lights the facet by. Nothing upstream promises the order agrees between
+    neighbours: a convex hull hands back triangles wound however each one fell
+    out, and a grid split into pairs can alternate. MEASURED on this app's own
+    shapes: the paper's 414 triangles are 207 one way and 207 the other, and
+    sRGB's 6348 are 3174 and 3174 — an exact half-and-half, which is the
+    signature of nobody ever having asked. Two things go wrong. The volume of
+    a closed shape is a sum of signed pieces, so half of them subtract and the
+    total collapses (the paper's came out at 35,662 against a true 765,392).
+    And facet lighting turns half the skin's normals inward.
+
+    HOW. Neighbours agree when the edge they share is walked in OPPOSITE
+    directions by the two of them, exactly as two adjacent tiles of a fabric
+    are stitched. So: pick a triangle, walk the mesh by shared edges, and flip
+    whoever disagrees. Each connected piece is settled on its own, then turned
+    outward — away from *centre* if one is given, otherwise by whichever way
+    makes the piece enclose a positive volume. An edge shared by more than two
+    triangles has no single answer; those are left alone rather than guessed.
+    """
+    import numpy as np
+
+    f = np.asarray(faces, int).copy()
+    if not len(f):
+        return f
+    beside: dict = {}
+    for i, tri in enumerate(f):
+        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            beside.setdefault((min(int(a), int(b)), max(int(a), int(b))), []).append(i)
+    settled = np.zeros(len(f), bool)
+    pieces = []
+    for start in range(len(f)):
+        if settled[start]:
+            continue
+        settled[start] = True
+        piece = [start]
+        queue = [start]
+        while queue:
+            here = queue.pop()
+            tri = f[here]
+            for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+                key = (min(int(a), int(b)), max(int(a), int(b)))
+                touching = beside.get(key, ())
+                if len(touching) != 2:
+                    continue  # a border, or a seam too crowded to be sure of
+                other = touching[0] if touching[1] == here else touching[1]
+                if settled[other]:
+                    continue
+                them = f[other]
+                walks = [(them[0], them[1]), (them[1], them[2]), (them[2], them[0])]
+                if (int(a), int(b)) in [(int(x), int(y)) for x, y in walks]:
+                    f[other] = them[::-1]  # walked the shared edge the same way
+                settled[other] = True
+                piece.append(other)
+                queue.append(other)
+        pieces.append(piece)
+    if vertices is None:
+        return f
+    v = np.asarray(vertices, float)
+    from_here = np.asarray(centre, float) if centre is not None else v.mean(axis=0)
+    for piece in pieces:
+        mine = f[piece]
+        a = v[mine[:, 0]] - from_here
+        b = v[mine[:, 1]] - from_here
+        c = v[mine[:, 2]] - from_here
+        if np.einsum("ij,ij->i", a, np.cross(b, c)).sum() < 0:
+            f[piece] = mine[:, ::-1]
+    return f
+
+
+def _where_the_ray_leaves(vertices, faces, centre, directions):
+    """How far along each direction the mesh's surface is, from *centre*.
+
+    Every triangle is asked at once — a gamut has hundreds, not millions, and
+    a clever index would be more code than it saves. Where a direction somehow
+    misses every triangle (it should not, on a shape that covers the view
+    once), the distance comes back as NaN and the caller decides.
+    """
+    import numpy as np
+
+    v = np.asarray(vertices, float) - np.asarray(centre, float)
+    f = np.asarray(faces, int)
+    d = np.asarray(directions, float)
+    d = d / np.maximum(1e-12, np.linalg.norm(d, axis=1, keepdims=True))
+    a, e1, e2 = v[f[:, 0]], v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]]
+    out = np.full(len(d), np.nan)
+    # In blocks, so a big mesh and many directions do not ask for one huge
+    # array: 200 directions against every triangle at a time.
+    for lo in range(0, len(d), 200):
+        rays = d[lo:lo + 200]
+        p = np.cross(rays[:, None, :], e2[None, :, :])
+        det = np.einsum("ijk,jk->ij", p, e1)
+        ok = np.abs(det) > 1e-12
+        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+        t = -a[None, :, :]
+        u = np.einsum("ijk,ijk->ij", t + rays[:, None, :] * 0, p) * 0
+        # Möller-Trumbore, written out rather than borrowed, so the corner
+        # cases are visible: the ray starts at the centre, so `s` is -a.
+        s = -a[None, :, :] * np.ones((len(rays), 1, 1))
+        u = np.einsum("ijk,ijk->ij", s, p) * inv
+        q = np.cross(s, e1[None, :, :])
+        vv = np.einsum("ijk,ik->ij", q, rays) * inv
+        hit = ok & (u >= -1e-9) & (vv >= -1e-9) & (u + vv <= 1 + 1e-9)
+        dist = np.einsum("ijk,jk->ij", q, e2) * inv
+        hit &= dist > 1e-9
+        far = np.where(hit, dist, np.inf)
+        best = far.min(axis=1)
+        out[lo:lo + 200] = np.where(np.isfinite(best), best, np.nan)
+    return out
+
+
+def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
+                  under=None, clearance=0.02, sag=0.25, rounds=6, smooth=6):
+    """A lid for an open piece, made from the piece's own rim.
+
+    WHAT THIS IS FOR. Fade "where they agree" to nothing and what is left of a
+    shape has a hole in it; turned round, you look into the hole and the far
+    wall is lit like an outside, so it reads as torn skin. The honest cure is
+    to close it with the piece of the OTHER shape that lies inside — and for
+    that to look right the lid and the hole must share an edge exactly.
+
+    HOW IT MANAGES THAT WITHOUT MATCHING ANYTHING. Every gamut here is a
+    height field seen from a neutral point — one distance per direction, the
+    view covered exactly once (`covers_the_sphere_once`). So the hole and the
+    lid are THE SAME SET OF DIRECTIONS, one roofed and one floored: take the
+    hole's own triangles and slide each corner down its own ray until it meets
+    the other shape. The rim corners are already on that shape — the cut put
+    them there — so they do not move, and the two pieces share them because
+    they ARE them. Nothing is matched, so nothing can mismatch.
+
+    ⚠ WELD FIRST. `split_at_crossing` leaves four copies of every crossing
+    point, and an unwelded piece has cracks where its rim should be.
+
+    ⚠ AND HOLD THE LID UNDER THE SKIN. The cut is coarser than the truth: a
+    triangle whose three corners all stand outside the other shape can still
+    have that shape bulging up through its middle — measured at 1.9% of one
+    hole's area, by as much as 15.4 Lab. Left alone the lid pokes out through
+    the skin it is meant to close. Pass the shape it must stay inside as
+    *under* and it is held a hair beneath it, so where they would cross they
+    touch instead.
+
+    ⚠ AND THE LID SAGS. The hole's triangles are as coarse as the cut left
+    them, and a flat triangle strung between three corners that sit on a
+    curved floor hangs BELOW that floor in the middle — so the lid encloses
+    too much. Measured on Glossy-paper against sRGB: 206,048 Lab³ where the
+    true gap is 189,090, nine per cent too fat. Any lid edge that sags more
+    than *sag* Lab is therefore split at its middle and the new corner dropped
+    onto the floor too, up to *rounds* times. Rim edges are never split: the
+    seam is the one thing that must stay exactly the hole's own corners.
+
+    ⚠ AND THE CUT LEAVES NEEDLES. The lid starts as a copy of the hole's
+    mesh, slivers and all. *smooth* passes let every corner but the seam's
+    slide toward the average of its neighbours and then fall back down its own
+    ray. A corner whose slide would turn a triangle inside out is put back:
+    a folded lid is one that passes through itself.
+
+    Returns (corners, the piece's triangles, the lid's triangles). The corners
+    are shared, so the two can be drawn as one closed solid, and every
+    triangle is wound the same way round (`face_the_same_way`).
+    """
+    import numpy as np
+
+    kept, welded, _where = weld_by_position(vertices, faces)
+    middle = np.asarray(centre, float)
+
+    def onto_the_floor(points):
+        """Slide points down their own rays until they meet the other shape."""
+        rays = np.asarray(points, float) - middle
+        reach = np.linalg.norm(rays, axis=1)
+        alive = reach > 1e-9
+        if not alive.all():
+            rays = np.where(alive[:, None], rays, np.array([1.0, 0.0, 0.0]))
+        far = _where_the_ray_leaves(other_vertices, other_faces, middle, rays)
+        if under is not None:
+            ceiling = _where_the_ray_leaves(under[0], under[1], middle, rays)
+            far = np.where(np.isfinite(ceiling),
+                           np.minimum(far, ceiling - clearance), far)
+        # A direction the other shape does not answer for keeps the piece's
+        # own distance: the lid meets the skin there rather than flying off.
+        far = np.where(np.isfinite(far), far, reach)
+        unit = rays / np.maximum(1e-12, np.linalg.norm(rays, axis=1, keepdims=True))
+        return middle + unit * far[:, None]
+
+    lid = onto_the_floor(kept)
+    rim = sorted({i for loop in boundary_loops(welded) for i in loop})
+    # ONLY THE SEAM IS SHARED, and it is shared BY BEING THE SAME CORNERS.
+    # The seam keeps the piece's own numbering, so its corners cannot drift
+    # apart however the lid is worked on afterwards — there is nothing to keep
+    # in step. Everything inside gets a copy of its own: share those as well
+    # and every inside edge is used FOUR times, twice by the piece and twice
+    # by the lid, which is two surfaces glued together and not a solid at all.
+    # Measured that way: 0 edges open and 496 used more than twice.
+    on_the_seam = np.zeros(len(kept), bool)
+    if rim:
+        on_the_seam[np.asarray(rim, int)] = True
+    theirs = np.arange(len(kept))
+    theirs[~on_the_seam] = len(kept) + np.arange(int((~on_the_seam).sum()))
+    corners = np.vstack([kept, lid[~on_the_seam]])
+    # The lid faces the other way round, so it closes rather than doubles.
+    lid_faces = theirs[welded][:, ::-1].copy()
+    held = len(kept)  # everything below this belongs to the piece and the seam
+    seam_edges = set()
+    for loop in boundary_loops(welded):
+        for a, b in zip(loop, loop[1:]):
+            seam_edges.add((min(int(a), int(b)), max(int(a), int(b))))
+
+    # ---- THE SAG. Split whichever lid edge hangs furthest from the floor,
+    # never a seam edge, and drop the new corner onto the floor as well.
+    for _round in range(int(rounds)):
+        want = {}
+        for tri in lid_faces:
+            for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+                key = (min(int(a), int(b)), max(int(a), int(b)))
+                if key not in want and key not in seam_edges:
+                    want[key] = None
+        if not want:
+            break
+        edges = np.asarray(list(want), int)
+        middles = 0.5 * (corners[edges[:, 0]] + corners[edges[:, 1]])
+        dropped = onto_the_floor(middles)
+        hangs = np.linalg.norm(dropped - middles, axis=1)
+        take = hangs > float(sag)
+        if not take.any():
+            break
+        fresh = {}
+        added = []
+        for t in np.flatnonzero(take):
+            fresh[(int(edges[t, 0]), int(edges[t, 1]))] = len(corners) + len(added)
+            added.append(dropped[t])
+        corners = np.vstack([corners, np.asarray(added, float)])
+        cut_up = []
+        for a, b, c in lid_faces:
+            m = [fresh.get((min(int(a), int(b)), max(int(a), int(b)))),
+                 fresh.get((min(int(b), int(c)), max(int(b), int(c)))),
+                 fresh.get((min(int(c), int(a)), max(int(c), int(a))))]
+            how_many = sum(x is not None for x in m)
+            if how_many == 0:
+                cut_up.append((a, b, c))
+            elif how_many == 3:
+                cut_up += [(a, m[0], m[2]), (m[0], b, m[1]),
+                           (m[2], m[1], c), (m[0], m[1], m[2])]
+            elif how_many == 1:
+                k = [i for i, x in enumerate(m) if x is not None][0]
+                p, q, r = ((a, b, c), (b, c, a), (c, a, b))[k]
+                cut_up += [(p, m[k], r), (m[k], q, r)]
+            else:
+                k = [i for i, x in enumerate(m) if x is None][0]
+                p, q, r = ((a, b, c), (b, c, a), (c, a, b))[k]
+                cut_up += [(p, q, m[(k + 1) % 3]),
+                           (p, m[(k + 1) % 3], m[(k + 2) % 3]),
+                           (m[(k + 2) % 3], m[(k + 1) % 3], r)]
+        lid_faces = np.asarray(cut_up, int)
+
+    # ---- THE NEEDLES. Every lid corner but the seam's slides toward the
+    # average of its neighbours and falls back down its ray. Nothing may fold.
+    free = np.ones(len(corners), bool)
+    free[:held] = False
+    facing = face_the_same_way(lid_faces, corners, middle)
+
+    def turned_inside_out(where):
+        a = where[facing[:, 0]] - middle
+        b = where[facing[:, 1]] - middle
+        c = where[facing[:, 2]] - middle
+        return np.einsum("ij,ij->i", a, np.cross(b, c)) <= 0
+
+    for _pass in range(int(smooth)):
+        pull = np.zeros_like(corners)
+        count = np.zeros(len(corners))
+        for a, b in ((0, 1), (1, 2), (2, 0)):
+            np.add.at(pull, lid_faces[:, a], corners[lid_faces[:, b]])
+            np.add.at(count, lid_faces[:, a], 1.0)
+            np.add.at(pull, lid_faces[:, b], corners[lid_faces[:, a]])
+            np.add.at(count, lid_faces[:, b], 1.0)
+        moving = np.flatnonzero(free & (count > 0))
+        if not len(moving):
+            break
+        towards = corners[moving] + 0.6 * (pull[moving] / count[moving, None]
+                                           - corners[moving])
+        before = corners[moving].copy()
+        corners[moving] = onto_the_floor(towards)
+        for _try in range(6):
+            folded = np.flatnonzero(turned_inside_out(corners))
+            if not len(folded):
+                break
+            guilty = np.intersect1d(np.unique(facing[folded]), moving)
+            if not len(guilty):
+                break
+            corners[guilty] = before[np.searchsorted(moving, guilty)]
+
+    settled = face_the_same_way(np.vstack([welded, lid_faces]), corners, middle)
+    return corners, settled[:len(welded)], settled[len(welded):]
+
+
 def split_at_crossing(vertices, faces, colors, stands, is_outside, *,
                       steps: int = 16):
     """Re-cut a mesh so no triangle straddles the boundary it is faded along.
