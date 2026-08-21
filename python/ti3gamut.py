@@ -810,13 +810,6 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
     # ⚠ ONE ENTRY PER SHAPE, NOT ONE ENTRY. Both shapes in a pair are capped,
     # so a single slot is evicted by the other on every call and the cache
     # never hits: measured, 4,104 ms per repeat against 4,105 for the first.
-    key = _what_was_cut_last(gamuts, None)
-    if _LAST_CAP is not None and _LAST_CAP[0] == key:
-        if int(which) in _LAST_CAP[1]:
-            return _LAST_CAP[1][int(which)]
-    else:
-        _LAST_CAP = (key, {})
-    done = _LAST_CAP[1]
     # ⚠ THE MIDDLE IS NOT ALWAYS (50, 0, 0). That is the neutral point of
     # CIELAB, and the reader chooses the space: an XYZ gamut spans 0 to about
     # 1, so a middle at fifty is nowhere near it, every ray leaves from
@@ -830,6 +823,17 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
         centre = ((50.0, 0.0, 0.0) if getattr(theirs, "space", "lab") == "lab"
                   else np.asarray(theirs.vertices, float).mean(axis=0))
     middle = np.asarray(centre, float)
+    # ⚠ THE MIDDLE IS PART OF THE QUESTION. Left out of the key, asking for a
+    # cap about a different middle handed back the one built for the first --
+    # the very same object. No caller varies it today, which is exactly how a
+    # cache like this is wrong for a year and then wrong in the picture.
+    key = (_what_was_cut_last(gamuts, None), tuple(np.round(middle, 6)))
+    if _LAST_CAP is not None and _LAST_CAP[0] == key:
+        if int(which) in _LAST_CAP[1]:
+            return _LAST_CAP[1][int(which)]
+    else:
+        _LAST_CAP = (key, {})
+    done = _LAST_CAP[1]
     try:
         corners, _skin, lid = close_the_cut(
             mine.vertices, faces[keep], theirs.vertices, theirs.faces, middle,
@@ -6797,8 +6801,11 @@ window.cqSpinControls = function (settings) {
           // the inside" -- and the measurement said the picture is right:
           // what is left at the bottom is an OPEN shell, and its far wall is
           // lit like an outside because there is no separate inside to shade.
-          // Capping the opening is a design decision nobody has taken; saying
-          // so costs nothing and answers the question where it is asked.
+          // The window can now CLOSE that opening -- "Close where it is cut"
+          // -- but this sentence is read inside a SAVED PAGE, by somebody who
+          // may not have the application at all, and it describes the picture
+          // in front of them. A page saved with the lid on does not show an
+          // open shell and never reaches this text.
           + "At the very bottom what is left is an open shell, so from some "
           + "angles you are looking into it and its far wall reads as an "
           + "outer surface — that is the shape being hollow, not broken. "
