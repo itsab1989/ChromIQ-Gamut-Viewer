@@ -236,3 +236,33 @@ Not "cut each against the other", which is what is there now.
 Instruments for all three: `scratch/attribute/sharedcut.py`, `capit.py`,
 `loops.py` (kept out of the repo; they are twenty minutes to rewrite from
 these numbers).
+
+
+## 2026-08-21, later — the shared curve is buildable, and here is the population
+
+The remaining work on the cap is one shared cut curve: the crossing points put
+into BOTH meshes. Measured today, Glossy-paper against sRGB at agreement 0%:
+
+* the paper has 209 corners; the cut leaves 681;
+* the standing piece's rim has 290 corners, of which **236 were put there by
+  the cut** — those are the crossing curve. The other 54 are boundary of a
+  different kind, where the standing piece simply ends (the wedge-shaped
+  slashes this file already names as a separate question);
+* **all 236 place on a triangle of sRGB's shell**: median 0.0000 Lab off it,
+  worst 0.0005, every one of them within a thousandth of a unit.
+
+⚠ ASK ONLY ABOUT THE CORNERS THE CUT CREATED. Asked of the whole rim, 39 of
+290 sit on no triangle of the other shell at all and 15 more are up to 5.2 Lab
+off — which reads as a broken construction and is only the wrong population:
+the rest of the rim was never on sRGB's surface to begin with.
+
+⚠ AND FIND THE TRIANGLE BY EXTENT, NOT BY ITS MIDDLE. The first attempt took
+the 40 triangles whose middles were nearest and placed 116 of 290, worst 32.6
+Lab off. A long thin triangle can be the right one while its middle is far
+away. Testing every triangle whose extents could hold the point places all of
+them.
+
+So the build is: insert those 236 into sRGB's mesh (a triangle split each),
+re-classify sRGB's corners against the paper, and take the piece inside it.
+The lid's rim then holds the opening's own corners rather than a second
+polyline near them.
