@@ -550,6 +550,29 @@ All six that were left ran in the foreground and came back clean:
 2026-08-22 and unchanged: 65,808 in Phase A over 6,912 combinations, 28
 more in Phase B.
 
+⚠ **A REBUILT SCREENSHOT ALWAYS DIFFERS. THAT IS NOT A CHANGE.** Checked
+2026-08-22, with 15 commits touching drawing or window code since the pictures
+were last made: rebuild them and compare, and 1.4% to 6.1% of pixels differ —
+which reads as "the app changed" and is mostly not. Two things separate the
+two:
+
+* **Threshold the difference.** Counting every pixel that differs at all
+  counts the encoder's ±1. Above 40 levels, `11-controls` differed by ZERO.
+* **Rebuild a second time and compare the two rebuilds.** That is the control,
+  and it is the only honest one. `23-five-ways` differed from the committed
+  copy by 5,111 pixels and from its own second rebuild by **7,359** — the
+  variation between two runs of identical code was LARGER than the "change".
+  The 3D pictures are captured from a moving page; the camera is not in
+  exactly the same place twice.
+
+Verdict that day: nothing had changed, and rebuilding would have committed
+churn as an update. `08-slice` and `22-choosing` came back byte-identical, so
+the encoder itself is deterministic — it is the rendering that moves.
+
+⚠ **`make_doc_shots.py` IGNORES ITS ARGUMENTS** and rebuilds all four of its
+pictures whatever you ask it for. Asking it what it knew is what modified
+three files.
+
 ⚠ **NUMBERS IN PROSE ROT, AND ONLY SOME OF THEM CAN BE GUARDED.** Three were
 found stale by reading, not by any rule: the suite was called 851 tests when
 it is 1,017, the showcase pages were called ten when the script writes 25, and
