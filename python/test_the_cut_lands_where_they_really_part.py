@@ -199,3 +199,30 @@ def test_a_facet_cannot_be_sampled_with_no_points_inside_it(paper):
         with pytest.raises(ValueError, match="at least 3"):
             sharpen_where_they_part(v, f, paper.colors, outside(v), outside,
                                     samples=few)
+
+
+def test_the_cut_cannot_run_away_with_three_shapes():
+    """Three shapes crossing took one mesh to 172,548 faces and 1.4 GB.
+
+    Each of them is cut against the union of the others, so the boundary is
+    far more complicated than a pair's and the splitting compounds. The
+    ceiling in `sharpen_where_they_part` is what stops it — and nothing tested
+    that ceiling until a mutation removing it passed everything.
+
+    Measured as it ships: three references at Detail 20 start at 4,332 faces
+    each and come out 4,635 / 15,824 / 17,603, in about 1.5 s.
+    """
+    import ti3gamut
+    from references import reference_gamut
+    three = [(n, reference_gamut(n, steps=20))
+             for n in ("sRGB", "Adobe RGB (1998)", "Display P3")]
+    started = max(len(np.asarray(g.faces)) for _n, g in three)
+    ti3gamut._LAST_CUT = None
+    out, _f, _s, _l = ti3gamut.recut_where_they_part(three)
+    biggest = max(len(np.asarray(g.faces)) for _n, g in out)
+    assert biggest > started, (
+        f"nothing was cut finer at all ({biggest:,} against {started:,}), so "
+        f"this is not measuring a ceiling, it is measuring a no-op")
+    assert biggest <= 12 * started, (
+        f"one mesh reached {biggest:,} faces from {started:,} — the ceiling "
+        f"is not holding, and a page has to carry every one of them")

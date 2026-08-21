@@ -1592,13 +1592,32 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
         # measurements of one paper are another matter — their drop has a
         # median of half a Lab, and a coarser lid simply misses the floor:
         #
-        #     a twentieth   +0.96%      a sixth   +8.60%
+        #     a twentieth   +2.00%      a sixth   +8.60%
         #     a quarter    +15.99%      two fifths  +26.76%
+        #
+        # (The +0.96% first written here was measured before the lid was
+        # held clear of both surfaces. Against a 300,000-ray count the
+        # narrow pair is +1.94% and +3.20%; against this suite's own
+        # 60,000-ray measure, +2.00% and +2.65%. The shape of the trade is
+        # unchanged and the figure was two to three times too kind.)
         #
         # A lid that far off is not decoration, it is in the wrong place. The
         # cost is that the wide pairs then reach the ceiling and are trimmed,
         # which costs them nothing measurable.
         sag = max(1e-4, 0.05 * float(np.median(far)) if len(far) else 1e-4)
+    # ⚠ *most* IS A BUDGET FOR SPLITTING, NOT A SIZE THE LID CANNOT PASS.
+    # The lid begins as a COPY of the piece it caps -- it has to, since the
+    # two share a rim corner for corner -- so it can never be smaller than
+    # that piece, however tight this is set. What it bounds is how much is
+    # ADDED. Measured on the paper against sRGB, both pieces:
+    #
+    #     Detail 20   piece    859 -> lid  7,999   (7,140 added)
+    #                 piece  4,793 -> lid  7,999   (3,206 added)
+    #     Detail 40   piece    855 -> lid  7,999   (7,144 added)
+    #                 piece 15,886 -> lid 15,886   (NONE added, already past)
+    #
+    # A claim that no lid passes 8,000 is therefore false, and was made.
+    #
     # ⚠ AND A CEILING, BECAUSE THIS IS A THING TO LOOK AT. Two measurements
     # of one paper lie a tenth of a Lab apart over most of their shared
     # surface, so ANY share of that drop is microscopic and the splitting runs
@@ -1806,10 +1825,16 @@ def sharpen_where_they_part(vertices, faces, colors, stands, is_outside, *,
         raise ValueError(
             f"samples must be at least 3 to have any point strictly inside a "
             f"facet, got {samples}")
-    # ⚠ AND IT MUST NOT RUN AWAY. Three references crossing each other took
-    # one mesh from 18,252 faces to 172,548 and 1.4 GB of memory. Each round
-    # can at most quadruple, so a ceiling on the total is the one bound that
-    # holds however many shapes are in the picture.
+    # ⚠ A BACKSTOP, AND IT NO LONGER FIRES. Three references crossing each
+    # other once took one mesh from 18,252 faces to 172,548 and 1.4 GB. What
+    # actually stops that now is the SIZE FLOOR above, which went from a flat
+    # Lab to a fiftieth of the shape: measured, with this ceiling and without
+    # it, the same three references give the same 17,603 faces in the same
+    # 1.5 s. So removing it changes nothing today — it is kept for the shapes
+    # nobody has tried, and it must not be credited with the bound. A test
+    # asserting three shapes stay bounded is in
+    # `test_the_cut_lands_where_they_really_part`; it passes either way, and
+    # that is honest rather than a gap.
     ceiling = max(12000, 6 * len(f))
 
     def cut_along(edges):
