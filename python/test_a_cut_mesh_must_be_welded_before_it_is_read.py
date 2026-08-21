@@ -82,9 +82,16 @@ def test_welding_turns_the_cracks_back_into_a_rim(standing_piece):
         f"welding took {len(raw)} boundary edges to {len(welded)}; the cracks "
         f"are still being counted as boundary")
     loops = boundary_loops(f2)
-    assert len(loops) == 1, (
-        f"the welded rim walks into {len(loops)} chains, not one closed loop")
-    assert loops[0][0] == loops[0][-1], "the welded rim does not close"
+    # A FEW CLOSED LOOPS, NOT EIGHTEEN CHAINS. It was one loop until the cut
+    # learned to look inside a facet (`sharpen_where_they_part`); where the
+    # other shape bulges through the middle of one, the standing piece has an
+    # ISLAND in it, and that is the truth about the shapes rather than a
+    # fault. What welding fixes is the eighteen open chains the cracks made.
+    assert len(loops) <= 4, (
+        f"the welded rim walks into {len(loops)} chains — the cracks are "
+        f"still being counted as boundary")
+    for i, loop in enumerate(loops):
+        assert loop[0] == loop[-1], f"welded rim {i} does not close"
 
 
 def test_every_corner_of_a_welded_rim_has_exactly_two_edges(standing_piece):

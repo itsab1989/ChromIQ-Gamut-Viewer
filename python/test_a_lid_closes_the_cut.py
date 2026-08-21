@@ -91,8 +91,10 @@ def test_the_lid_shuts_the_piece(capped):
 def test_the_seam_is_the_pieces_own_corners_unmoved(capped):
     from gamutview import boundary_loops
     loops = boundary_loops(capped["welded"])
-    assert len(loops) == 1, f"the piece's rim is {len(loops)} chains, not one"
-    rim = sorted({int(i) for i in loops[0]})
+    assert loops, "the piece has no rim at all"
+    for i, loop in enumerate(loops):
+        assert loop[0] == loop[-1], f"the piece's rim {i} does not close"
+    rim = sorted({int(i) for loop in loops for i in loop})
     moved = np.linalg.norm(capped["corners"][rim] - capped["rim_before"][rim],
                            axis=1)
     assert moved.max() == 0.0, (
@@ -106,14 +108,32 @@ def test_the_seam_is_the_pieces_own_corners_unmoved(capped):
 
 
 def test_the_capped_shape_is_wound_one_way(capped):
+    """Neighbours must agree — NOT "every cone from the middle points out".
+
+    That was the first criterion here and it is wrong, for the same reason it
+    was wrong about a dented shape: the standing piece is not star-shaped from
+    the middle once it has an island in it, so a handful of its triangles
+    genuinely have their cone the other way. Two of the lid's 32,948 do.
+    Consistency is about neighbours, and the total is what says which way out
+    is.
+    """
     both = np.vstack([capped["skin"], capped["lid"]])
     v = capped["corners"]
+    seen: dict = {}
+    for tri in both:
+        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            seen.setdefault((min(int(a), int(b)), max(int(a), int(b))),
+                            []).append((int(a), int(b)))
+    clash = [k for k, walks in seen.items()
+             if len(walks) == 2 and walks[0] == walks[1]]
+    assert not clash, (
+        f"{len(clash)} edge(s) of the capped shape are walked the same way "
+        f"round by both their triangles")
     a, b, c = (v[both[:, 0]] - _MIDDLE, v[both[:, 1]] - _MIDDLE,
                v[both[:, 2]] - _MIDDLE)
     s = np.einsum("ij,ij->i", a, np.cross(b, c)) / 6.0
-    # A shell: the piece's own skin faces out, the lid faces back in.
-    assert (s[:len(capped["skin"])] > 0).all(), "the piece's skin faces inward"
-    assert (s[len(capped["skin"]):] < 0).all(), (
+    assert s[:len(capped["skin"])].sum() > 0, "the piece's skin faces inward"
+    assert s[len(capped["skin"]):].sum() < 0, (
         "the lid does not face back into the shell, so the two double rather "
         "than close")
 

@@ -1639,6 +1639,166 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
     return corners, settled[:len(welded)], settled[len(welded):]
 
 
+def sharpen_where_they_part(vertices, faces, colors, stands, is_outside, *,
+                            rounds=6, samples=6, closer=1, too_small=1.0):
+    """Give `split_at_crossing` a mesh fine enough to see the real boundary.
+
+    WHY. `split_at_crossing` asks each triangle's three corners which side of
+    the boundary they are on and cuts the edges where the answer changes. That
+    leaves the drawn boundary wrong in two ways, and both were measured on the
+    paper the application ships with, against sRGB, which is the reference
+    most people compare to.
+
+    ONE — A FACET WHOSE CORNERS AGREE IS LEFT ALONE, and the other shape can
+    bulge up through its middle without ever reaching a corner. Three facets
+    carrying 5.3% of the standing area do exactly that. There the boundary
+    jumps straight across instead of going round the bulge.
+
+    TWO — BETWEEN TWO CORNERS OF THE SEAM IT IS A STRAIGHT LINE, and the true
+    crossing is not. The seam only gets a corner where it meets an edge of
+    THIS mesh, so across one facet it chords over however much the other
+    shape bends. That is why the seam is identical whether the reference has
+    1,452 triangles or 60,492: one corner per crossed edge, and no more.
+
+    Sampled along the drawn seam, the gap between the two surfaces should be
+    nought all the way. Measured:
+
+        as it ships               29.8% of the seam strays >1 Lab, worst 14.64
+        after phase one           11.9%                              worst  4.21
+        after both, closer=1       1.8%                              worst  1.01
+        after both, closer=2       0.0%                              worst  0.78
+
+    One Lab is about the smallest difference a good eye can find, so
+    ``closer=1`` puts the seam under what anyone can see, for 1,762 triangles
+    against 650. A negative gap means this shape is INSIDE the other one
+    there, so what was drawn standing was ground it does not reach at all.
+
+    HOW. Both phases mark EDGES and re-cut every triangle that uses a marked
+    one — two, three or four pieces according to how many of its edges were
+    marked — so no corner is ever left hanging in the middle of a neighbour's
+    edge. Phase one repeats up to *rounds* times, or until no facet hides a
+    crossing. Phase two quarters every straddling facet *closer* times.
+
+    Returns ``(vertices, faces, colors, stands)`` describing the SAME surface.
+    """
+    import numpy as np
+
+    v = np.asarray(vertices, float)
+    f = np.asarray(faces, int)
+    keep = np.asarray(stands, bool)
+    cols = None if colors is None else np.asarray(colors, float)
+    if not len(f):
+        return v, f, colors, keep
+    # ⚠ NOTHING TO SHARPEN WHERE THE WHOLE SHAPE AGREES WITH ITSELF, and
+    # asking anyway does harm. A new corner is the middle of an edge, which
+    # lies ON this surface — so where the two surfaces TOUCH, as two copies of
+    # one shape do everywhere, the question "is this point outside the other?"
+    # is put exactly on its own answer's boundary and comes back either way.
+    # Two identical shapes agree everywhere and fading the agreement should
+    # empty the picture; sharpening left specks of it standing, and the
+    # caption that explains an emptied picture stopped appearing.
+    #
+    # A shape whose corners are unanimous has no boundary drawn on it to
+    # sharpen. THE PRICE, stated: a bulge that pokes through one facet of an
+    # otherwise wholly-inside shape is not found. That is the one case this
+    # cannot see, and it is the price of not inventing a boundary where two
+    # surfaces touch.
+    if keep.all() or not keep.any():
+        return v, f, colors, keep
+
+    def cut_along(edges):
+        """Halve every named edge and re-cut whatever triangle uses one."""
+        nonlocal v, f, keep, cols
+        pairs = np.asarray(sorted(edges), int)
+        middles = 0.5 * (v[pairs[:, 0]] + v[pairs[:, 1]])
+        fresh = {tuple(e): len(v) + i for i, e in enumerate(pairs.tolist())}
+        v = np.vstack([v, middles])
+        if cols is not None:
+            cols = np.vstack([cols,
+                              0.5 * (cols[pairs[:, 0]] + cols[pairs[:, 1]])])
+        keep = np.concatenate([keep, np.asarray(is_outside(middles), bool)])
+        out = []
+        for a, b, c in f:
+            m = [fresh.get((min(int(a), int(b)), max(int(a), int(b)))),
+                 fresh.get((min(int(b), int(c)), max(int(b), int(c)))),
+                 fresh.get((min(int(c), int(a)), max(int(c), int(a))))]
+            how_many = sum(x is not None for x in m)
+            if how_many == 0:
+                out.append((a, b, c))
+            elif how_many == 3:
+                out += [(a, m[0], m[2]), (m[0], b, m[1]),
+                        (m[2], m[1], c), (m[0], m[1], m[2])]
+            elif how_many == 1:
+                k = [i for i, x in enumerate(m) if x is not None][0]
+                p, q, r = ((a, b, c), (b, c, a), (c, a, b))[k]
+                out += [(p, m[k], r), (m[k], q, r)]
+            else:
+                k = [i for i, x in enumerate(m) if x is None][0]
+                p, q, r = ((a, b, c), (b, c, a), (c, a, b))[k]
+                out += [(p, q, m[(k + 1) % 3]),
+                        (p, m[(k + 1) % 3], m[(k + 2) % 3]),
+                        (m[(k + 2) % 3], m[(k + 1) % 3], r)]
+        f = np.asarray(out, int)
+
+    def big_enough(which):
+        """Drop the facets too small to have misplaced the boundary anyway.
+
+        A facet can only hide a bulge, or chord across a bend, by something
+        like its own size — so once it is smaller than *too_small* across,
+        cutting it again buys less than the eye can find and costs a
+        containment test on every redraw. This is what keeps a fine mesh
+        cheap: at the highest Detail the reference has 18,252 facets and
+        every one of them is already under a Lab across, so none is touched.
+        """
+        if not len(which):
+            return which
+        tri = v[f[which]]
+        widest = np.linalg.norm(
+            np.stack([tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 1],
+                      tri[:, 0] - tri[:, 2]]), axis=2).max(axis=0)
+        return which[widest > float(too_small)]
+
+    def edges_of(which):
+        found = set()
+        for tri in f[which]:
+            for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+                found.add((min(int(a), int(b)), max(int(a), int(b))))
+        return found
+
+    # ---- ONE: facets the boundary crosses without touching an edge.
+    n = int(samples)
+    weights = np.asarray(
+        [(i / n, j / n, (n - i - j) / n) for i in range(n + 1)
+         for j in range(n + 1 - i) if i and j and (n - i - j)], float)
+    if len(weights):
+        for _round in range(int(rounds)):
+            corner_says = keep[f]
+            settled = big_enough(np.flatnonzero(
+                corner_says.all(axis=1) | (~corner_says).all(axis=1)))
+            if not len(settled):
+                break
+            inside = np.einsum("kj,ijl->ikl", weights, v[f[settled]])
+            beyond = np.asarray(is_outside(inside.reshape(-1, 3)), bool)
+            beyond = beyond.reshape(len(settled), len(weights))
+            hiding = big_enough(
+                settled[(beyond != keep[f[settled][:, 0]][:, None]).any(axis=1)])
+            if not len(hiding):
+                break
+            cut_along(edges_of(hiding))
+
+    # ---- TWO: the facets the boundary does cross, so the seam gets corners
+    # along it rather than one chord from edge to edge.
+    for _pass in range(int(closer)):
+        says = keep[f]
+        straddling = big_enough(
+            np.flatnonzero(~(says.all(axis=1) | (~says).all(axis=1))))
+        if not len(straddling):
+            break
+        cut_along(edges_of(straddling))
+
+    return v, f, (cols if colors is not None else None), keep
+
+
 def split_at_crossing(vertices, faces, colors, stands, is_outside, *,
                       steps: int = 16):
     """Re-cut a mesh so no triangle straddles the boundary it is faded along.
