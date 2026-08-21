@@ -550,6 +550,19 @@ All six that were left ran in the foreground and came back clean:
 **Do not run them again as a sweep** — run one when you have changed
 something it looks at.
 
+⚠ **AND RUN THEM ON A REAL SCREEN.** Two of them skip material checks when
+`QT_QPA_PLATFORM=offscreen` is set: `audit_sliders` cannot judge the four
+movement sliders (a browser with no screen throttles its animation loop away)
+and `audit_what_you_save` does not judge the saved picture. Both now SAY so in
+their summary instead of printing the same word "Clean" as a full run — that
+was fixed on 2026-08-21 after the record above was written, so **it is not
+known how the 22 were run.** Measured since, on a real screen: all four
+movement sliders are live, and the saved picture carries what was on screen.
+
+A plain `python scripts/audit_sliders.py` uses the real screen — OFFSCREEN is
+true only when the variable is literally "offscreen", and no script sets it
+itself. Two runs were misread as offscreen before that was noticed.
+
 ### What the sweep turned up, both shipped in v2.44.0
 
 1. **Both page checks asked about the sides and never the bottom**
