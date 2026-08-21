@@ -8663,6 +8663,60 @@ class GamutApp(QMainWindow):
         differ_hint.setObjectName("hint_differ_hint")
         lv.addWidget(differ_hint)
 
+        # ---- CLOSE WHAT THE FADE OPENED.
+        #
+        # Fading the agreement away leaves an OPEN shell, and turned round you
+        # look into it: the far wall is lit exactly like an outside, because
+        # there is no separate inside to shade, so it reads as torn skin.
+        # Reported from the window as "this one looks scattered".
+        #
+        # WHAT CLOSES IT is the piece of the other shape that lies inside this
+        # one. The two really do meet along that curve, so the lid is a true
+        # surface and not an invented flat disc, and it is painted in the
+        # other shape's own colours -- the reader is looking at exactly the
+        # colours where the two part company.
+        self._close_cut = QCheckBox("Close where it is cut", g_look)
+        # A HOVER IS READ ON THE WAY PAST, so it stays short; the long version
+        # is behind the ⓘ. Asked for in as many words.
+        self._close_cut.setToolTip(
+            "Puts a lid over the hole the fade leaves, made from the other "
+            "shape's own surface. Needs two shapes and Where they agree "
+            "below full.")
+        self._close_cut.toggled.connect(lambda _on: self._redraw())
+        close_hint = Hint(
+            "Closes the opening that fading the agreement leaves behind.\n\n"
+            "WHAT YOU ARE SEEING WITHOUT IT. A gamut is drawn as a closed "
+            "skin with nothing inside. Take the shared part away and the skin "
+            "has a hole where that part used to be, like a bowl with a bite "
+            "out of the rim. Through the hole you see the far wall from "
+            "behind, and it is lit exactly like the outside, because there is "
+            "no separate inside to shade. Nothing is wrong with it, but it "
+            "can read as a broken surface.\n\n"
+            "WHAT THE LID IS. Not an invented flat disc: it is the piece of "
+            "the OTHER shape that lies inside this one. The two really do "
+            "meet along the curve where the hole ends, so the lid meets the "
+            "opening exactly, and it is painted in the other shape's own "
+            "colours — so you are looking at the colours where the two part "
+            "company.\n\n"
+            "IT ADDS NOTHING TO THE FIGURES. Every number beside the picture "
+            "is worked out from the shapes themselves and never from the lid, "
+            "so ticking this cannot move a volume or a ΔE.\n\n"
+            "WHAT IT NEEDS: two shapes on screen, and Where they agree below "
+            "full — at full strength nothing is taken away, there is no hole, "
+            "and a lid would be a second skin lying on the first. With three "
+            "or more shapes it is greyed out: the hole then ends wherever the "
+            "ray next meets ANY of the others, which is a different shape "
+            "again, and drawing one of them would be quietly wrong.\n\n"
+            "It costs a second or two the first time, while the lid is worked "
+            "out, and nothing after that until the shapes change. It travels "
+            "into a saved page like everything else here.", g_look)
+        close_hint.setObjectName("hint_close_cut_hint")
+        _cc = QHBoxLayout(); _cc.setContentsMargins(0, 0, 0, 0)
+        _cc.setSpacing(6)
+        _cc.addWidget(self._close_cut, 1)
+        _cc.addWidget(close_hint, 0, Qt.AlignmentFlag.AlignVCenter)
+        lv.addLayout(_cc)
+
         self._neutral = QCheckBox("Show the greys as they came out", g_look)
         self._neutral.stateChanged.connect(self._redraw)
         self._neutral.toggled.connect(self._follow_neutral)
@@ -11111,6 +11165,7 @@ class GamutApp(QMainWindow):
         # shown, so the controls that depend on what is loaded have to be
         # settled here as well as during construction.
         self._apply_side_by_side_availability()
+        self._apply_closing_availability()
         self._apply_flat_availability()
         # …and the folded groups, for exactly the same reason.
         for box in self.findChildren(QGroupBox):
@@ -13787,6 +13842,7 @@ class GamutApp(QMainWindow):
         except Exception:                  # noqa: BLE001 — never on a drag
             return False
         self._scene_inputs = (list(gamuts), clouds, styles, lost)
+        self._apply_closing_availability()
         wanted = traces_for_restyle(figure)
         if not wanted:
             return False
@@ -13973,6 +14029,10 @@ class GamutApp(QMainWindow):
     #: because that is what somebody grepping for it would type.
     SPACE_INDEPENDENT = {
         "_space": "the control that chooses the space cannot depend on it",
+        "_close_cut": "whether the opening the fade leaves is closed is a fact "
+                      "about the picture and not about the space it is drawn "
+                      "in: the hole and its lid are the same two shapes "
+                      "whichever axes they are put on",
         "_lost_in_colour": "repaints the out-of-reach faces the shape already "
                            "has; whichever space the shape is drawn in, those "
                            "faces are the same faces",
@@ -15033,6 +15093,55 @@ class GamutApp(QMainWindow):
                 "Shapes the highlight, and there is none to shape yet. Take "
                 "Specular up to about a quarter of its range.")
 
+    def _apply_closing_availability(self) -> None:
+        """Dim the lid's tick where there is no opening for it to close.
+
+        This window's own rule, applied three times before: a control offered
+        where it cannot act is worse than one that is not there. It invites a
+        click and answers with nothing, and the reader cannot tell that from a
+        fault. The drift marker's tick was exactly this, and dimming it there
+        first BROKE the feature -- it was dimmed while a pair existed, and a
+        dim tick cannot be clicked. So the test below is what the drawing
+        itself asks, and nothing else.
+
+        THREE WAYS THERE IS NOTHING TO CLOSE. One shape has nothing to agree
+        with, so nothing is ever taken away. At full strength the fade takes
+        nothing away either. And with three or more, the hole ends wherever
+        the ray next meets ANY of the others -- a different construction from
+        the one here, so `cap_over_the_cut` declines rather than cap against
+        one arbitrary neighbour, and the tick must say so instead of looking
+        broken.
+        """
+        if not hasattr(self, "_close_cut"):
+            return
+        # THE SHAPES THE PICTURE WAS LAST BUILT FROM, which is what the
+        # drawing will be asked about — not a list kept beside it that could
+        # disagree. `_scene_inputs` is the same thing `_surfaces_for_live`
+        # reads. Reading a name that does not exist left the tick dead in
+        # EVERY state, which is how driving it on screen earns its keep: the
+        # measurement said "disabled" four times and looked like a rule
+        # working perfectly.
+        stashed = getattr(self, "_scene_inputs", None)
+        shapes = len(stashed[0]) if stashed else 0
+        faded = self._agree.value() < 100 or self._differ.value() < 100
+        can = shapes == 2 and faded
+        self._close_cut.setEnabled(can)
+        if can:
+            self._close_cut.setToolTip(
+                "Puts a lid over the hole the fade leaves, made from the "
+                "other shape's own surface. Needs two shapes and Where they "
+                "agree below full.")
+        elif shapes != 2:
+            self._close_cut.setToolTip(
+                "Needs exactly two shapes. One has nothing to agree with; "
+                "with three the hole ends at whichever of the others comes "
+                "first, which this cannot draw."
+                if shapes else "Needs two shapes on screen.")
+        else:
+            self._close_cut.setToolTip(
+                "Nothing is cut away yet, so there is no opening to close. "
+                "Take Where they agree below full.")
+
     def _on_light_changed(self, key: str, value: float, label) -> None:
         label.setText(f"{value:.2f}")
         if key == "specular":
@@ -15369,10 +15478,12 @@ class GamutApp(QMainWindow):
 
     def _on_agree_changed(self, value: int) -> None:
         self._agree_lbl.setText(self._fade_words(value))
+        self._apply_closing_availability()
         self._push_fade()
 
     def _on_differ_changed(self, value: int) -> None:
         self._differ_lbl.setText(self._fade_words(value))
+        self._apply_closing_availability()
         self._push_fade()
 
     def _surfaces_for_live(self) -> dict:
@@ -15548,6 +15659,7 @@ class GamutApp(QMainWindow):
     def _on_side_by_side(self) -> None:
         """Side by side changes which other controls make sense."""
         self._apply_side_by_side_availability()
+        self._apply_closing_availability()
         self._redraw()
 
     def _apply_side_by_side_availability(self) -> None:
@@ -15826,6 +15938,7 @@ class GamutApp(QMainWindow):
         if getattr(self, "_run_drawn", False):
             self._refresh_style_controls()
             self._apply_side_by_side_availability()
+            self._apply_closing_availability()
             self._update_volume()
             self._update_coverage()
             self._update_drift()
@@ -15853,6 +15966,7 @@ class GamutApp(QMainWindow):
         # controls are refreshed here rather than only when charts are opened.
         self._refresh_style_controls()
         self._apply_side_by_side_availability()
+        self._apply_closing_availability()
         gamuts, clouds, styles, lost = self._scene_contents()
         # A NEW FILE EVERY TIME. Writing to one name and loading the same URL
         # let the web view serve its cached copy, so switching to light left
@@ -15992,6 +16106,12 @@ class GamutApp(QMainWindow):
         else:
             # WHAT THIS SCENE WAS DRAWN FROM.
             self._scene_inputs = (list(gamuts), clouds, styles, lost)
+            # ⚠ AFTER THE SCENE IS STASHED, NOT BEFORE. The lid's tick asks
+            # how many shapes the picture was built from, and the redraw
+            # settles that here — so asking earlier answers about the PREVIOUS
+            # picture and the tick lags a step behind. Driven on screen it
+            # said "needs exactly two shapes" with two shapes on the screen.
+            self._apply_closing_availability()
             write_html(gamuts, out, self._scene_title(),
                        # SPLIT WHETHER OR NOT IT IS FADED RIGHT NOW, AND FOR
                        # THIS WINDOW AS WELL AS FOR A PAGE SOMEBODY IS SENT.
@@ -16381,6 +16501,7 @@ class GamutApp(QMainWindow):
             # jump reported after letting go of a slider.
             camera=self._camera_now(),
             agree=self._agree.value() / 100.0,
+            cap=self._close_cut.isChecked(),
             differ=self._differ.value() / 100.0,
             # Named explicitly rather than read off the first shape, because
             # in ink amounts there is no first shape to read it off and the
