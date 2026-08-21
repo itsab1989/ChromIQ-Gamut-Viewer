@@ -1,5 +1,30 @@
 # Changelog
 
+## v2.50.4
+
+### 🗒 The shortened hover no longer grows back the moment you use the panel
+
+v2.50.3 took the walls of text off the hovers. They came back — but only once
+you had actually used the window, which is why nothing had caught it.
+
+Several controls keep a copy of their own tooltip and set it again whenever
+they become available. That copy is taken while the window is being built,
+which is *before* the pass that shortens hovers runs. So the full text was
+waiting to return:
+
+| control | as the window opens | once its tickbox is on |
+|---|---|---|
+| **Split it into colour families** | 188 characters | 946 |
+| the menu of what the colours stand for | 40 characters | **2,132** |
+
+The copies are refreshed after the shortening pass now, so what comes back is
+what you were already being shown. Every word is still behind the ⓘ, where it
+was already: 2,139 characters for the menu, 946 for the tick.
+
+Found by asking the question with two papers open and the tickboxes turned on,
+rather than of a window that had just started. A check that runs before
+anything is open looks exactly like one that found nothing wrong.
+
 ## v2.50.3
 
 ### 🗒 A hovered label no longer answers with an essay
