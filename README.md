@@ -1340,6 +1340,7 @@ once they leave here:
 python scripts/audit_bad_files.py         # an empty file, a text file named .icc, a CMYK profile
 python scripts/audit_without_the_tools.py # the window on a computer with no ArgyllCMS and no ffmpeg
 python scripts/audit_the_page_at_any_size.py  # a saved page from a wide desktop down to a phone
+python scripts/audit_every_space_can_be_sent.py  # each drawing space written out and opened
 python scripts/audit_other_engines.py     # the same pages in Firefox and Safari, not only Chromium
 python scripts/audit_showcase_page.py     # every showcase frame explains itself, and comes alive when pressed
 python scripts/audit_follows_the_reader.py  # a page set to "follow you" wears the reader's own colours
