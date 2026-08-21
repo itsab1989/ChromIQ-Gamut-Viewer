@@ -8270,6 +8270,7 @@ class GamutApp(QMainWindow):
         lv.addWidget(self._manual_light)
         self._light_rows = []
         self._light_sliders = {}
+        self._light_row_of = {}
         for key, label, lo, hi, start in LIGHT_CONTROLS:
             row = QWidget(g_look)
             rl = QVBoxLayout(row)
@@ -8294,6 +8295,9 @@ class GamutApp(QMainWindow):
             lv.addWidget(row)
             self._light_rows.append(row)
             self._light_sliders[key] = (slider, lo, hi)
+            # THE WHOLE ROW, so a slider that cannot act dims together with
+            # the words that name it rather than on its own.
+            self._light_row_of[key] = row
         light_hint = Hint(
             "Everything about the light in the 3D view, for anybody who wants "
             "to dial in a particular look. Nothing here changes a single "
@@ -14922,6 +14926,7 @@ class GamutApp(QMainWindow):
         off rather than having two controls quietly fight each other.
         """
         manual = self._manual_light.isChecked()
+        self._apply_shine_availability()
         for row in self._light_rows:
             row.setVisible(manual)
         self._depth.setEnabled(not manual)
@@ -14971,8 +14976,46 @@ class GamutApp(QMainWindow):
             f"if(which.length){{Plotly.restyle(el,"
             f"{{lightposition:{{{body}}}}},which);did++;}}"))
 
+    #: Below this much shine, Roughness and Fresnel are provably dead: they
+    #: shape a specular highlight and there is none to shape. Measured in the
+    #: real window, roughness dragged from one end to the other — 0 px at
+    #: shine 0.00 and at the 0.08 the window opens with, 1,552 px at 0.15,
+    #: 15,110 at 0.25, 189,384 at 0.40.
+    NO_SHINE_TO_SHAPE = 0.15
+
+    def _apply_shine_availability(self) -> None:
+        """Dim the two sliders that shape a highlight when there is none.
+
+        This window's own rule, applied twice before: a control offered where
+        it cannot act is worse than one that is not there. It invites a drag
+        and answers with nothing, and the reader has no way to tell that from
+        a fault.
+
+        The shine is deliberately left low — past about a quarter of its range
+        the shape washes towards white and the colours lose their strength,
+        which is the one thing a picture of what a paper can print must not
+        do. So these two spend most of their life inert, and saying so is the
+        honest treatment.
+        """
+        if not getattr(self, "_light_row_of", None):
+            return
+        shine = self._light_value("specular")
+        can = shine >= self.NO_SHINE_TO_SHAPE
+        for key in ("roughness", "fresnel"):
+            row = self._light_row_of.get(key)
+            slider = self._light_sliders.get(key, (None,))[0]
+            if row is None or slider is None:
+                continue
+            row.setEnabled(can)
+            slider.setToolTip(
+                "" if can else
+                "Shapes the highlight, and there is none to shape yet. Take "
+                "Specular up to about a quarter of its range.")
+
     def _on_light_changed(self, key: str, value: float, label) -> None:
         label.setText(f"{value:.2f}")
+        if key == "specular":
+            self._apply_shine_availability()
         if not self._manual_light.isChecked():
             return
         if key in self.LIGHT_IS_PLACED_BY:

@@ -480,6 +480,8 @@ def audit_window(bench, w, gamut_app) -> list:
     except (TypeError, ValueError):
         opening_view = {"x": 1.5, "y": 1.5, "z": 1.5}
 
+    dimmed: list = []
+
     def move_and_restore(key, widget):
         kind = kind_of(widget)
         # DECLARED HERE AND NOWHERE LOWER DOWN. Written beside the shot it
@@ -499,6 +501,21 @@ def audit_window(bench, w, gamut_app) -> list:
         # ticked, and ticking it is exactly what the NEEDS table is for. The
         # prerequisite is switched on FIRST, and only then is the control
         # asked whether it is on screen.
+        # A CONTROL THE WINDOW HAS DIMMED IS THE WINDOW SAYING IT CANNOT ACT
+        # HERE, which is this application's own rule for a control with
+        # nothing to do — Roughness and Fresnel shape a specular highlight and
+        # dim themselves while there is none. Pressing one anyway and
+        # reporting "does nothing" is reporting the window being right.
+        #
+        # ⚠ IT IS COUNTED AND SAID OUT LOUD BELOW, because "the window dimmed
+        # it" is exactly the excuse a broken window would offer for
+        # everything.
+        if widget.isVisible() and not widget.isEnabled():
+            rows.append((key, None, None,
+                         "not asked — the window has dimmed it, so it says "
+                         "itself that it cannot act here"))
+            dimmed.append(key)
+            return
         woken = None
         if not widget.isVisible():
             parent_of = NEEDS.get(key, "")
@@ -699,6 +716,11 @@ def audit_window(bench, w, gamut_app) -> list:
 
     for key, widget in window_controls(w):
         move_and_restore(key, widget)
+    if dimmed:
+        print(f"\n  {len(dimmed)} control(s) the window had dimmed, and so "
+              f"were not asked: {', '.join(dimmed)}.\n  A window that dims "
+              f"everything would pass this run in silence, so the count is "
+              f"here to be argued with.")
     report(rows, findings, "THE WINDOW'S OWN SETTINGS")
     return findings
 
