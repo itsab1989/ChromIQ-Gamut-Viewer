@@ -1,5 +1,47 @@
 # Changelog
 
+## v2.47.0
+
+### 💡 The lamp you place was nailed to the camera, and both its controls were dead
+
+**Which side the light comes from** and **how high the light hangs** moved the
+picture by nothing at all. Not a little — nothing.
+
+The lamp was being put 2,000 units away, under a note in the code saying a
+large distance means "only the DIRECTION matters". It is the other way round.
+The drawing library does not treat that as a place in the room: it takes it
+through the picture's own projection, so the further out the lamp goes the
+more it converges on a single point behind the camera — the same point whether
+you asked for above or below. Measured on a real paper:
+
+| | |
+|---|---|
+| the lamp above against the same lamp below, close in | **229,586 pixels different** |
+| the same, at the distance it was using | **0** |
+| swinging the bearing right round at the height it opens with | **0** |
+| the same, with the lamp brought back in | **228,038** |
+
+Now the two directions have their own distances — far enough sideways that a
+bearing means a bearing, near enough vertically that above and below are two
+different places. Every step of both controls moves the picture, at every
+height. Swinging the bearing while the lamp is straight overhead still does
+nothing, as in a real room.
+
+### 🎛 Two controls that had nothing to do now say so
+
+**Roughness** and **Fresnel** shape a highlight, and there is almost none to
+shape until **Specular** is up: at the value the window opens with, dragging
+either from one end to the other changes not a single pixel. They dim now,
+with a line telling you to take Specular to about a quarter of its range.
+
+The shine is left low on purpose, and the explanation says that too — past
+about a quarter the shape washes towards white, and washing out the colours is
+the one thing a picture of what a paper can print must never do.
+
+The explanation used to end "Every one of them moves the picture as you drag".
+It no longer says what is not true.
+
+
 ## v2.46.0
 
 ### ✂️ What a paper cannot print now has a clean edge, in every picture
