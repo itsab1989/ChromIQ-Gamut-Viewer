@@ -1020,7 +1020,21 @@ would still say Clean.
 
 ---
 
-## FOR BASTI — NINETEEN AUDITS STAND ON FOUR FILES NOTHING CAN REBUILD
+## ~~FOR BASTI — NINETEEN AUDITS STAND ON FOUR FILES NOTHING CAN REBUILD~~
+
+**SETTLED 2026-08-21.** He answered: *"any files needed for tests can be
+uploaded to github as well and feel free to add more if you need any"*. The
+four profiles were read first — all four say `Glossy paper (demo profile)`,
+a placeholder copyright, and `DESCRIPTOR "Demo measurement"` inside; no
+customer, no employer, no person — and they are now in the checkout at
+`demo/one-printer-over-time/`. `scripts/demo_profiles.py` looks in the temp
+folder FIRST and falls back to that copy, so a freshly built set still wins.
+Proved with TMPDIR empty: the audit that used to die at `profiles[0]` now
+finishes Clean with identical rows. What originally made them is still
+unknown, and no longer matters.
+
+The record of what it was:
+
 
 `scripts/audit_two_groupings.py`, `audit_what_you_save.py`, `audit_controls.py`
 and sixteen others begin the same way:
