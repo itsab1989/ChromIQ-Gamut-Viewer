@@ -1,5 +1,59 @@
 # Changelog
 
+## v2.49.0
+
+### ✂️ The cut now lands where the two shapes really part
+
+The line between "this paper reaches past the reference" and "it does not" was
+drawn in the wrong place — **by as much as 15 Lab**, which is a large and
+visible amount. Reported as the boundary "zig zagging" rather than being a
+clean cut.
+
+The cut asked each triangle's three **corners** which side of the line they
+were on. That leaves two ways to be wrong. A triangle whose corners all agree
+is left alone, so a shape bulging up through its middle is never noticed; and
+between two points on the line the boundary is drawn straight, while the real
+crossing bends. Measured along the drawn boundary against sRGB, where the gap
+between the two surfaces should be nothing at all:
+
+| | boundary straying more than 1 Lab | worst |
+|---|---|---|
+| before | 29.8% of its length | **14.64 Lab** |
+| now | 1.8% | **1.01 Lab** |
+
+One Lab is about the smallest difference a good eye can find. It was never the
+reference's resolution: the old boundary was identical whether sRGB was drawn
+with 1,452 triangles or 60,492.
+
+**Where the boundary was wrong it was wrong in a particular direction** — the
+piece left standing bulged into ground the paper does not actually reach past
+the reference at all. Against Adobe RGB (1998) it was 13.34 Lab out, and
+against Display P3 it was already clean.
+
+### ⚡ Dragging the fade sliders is many times quicker
+
+Every step of a drag rebuilt the comparison from scratch — the same answer,
+a hundred times over, on the sliders **Where they agree** and **Where they
+differ**. It never depended on where the handle sat. Kept between redraws:
+
+| a full sweep of the handle | before | now |
+|---|---|---|
+| at the detail it opens with | 5.8 s | **0.12 s** |
+| at the highest detail | 13.8 s | **0.50 s** |
+
+### 🌐 A page whose viewer is blocked now has somewhere else to ask
+
+A page saved **without** the 3D viewer fetches it when opened. If that one
+address is refused — by a content blocker, a company proxy, a school network —
+the old "try again" button asked the same address again, which is no answer at
+all. It now moves on to a different host each time, and says which one it is
+trying. The same file is served by all of them, byte for byte, so the check
+that guards it is unchanged.
+
+Two faults went with it: a viewer that arrived **late** used to uncover a blank
+page, because hiding the notice was all that happened and nothing ever drew;
+and the notice now names the address it could not reach, so it can be checked.
+
 ## v2.48.0
 
 ### 🩹 Two shapes over each other came out blotchy
