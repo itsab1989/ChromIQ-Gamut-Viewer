@@ -135,3 +135,67 @@ def test_it_is_not_the_other_shapes_resolution(paper):
     assert len(seen) == 1, (
         f"the unsharpened seam now varies with the reference's resolution "
         f"({sorted(seen)} corners) — the reasoning in this file no longer holds")
+
+
+def test_it_carries_colours_in_either_form(paper):
+    """The caller swallows every exception, so a raise here is INVISIBLE.
+
+    `recut_where_they_part` wraps the whole cut in a bare `except Exception`
+    and falls back to the shape's old mesh — deliberately, so an odd file
+    cannot empty the picture. The cost is that anything which raises in here
+    is not reported anywhere: the gradient seam simply comes back, silently,
+    and looks like the fault this whole file exists to fix.
+
+    `split_at_crossing` takes colours as "rgb(r,g,b)" strings as well as
+    numbers — that is what the drawing library is handed, and `_mix_colour`
+    exists for it. This used to call `np.asarray(colors, float)` on them and
+    raise ValueError. Not reachable today, because every gamut the
+    application builds carries numbers. That is exactly the kind of thing
+    that stops being true without anybody noticing.
+    """
+    import ti3gamut
+    from gamutview import sharpen_where_they_part
+    from references import reference_gamut
+    other = reference_gamut("sRGB", steps=24)
+    skin = ti3gamut.surfaces_of([("o", other)])[0]
+    outside = lambda points: ~skin.contains(np.atleast_2d(points))  # noqa: E731
+    v = np.asarray(paper.vertices, float)
+    f = np.asarray(paper.faces, int)
+    stands = outside(v)
+    numbers = np.asarray(paper.colors, float)
+    strings = [f"rgb({int(r * 255)},{int(g * 255)},{int(b * 255)})"
+               for r, g, b in numbers]
+    shapes = {}
+    for name, colours in (("numbers", numbers), ("rgb() strings", strings)):
+        out_v, out_f, out_c, _s = sharpen_where_they_part(
+            v, f, colours, stands, outside)
+        assert len(out_f) > len(f), (
+            f"{name}: nothing was cut finer, so this proves nothing")
+        assert out_c is not None and len(out_c) == len(out_v), (
+            f"{name}: {len(out_c) if out_c is not None else 0} colours for "
+            f"{len(out_v)} corners — they have come apart")
+        shapes[name] = len(out_f)
+    assert shapes["numbers"] == shapes["rgb() strings"], (
+        f"the two forms of colour gave different meshes, {shapes} — the "
+        f"colours are steering the geometry, which they must not")
+    for text in strings[:5]:
+        assert text.startswith("rgb("), "the fixture is not string colours"
+
+
+def test_a_facet_cannot_be_sampled_with_no_points_inside_it(paper):
+    """Fewer than three a side leaves the weight list EMPTY.
+
+    It used to accept 1 or 2 and quietly do nothing at all in phase one,
+    which reads exactly like a phase one that looked and found nothing.
+    """
+    import ti3gamut
+    from gamutview import sharpen_where_they_part
+    from references import reference_gamut
+    skin = ti3gamut.surfaces_of([("o", reference_gamut("sRGB", steps=16))])[0]
+    outside = lambda points: ~skin.contains(np.atleast_2d(points))  # noqa: E731
+    v = np.asarray(paper.vertices, float)
+    f = np.asarray(paper.faces, int)
+    for few in (0, 1, 2):
+        with pytest.raises(ValueError, match="at least 3"):
+            sharpen_where_they_part(v, f, paper.colors, outside(v), outside,
+                                    samples=few)

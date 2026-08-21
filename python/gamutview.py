@@ -1686,7 +1686,19 @@ def sharpen_where_they_part(vertices, faces, colors, stands, is_outside, *,
     v = np.asarray(vertices, float)
     f = np.asarray(faces, int)
     keep = np.asarray(stands, bool)
-    cols = None if colors is None else np.asarray(colors, float)
+    # ⚠ COLOURS COME IN TWO FORMS, and `np.asarray(colors, float)` raises on
+    # one of them. `split_at_crossing` deliberately takes "rgb(r,g,b)" strings
+    # — that is what the drawing library is handed — and mixes them with
+    # `_mix_colour`. This used to convert blindly, and the caller's bare
+    # `except Exception` would have swallowed the ValueError and quietly left
+    # the shape its OLD mesh: the gradient seam back, and no error anywhere to
+    # say why. Not reachable today, because every gamut the application builds
+    # carries numbers, and that is exactly the kind of thing that stops being
+    # true without anybody noticing.
+    as_text = (colors is not None and len(colors)
+               and isinstance(colors[0], str))
+    cols = (list(colors) if as_text
+            else None if colors is None else np.asarray(colors, float))
     if not len(f):
         return v, f, colors, keep
     # ⚠ NOTHING TO SHARPEN WHERE THE WHOLE SHAPE AGREES WITH ITSELF, and
@@ -1739,7 +1751,10 @@ def sharpen_where_they_part(vertices, faces, colors, stands, is_outside, *,
         middles = 0.5 * (v[pairs[:, 0]] + v[pairs[:, 1]])
         fresh = {tuple(e): len(v) + i for i, e in enumerate(pairs.tolist())}
         v = np.vstack([v, middles])
-        if cols is not None:
+        if as_text:
+            cols = cols + [_mix_colour(cols[int(a)], cols[int(b)], 0.5)
+                           for a, b in pairs]
+        elif cols is not None:
             cols = np.vstack([cols,
                               0.5 * (cols[pairs[:, 0]] + cols[pairs[:, 1]])])
         keep = np.concatenate([keep, np.asarray(is_outside(middles), bool)])
