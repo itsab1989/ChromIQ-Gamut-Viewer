@@ -16,7 +16,9 @@ window.cqViewerCame = function () {
   window.cqNoViewerWanted = false;
   var n = document.getElementById('cq-noviewer');
   if (n) n.hidden = true;
+  if (window.cqDrawn) return;
   if (!document.querySelector('.js-plotly-plot')) {
+    window.cqDrawn = true;
     var draw = document.getElementById('cq-draw');
     if (draw) {
       var run = document.createElement('script');
@@ -319,27 +321,21 @@ window.cqCaption = (function () {
     button.disabled = true;
     if (says) says.textContent = 'fetching\u2026';
     var again = document.createElement('script');
-    var where = "https://cdn.plot.ly/plotly-3.7.0.min.js";
+    var hosts = ["https://cdn.plot.ly/plotly-3.7.0.min.js", "https://cdn.jsdelivr.net/npm/plotly.js@3.7.0/dist/plotly.min.js", "https://unpkg.com/plotly.js@3.7.0/dist/plotly.min.js"];
+    var where = hosts[(tries - 1) % hosts.length];
     again.src = where + (where.indexOf('?') < 0 ? '?' : '&')
                 + 'cq-retry=' + tries;
+    if (told) told.textContent = 'It is trying: ' + where;
     again.crossOrigin = 'anonymous';
     if ("sha256-jvTGqxNp8AGWEcvNLVuKr+8j5dGe9Yw51LQkmDH+IYA=") again.integrity = "sha256-jvTGqxNp8AGWEcvNLVuKr+8j5dGe9Yw51LQkmDH+IYA=";
     again.onload = function () {
-      // RUN THE DRAWING AGAIN. The first attempt threw when the
-      // viewer was missing, so there is no picture waiting -- only
-      // the instructions for one.
-      var draw = document.getElementById('cq-draw');
-      if (draw) {
-        var run = document.createElement('script');
-        run.text = draw.textContent;
-        document.body.appendChild(run);
-      }
       window.cqViewerCame();
     };
     again.onerror = function () {
       button.disabled = false;
       if (says) says.textContent =
         'still no luck (' + tries + (tries === 1 ? ' try' : ' tries')
+        + (hosts.length > 1 ? ', ' + hosts.length + ' addresses' : '')
         + ')';
     };
     document.head.appendChild(again);
