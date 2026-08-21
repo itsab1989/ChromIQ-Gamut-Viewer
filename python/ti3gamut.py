@@ -1935,6 +1935,33 @@ def disagreeing_vertices(gamuts, skins=None):
     return out
 
 
+def _what_was_cut_last(gamuts, lost):
+    """A fingerprint of the only two things the re-cut depends on.
+
+    Content, not identity: the window hands the same objects back on every
+    step of a drag, but a page reloaded from a file does not, and an `id()`
+    that has been recycled would serve the wrong shape's mesh.
+    """
+    parts = []
+    for name, g in gamuts:
+        parts += [str(name), g.space, g.mode,
+                  np.asarray(g.vertices, float).tobytes(),
+                  np.asarray(g.faces, int).tobytes()]
+    for m in (lost or ()):
+        parts.append(b"" if m is None else np.asarray(m, bool).tobytes())
+    import hashlib
+    h = hashlib.blake2b(digest_size=16)
+    for bit in parts:
+        h.update(bit if isinstance(bit, bytes) else bit.encode())
+        h.update(b"|")
+    return h.digest()
+
+
+#: The last re-cut, kept because a fade slider asks for the same one on every
+#: step of a drag. See `recut_where_they_part`.
+_LAST_CUT: "tuple | None" = None
+
+
 def recut_where_they_part(gamuts, lost=None):
     """Re-cut every shape so the fade has an edge instead of a slope.
 
@@ -1971,6 +1998,22 @@ def recut_where_they_part(gamuts, lost=None):
     test that made the mask. Rather than guess, that shape keeps its old
     mesh: the marking stays right and the fade keeps its slope.
     """
+    # ⚠ THE SAME ANSWER IS ASKED FOR OVER AND OVER. This depends on the
+    # SHAPES and the marking, and on nothing else — not on where the fade
+    # sliders sit. But the fade is live: every step of a drag rebuilds the
+    # surfaces (`_surfaces_for_live` -> `build_figure(split=True)` -> here),
+    # so one sweep of the handle asked for the same cut a hundred times over.
+    # Measured on the paper against sRGB at the Detail the window opens with,
+    # one full drag: 101 steps, 5.79 s of them here. Kept, that is one cut.
+    #
+    # ONE ENTRY IS ENOUGH and two would be a memory leak with extra steps: a
+    # drag repeats one question, and anything else is a different picture
+    # altogether. The key is the shapes' CONTENT, so a reloaded file that
+    # happens to reuse an address cannot collect the wrong mesh.
+    global _LAST_CUT
+    fingerprint = _what_was_cut_last(gamuts, lost)
+    if _LAST_CUT is not None and _LAST_CUT[0] == fingerprint:
+        return _LAST_CUT[1]
     from gamutview import (Gamut, sharpen_where_they_part,
                            split_at_crossing)
 
@@ -2089,7 +2132,10 @@ def recut_where_they_part(gamuts, lost=None):
             # whole point of the second cut is that they can differ.
             out_lost.append(None if marked is None
                             else (marked_after if judge is not None else s2))
-    return out_g, out_faces, out_stands, out_lost
+    answer = (out_g, out_faces, out_stands, out_lost)
+    _LAST_CUT = (fingerprint, answer)
+    globals()["_LAST_CUT"] = _LAST_CUT
+    return answer
 
 
 def agreeing_edges(gamut, keep_faces):

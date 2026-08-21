@@ -1640,7 +1640,7 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
 
 
 def sharpen_where_they_part(vertices, faces, colors, stands, is_outside, *,
-                            rounds=6, samples=6, closer=1, too_small=1.0):
+                            rounds=6, samples=6, closer=1, too_small=None):
     """Give `split_at_crossing` a mesh fine enough to see the real boundary.
 
     WHY. `split_at_crossing` asks each triangle's three corners which side of
@@ -1705,6 +1705,32 @@ def sharpen_where_they_part(vertices, faces, colors, stands, is_outside, *,
     # surfaces touch.
     if keep.all() or not keep.any():
         return v, f, colors, keep
+    across = float(np.linalg.norm(v.max(axis=0) - v.min(axis=0)))
+    # A FIFTIETH OF THE SHAPE, chosen against measurement and not taste.
+    # On the paper against sRGB, worst error and what three references
+    # crossing each other cost:
+    #     across/200 (1.32 Lab)  worst 1.01   3,552 ms, 48,329 faces
+    #     across/100 (2.65 Lab)  worst 1.01   2,630 ms, 34,964
+    #     across/50  (5.29 Lab)  worst 1.16   1,394 ms, 17,603
+    #     across/25  (10.6 Lab)  worst 4.05     334 ms,  7,121
+    # A fiftieth keeps the seam inside what an eye can find and costs a third
+    # of what a two-hundredth does; a twenty-fifth throws the accuracy away.
+    floor = (float(too_small) if too_small is not None
+             else max(1e-9, across / 50.0))
+    # ⚠ FEWER THAN THREE SAMPLES A SIDE IS NO SAMPLES AT ALL: the weights
+    # below take only the points strictly inside, and a triangle halved or
+    # left whole has none. It used to accept 1 or 2 and quietly do nothing at
+    # all in phase one, which reads exactly like a phase one that found
+    # nothing to do.
+    if int(samples) < 3:
+        raise ValueError(
+            f"samples must be at least 3 to have any point strictly inside a "
+            f"facet, got {samples}")
+    # ⚠ AND IT MUST NOT RUN AWAY. Three references crossing each other took
+    # one mesh from 18,252 faces to 172,548 and 1.4 GB of memory. Each round
+    # can at most quadruple, so a ceiling on the total is the one bound that
+    # holds however many shapes are in the picture.
+    ceiling = max(12000, 6 * len(f))
 
     def cut_along(edges):
         """Halve every named edge and re-cut whatever triangle uses one."""
@@ -1744,11 +1770,24 @@ def sharpen_where_they_part(vertices, faces, colors, stands, is_outside, *,
         """Drop the facets too small to have misplaced the boundary anyway.
 
         A facet can only hide a bulge, or chord across a bend, by something
-        like its own size — so once it is smaller than *too_small* across,
-        cutting it again buys less than the eye can find and costs a
-        containment test on every redraw. This is what keeps a fine mesh
-        cheap: at the highest Detail the reference has 18,252 facets and
-        every one of them is already under a Lab across, so none is touched.
+        like its own size, so below *too_small* across, cutting it again buys
+        less than an eye can find.
+
+        ⚠ IT IS A SHARE OF THE SHAPE, NOT A NUMBER OF Lab. It was a flat 1.0,
+        and the space the reader is drawing in is theirs to choose: a gamut in
+        CIE XYZ spans 0.005 to 0.85, its widest facet edge is 0.9264, and one
+        Lab therefore threw away EVERY facet — the whole function became a
+        silent no-op in that space, leaving the seam 8.4% of the shape's own
+        radius out of place. A five-hundredth of the shape's diagonal is 0.95
+        in Lab, which is what was measured there, and 0.004 in XYZ.
+
+        ⚠ AND IT DOES NOT MAKE A FINE MESH CHEAP. An earlier version of this
+        note claimed that at the highest Detail every one of the reference's
+        18,252 facets is already under a Lab across, so none is touched. That
+        was never measured and it is false — the median widest edge is 4.07
+        Lab and 99.3% of them are over. Nothing here bounds the cost; what
+        bounds it is that the answer is kept between redraws
+        (`recut_where_they_part`).
         """
         if not len(which):
             return which
@@ -1756,7 +1795,7 @@ def sharpen_where_they_part(vertices, faces, colors, stands, is_outside, *,
         widest = np.linalg.norm(
             np.stack([tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 1],
                       tri[:, 0] - tri[:, 2]]), axis=2).max(axis=0)
-        return which[widest > float(too_small)]
+        return which[widest > floor]
 
     def edges_of(which):
         found = set()
@@ -1785,6 +1824,8 @@ def sharpen_where_they_part(vertices, faces, colors, stands, is_outside, *,
             if not len(hiding):
                 break
             cut_along(edges_of(hiding))
+            if len(f) >= ceiling:
+                break
 
     # ---- TWO: the facets the boundary does cross, so the seam gets corners
     # along it rather than one chord from edge to edge.
@@ -1795,6 +1836,8 @@ def sharpen_where_they_part(vertices, faces, colors, stands, is_outside, *,
         if not len(straddling):
             break
         cut_along(edges_of(straddling))
+        if len(f) >= ceiling:
+            break
 
     return v, f, (cols if colors is not None else None), keep
 
