@@ -6390,9 +6390,26 @@ class Notice(QDialog):
             text.setTextFormat(Qt.TextFormat.RichText)
         text.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
+        # ...OR ANYTHING ELSE THAT WOULD NOT FIT ON THE SCREEN. Asked of the
+        # text rather than remembered per message, because "only the glossary
+        # is long enough" stops being true the moment somebody moves a long
+        # tooltip in here -- which is exactly how this was found. Measured on
+        # this screen: the drift box's explanation grew to 1,372 px against
+        # 1,079 px of screen, and a dialog taller than the screen puts its own
+        # buttons past the bottom edge. Both gates and the panel audit called
+        # that clean.
+        #
+        # THE ALLOWANCE IS THE DIALOG'S OWN FURNITURE -- title, buttons and
+        # margins -- measured at 220 px rather than guessed: a 1,646-character
+        # explanation asks 387 px for its words and 607 px in total.
+        if not scroll:
+            where = self.screen() or QApplication.primaryScreen()
+            room = where.availableGeometry().height() if where else 900
+            if text.heightForWidth(inner) > room - 220:
+                scroll = True
         if scroll:
-            # Only the glossary is long enough to need this; everything else
-            # would gain a scroll bar it never uses.
+            # The glossary, and anything else too tall for the screen; a
+            # message that fits would gain a scroll bar it never uses.
             area = QScrollArea(card)
             area.setWidgetResizable(True)
             # ROOM FOR THE SCROLL BAR ITSELF. It is drawn inside the viewport,
@@ -9076,7 +9093,21 @@ class GamutApp(QMainWindow):
         # WHERE the movement was.
         self._drift_families = WrappedLabel("", self._drift_box,
                                             hide_when_empty=True)
-        self._drift_families.setToolTip(
+        # THE LONG VERSION GOES BEHIND THE ⓘ, and the hover stays short.
+        # Asked for in as many words, and _shorten_the_hovers already does it
+        # for every button, menu and slider -- but it walks QAbstractButton,
+        # QComboBox and QSlider, and this is a label. So the wall of text it
+        # was written to remove was still here: 2,494 characters, which opens
+        # a box 481 x 562 px, over half the height of the screen, dropped
+        # over the panel by a pointer merely passing across. That is LARGER
+        # than the 2,139-character tooltip that prompted the complaint.
+        #
+        # MOVED WORD FOR WORD rather than edited down. This box already
+        # carries an ⓘ, so the words have a home; deciding which paragraphs
+        # were worth keeping would be me rewriting an explanation somebody
+        # else wrote for a beginner. It reads a little long behind the icon
+        # and that is the right place to be a little long.
+        drift_families_help = (
             "Which colour families moved between the two files you have "
             "open, and which way — written out so you can paste it straight "
             "into an email or a report.\n\n"
@@ -9123,6 +9154,10 @@ class GamutApp(QMainWindow):
             "or darker instead. Greys drifting while the colours hold still "
             "is a common and useful pattern: it usually points at the light "
             "inks or the paper rather than at one colourant.")
+        self._drift_families.setToolTip(
+            "Which colour families moved between the two files you have "
+            "open, and which way — written out so you can paste it straight "
+            "into an email. Needs two files of the same kind open together.")
         self._drift_families_note = WrappedLabel("", self._drift_box,
                                                  hide_when_empty=True)
         self._drift_families_note.setObjectName("hint")
@@ -9154,7 +9189,8 @@ class GamutApp(QMainWindow):
             "not to have changed.\n\n"
             "The numbers are ΔE2000. Below 1 nobody can see it. Around 2 a "
             "careful eye finds it on a smooth gradient. Above 3 it is plain, "
-            "and worth investigating before you print anything that matters.",
+            "and worth investigating before you print anything that matters."
+            "\n\n" + drift_families_help,
             self._drift_box)
         drift_hint.setObjectName("hint_drift_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
