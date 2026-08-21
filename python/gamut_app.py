@@ -12148,8 +12148,29 @@ class GamutApp(QMainWindow):
         make the newcomer the odd one out, the two beside it were brought to
         the same rule.
         """
-        drawing = bool(getattr(self, "_drift_draw", None)
-                       and self._drift_draw.isChecked())
+        # AND THE TICK ITSELF, when there is no cloud it could ever draw.
+        #
+        # The cloud is worked out from two ICC PROFILES — `_profile_pair` — and
+        # with two MEASUREMENTS open there is none, whatever the shape's
+        # solidity. Measured in the real window on two readings of one paper
+        # months apart: ticking it changed 0 px at every solidity, including
+        # fully see-through, so this is not the cloud hiding behind the shape.
+        # The panel above still answers "has anything changed" from the
+        # patches; only the picture cannot be drawn.
+        tick = getattr(self, "_drift_draw", None)
+        can_draw = self._profile_pair() is not None
+        if tick is not None:
+            if not can_draw and tick.isChecked():
+                tick.blockSignals(True)
+                tick.setChecked(False)
+                tick.blockSignals(False)
+            tick.setEnabled(can_draw)
+            tick.setToolTip(
+                "Paint every colour into the picture, coloured by how far the "
+                "two profiles disagree about it." if can_draw else
+                "Needs two ICC profiles of one device. Two measurements can "
+                "be compared in words above, but there is no cloud to paint.")
+        drawing = bool(tick is not None and can_draw and tick.isChecked())
         for name in ("_drift_by", "_drift_by_label", "_drift_split",
                      "_drift_cut", "_drift_cut_label", "_drift_cut_says"):
             widget = getattr(self, name, None)
@@ -16729,6 +16750,12 @@ class GamutApp(QMainWindow):
         a chart and of two profiles of a scanner; only the way of answering it
         differs, and that is our problem rather than theirs.
         """
+        # WHETHER THE TICK HAS A CLOUD TO PAINT depends on WHAT IS OPEN, not
+        # on any control: two profiles have one, two measurements do not.
+        # Wired only to the controls' own signals it stayed dim after two
+        # profiles had been opened — measured, live=False with pair=True —
+        # and a dim tick cannot be clicked, so the cloud was unreachable.
+        self._refresh_drift_controls()
         pair = self._profile_pair()
         if pair is not None:
             self._update_profile_drift(*pair)
