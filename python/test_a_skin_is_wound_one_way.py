@@ -161,3 +161,35 @@ def test_a_faced_shape_holds_the_volume_it_looks_like(shapes):
             f"{name}: with half the triangles turned round the mesh still "
             f"holds {muddled:,.0f} of {dice:,.0f} — this measurement cannot "
             f"see winding at all")
+
+
+def test_a_gamut_read_from_a_profile_is_wound_one_way_too():
+    """The real-world path, and the one the other tests never touch.
+
+    A gamut read through Argyll arrives ALREADY consistent — 4,462 triangles,
+    no two neighbours disagreeing — so facing it only turns the whole shell
+    outward, and that is invisible: `_ORDER_JS` corrects one global sign, so
+    flipping every face of a consistent mesh cancels (measured, 0 pixels of
+    1,000×820 between the two). It is faced anyway so that ONE rule holds for
+    every shape the application builds, and this is what keeps that true.
+
+    Without this, the facing in `references.py` is not load-bearing: a
+    mutation removing it from both sites there was caught by nothing.
+    """
+    from references import _find_iccgamut, icc_gamut
+    if _find_iccgamut() is None:
+        pytest.skip("no Argyll iccgamut to read a profile with")
+    profile = _DEMO / "Glossy-paper.icc"
+    if not profile.is_file():
+        pytest.skip("no demo profile")
+    shape = icc_gamut(profile)
+    assert len(shape.faces) > 100, (
+        f"the profile came back with only {len(shape.faces)} triangles — "
+        f"too few to be the gamut, so this proves nothing")
+    clash = _edges_walked_the_same_way(shape.faces)
+    assert not clash, (
+        f"{len(clash)} edge(s) of the profile's gamut are walked the same way "
+        f"round by both their triangles")
+    assert _signed(shape.faces, shape.vertices,
+                   np.asarray(shape.vertices, float).mean(axis=0)).sum() > 0, (
+        "the profile's gamut is wound inside out")
