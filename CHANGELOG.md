@@ -1,5 +1,43 @@
 # Changelog
 
+## v2.50.3
+
+### 🗒 A hovered label no longer answers with an essay
+
+Passing the pointer over the colour-family summary in **Has anything changed?**
+opened **2,494 characters** — a box 481 × 562 px, over half the height of the
+screen, dropped over the panel by a pointer merely on its way somewhere else.
+
+The window already shortens hovers and keeps the long version behind the ⓘ.
+It walks buttons, menus and sliders — and this is a label, so it kept its wall
+of text. That wall was *larger* than the 2,139-character one that prompted the
+rule in the first place.
+
+| | |
+|---|---|
+| before | 2,494 characters, 481 × 562 px |
+| now | **184 characters, one line** |
+
+The words are not gone and not edited down: every paragraph moved, word for
+word, behind the ⓘ that box already carries.
+
+### 🪟 An explanation can no longer open taller than the screen
+
+Moving those words revealed the same fault one click further in. The ⓘ's own
+window took a scroll bar only where somebody had asked for one by hand, with a
+note beside it saying only the glossary was ever long enough to need it — so
+the explanation grew to **1,372 px on a 1,079 px screen**, putting its own OK
+button below the bottom edge.
+
+It now asks the text rather than remembering: anything that would not fit
+scrolls, and anything that fits gains no scroll bar it never uses. A one-line
+message is unchanged.
+
+**This was already happening somewhere else.** With the new rule switched off,
+the check reports **Where they agree** at 817 px against 800 px of screen —
+that explanation has been running off the bottom of a small laptop all along,
+and nobody had asked the question.
+
 ## v2.50.2
 
 ### 💾 Two rooms can be saved without the viewer, which the box had been promising
