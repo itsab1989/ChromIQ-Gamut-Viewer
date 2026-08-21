@@ -300,6 +300,20 @@ window.cqCaption = (function () {
   window.setTimeout(function () {
     window.cqNoViewer('The viewer is taking a long time to arrive. It is about 5 MB, so this can happen on a slow connection. Leave the page open and it may still appear.');
   }, 30000);
+  var reaching = 0;
+  var reach = window.setInterval(function () {
+    if (window.Plotly) { window.clearInterval(reach); return; }
+    if (reaching >= hosts.length - 1) { window.clearInterval(reach); return; }
+    reaching += 1;
+    if (told) told.textContent = 'It is trying: ' + hosts[reaching];
+    var nxt = document.createElement('script');
+    nxt.src = hosts[reaching] + (hosts[reaching].indexOf('?') < 0 ? '?' : '&')
+              + 'cq-next=' + reaching;
+    nxt.crossOrigin = 'anonymous';
+    if ("sha256-jvTGqxNp8AGWEcvNLVuKr+8j5dGe9Yw51LQkmDH+IYA=") nxt.integrity = "sha256-jvTGqxNp8AGWEcvNLVuKr+8j5dGe9Yw51LQkmDH+IYA=";
+    nxt.onload = function () { window.cqViewerCame(); };
+    document.head.appendChild(nxt);
+  }, 12000);
   // TRY AGAIN WITHOUT LOSING THE PAGE, which is the thing a reader
   // on a phone actually wants. Being told to reload when the line is
   // fine is useless advice, and an interrupted download -- switching
@@ -310,6 +324,7 @@ window.cqCaption = (function () {
   // integrity hash is over the CONTENT, not the address, so a query
   // string cannot break it.
   var tries = 0;
+  var hosts = ["https://cdn.plot.ly/plotly-3.7.0.min.js", "https://cdn.jsdelivr.net/npm/plotly.js@3.7.0/dist/plotly.min.js", "https://unpkg.com/plotly.js@3.7.0/dist/plotly.min.js"];
   var note = document.getElementById('cq-noviewer');
   var button = note && note.querySelector('[data-cq=\"retry\"]');
   var says = note && note.querySelector('[data-cq=\"tries\"]');
@@ -321,7 +336,6 @@ window.cqCaption = (function () {
     button.disabled = true;
     if (says) says.textContent = 'fetching\u2026';
     var again = document.createElement('script');
-    var hosts = ["https://cdn.plot.ly/plotly-3.7.0.min.js", "https://cdn.jsdelivr.net/npm/plotly.js@3.7.0/dist/plotly.min.js", "https://unpkg.com/plotly.js@3.7.0/dist/plotly.min.js"];
     var where = hosts[(tries - 1) % hosts.length];
     again.src = where + (where.indexOf('?') < 0 ? '?' : '&')
                 + 'cq-retry=' + tries;
@@ -329,9 +343,16 @@ window.cqCaption = (function () {
     again.crossOrigin = 'anonymous';
     if ("sha256-jvTGqxNp8AGWEcvNLVuKr+8j5dGe9Yw51LQkmDH+IYA=") again.integrity = "sha256-jvTGqxNp8AGWEcvNLVuKr+8j5dGe9Yw51LQkmDH+IYA=";
     again.onload = function () {
+      window.clearTimeout(waited);
       window.cqViewerCame();
     };
+    var waited = window.setTimeout(function () {
+      if (window.Plotly) return;
+      button.disabled = false;
+      if (says) says.textContent = 'no reply from that one — press again to try the next';
+    }, 20000);
     again.onerror = function () {
+      window.clearTimeout(waited);
       button.disabled = false;
       if (says) says.textContent =
         'still no luck (' + tries + (tries === 1 ? ' try' : ' tries')
