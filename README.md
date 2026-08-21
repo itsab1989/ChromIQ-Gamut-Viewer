@@ -1330,7 +1330,7 @@ real application, and each one states what should happen before it looks:
 python scripts/audit_panel.py             # every control, 30 states, nothing clipped and no ⓘ left stranded
 python scripts/audit_the_panel_hovers_stay_short.py  # every ⓘ opens a window that fits the screen
 python scripts/drive_ink_amounts.py       # 27 scenarios through the ink-amount view
-python scripts/drive_all_combinations.py  # 6,912 combinations, 60,076 checks
+python scripts/drive_all_combinations.py  # 6,912 combinations, 65,836 checks
 python scripts/make_sample_pages.py       # the 25 showcase pages, and their claims
 
 python scripts/audit_truth.py             # does each control say what the picture shows?
