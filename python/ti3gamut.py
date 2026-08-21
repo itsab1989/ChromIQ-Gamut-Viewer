@@ -2204,7 +2204,16 @@ def _chart_skin(points, colours, name: str, style: str, opacity: float,
         x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
         i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
         name=f"{name} — a skin over the patches", showlegend=False,
-        hoverinfo="name", flatshading=False,
+        # LIT FACET BY FACET, for the same reason the simple skin over a shape
+        # is. This is a hull over a cloud of measured patches, and a hull over
+        # unevenly spread points is full of needles — MEASURED on the
+        # verification chart placed through a real profile: 25 of its 92
+        # triangles have a longest edge more than eight times their own width,
+        # the worst 355 times. Smooth shading averages the light across every
+        # facet meeting at a corner, and over a needle that average smears
+        # into a streak, which was reported from the window of the other
+        # hull: "this one looks scattered".
+        hoverinfo="name", flatshading=True,
         lighting=_lighting(depth, opacity),
         lightposition=light or _LIGHT_OVERHEAD,
     )
