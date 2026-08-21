@@ -129,6 +129,57 @@ def slugs_of(text: str) -> set:
     return out
 
 
+def the_pages_it_promises(problems: list) -> int:
+    """The README says how many showcase pages there are. Are there?
+
+    THE SAME ROT AS THE TEST COUNT, found the same way -- by reading, because
+    no rule could see it. The line said "the ten showcase pages" while the
+    script wrote twenty-five, so somebody running it got fifteen files they
+    had not been told about and no reason to trust the sentence above.
+
+    COUNTED OFF THE PAGES THEMSELVES rather than off the script that writes
+    them: what is on the disk is what a reader finds, and parsing another
+    script's source for the names it happens to spell would be a rule that
+    breaks when that file is tidied.
+
+    IT REFUSES AN EMPTY FOLDER. No pages at all is a checkout that has never
+    had them built, not a README that is wrong, and saying "0 promised, 0
+    found, agreed" would be the emptiest kind of clean.
+    """
+    # WRITTEN OUT OR IN FIGURES, because the rot this was written for said
+    # "ten". A rule that only reads digits walks straight past the very
+    # sentence that prompted it, prints "0 counted" and calls that clean --
+    # which is what the first version of this did, caught by putting the old
+    # wording back and watching nothing happen.
+    said = re.search(r"#\s*(?:the\s+)?([\w,]+)\s+showcase pages",
+                     (ROOT / "README.md").read_text(encoding="utf-8"))
+    if not said:
+        return 0
+    spelled = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+               "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+               "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+               "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+               "nineteen": 19, "twenty": 20}
+    word = said.group(1).replace(",", "").lower()
+    if not word.isdigit() and word not in spelled:
+        problems.append(
+            f"README: the number of showcase pages reads {said.group(1)!r}, "
+            f"which is neither a figure nor a number written out, so it was "
+            f"not checked")
+        return 0
+    there = sorted((ROOT / "docs" / "pages").glob("*.html"))
+    if not there:
+        problems.append("README: docs/pages holds no pages at all, so the "
+                        "number it promises was not checked")
+        return 0
+    claimed = int(word) if word.isdigit() else spelled[word]
+    if claimed != len(there):
+        problems.append(
+            f"README promises {claimed:,} showcase pages and docs/pages "
+            f"holds {len(there):,}")
+    return len(there)
+
+
 def the_count_it_promises(problems: list) -> int:
     """The README says how many tests there are. Is that still true?
 
@@ -292,6 +343,9 @@ def main() -> int:
               "were not checked")
     counted = the_count_it_promises(problems)
     print(f"  {counted} test(s) counted, against the number the README prints")
+    pages = the_pages_it_promises(problems)
+    print(f"  {pages} showcase page(s) counted, against the number it "
+          f"promises")
     print()
     if problems:
         for line in problems:
