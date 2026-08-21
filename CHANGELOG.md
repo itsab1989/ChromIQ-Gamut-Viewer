@@ -1,5 +1,53 @@
 # Changelog
 
+## v2.50.0
+
+### 🖼 A page that fetched its viewer showed the message even when the viewer arrived
+
+Saved **without** the 3D viewer inside it, a page fetches it when opened. The
+picture was arriving, drawing perfectly — and then being covered.
+
+The "did not arrive" notice was marked hidden, and it was **never hidden**. It
+carried the `hidden` attribute together with its own `display` style, and a
+style written on the element beats the browser's rule for `hidden`. So the
+panel was on screen from the moment the page reached it, over a picture that
+was already there.
+
+| | |
+|---|---|
+| the picture drawn at | 1,314 ms |
+| the notice covering it at | 1,365 ms |
+| what you saw | **51 milliseconds of picture** |
+
+That is the whole of it: the shape flashing and vanishing, the message
+"returning" when it had never gone, and the **Try to fetch the viewer again**
+button doing nothing at all — it could not, the viewer being already there.
+
+**And if the address really is blocked**, the page now moves on by itself. It
+knows three places to ask, tries the next one when the last one refuses, and
+says which it is trying. The same file is served by all three, byte for byte,
+so the check that guards it is unchanged.
+
+### ✂️ A lid for the hole the fade leaves — **Close where it is cut**
+
+Fade *Where they agree* away and what is left of a shape has a hole in it.
+Turned round, you look **into** the hole, and its far wall is lit exactly like
+an outside — so it reads as torn. Reported as "this one looks scattered".
+
+The new tick closes it with the piece of the **other** shape that lies inside
+this one. Not an invented flat disc: the two really do meet along the curve
+where the hole ends, so the lid meets the opening exactly, and it is painted
+in the other shape's own colours — you are looking at the colours where the
+two part company.
+
+**It adds nothing to the figures.** Every number beside the picture is worked
+out from the shapes themselves and never from the lid.
+
+**What it needs:** two shapes, and *Where they agree* below full. It is greyed
+out otherwise, and says which of those is missing — including for a
+cross-section, two rooms, a run of profiles, a shape drawn as an outline, and
+while what is out of reach is marked, none of which it can act on.
+
 ## v2.49.0
 
 ### ✂️ The cut now lands where the two shapes really part
