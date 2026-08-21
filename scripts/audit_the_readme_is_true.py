@@ -129,6 +129,47 @@ def slugs_of(text: str) -> set:
     return out
 
 
+def the_count_it_promises(problems: list) -> int:
+    """The README says how many tests there are. Is that still true?
+
+    THE ROT THIS CATCHES has no link and no label in it, so every rule above
+    walks straight past: `# 851 tests` beside the command, while the suite had
+    grown to 1,017. Nobody had lied; the number simply stopped being true, and
+    a reader who runs the line sees a different figure and wonders what else
+    here is out of date.
+
+    ASKED WITHOUT RUNNING THEM. `--collect-only` counts in 0.37s where running
+    takes a minute, and the question is how many there ARE, not whether they
+    pass -- which is what the gates are for.
+
+    A number written with or without its thousands comma both count as the
+    same number, because both are ordinary English and neither is wrong.
+    """
+    import subprocess
+
+    said = re.search(r"#\s*([\d,]+)\s+tests", (ROOT / "README.md")
+                      .read_text(encoding="utf-8"))
+    if not said:
+        problems.append("README: no test count to check, and there was one")
+        return 0
+    claimed = int(said.group(1).replace(",", ""))
+    out = subprocess.run([sys.executable, "-m", "pytest", "python",
+                          "--collect-only", "-q"], cwd=ROOT,
+                         capture_output=True, text=True).stdout
+    found = re.search(r"(\d+)\s+tests? collected", out)
+    if not found:
+        problems.append("README: the tests could not be counted, so the "
+                        "number it prints was not checked")
+        return 0
+    really = int(found.group(1))
+    if claimed != really:
+        problems.append(
+            f"README says the suite is {claimed:,} tests and it is "
+            f"{really:,} — the line a reader is told to run prints a "
+            f"different number from the one beside it")
+    return really
+
+
 def main() -> int:
     docs = [ROOT / "README.md"] + sorted((ROOT / "docs").rglob("*.md"))
     problems: list[str] = []
@@ -249,6 +290,8 @@ def main() -> int:
     else:
         print("  the window could not be opened, so the controls it names "
               "were not checked")
+    counted = the_count_it_promises(problems)
+    print(f"  {counted} test(s) counted, against the number the README prints")
     print()
     if problems:
         for line in problems:

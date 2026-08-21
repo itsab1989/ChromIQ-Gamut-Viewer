@@ -1304,15 +1304,17 @@ g = build_gamut(m.lab, m.device, input_space="lab")   # the dented boundary
 print(f"{g.volume:,.0f} cubic Lab units from {m.n_patches} patches")
 ```
 
-**There is something to open in `demo/`** — two measured papers, a profile and
-a 480-patch chart — so the window has something in it the moment you start it,
-and so everything below can be run without hunting for files of your own.
+**There is something to open in `demo/`** — two measured papers, a profile, a
+480-patch chart, and one printer's profiles from four separate years for
+following a device through time — so the window has something in it the moment
+you start it, and so everything below can be run without hunting for files of
+your own.
 
 Tests:
 
 ```bash
 pip install -r requirements-test.txt        # pytest, and pyyaml for one file
-cd python && python -m pytest . -q          # 851 tests
+cd python && python -m pytest . -q          # 1,017 tests
 ```
 
 They check the colour science against published reference values rather than
