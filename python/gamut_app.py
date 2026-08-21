@@ -4751,6 +4751,32 @@ class TimelineDialog(QDialog):
         # scroll lands short of where it needs to be.
         QTimer.singleShot(0, settle)
 
+
+    def keep_the_short_form_of_its_hovers(self) -> None:
+        """Put the SHORTENED words in the stashes these controls put back.
+
+        Two controls here stash their own tooltip and set it again whenever
+        they become available -- see _coloured_by_words and _split_words. The
+        stash is taken while this dialog is being built, which is before the
+        window's shortening pass has run, so what came back was the full text:
+        "Split it into colour families" went from 188 characters to 946 the
+        moment its tickbox was turned on, and the menu beside it to 2,132. The
+        wall was gone from the window as it opens and back the moment somebody
+        used it.
+
+        ASKED AFTERWARDS RATHER THAN AT EITHER END, and both of those were
+        tried and measured first. Shortening the stash, or shortening where
+        the words are put back, both run while the window is still being
+        built: the shortening pass then meets a tooltip already short, builds
+        no ⓘ for it, and 2,139 characters of explanation leave the application
+        altogether. The icon count read 83 where it had read 85, which is the
+        only reason either attempt was caught.
+        """
+        for name in ("_coloured_by_words", "_split_words"):
+            words = getattr(self, name, None)
+            if words:
+                setattr(self, name, _for_a_hover(words))
+
     def _on_add(self) -> None:
         parent = self.parent()
         chooser = parent._file_dialog(
@@ -6501,6 +6527,11 @@ class Notice(QDialog):
 _HOVER_LIMIT = 200
 
 
+def _for_a_hover(text: str) -> str:
+    """The form a tooltip should have while it sits on a control."""
+    return _one_sentence(text) if len(text or "") > _HOVER_LIMIT else text
+
+
 def _one_sentence(text: str) -> str:
     """The first sentence of an explanation, for a hover.
 
@@ -7083,6 +7114,17 @@ class GamutApp(QMainWindow):
         # AND NOTHING IS EXPLAINED AT LENGTH ON A HOVER. Last, so it sees the
         # words every earlier pass has handed out. See _shorten_the_hovers.
         self._shorten_the_hovers(self.findChild(QScrollArea))
+        # AND THE STASHED COPIES OF THOSE WORDS TOO. Four controls put their
+        # own tooltip back when they become available again, and the copy they
+        # kept was taken before this pass ran. See
+        # TimelineDialog.keep_the_short_form_of_its_hovers for what that
+        # looked like and why it is asked here and not at either end.
+        for _stash in ("_drift_by_tooltip", "_split_tooltip"):
+            _words = getattr(self, _stash, None)
+            if _words:
+                setattr(self, _stash, _for_a_hover(_words))
+        if getattr(self, "_timeline", None) is not None:
+            self._timeline.keep_the_short_form_of_its_hovers()
         # A hidden control must take its ⓘ with it. Anything already managed
         # by an explicit show/hide list keeps that behaviour; the attach pass
         # ties the rest to the control they were placed beside.
