@@ -198,17 +198,32 @@ def test_the_dented_shape_reports_less_than_a_skin_around_it():
 
 
 def test_orientation_is_fixed_here_not_assumed_of_the_caller():
-    """The device-cube faces are triangulated independently, so their windings
-    disagree. Summing signed volumes without orienting them first cancels part
-    of the shape away — it once gave a third of the true answer."""
+    """Summing signed volumes without orienting first cancels part of the
+    shape away — it once gave a third of the true answer.
+
+    THE MUDDLE IS MADE HERE ON PURPOSE. It used to come free, because the
+    device cube's six faces are triangulated independently and their windings
+    disagreed; `build_gamut` now settles them before it hands the shape over
+    (`face_the_same_way`), so a test that relied on getting a disordered mesh
+    was quietly testing nothing. Turning each triangle's own corners round
+    cannot move a single point of the surface — it can only take away the
+    agreement between neighbours, which is exactly the input this guards."""
     from gamutview import mesh_volume
     rgb, xyz = rgb_cube(5)
     g = build_gamut(xyz, rgb, white_point="D65")
+    rng = np.random.default_rng(3)
+    faces = np.asarray(g.faces, int).copy()
+    turned = rng.random(len(faces)) < 0.5
+    faces[turned] = faces[turned][:, ::-1]
+    assert turned.any(), "nothing was turned round, so nothing is being tested"
     naive = abs(float(np.einsum(
         "ij,ij->i",
-        g.vertices[g.faces[:, 0]],
-        np.cross(g.vertices[g.faces[:, 1]], g.vertices[g.faces[:, 2]])).sum()) / 6)
-    assert mesh_volume(g.vertices, g.faces) > naive * 1.5
+        g.vertices[faces[:, 0]],
+        np.cross(g.vertices[faces[:, 1]], g.vertices[faces[:, 2]])).sum()) / 6)
+    assert mesh_volume(g.vertices, faces) > naive * 1.5
+    # and it must give the same answer whichever way the triangles were left
+    assert abs(mesh_volume(g.vertices, faces)
+               - mesh_volume(g.vertices, g.faces)) < 1e-6
 
 
 def test_ciede2000_against_the_published_reference_pairs():

@@ -142,7 +142,8 @@ def gam_gamut(path, *, white_point: str = "D50", space: str = "lab",
             f"{exc}") from exc
     if len(verts) < 4:
         raise ValueError(f"{path.name} describes no usable volume")
-    from gamutview import Gamut, lab_to_xyz, mesh_volume, xyz_to_srgb
+    from gamutview import (Gamut, face_the_same_way, lab_to_xyz, mesh_volume,
+                           xyz_to_srgb)
     # The file always holds Lab. Drawing in another space moves every
     # vertex, and the volume has to be recomputed there -- a number carried
     # over from Lab would be in the wrong units for the picture beside it.
@@ -150,6 +151,10 @@ def gam_gamut(path, *, white_point: str = "D50", space: str = "lab",
     if space != "lab":
         from gamutview import _FROM_XYZ
         verts = _FROM_XYZ[space](xyz, white_point)
+    # Wound one way before it leaves, for the reason in `build_gamut`: the
+    # page's far-wall sort reads each triangle's cross product, and a mesh
+    # that disagrees with itself puts half its faces in the wrong group.
+    faces = face_the_same_way(faces, verts)
     return Gamut(vertices=verts, faces=faces,
                  colors=xyz_to_srgb(xyz, white_point),
                  # The volume the file's OWN triangles enclose. Measuring the
@@ -445,7 +450,8 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
 
     if len(verts) < 4:
         raise ValueError(f"{path.name} describes no usable volume")
-    from gamutview import Gamut, lab_to_xyz, mesh_volume, xyz_to_srgb
+    from gamutview import (Gamut, face_the_same_way, lab_to_xyz, mesh_volume,
+                           xyz_to_srgb)
     # The file always holds Lab. Drawing in another space moves every
     # vertex, and the volume has to be recomputed there -- a number carried
     # over from Lab would be in the wrong units for the picture beside it.
@@ -453,6 +459,10 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
     if space != "lab":
         from gamutview import _FROM_XYZ
         verts = _FROM_XYZ[space](xyz, white_point)
+    # Wound one way before it leaves, for the reason in `build_gamut`: the
+    # page's far-wall sort reads each triangle's cross product, and a mesh
+    # that disagrees with itself puts half its faces in the wrong group.
+    faces = face_the_same_way(faces, verts)
     return Gamut(vertices=verts, faces=faces,
                  colors=xyz_to_srgb(xyz, white_point),
                  # The volume the file's OWN triangles enclose. Measuring the

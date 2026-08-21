@@ -465,6 +465,17 @@ def build_gamut(colors, drive_values=None, *, space: Space = "lab",
         # not what a hull around it would -- is what this printer can print.
         volume = mesh_volume(verts, faces)
 
+    # WOUND ONE WAY BEFORE IT LEAVES. `ConvexHull.simplices` come back
+    # unoriented -- measured, this paper's 414 triangles are 207 one way and
+    # 207 the other, and the six faces of the device cube are triangulated
+    # independently so they disagree too. The page's own far-wall sort reads
+    # each triangle's cross product to decide which faces are the back of the
+    # shell (`_ORDER_JS`), and on a half-and-half mesh half of them land in
+    # the wrong group: 28,861 pixels of blotchy mottling across two
+    # see-through shapes. It corrects ONE global sign, which cannot fix a mesh
+    # that disagrees with itself. 1.4 ms here for the paper, 62 ms for the
+    # densest reference, and only once when the shape is built.
+    faces = face_the_same_way(faces, verts)
     return Gamut(vertices=verts, faces=faces,
                  colors=xyz_to_srgb(v_xyz, white_point),
                  volume=volume, space=space, mode=mode)

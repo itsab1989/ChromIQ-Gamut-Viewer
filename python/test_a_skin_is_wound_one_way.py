@@ -35,6 +35,27 @@ def _signed(faces, vertices, centre=_MIDDLE):
     return np.einsum("ij,ij->i", a, np.cross(b, c)) / 6.0
 
 
+def _edges_walked_the_same_way(faces):
+    """Interior edges whose two triangles walk them in the SAME direction.
+
+    THE ONLY HONEST TEST OF CONSISTENT WINDING, and not "do all the cone
+    volumes from the middle come out positive". A closed shape that is DENTED
+    — which a printer's gamut is, and which is the whole reason `mesh_volume`
+    measures the drawn surface rather than a hull around it — genuinely has
+    triangles whose cone from a point inside runs the other way. Measured: 3
+    of the device-cube paper's 978. Judging those backwards would call a
+    correctly wound mesh broken; two of us did exactly that.
+    """
+    import numpy as np
+    seen: dict = {}
+    for tri in np.asarray(faces, int):
+        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            key = (min(int(a), int(b)), max(int(a), int(b)))
+            seen.setdefault(key, []).append((int(a), int(b)))
+    return [k for k, walks in seen.items()
+            if len(walks) == 2 and walks[0] == walks[1]]
+
+
 @pytest.fixture(scope="module")
 def shapes():
     import ti3gamut
@@ -43,32 +64,50 @@ def shapes():
     paper_file = _DEMO / "Glossy-paper.ti3"
     if not paper_file.is_file():
         pytest.skip("no demo paper to measure")
-    paper = build_gamut(ti3gamut.read_measurement(paper_file).lab,
-                        input_space="lab")
-    return {"the paper": paper, "sRGB": reference_gamut("sRGB", steps=16)}
+    reading = ti3gamut.read_measurement(paper_file)
+    paper = build_gamut(reading.lab, input_space="lab")
+    # THE DENTED ONE TOO. A convex hull cannot dent, so a fixture of hulls
+    # alone never meets the case that made the old criterion wrong.
+    cube = build_gamut(reading.lab, input_space="lab",
+                       drive_values=reading.device)
+    return {"the paper": paper, "the paper as a device cube": cube,
+            "sRGB": reference_gamut("sRGB", steps=16)}
 
 
-def test_the_shapes_really_do_come_back_mixed(shapes):
+def test_the_raw_triangles_really_do_disagree(shapes):
     # THE FAULT ITSELF, so this file cannot pass on shapes that never had it.
-    mixed = 0
+    # Taken from the UNFACED source, since the shapes now arrive faced.
+    import ti3gamut
+    from scipy.spatial import ConvexHull
+    reading = ti3gamut.read_measurement(_DEMO / "Glossy-paper.ti3")
+    raw = ConvexHull(np.asarray(reading.lab, float)).simplices
+    clash = _edges_walked_the_same_way(raw)
+    assert len(clash) > 100, (
+        f"only {len(clash)} of the hull's edges are walked the same way by "
+        f"both their triangles — scipy now orients them, and this file is "
+        f"guarding a fault that no longer exists")
+
+
+def test_every_shape_the_app_builds_is_wound_one_way(shapes):
+    # NOT "faced on the way past" — the shapes must arrive already wound, or
+    # the page's far-wall sort reads a mesh that disagrees with itself.
     for name, shape in shapes.items():
-        s = _signed(shape.faces, shape.vertices)
-        if (s > 0).any() and (s < 0).any():
-            mixed += 1
-    assert mixed == len(shapes), (
-        f"only {mixed} of {len(shapes)} shapes come back wound both ways — "
-        f"something upstream now orients them, and the rest of this file is "
-        f"testing nothing")
+        clash = _edges_walked_the_same_way(shape.faces)
+        assert not clash, (
+            f"{name}: {len(clash)} edge(s) are walked the same way round by "
+            f"both of their triangles, so the two disagree about which side "
+            f"is out")
 
 
-def test_facing_them_the_same_way_leaves_no_triangle_backwards(shapes):
+def test_facing_them_the_same_way_settles_every_neighbour(shapes):
     from gamutview import face_the_same_way
     for name, shape in shapes.items():
         faced = face_the_same_way(shape.faces, shape.vertices, _MIDDLE)
-        s = _signed(faced, shape.vertices)
-        assert (s > 0).all(), (
-            f"{name}: {int((s <= 0).sum())} of {len(s)} triangles still face "
-            f"the wrong way after being faced the same way")
+        assert not _edges_walked_the_same_way(faced), (
+            f"{name}: neighbours still disagree after being faced")
+        assert _signed(faced, shape.vertices).sum() > 0, (
+            f"{name}: faced, the shape encloses a negative volume — it is "
+            f"consistent but turned inside out")
 
 
 def test_facing_them_keeps_every_triangle_and_its_corners(shapes):
@@ -85,6 +124,13 @@ def test_facing_them_keeps_every_triangle_and_its_corners(shapes):
 
 
 def test_a_faced_shape_holds_the_volume_it_looks_like(shapes):
+    """Only the star-shaped ones: a ray count cannot measure a dented shape.
+
+    Casting one ray per direction assumes the surface is met exactly once
+    that way. The device-cube paper is not star-shaped from the middle — 1 in
+    4,000 rays crosses it three times — so it is left out here and covered by
+    the winding tests above instead.
+    """
     from gamutview import _where_the_ray_leaves, face_the_same_way
     # 20,000 directions: at 4,000 the dice count itself wobbles by 3%, which
     # is wider than some of the faults this is meant to catch. Measured noise
@@ -93,15 +139,25 @@ def test_a_faced_shape_holds_the_volume_it_looks_like(shapes):
     u = rng.normal(size=(20000, 3))
     u /= np.linalg.norm(u, axis=1)[:, None]
     for name, shape in shapes.items():
+        if shape.mode != "hull":
+            continue
         reach = _where_the_ray_leaves(shape.vertices, shape.faces, _MIDDLE, u)
         alive = np.isfinite(reach)
         dice = (4 * np.pi / alive.sum()) * (reach[alive] ** 3 / 3).sum()
-        raw = _signed(shape.faces, shape.vertices).sum()
-        faced = _signed(face_the_same_way(shape.faces, shape.vertices,
-                                          _MIDDLE), shape.vertices).sum()
+        faced = _signed(shape.faces, shape.vertices).sum()
         assert abs(faced - dice) < 0.03 * dice, (
-            f"{name}: faced, the mesh holds {faced:,.0f} where casting rays "
-            f"through it says {dice:,.0f}")
-        assert raw < 0.5 * dice, (
-            f"{name}: the mesh as built already holds {raw:,.0f} against a "
-            f"true {dice:,.0f} — it was not mixed, so this proves nothing")
+            f"{name}: the mesh holds {faced:,.0f} where casting rays through "
+            f"it says {dice:,.0f}")
+        # AND THE SAME TRIANGLES LEFT UNFACED MUST NOT, or the number above
+        # is not evidence of anything. Shuffling each triangle's own corners
+        # cannot move a single point of the surface; it can only take away
+        # the agreement between neighbours.
+        rng2 = np.random.default_rng(11)
+        f = np.asarray(shape.faces, int).copy()
+        flip = rng2.random(len(f)) < 0.5
+        f[flip] = f[flip][:, ::-1]
+        muddled = _signed(f, shape.vertices).sum()
+        assert abs(muddled) < 0.5 * dice, (
+            f"{name}: with half the triangles turned round the mesh still "
+            f"holds {muddled:,.0f} of {dice:,.0f} — this measurement cannot "
+            f"see winding at all")
