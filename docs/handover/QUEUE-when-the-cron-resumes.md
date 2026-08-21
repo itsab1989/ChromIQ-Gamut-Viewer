@@ -1017,3 +1017,55 @@ Not shipped, not decided. The guard that keeps the working half working is in:
 `audit_panel.py` now asks the OUTCOME — no control answers a hover with an
 essay — so removing the shortener is caught even though every older rule
 would still say Clean.
+
+---
+
+## FOR BASTI — NINETEEN AUDITS STAND ON FOUR FILES NOTHING CAN REBUILD
+
+`scripts/audit_two_groupings.py`, `audit_what_you_save.py`, `audit_controls.py`
+and sixteen others begin the same way:
+
+```python
+profiles = sorted(pathlib.Path(tempfile.gettempdir())
+                  .glob("showme-*/printer-*.icc"))
+```
+
+Those four profiles are real and the audits pass on them today:
+
+```
+/var/folders/1b/…/T/showme-gzcjocho/printer-2019.icc   18 Aug 01:07
+                                    printer-2021.icc   18 Aug 01:07
+                                    printer-2023.icc   18 Aug 01:07
+                                    printer-2024.icc   18 Aug 01:07
+```
+
+**Nothing in this repository creates them.** Not a script, not a test, and
+nothing that was ever deleted from the history either — searched with
+`git log -S`. They were made on 18 August by something outside the checkout,
+and nineteen audits have been standing on them ever since.
+
+`/var/folders/…/T` is cleared by macOS on its own schedule and on a reboot.
+When that happens:
+
+* the audits that guard say so plainly — *"no demo profiles to drive the
+  window with"*, exit 1 — and that is the good case;
+* the ones that do not guard die on `profiles[0]` with `IndexError: list
+  index out of range`. Measured, by pointing `TMPDIR` at an empty folder.
+
+Neither is silent, so nothing here is reporting a false Clean. The cost is
+that **the day those files go, nineteen audits stop answering, and there is no
+way to make them again.**
+
+**I have not copied them anywhere, and deliberately.** They may be built from
+your own measurements, and the standing rule is that nothing of yours goes on
+GitHub. Moving or duplicating files of yours is not mine to do either. What
+they are, and whether ChromIQ made them, is something only you know.
+
+If you want them to survive, the safe move is a copy somewhere durable that is
+yours:
+
+```bash
+cp -R /var/folders/1b/*/T/showme-*/ ~/develop/ChromIQ-Gamut-Viewer/fixtures/
+```
+
+and then a decision about whether the audits should look there as well.
