@@ -412,3 +412,42 @@ is also a fault in the shape the application draws today.
 surfaces changes sign within a triangle rather than only along its edges.
 Refining the seam by adding points ALONG it does nothing: the corners are
 already right.
+
+## 2026-08-21 — the "serration" was mine, not the code's
+
+I said the standing piece's edge looked worse after the seam fix and would not
+wire the cap until I could name why. Four hypotheses, measured one at a time,
+and the answer was that there was nothing to name.
+
+**It is not the lid.** The lid alone is a clean smooth surface. Adding it
+changes that edge not at all — it sits INSIDE the shell and cannot cover a rim.
+
+**It is not the triangle ceiling.** Bounded, the lid's triangle sizes span 8.7
+to one; unbounded, 37.0. The bound makes it MORE even, not less.
+
+**It is not the surfaces nearly touching.** That was my best guess: where two
+surfaces graze, the boundary between them is ill-conditioned and genuinely
+wanders. Stepping SIDEWAYS across the seam — not along the ray, which was my
+first attempt and measured nothing, since the radial gap depends only on
+direction — the two surfaces separate at a median of 2.04 Lab per Lab
+sideways, and the shallowest corner of 299 is 0.097. NOT ONE is near tangent.
+The boundary is well determined everywhere.
+
+**It is not needles at the rim.** 24.4% of rim triangles were needles before
+the fix, 20.3% after; smallest angle under 2° at 22.2% before, 16.9% after.
+
+**And the seam is measurably SMOOTHER after the fix:**
+
+    turns    median 4.3° -> 0.9°,  90th 42.4° -> 11.0°,  worst 171.2° -> 116.8°
+    turning back on itself   3.4% -> 0.7%
+    distance from the true crossing   14.64 Lab -> 1.01
+
+**The pictures are the same.** Measured on the two renders rather than judged
+by eye: the lit regions differ by 3,355 pixels — 0.7% of the shape — and the
+outline roughness ratio is 9.29 before against 9.55 after.
+
+⚠ SO THE RAGGED RIM IS PRE-EXISTING and the seam fix neither caused nor cured
+it. It is what an OPEN shell's rim looks like at a grazing angle: a
+zero-thickness edge of small flat-shaded facets. Judging two pictures taken
+an hour apart, by eye, produced a fault report about a 0.7% difference and
+cost a cycle. The pixel measure took one run.
