@@ -1244,13 +1244,18 @@ def face_the_same_way(faces, vertices=None, centre=None):
     return f
 
 
-def _where_the_ray_leaves(vertices, faces, centre, directions):
+def _where_the_ray_leaves(vertices, faces, centre, directions, *,
+                          and_where=False):
     """How far along each direction the mesh's surface is, from *centre*.
 
     Every triangle is asked at once — a gamut has hundreds, not millions, and
     a clever index would be more code than it saves. Where a direction somehow
     misses every triangle (it should not, on a shape that covers the view
     once), the distance comes back as NaN and the caller decides.
+
+    With *and_where*, also returns which triangle was hit and where inside it
+    — enough to read anything the mesh carries per corner, a colour above all,
+    at the exact point the ray came out. A miss reports triangle -1.
     """
     import numpy as np
 
@@ -1260,6 +1265,8 @@ def _where_the_ray_leaves(vertices, faces, centre, directions):
     d = d / np.maximum(1e-12, np.linalg.norm(d, axis=1, keepdims=True))
     a, e1, e2 = v[f[:, 0]], v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]]
     out = np.full(len(d), np.nan)
+    which = np.full(len(d), -1, int)
+    where = np.zeros((len(d), 2))
     # In blocks, so a big mesh and many directions do not ask for one huge
     # array: 200 directions against every triangle at a time.
     for lo in range(0, len(d), 200):
@@ -1268,8 +1275,6 @@ def _where_the_ray_leaves(vertices, faces, centre, directions):
         det = np.einsum("ijk,jk->ij", p, e1)
         ok = np.abs(det) > 1e-12
         inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
-        t = -a[None, :, :]
-        u = np.einsum("ijk,ijk->ij", t + rays[:, None, :] * 0, p) * 0
         # Möller-Trumbore, written out rather than borrowed, so the corner
         # cases are visible: the ray starts at the centre, so `s` is -a.
         s = -a[None, :, :] * np.ones((len(rays), 1, 1))
@@ -1280,9 +1285,16 @@ def _where_the_ray_leaves(vertices, faces, centre, directions):
         dist = np.einsum("ijk,jk->ij", q, e2) * inv
         hit &= dist > 1e-9
         far = np.where(hit, dist, np.inf)
-        best = far.min(axis=1)
-        out[lo:lo + 200] = np.where(np.isfinite(best), best, np.nan)
-    return out
+        nearest = far.argmin(axis=1)
+        best = far[np.arange(len(rays)), nearest]
+        found = np.isfinite(best)
+        out[lo:lo + 200] = np.where(found, best, np.nan)
+        if and_where:
+            rows = np.arange(len(rays))
+            which[lo:lo + 200] = np.where(found, nearest, -1)
+            where[lo:lo + 200, 0] = np.where(found, u[rows, nearest], 0.0)
+            where[lo:lo + 200, 1] = np.where(found, vv[rows, nearest], 0.0)
+    return (out, which, where) if and_where else out
 
 
 def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,

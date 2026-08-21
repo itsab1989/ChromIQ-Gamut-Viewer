@@ -309,3 +309,51 @@ and point insertion (above). Until someone writes the imprint, the answer that
 ships is the one already shipped in v2.43.0: the control says in plain words
 that what stands is an open shell, why its far wall looks like an outside, and
 the two ways round it.
+
+## 2026-08-21 — the lid that fits, and the winding nobody had asked about
+
+**The rim I measured for three days was cracks.** `split_at_crossing` leaves
+four unwelded copies of every crossing point, and every seam number in the
+entries above — 18 chains, 236 cut corners, 0.88 Lab apart, 81 open edges and
+481 doubled — was measured on that. Welded by position the same piece has ONE
+closed loop of 118 corners, every corner with exactly two edges.
+
+**And every shape in this application was wound half-and-half.** A triangle's
+front comes from the order of its three corners; `scipy`'s `ConvexHull`
+returns them unoriented. Measured: the paper's 414 triangles are 207 one way
+and 207 the other, sRGB's 6348 are 3174 and 3174. Exactly half is the
+signature of nobody ever having asked. `mesh_volume` had already worked around
+it by summing absolute values — the docstring records "three times too small"
+— but nothing fixed it at source, and every signed-volume measurement of a
+capped shape needs it fixed. `face_the_same_way` does it.
+
+    the paper   as built 35,662   faced 762,246   dice count 765,392
+    sRGB        as built 41,223   faced 832,713   dice count 837,773
+
+**It changes no pixel.** Rendered as-built, faced, and with every triangle
+turned INWARD, all three pictures are identical: 0 of 2,736,000 pixels differ.
+Plotly lights `mesh3d` two-sided. The control — moving the lamp — changed
+114,562 pixels, so the comparison could see. This is a fix to the numbers, not
+to the picture, and must not be advertised as one.
+
+**The lid.** `close_the_cut` needs no shared intersection curve after all. The
+lid is the hole's OWN triangles slid down their own rays onto the other shape;
+the seam is shared by BEING the same vertex indices, so there is nothing to
+keep in step and nothing that can drift. Three faults, each measured:
+
+    sharing the inside corners too      0 edges open, 496 used FOUR times
+    a sagging lid (flat facets, curved
+      floor: chords hang below it)      206,048 Lab³ against a true 189,090
+    needles inherited from the cut      smoothed, seam pinned, no folds
+
+Finished, on Glossy-paper against sRGB: 370 + 1364 triangles over 1033
+corners, **0 edges open, 0 used more than twice, one seam loop of 118 corners
+that move 0.000000000 Lab**, holding **187,551 Lab³** in 2.8 s. A 60,000-ray
+dice count says 189,090. An independent construction written to a different
+design to argue with this one says **187,545** — agreement to 0.003%.
+
+Pictures in `the-lid-that-fits/`: three cameras × (as it ships / with the lid
+/ the lid alone). `from-outside--as-it-ships` is the "this one looks
+scattered" report seen from outside — the torn far wall of the open shell
+showing through the skin, which is a different fault from the needles that
+flat shading cured. With the lid it is one continuous surface.
