@@ -8163,6 +8163,13 @@ def _js(text: str) -> str:
     return _json.dumps(text or "").replace("</", "<\\/")
 
 
+def _js_list(items) -> str:
+    """A list of python strings, safe to paste into a <script> block."""
+    import json as _json
+
+    return _json.dumps([str(i) for i in items]).replace("</", "<\\/")
+
+
 def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
     """A page that fetches its viewer has to say so when it cannot get it.
 
@@ -8228,7 +8235,14 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "  window.cqNoViewerWanted = false;\n"
         "  var n = document.getElementById('cq-noviewer');\n"
         "  if (n) n.hidden = true;\n"
+        # ONCE, HOWEVER MANY THINGS NOTICE AT ONCE. The watchdog polls every
+        # quarter second and the retry's onload fires as well, so both can
+        # call this for the same arrival -- and the drawing is not instant, so
+        # asking "is there a picture yet" would still say no and draw a
+        # second one over the first.
+        "  if (window.cqDrawn) return;\n"
         "  if (!document.querySelector('.js-plotly-plot')) {\n"
+        "    window.cqDrawn = true;\n"
         "    var draw = document.getElementById('cq-draw');\n"
         "    if (draw) {\n"
         "      var run = document.createElement('script');\n"
@@ -8259,6 +8273,25 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         src = found.group(1) if found else ""
         found = re.search(r'\bintegrity="([^"]+)"', whole.group(0))
         sri = found.group(1) if found else ""
+    # SOMEWHERE ELSE TO ASK, because "it is blocked for you" is not an
+    # answer a reader can do anything with. Reported from a real window: the
+    # retry "never works for me. i only ever get this info but not the real
+    # view." A content blocker, a company proxy or a school network refuses
+    # ONE address, not the file -- and the very same file is served by other
+    # hosts. Measured, all three at version 3.7.0: 4,851,164 bytes each, the
+    # SAME sha256, and `access-control-allow-origin: *` on every one. So the
+    # page's own integrity hash guards a mirror exactly as well as it guards
+    # the first address, and nothing is trusted that was not trusted before.
+    mirrors = [src] if src else []
+    version = re.search(r"plotly-(\d+\.\d+\.\d+)", src or "")
+    if version:
+        for other in (
+                f"https://cdn.jsdelivr.net/npm/plotly.js@{version.group(1)}"
+                f"/dist/plotly.min.js",
+                f"https://unpkg.com/plotly.js@{version.group(1)}"
+                f"/dist/plotly.min.js"):
+            if other not in mirrors:
+                mirrors.append(other)
     if tag:
         html = html[:tag.start()] + functions + html[tag.start():tag.end()] \
             + hooks + html[tag.end():]
@@ -8355,27 +8388,26 @@ def _say_if_the_viewer_never_arrives(html: str, mode: str) -> str:
         "    button.disabled = true;\n"
         "    if (says) says.textContent = 'fetching\\u2026';\n"
         "    var again = document.createElement('script');\n"
-        "    var where = " + _js(src) + ";\n"
+        # A DIFFERENT HOST EACH GO, not the same one again. The first address
+        # has already failed however many times the reader has pressed this,
+        # and pressing it once more is the definition of no answer.
+        "    var hosts = " + _js_list(mirrors) + ";\n"
+        "    var where = hosts[(tries - 1) % hosts.length];\n"
         "    again.src = where + (where.indexOf('?') < 0 ? '?' : '&')\n"
         "                + 'cq-retry=' + tries;\n"
+        "    if (told) told.textContent = 'It is trying: ' + where;\n"
         "    again.crossOrigin = 'anonymous';\n"
         "    if (" + _js(sri) + ") again.integrity = " + _js(sri) + ";\n"
         "    again.onload = function () {\n"
-        "      // RUN THE DRAWING AGAIN. The first attempt threw when the\n"
-        "      // viewer was missing, so there is no picture waiting -- only\n"
-        "      // the instructions for one.\n"
-        "      var draw = document.getElementById('cq-draw');\n"
-        "      if (draw) {\n"
-        "        var run = document.createElement('script');\n"
-        "        run.text = draw.textContent;\n"
-        "        document.body.appendChild(run);\n"
-        "      }\n"
+        # THE DRAWING IS cqViewerCame'S JOB NOW, for every way the viewer can
+        # turn up and not just this one. Doing it here as well drew twice.
         "      window.cqViewerCame();\n"
         "    };\n"
         "    again.onerror = function () {\n"
         "      button.disabled = false;\n"
         "      if (says) says.textContent =\n"
         "        'still no luck (' + tries + (tries === 1 ? ' try' : ' tries')\n"
+        "        + (hosts.length > 1 ? ', ' + hosts.length + ' addresses' : '')\n"
         "        + ')';\n"
         "    };\n"
         "    document.head.appendChild(again);\n"
