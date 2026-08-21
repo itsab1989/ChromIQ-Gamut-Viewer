@@ -77,10 +77,19 @@ def main() -> int:
     # called it clean about the half it could see -- the same fault
     # audit_panel.py records against itself, and it cost this project four
     # separate days elsewhere.
-    for name in ("Glossy-paper.ti3", "Matte-paper.ti3"):
+    # THREE FILES, NOT TWO, AND THE THIRD IS THE POINT. Two different papers
+    # make a comparison; two readings of the SAME chart make a drift pair, and
+    # the drift controls -- which keep stashed copies of their own tooltips,
+    # exactly like the two that were found growing back -- do not exist at all
+    # without one. Measured: with two papers they are never shown; with the
+    # pair they are.
+    opened = 0
+    for name in ("Glossy-paper.ti3", "Glossy-paper-months-later.ti3",
+                 "Matte-paper.ti3"):
         paper = ROOT / "demo" / name
         if paper.is_file():
             window._load(paper)
+            opened += 1
             settle(app, 4)
     ticked = 0
     for tick in window.findChildren(QCheckBox):
@@ -172,8 +181,14 @@ def main() -> int:
                           widget.objectName() or tip[:60]))
     walls.sort(reverse=True)
 
-    print(f"  two papers open and {ticked} tickbox(es) turned on; "
-          f"{looked} control(s) asked")
+    # SAY WHICH STATE IT REACHED, so a run that quietly failed to open the
+    # files cannot be read as a clean one. The drift box appears only when two
+    # readings of one chart are open, and it is the reason the third file is
+    # loaded at all.
+    drifting = getattr(window, "_drift_box", None)
+    print(f"  {opened} file(s) open and {ticked} tickbox(es) turned on; "
+          f"{looked} control(s) asked; the drift controls "
+          f"{'are shown' if drifting is not None and drifting.isVisible() else 'NEVER APPEARED'}")
     print(f"  {len(icons)} ⓘ in the window, tallest opens "
           f"{tallest[1]} px of {room} px ({tallest[0]})")
     print(f"  {len(walls)} hover(s) over {LIMIT} characters on widgets the "
