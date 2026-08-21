@@ -266,3 +266,46 @@ So the build is: insert those 236 into sRGB's mesh (a triangle split each),
 re-classify sRGB's corners against the paper, and take the piece inside it.
 The lid's rim then holds the opening's own corners rather than a second
 polyline near them.
+
+
+## 2026-08-21 — POINT INSERTION IS NOT ENOUGH, and here is the number that says so
+
+Three attempts at giving the lid and the opening one shared rim, each measured
+against the same test: is every corner the paper's cut created also a corner
+of the lid's rim?
+
+| what was tried | corners shared exactly | on the lid's rim | median gap |
+|---|---|---|---|
+| split the ONE triangle that holds each point | 214 of 236 | 180 | 0.000 |
+| split EVERY triangle that holds it | 0 | 0 | 3.66 Lab |
+| …and let only strictly-inside corners decide a triangle | 84 | 42 | 1.84 Lab |
+
+The second and third are worse than the first, and the reason is not the
+splitting. **Inserting points does not put EDGES along the curve.** The lid's
+boundary is decided by which of sRGB's triangles count as inside the paper, and
+that boundary runs along sRGB's own edges — through the places where ITS edges
+cross the paper, which are not the places where the PAPER's edges cross it. The
+inserted corners sit on the curve but nothing makes the boundary pass through
+them.
+
+**So the real job is imprinting the curve, not its samples**: for every sRGB
+triangle the curve passes through, cut that triangle WITH THE CURVE SEGMENTS,
+so the curve becomes a chain of mesh edges in both shells. That is the "one
+shared cut curve" this file has named from the start, and it is a genuine
+mesh-boolean operation — the mesh repair the earliest notes warned about,
+arrived at from the other direction.
+
+⚠ AND A CORNER ON A BOUNDARY DECIDES NOTHING. Counting every corner on the
+curve as "inside" let triangles on the FAR side join the lid, and its rim then
+ran outside the curve rather than along it — 0 of 236, median 3.66 Lab. What
+decides a triangle is the corners that are NOT on the boundary.
+
+**Where this leaves the cap.** The picture is worth having: at agreement 0% the
+standing remainder reads as torn skin, and Basti reported exactly that. But the
+work is a mesh boolean, and everything short of one has now been measured and
+found wanting — a second shell's piece (rims a median 0.88 Lab apart), a cap
+from the rim itself (the big loop wanders 28% of its width out of any plane),
+and point insertion (above). Until someone writes the imprint, the answer that
+ships is the one already shipped in v2.43.0: the control says in plain words
+that what stands is an open shell, why its far wall looks like an outside, and
+the two ways round it.
