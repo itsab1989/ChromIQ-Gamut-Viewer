@@ -8,12 +8,17 @@ in front of the shapes. This machine's depth buffer is SIXTEEN bits
 bits over that range one step of depth is larger than a Lab at the distance
 these shapes are drawn from. A lid laid a median 0.116 Lab under the skin
 cannot be told from it, and the picture hatches wherever the two run close.
-Fitted, the lid's own speckle went 121 → 2, 158 → 5 and 193 → 17 at three of
-four cameras on a page a reader would get. ⚠ AT THE FOURTH — seen from below
-— it is 34 → 132, WORSE than leaving the planes alone, and that is not
-understood. It is written here because the first version of this docstring
-quoted 34 → 1: numbers taken before the box was corrected, which made the one
-camera that got worse read as the best of the four.
+Fitted, the lid's own speckle goes 121 → 10, 158 → 24, 193 → 16 and 34 → 27
+at the four cameras on a page a reader would get.
+
+⚠ THE LAST OF THOSE WAS 34 → 132 — WORSE THAN NOT FITTING AT ALL — and the
+cause is worth keeping: the near plane was floored at 1e-3, ten times closer
+than gl-plot3d's own 0.01, and perspective depth resolution is proportional to
+the near plane. Wherever the floor bit, the fit handed the buffer less
+precision than leaving it alone. Two earlier versions of this docstring quoted
+34 → 1 and then 121 → 2: the first taken before the drawn box was corrected,
+the second with the toolbar still in frame, whose icons speckle exactly like a
+hatched seam. Both made the fix read better than it was.
 
 ⚠ THE SHIPPED FUNCTION IS WHAT RUNS HERE, not a copy of it in Python. A copy
 is a test of the copy: it drifts, and it passes while the thing it stands for
@@ -152,6 +157,96 @@ console.log(JSON.stringify(cases.map(function (c) {
                         f"be clipped")
     assert looked > 40, f"only {looked} corners were in front of any eye"
 
+
+
+@pytest.mark.skipif(_NODE is None, reason="no node on the path to run it with")
+def test_the_two_numbers_that_were_tuned_are_the_numbers_that_are_checked():
+    """⚠ THIS TEST EXISTS BECAUSE NOTHING COULD SEE THE TUNING.
+
+    A hostile review mutated the pad to zero, the pad to five, the near floor
+    to 1e-9 and the far pad away altogether, and the whole file stayed green.
+    The clip test could not see them because it asked `near <= along <= far`:
+    with no pad at all the nearest corner sits EXACTLY on the near plane, and
+    equality passes. So the two numbers that took a day of measuring to choose
+    were held in place by nothing but the comment beside them.
+
+    THE FIRST PROPERTY: THE PAD CLEARS WHAT IS DRAWN OUTSIDE THE BOX. The
+    shapes sit inside ±aspect/2; the tick marks, the tick numbers and the axis
+    titles do not, and a plane that lands on the box takes them off. Measured
+    in pixels the library drew that the fit erased, looking along b*: a pad of
+    a fifth of the box erased 13,413, half the box erased 28. Half is the
+    shipped number, so the check asks for a real fraction of it at BOTH ends
+    — a far plane on the corner is fault enough on its own.
+
+    THE SECOND PROPERTY: THE NEAR PLANE IS NEVER CLOSER THAN THE LIBRARY'S OWN
+    FLOOR. Perspective depth resolution is proportional to the near plane, so
+    a near of 1e-3 hands the buffer ten times less precision than gl-plot3d's
+    untouched 0.01 — the fix becomes three to forty-eight times worse than no
+    fix, at any camera close enough for the clamp to bite, which is a click
+    and a half of the page's own wheel zoom. Two of the eyes below are inside
+    the box, where `lo` goes negative and the clamp is the only thing between
+    the reader and that.
+
+    NEITHER IS AN ARBITRARY THRESHOLD DRESSED AS A LAW. Both are the reason
+    the constants are what they are, written so that changing one of them
+    without measuring goes red.
+    """
+    body = _the_shipped_fit()
+    harness = body + """
+var cases = JSON.parse(process.argv[2]);
+console.log(JSON.stringify(cases.map(function (c) {
+  var gl = {camera: {eye: c, center: [0, 0, 0]}, aspect: ASPECT,
+            bounds: BOUNDS, zNear: 0.01, zFar: 1000};
+  fit(gl);
+  return [gl.zNear, gl.zFar];
+})));
+""".replace("BOUNDS", json.dumps(_BOUNDS)).replace("ASPECT", json.dumps(_ASPECT))
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(harness)
+        where = f.name
+    done = subprocess.run([_NODE, where, json.dumps(_EYES)],
+                          capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr[:600]
+    planes = json.loads(done.stdout)
+
+    across = float(np.linalg.norm(_ASPECT))
+    #: Comfortably under the shipped half-a-box, comfortably over the fifth
+    #: of a box that was measured erasing 13,413 pixels.
+    want = 0.4 * across
+    lo_box, hi_box = np.asarray(_DRAWN[0]), np.asarray(_DRAWN[1])
+    corners = np.array([[x, y, z] for x in (lo_box[0], hi_box[0])
+                        for y in (lo_box[1], hi_box[1])
+                        for z in (lo_box[2], hi_box[2])], float)
+    clamped = 0
+    for eye, (near, far) in zip(_EYES, planes):
+        e = np.asarray(eye, float)
+        view = -e / np.linalg.norm(e)
+        along = (corners - e) @ view
+        lo, hi = float(along.min()), float(along.max())
+
+        assert far - hi >= want, (
+            f"from {eye} the far plane is only {far - hi:.4f} beyond the "
+            f"furthest corner, and the axis furniture is drawn out there — "
+            f"a fifth of the box erased 13,413 pixels of it")
+
+        if lo - want < 0.01:
+            # The clamp is the only thing acting here, and it is the point.
+            clamped += 1
+            assert near == pytest.approx(0.01, abs=1e-12), (
+                f"from {eye} the near plane clamped to {near!r} instead of "
+                f"gl-plot3d's own 0.01 — closer than the library's floor is "
+                f"strictly worse than not fitting at all")
+        else:
+            assert lo - near >= want * 0.999, (
+                f"from {eye} the near plane is only {lo - near:.4f} in front "
+                f"of the nearest corner")
+        assert near >= 0.01, (
+            f"from {eye} the near plane is {near!r}, inside the library's own "
+            f"floor — depth resolution is proportional to it")
+    assert clamped >= 2, (
+        f"only {clamped} of the cameras put the near plane against the floor, "
+        f"so the clamp is barely exercised and a change to it could pass")
 
 @pytest.mark.skipif(_NODE is None, reason="no node on the path to run it with")
 def test_it_is_a_large_improvement_and_not_a_small_one():
@@ -324,8 +419,8 @@ def test_a_page_whose_viewer_arrives_late_is_still_fixed(late, tmp_path):
     slower than ten seconds the fix never happened, and the only symptom was
     the hatching being there.
 
-    It now stops when a scene has actually been armed, and otherwise keeps
-    looking for two minutes.
+    It now looks for two minutes and then stops — see the two-room test
+    below for why it does NOT stop early at the first thing it arms.
     """
     import ti3gamut
     script = tmp_path / "depth.js"
@@ -340,6 +435,121 @@ def test_a_page_whose_viewer_arrives_late_is_still_fixed(late, tmp_path):
         f"a viewer arriving at sweep {late} was never armed: {got}")
     assert not got["still_sweeping"], (
         f"it is still sweeping after arming: {got}")
-    assert got["sweeps"] <= late + 8, (
-        f"it swept {got['sweeps']} times for a viewer that arrived at "
-        f"{late} — it should stop once there is something armed")
+    assert got["sweeps"] <= 490, (
+        f"it swept {got['sweeps']} times and the harness gave up before it "
+        "did — a timer that never stops is its own fault")
+
+
+_TWO_ROOMS = r"""
+// Two rooms, the second arriving at sweep K, then a rebuild of the first.
+let libraryRan = 0, libraryThis = null, libraryArgs = null;
+function room(hasOwn) {
+  const gl = {camera: {eye: [1.5, 1.5, 1.5], center: [0, 0, 0]},
+              aspect: [1.0954679926284856, 1.4693597294706, 0.6212582573094755],
+              zNear: 0.01, zFar: 1000,
+              onrender: hasOwn ? function () {
+                libraryRan += 1;
+                libraryThis = this;
+                libraryArgs = Array.prototype.slice.call(arguments);
+              } : null};
+  const gd = {_fullLayout: {scene: {_scene: {glplot: gl}}}, __h: [],
+              on(n, f) { this.__h.push(f); },
+              fire() { this.__h.forEach(f => f()); }};
+  return {gl, gd};
+}
+let timer = null, visible = [];
+global.document = {readyState: "complete", addEventListener() {},
+                   querySelectorAll: () => visible.map(r => r.gd)};
+global.setInterval = (fn) => { timer = fn; return 1; };
+global.clearInterval = () => { timer = null; };
+const A = room(true);
+visible = [A];
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const K = Number(process.argv[3]);
+const B = room(false);
+const armed = r => !!(r.gl.onrender && r.gl.onrender.__cqDepth);
+for (let n = 0; n < 900 && timer; n++) {
+  if (n === K) visible = [A, B];
+  timer();
+}
+const out = {left: armed(A), right: armed(B),
+             right_fitted: B.gl.zNear !== 0.01};
+// and now the library rebuilds the LEFT room over our handler -- putting
+// its own back, which ours must then wrap again AND go on calling
+A.gl.onrender = function () {
+  libraryRan += 1;
+  libraryThis = this;
+  libraryArgs = Array.prototype.slice.call(arguments);
+};
+A.gd.fire();
+out.left_after_rebuild = armed(A);
+out.right_still = armed(B);
+// and the handler we wrapped at the very start has to still be being called,
+// with its own `this` and its own arguments
+B.gl.onrender = (function (was) {
+  const mine = function () { return was.apply(this, arguments); };
+  mine.__cqDepth = true;
+  return mine;
+})(B.gl.onrender);
+libraryRan = 0;
+const marker = {who: "gl"};
+A.gl.onrender.call(marker, 7, "eight");
+out.library_ran = libraryRan;
+out.library_this = libraryThis === marker;
+out.library_args = JSON.stringify(libraryArgs);
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(_NODE is None, reason="no node on the path to run it with")
+@pytest.mark.parametrize("late", [1, 5, 40, 200])
+def test_the_second_room_is_armed_however_late_it_opens(late, tmp_path):
+    """A COMPARISON PAGE HAS TWO ROOMS AND THEY DO NOT ARRIVE TOGETHER.
+
+    The sweep used to stop as soon as ANY scene was armed — 1.25 s after the
+    first room drew. The second room is built later, and by then there was
+    nothing left looking: it kept the library's own 0.01/1000 for ever, and
+    the only symptom was the hatching being there in the right-hand picture
+    and gone in the left. Driven here with the second room arriving at sweep
+    5, 40 and 200, it was armed in none of them.
+
+    Asking "is EVERY scene armed" instead does not fix it, which is the trap
+    worth writing down: at sweep 5 the only scene on the page IS armed, so
+    that question stops the sweep just the same. Nothing but continuing to
+    look answers it.
+
+    The tail of this test is the other half — the library assigns `onrender`
+    again when it rebuilds a room, and `plotly_afterplot` has to put ours
+    back on THAT room. It is one handler per div, because a `var` shared
+    across the loop pointed every handler at the last div.
+    """
+    import ti3gamut
+    script = tmp_path / "depth.js"
+    script.write_text(ti3gamut._DEPTH_JS)
+    page = tmp_path / "rooms.js"
+    page.write_text(_TWO_ROOMS)
+    done = subprocess.run([_NODE, str(page), str(script), str(late)],
+                          capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr[:600]
+    got = json.loads(done.stdout)
+    assert got["left"], f"the first room was never armed: {got}"
+    assert got["right"] and got["right_fitted"], (
+        f"a second room opening at sweep {late} was never armed: {got}")
+    assert got["left_after_rebuild"], (
+        f"the library rebuilt the first room and ours was not put back: {got}")
+    assert got["right_still"], (
+        f"rebuilding the first room disarmed the second: {got}")
+    # ⚠ AND WE ARE A GUEST ON A HANDLER THAT IS NOT OURS. `onrender` is
+    # gl-plot3d's own per-frame callback and Plotly hangs work on it; ours
+    # wraps it, so failing to call through would silently take that work away
+    # every frame — with the picture still drawing, which is how it would be
+    # missed. Dropping the `was.apply` was the one mutation the whole file
+    # could not see.
+    assert got["library_ran"] == 1, (
+        f"our handler was called once and the handler it wrapped ran "
+        f"{got['library_ran']} times — gl-plot3d's own per-frame work is "
+        f"being swallowed: {got}")
+    assert got["library_this"], (
+        f"the wrapped handler was called with the wrong `this`: {got}")
+    assert got["library_args"] == '[7,"eight"]', (
+        f"the wrapped handler was not given its arguments: {got}")

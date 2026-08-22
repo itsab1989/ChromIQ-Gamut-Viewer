@@ -869,16 +869,26 @@ angles, counting only the speckle the lid itself adds:
 
 | | before | after |
 |---|---|---|
-| as saved | 121 | **2** |
-| angled | 158 | **5** |
-| from above | 193 | **17** |
-| from below | 34 | 132 |
+| as saved | 121 | **10** |
+| angled | 158 | **24** |
+| from above | 193 | **16** |
+| from below | 34 | **27** |
 
-Three of the four are cured. **The fourth is worse than leaving it alone**, and
-that is not yet understood, so it is written down here rather than left for you
-to find. Nothing is clipped by the closer planes: the axis box, its grid walls
-and every tick label survive at each of five camera angles, checked by counting
-the pixels the library drew that the fitted planes do not.
+All four are improved. The last one was for a while *worse* than leaving the
+planes alone — 34 against 132 — and the cause turned out to be a floor: the
+near plane was clamped no closer than 0.001, ten times closer than the drawing
+library's own 0.01, and depth precision is proportional to it. Wherever that
+clamp bit, the fix was handing the buffer less precision than doing nothing
+would have. The floor is now the library's own number, which is what makes the
+fitted planes unable to be worse than not fitting at all.
+
+These counts are taken below the toolbar. Its icons speckle exactly the way a
+hatched seam does, and while they were in frame they were being counted as
+part of the picture.
+
+Nothing is clipped by the closer planes: the axis box, its grid walls and every
+tick label survive at each of twelve camera angles, checked by counting the
+pixels the library drew that the fitted planes do not.
 
 ⚠ **Nothing in the drawing library is modified.** It is a script of this
 application's own, written into its own pages, which sets two numbers after the
@@ -1373,7 +1383,7 @@ Tests:
 
 ```bash
 pip install -r requirements-test.txt        # pytest, and pyyaml for one file
-cd python && python -m pytest . -q          # 1,111 tests
+cd python && python -m pytest . -q          # 1,116 tests
 ```
 
 They check the colour science against published reference values rather than

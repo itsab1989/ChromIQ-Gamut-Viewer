@@ -3843,7 +3843,6 @@ _WHEEL_JS = """
 #: erased looking from above. See `fit` for the numbers.
 _DEPTH_JS = """
 (function () {
-  var armedAny = false;
   function fit(gl) {
     try {
       // ⚠ THE BOX THAT IS DRAWN, NOT `gl.bounds`. `bounds` is the data's own
@@ -3906,7 +3905,24 @@ _DEPTH_JS = """
       // the fourth, seen from below, is 132 against 34 with no fix at all,
       // and is written into the queue rather than counted as fixed.
       var pad = 0.5 * across + 1e-3;
-      var near = Math.max(1e-3, lo - pad), far = hi + pad;
+      // ⚠ NEVER CLOSER THAN THE LIBRARY'S OWN FLOOR. Clamped at 1e-3 this
+      // handed the depth buffer a near plane TEN TIMES CLOSER than gl-plot3d
+      // would have, and perspective depth resolution is proportional to the
+      // near plane -- so wherever the clamp bit, the fix was three to
+      // forty-eight times WORSE than doing nothing. Measured by a hostile
+      // review, the speckle the lid adds:
+      //
+      //     eye x   no fix   with 1e-3   with 0.01
+      //     1.0       134         6          6
+      //     0.864     106       302        106
+      //     0.7        33       341         53
+      //     0.5         9       434          7
+      //
+      // and the camera this change was said to make worse -- 34 against 132 --
+      // is 27 with the floor at 0.01. It is one token, it is reached by one
+      // and a half clicks of the page's own wheel zoom, and it guarantees the
+      // fitted planes can never be worse than leaving them alone.
+      var near = Math.max(0.01, lo - pad), far = hi + pad;
       if (!(far > near)) return;
       if (Math.abs(gl.zNear - near) > 1e-9 || Math.abs(gl.zFar - far) > 1e-9) {
         gl.zNear = near;
@@ -3935,9 +3951,20 @@ _DEPTH_JS = """
       };
       mine.__cqDepth = true;
       gl.onrender = mine;
-      armedAny = true;
       fit(gl);
     });
+  }
+  function watch(gd) {
+    // ⚠ ONE FUNCTION PER DIV, BECAUSE `var` IS NOT PER-ITERATION. Written
+    // inline in the loop below, every handler closed over the SAME `gd` and
+    // saw whatever it held after the loop -- the LAST div. On a page with two
+    // rooms, a redraw of the left one re-armed the right one and the left was
+    // never armed again.
+    if (gd.__cqDepthWatched || typeof gd.on !== "function") return;
+    gd.__cqDepthWatched = true;
+    try {
+      gd.on("plotly_afterplot", function () { arm(gd); });
+    } catch (e) { gd.__cqDepthWatched = false; }
   }
   function sweep() {
     var all = document.querySelectorAll(".js-plotly-plot"), n, gd;
@@ -3949,32 +3976,30 @@ _DEPTH_JS = """
       // colour space, or adds a comparison, and the new one is a NEW glplot.
       // A bounded sweep -- this ran forty times over ten seconds -- leaves
       // every scene made after that unarmed, silently.
-      if (!gd.__cqDepthWatched && typeof gd.on === "function") {
-        gd.__cqDepthWatched = true;
-        try {
-          gd.on("plotly_afterplot", function () { arm(gd); });
-        } catch (e) { gd.__cqDepthWatched = false; }
-      }
+      watch(gd);
     }
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", sweep);
   }
   sweep();
-  // ⚠ AND IT KEEPS LOOKING UNTIL THERE IS SOMETHING TO ARM. A page saved
-  // WITHOUT the viewer inside it fetches that viewer from the network when
-  // the reader opens it, and nothing is drawn until it arrives. A sweep that
-  // gave up after ten seconds -- this did, forty times at 250ms -- left every
-  // such page on a slow connection with no fix at all, silently, which is the
-  // one kind of page that travels furthest from here.
+  // ⚠ IT SWEEPS FOR TWO MINUTES AND DOES NOT STOP EARLY.
   //
-  // So: stop once a scene has actually been armed and the event below can
-  // carry it, and otherwise keep looking for two minutes before giving up.
+  // Stopping "once something is armed" abandons whatever appears NEXT: a page
+  // with two rooms draws the second one later, and 1.25 s after the first
+  // room drew there was no longer anything looking. Driven under node with
+  // the second room arriving at sweep 5, 40 and 200, it was never armed.
+  //
+  // Asking "is every scene armed" instead does not help either -- at sweep 5
+  // the only scene there IS armed, so it still stops. The honest answer is to
+  // keep looking for a while and let `plotly_afterplot` carry it after that.
+  // `fit` costs 0.038 microseconds, so 480 ticks of a 250 ms timer is nothing
+  // to weigh against a page that silently keeps the hatching.
   var tries = 0;
   var again = setInterval(function () {
     sweep();
     tries += 1;
-    if ((armedAny && tries > 4) || tries > 480) clearInterval(again);
+    if (tries > 480) clearInterval(again);
   }, 250);
 })();
 """
