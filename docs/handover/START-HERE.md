@@ -142,7 +142,12 @@ GAMUTVIEW_NO_ARGYLL=1 ../gv-venv/bin/python -m pytest -q
 ```
 
 At the time of writing: **1017 passed**, and **1013 passed + 4 skipped**.
-Version **2.52.0** (released, 11 assets). Nine releases: v2.49.0, v2.50.0,
+Version **2.52.1** (released, 11 assets). **THE CRON JOB WAS STOPPED HERE,
+2026-08-22, at his word.** To carry on, paste `KICK-OFF.md` (this folder, his
+Desktop, and fork/docs/handover/) into a new session: it carries the method as
+well as the state.
+
+Ten releases: v2.49.0, v2.50.0,
 v2.50.1 (correcting a false claim in v2.50.0), v2.50.2, v2.50.3, v2.50.4,
 v2.50.5, v2.51.0 and v2.52.0.
 
