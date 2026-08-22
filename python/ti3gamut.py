@@ -1060,6 +1060,34 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
         _drawn = _tri[_room_enough | _on_seam]
         if len(_drawn) >= 4:
             lid = _drawn
+        # ⚠ AND THE SEAM TAKES THE PIECE'S OWN COLOUR. The rim corners ARE
+        # the piece's corners -- the cut put them there and `close_the_cut`
+        # keeps its numbering so they cannot drift -- so the two surfaces
+        # paint THE SAME POINT. They did not agree about it: measured on his
+        # profile against sRGB, a median 5.3 of 255 apart and up to 41.3,
+        # and on sRGB's own lid up to 53.3. Each shape colours its skin from
+        # its own measurements, and where they cross those answers differ.
+        #
+        # The rim is the one place the lid and the skin must touch, so the
+        # depth buffer's tie there cannot be moved somewhere else. What CAN
+        # be taken away is the thing the tie shows: two colours for one
+        # point. Sewn to the piece's, a bite out of the seam paints what the
+        # seam was going to be painted anyway.
+        # ⚠ TO SEVEN PLACES, WHICH IS WHERE `weld_by_position` LEAVES THEM.
+        # It hands back `np.unique(np.round(v, 7))`, so a rim corner is the
+        # piece's corner ROUNDED -- as much as 8.4e-08 Lab from it. Matched on
+        # the raw numbers, 0 of 299 corners were found and the whole rule
+        # silently painted nothing, which looked exactly like a rule that had
+        # nothing to paint.
+        _at = {}
+        for _n, _p in enumerate(np.round(np.asarray(mine.vertices, float), 7)):
+            _at.setdefault((float(_p[0]), float(_p[1]), float(_p[2])), _n)
+        _paint = np.asarray(mine.colors, float)
+        for _v in sorted({_i for _k in _seam for _i in _k}):
+            _p = np.round(corners[_v], 7)
+            _n = _at.get((float(_p[0]), float(_p[1]), float(_p[2])))
+            if _n is not None:
+                colours[_v] = _paint[_n]
     answer = (corners, lid, np.clip(colours, 0.0, 1.0))
     done[int(which)] = (here, answer)
     return answer
@@ -10128,7 +10156,22 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                 fig.add_trace(go.Mesh3d(
                     x=_corners[:, 1], y=_corners[:, 2], z=_corners[:, 0],
                     i=_faces[:, 0], j=_faces[:, 1], k=_faces[:, 2],
-                    vertexcolor=_colours, flatshading=True,
+                    vertexcolor=_colours,
+                    # LIT THE WAY THE SURFACE IT IS A COPY OF IS LIT.
+                    # The lid IS the other shape's skin, sampled where each
+                    # ray leaves it, and `_mesh` lights that skin facet by
+                    # facet only when it was built as a hull. Flat either way,
+                    # the lid disagreed with it: measured at his settings, the
+                    # herringbone where the two shapes converge counts 668
+                    # pixels flat against 257 smooth, because a facet's one
+                    # colour cannot follow a surface the picture is drawing
+                    # smoothly a hair above it.
+                    # ⚠ AND IT IS THE OTHER SHAPE'S RULE, NOT THIS ONE'S.
+                    # The lid is cut from the shape across the way and painted
+                    # in its colours; `cap_over_the_cut` refuses anything but
+                    # a pair, so there is exactly one other to ask.
+                    flatshading=(getattr(gamuts[1 - i][1], "mode", "")
+                                 == "hull"),
                     **({"meta": {"stand": "1" * len(_corners)}}
                        if stand is not None else {}),
                     opacity=float(base_i), name=f"{name} — where it is cut",

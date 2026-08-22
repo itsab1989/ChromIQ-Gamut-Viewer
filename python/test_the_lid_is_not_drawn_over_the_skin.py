@@ -73,7 +73,8 @@ def built_and_drawn():
         drawn = ti3gamut.cap_over_the_cut(cut, stands, which)
         assert drawn is not None, f"shape {which} got no lid at all"
         made[which] = (np.asarray(corners, float), np.asarray(built, int),
-                       np.asarray(drawn[1], int), piece)
+                       np.asarray(drawn[1], int), piece,
+                       np.asarray(drawn[2], float))
     return made
 
 
@@ -81,7 +82,7 @@ def built_and_drawn():
 def test_the_part_that_hugs_the_skin_is_not_drawn(built_and_drawn, which):
     """AND THERE HAS TO BE SOME OF IT. A rule that fires on nothing reads
     exactly like a rule that found nothing to fire on."""
-    _corners, built, drawn, _piece = built_and_drawn[which]
+    _corners, built, drawn, _piece, _paint = built_and_drawn[which]
     assert len(drawn) < len(built), (
         "nothing was held back at all, so this measures nothing")
     share = 1.0 - len(drawn) / len(built)
@@ -97,7 +98,7 @@ def test_the_part_that_hugs_the_skin_is_not_drawn(built_and_drawn, which):
 def test_everything_held_back_really_was_against_the_skin(built_and_drawn,
                                                           which):
     from gamutview import _rays_onto
-    corners, built, drawn, piece = built_and_drawn[which]
+    corners, built, drawn, piece, _paint = built_and_drawn[which]
     shy = float(np.linalg.norm(
         np.asarray(piece.vertices, float).max(axis=0)
         - np.asarray(piece.vertices, float).min(axis=0))) / 100.0
@@ -126,7 +127,7 @@ def test_the_seam_is_still_covered(built_and_drawn, which):
     covered at all, leaving an opening up to 2.98 Lab deep along the very
     edge the lid exists to close.
     """
-    _corners, built, drawn, _piece = built_and_drawn[which]
+    _corners, built, drawn, _piece, _paint = built_and_drawn[which]
     was = _seam_of(built)
     assert len(was) > 100, "no seam to speak of, so this measures nothing"
     still = set(_edges_used(drawn))
@@ -134,3 +135,55 @@ def test_the_seam_is_still_covered(built_and_drawn, which):
     assert not missing, (
         f"{len(missing)} of the lid's {len(was)} seam edges are no longer "
         f"covered — the lid has come away from the hole's own edge")
+
+
+@pytest.mark.parametrize("which", (0, 1))
+def test_the_seam_is_painted_the_pieces_own_colour(built_and_drawn, which):
+    """ONE POINT, ONE COLOUR.
+
+    A rim corner IS the piece's corner, so the lid and the skin paint the same
+    place. They did not agree about it — a median 5.3 of 255 apart on his
+    profile and up to 41.3, and up to 53.3 on sRGB's own lid — and the seam is
+    the one place the two surfaces must touch, so the depth buffer's tie there
+    cannot be moved. Taking the disagreement away is what is left.
+
+    ⚠ AND THE MATCH IS ON THE WELDED NUMBERS. `weld_by_position` hands back
+    `np.unique(np.round(v, 7))`, so a rim corner is the piece's corner
+    ROUNDED — as much as 8.4e-08 Lab from it. Matched on the raw numbers, 0
+    of 299 corners were found and the rule painted nothing at all, which read
+    exactly like a rule with nothing to paint.
+    """
+    corners, _built, drawn, piece, colours = built_and_drawn[which]
+    where = {}
+    for n, p in enumerate(np.round(np.asarray(piece.vertices, float), 7)):
+        where.setdefault((float(p[0]), float(p[1]), float(p[2])), n)
+    paint = np.asarray(piece.colors, float)
+    seam = _seam_of(drawn)
+    sewn = 0
+    for v in sorted({i for e in seam for i in e}):
+        p = np.round(corners[v], 7)
+        n = where.get((float(p[0]), float(p[1]), float(p[2])))
+        if n is None:                       # an edge the shy rule opened
+            continue
+        sewn += 1
+        assert np.allclose(colours[v], paint[n], atol=1e-9), (
+            f"the lid paints corner {v} {colours[v]} where the piece it is "
+            f"sewn to paints it {paint[n]}")
+    assert sewn > 100, (
+        f"only {sewn} rim corners were found in the piece at all — the match "
+        f"is not landing, and a rule that paints nothing looks like a rule "
+        f"with nothing to paint")
+
+
+def test_the_lid_is_lit_the_way_the_shape_it_copies_is():
+    """The lid IS the other shape's skin. `_mesh` lights a skin facet by facet
+    only when it was built as a hull, and the lid was flat either way: at his
+    settings the herringbone counts 668 pixels flat against 257 smooth."""
+    import inspect
+    import ti3gamut
+    src = inspect.getsource(ti3gamut)
+    at = src.index("name=f\"{name} — where it is cut\"")
+    before = src[:at]
+    cut = before.rindex("go.Mesh3d(")
+    assert 'flatshading=(getattr(gamuts[1 - i][1], "mode", "")' in before[cut:], (
+        "the lid no longer takes its lighting from the shape it is cut from")
