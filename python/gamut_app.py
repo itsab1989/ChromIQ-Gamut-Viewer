@@ -83,6 +83,7 @@ from gamutview import xyz_to_lab
 from references import (REFERENCE_SPACES, Stopped, gam_gamut,
                         icc_gamut, reference_gamut)
 from spectral import optimal_colour_solid
+from ti3gamut import _looks_dark as ti3gamut_looks_dark
 from ti3gamut import (CONVERTERS, DIRECTIONS, compare_measurements,
                       neutral_axis, read_measurement, write_html,
                       write_slice_html)
@@ -6121,8 +6122,15 @@ class TimelineDialog(QDialog):
         # 13px -> 11px -> 10px, and all 68 characters of "How far <device> has
         # moved -- the biggest difference at each step" inside a 390px page,
         # 30px clear of the edge.
+        # The same declaration the other saved pages carry: what a browser
+        # should paint before it has read a line of CSS. A run's page is
+        # opened cold like any other, and flashed white exactly like them
+        # -- measured at 100% white in the first frame. See
+        # ti3gamut._write_dark_html for the numbers.
+        _scheme = "dark" if ti3gamut_looks_dark(c["page"]) else "light"
         return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
+<meta name="color-scheme" content="{_scheme}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How far {_escape(first)} has moved — {APP_NAME}</title>
 <style>

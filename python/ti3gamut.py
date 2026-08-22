@@ -8235,7 +8235,11 @@ def write_two_views_html(views, out: Path, mode: str = "dark", spin=None,
                f'BlinkMacSystemFont,sans-serif;color:{colours["text"]};'
                f'background:{colours["page"]};max-width:46em;margin:0 auto;'
                f'padding:0 1.5em 1.5em">{notes}</div>') if notes else ""
+    # The same declaration the single-shape pages carry: what to paint
+    # before any CSS has been read. See _write_dark_html for the measurement.
+    _scheme = "dark" if _looks_dark(colours["page"]) else "light"
     html = f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="color-scheme" content="{_scheme}">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html_escape(views[0][0])}</title><style>
  html {{ height:100%; }}
@@ -8375,7 +8379,11 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
                    "padding:14px 22px 78px;white-space:pre-wrap\">"
                    f"{notes}</div>")
     _t = _escape_title(" and ".join(n for n, _f in pages) or "Measured gamut")
+    # The same declaration again; two rooms is still a page somebody opens
+    # cold, and it flashed white exactly like the others.
+    _scheme = "dark" if _looks_dark(colours["page"]) else "light"
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">\
+<meta name="color-scheme" content="{_scheme}">\
 <title>{_t} — ChromIQ Gamut Viewer</title><style>
  /* THE PAGE GROWS AND SCROLLS; THE PICTURE KEEPS ITS SHARE OF THE FIRST
     SCREEN. This was `height:100%; overflow:hidden`, which means the page can

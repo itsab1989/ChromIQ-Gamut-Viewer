@@ -81,3 +81,28 @@ def test_the_brightness_is_read_from_the_colour():
 def test_it_is_not_added_twice(one_shape, tmp_path):
     page = _page(one_shape, tmp_path, "dark")
     assert page.count('name="color-scheme"') == 1
+
+
+# ---------------------------------------------------------------------------
+# AND EVERY PAGE THAT SHIPS, not only the one this file writes. The same
+# one-line declaration needed FOUR homes before every page had it: the main
+# writer, the two-views writer, the side-by-side writer, and the run's own
+# page in gamut_app. Nothing in the code makes those four visible to each
+# other, and a fix in the obvious place looked complete at 19 pages of 25.
+# ---------------------------------------------------------------------------
+
+
+def test_every_showcase_page_says_what_to_paint():
+    pages = sorted((pathlib.Path(__file__).resolve().parent.parent
+                    / "docs" / "pages").glob("*.html"))
+    if not pages:
+        pytest.skip("no showcase pages built here")
+    # A handful would mean the folder is half-built, and "all of them carry
+    # it" would then be a promise about almost nothing.
+    assert len(pages) >= 10, f"only {len(pages)} pages to check"
+    missing = [p.name for p in pages
+               if 'name="color-scheme"' not in
+               p.read_text(encoding="utf-8", errors="replace")[:4000]]
+    assert not missing, (
+        "these pages never tell the browser what to paint, so they flash "
+        "white before they draw: " + ", ".join(missing))

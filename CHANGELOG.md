@@ -1,5 +1,42 @@
 # Changelog
 
+## v2.51.0
+
+### 🪟 A saved page no longer flashes white before it draws
+
+Opening one and watching the frames every 50 ms: **100% white** at 0.06 s, dark
+at 0.51 s, the shape at 0.98 s. The page has declared its colours all along —
+the browser simply cannot obey a stylesheet until it has parsed past five
+megabytes of inlined viewer. It now says `color-scheme` beside the charset,
+which is the one thing a browser acts on before any CSS. Measured after:
+**0% white in the first frame**.
+
+It reads the page's own background rather than the name of a colouring, so a
+new one cannot forget to be listed.
+
+### 🔧 Six faults in **Close where it is cut**, found by attacking it
+
+The lid over the fade's opening was drawn in more places than it should have
+been, and offered in more places than it worked.
+
+| | |
+|---|---|
+| **A lid in the wrong place** | Capping a shape whose middle lies outside it produced 7,999 triangles that looked like a lid and were a copy of its own front skin — 0.000 Lab from that skin, 5.918 from the shape it was cut from. Refused now. |
+| **A lid that would only speckle** | Two shapes closer than 1 Lab cannot have a lid told apart from the skin: the picture came back hatched with stripes. Refused, with the tick saying so. |
+| **A lid over a shape you had faded away** | At *where they differ* 0, the shape emptied and the lid stayed at full strength. It now fades with what it closes. |
+| **A lid that never faded on a saved page** | It carried no standing mask, so a reader sliding the fade could not shift it. |
+| **The tick offered where nothing can be closed** | Including the demo pair that ships. |
+| **The tick dimmed where a lid would be drawn** | The rule read the two chart menus and never the comparison's. |
+
+It stays **off unless you ask for it**. With it on, the seam still shows the
+triangles of the shape the lid is cut from — raise **Detail** and they shrink.
+
+### 🎚 Detail says what it governs
+
+It rebuilds the shape you compare *against*, and only for the named colour
+spaces — never the file you opened. The reason printed beside it in the
+slider check said otherwise, and has been corrected.
+
 ## v2.50.5
 
 ### 🎚 Detail is dimmed where it cannot act
