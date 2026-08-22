@@ -1126,9 +1126,36 @@ def cap_over_the_cut(gamuts, stands, which, centre=None, paint="true"):
             _n = _at.get((float(_p[0]), float(_p[1]), float(_p[2])))
             if _n is not None:
                 colours[_v] = _own[_n]
-        _tuck = float(np.linalg.norm(
-            np.asarray(mine.vertices, float).max(axis=0)
-            - np.asarray(mine.vertices, float).min(axis=0))) / 400.0
+        # ⚠ AND NEVER MORE THAN A HAIR OF THE LID ITSELF. Half a Lab of the
+        # SHAPE is the right size for a lid that is a fair part of it, and
+        # the wrong size for a lid that is a sliver: the tuck opens a slit
+        # around the whole rim, rim perimeter times tuck, and on a small lid
+        # that slit is the lid. Measured, slit against the lid's own area:
+        #
+        #     his profile vs sRGB        3.6%   and   4.4%
+        #     Display P3  vs Rec.2020    0.7%   and  39.0%
+        #     sRGB        vs Adobe RGB   9.0%   and  69.8%
+        #     sRGB        vs Display P3  0.4%   and 790.3%   <- the lid is
+        #                                                       25.8 Lab² and
+        #                                                       the slit 204.1
+        #
+        # This is the same mistake as the rule reverted in a1c6111, in a
+        # different place: a threshold that is a share of the SHAPE, applied
+        # to something that need not be a fair part of the shape at all. So
+        # it is capped at a twentieth of the lid's own area spread along its
+        # own rim, which leaves every pair above at or under 5% and leaves
+        # his own pair -- 3.6% and 4.4% -- exactly where it was measured.
+        _rim_len = sum(
+            float(np.linalg.norm(corners[_a] - corners[_b]))
+            for _a, _b in (_k for _k, _n in _edges.items() if _n == 1))
+        _p0, _p1, _p2 = corners[_tri[:, 0]], corners[_tri[:, 1]], corners[_tri[:, 2]]
+        _lid_area = float(0.5 * np.linalg.norm(
+            np.cross(_p1 - _p0, _p2 - _p0), axis=1).sum())
+        _tuck = min(
+            float(np.linalg.norm(
+                np.asarray(mine.vertices, float).max(axis=0)
+                - np.asarray(mine.vertices, float).min(axis=0))) / 400.0,
+            0.05 * _lid_area / max(1e-9, _rim_len))
         _r = corners[_seam] - middle
         _dd = np.linalg.norm(_r, axis=1)
         corners = np.asarray(corners, float).copy()

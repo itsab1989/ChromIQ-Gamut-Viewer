@@ -37,6 +37,27 @@ _DEMO = pathlib.Path(__file__).resolve().parent.parent / "demo"
 _MIDDLE = np.array([50.0, 0.0, 0.0])
 
 
+def _a_share_of_the_shape(piece):
+    return float(np.linalg.norm(
+        np.asarray(piece.vertices, float).max(axis=0)
+        - np.asarray(piece.vertices, float).min(axis=0))) / 400.0
+
+
+def _a_twentieth_of_the_lid(corners, faces):
+    """The tuck that opens a slit of a twentieth of the lid's own area."""
+    v, f = np.asarray(corners, float), np.asarray(faces, int)
+    seen: dict = {}
+    for tri in f:
+        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            k = (min(int(a), int(b)), max(int(a), int(b)))
+            seen[k] = seen.get(k, 0) + 1
+    rim = [k for k, n in seen.items() if n == 1]
+    perimeter = sum(float(np.linalg.norm(v[a] - v[b])) for a, b in rim)
+    a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
+    area = float(0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1).sum())
+    return 0.05 * area / max(1e-9, perimeter)
+
+
 def _seam_of(faces):
     seen: dict = {}
     for tri in np.asarray(faces, int):
@@ -88,9 +109,13 @@ def built_and_drawn():
 @pytest.mark.parametrize("which", (0, 1))
 def test_every_seam_corner_is_tucked_and_by_how_much(built_and_drawn, which):
     built_at, built, drawn_at, _drawn, _colours, piece = built_and_drawn[which]
-    want = float(np.linalg.norm(
-        np.asarray(piece.vertices, float).max(axis=0)
-        - np.asarray(piece.vertices, float).min(axis=0))) / 400.0
+    # ⚠ AND CAPPED BY THE LID'S OWN SIZE. The tuck opens a slit around the
+    # whole rim -- perimeter times tuck -- and half a Lab of the SHAPE is the
+    # wrong size for a lid that is a sliver of it: measured on sRGB against
+    # Display P3, a slit of 204.1 Lab² around a lid of 25.8, which is 790% of
+    # the thing it was meant to help.
+    want = min(_a_share_of_the_shape(piece), _a_twentieth_of_the_lid(built_at,
+                                                                     built))
     seam = _seam_of(built)
     assert len(seam) > 100, "no seam to speak of, so this measures nothing"
     was = np.linalg.norm(built_at[seam] - _MIDDLE, axis=1)
@@ -101,12 +126,18 @@ def test_every_seam_corner_is_tucked_and_by_how_much(built_and_drawn, which):
         f"{want:.6f} was asked for")
     # AND STRAIGHT DOWN ITS OWN RAY, not sideways: the lid must still be the
     # same set of directions as the hole, or it is a different surface.
-    a = (built_at[seam] - _MIDDLE)
-    b = (drawn_at[seam] - _MIDDLE)
-    cos = np.einsum("ij,ij->i", a, b) / (np.linalg.norm(a, axis=1)
-                                         * np.linalg.norm(b, axis=1))
-    assert cos.min() > 1 - 1e-12, (
-        f"a seam corner slid sideways: worst cosine {cos.min():.15f}")
+    #
+    # ⚠ ASKED OF THE MOVE, NOT OF THE COSINE. A hostile review pointed out
+    # that the cosine between the two POSITIONS only notices a slide that
+    # also changes the radius -- and the magnitude check above catches those
+    # already, so the cosine could never be the thing that fired. What has to
+    # be zero is the part of the MOVE that is across the ray.
+    ray = built_at[seam] - _MIDDLE
+    unit = ray / np.linalg.norm(ray, axis=1)[:, None]
+    move = drawn_at[seam] - built_at[seam]
+    across = move - unit * np.einsum("ij,ij->i", move, unit)[:, None]
+    assert np.abs(across).max() < 1e-9, (
+        f"a seam corner slid across its ray by {np.abs(across).max():.3e} Lab")
 
 
 @pytest.mark.parametrize("which", (0, 1))
@@ -264,3 +295,73 @@ def test_the_lid_is_lit_the_way_the_shape_it_copies_is():
         seen[their_mode] = bool(theirs[0].flatshading)
     assert seen == {"device-cube": False, "hull": True}, (
         f"the lid lights itself by the wrong shape's rule: {seen}")
+
+
+def test_the_tuck_never_takes_more_than_a_twentieth_of_the_lid():
+    """A THRESHOLD THAT IS A SHARE OF THE SHAPE, APPLIED TO A SLIVER OF IT.
+
+    The tuck opens a slit around the whole rim — perimeter times tuck. Half a
+    Lab of the SHAPE is the right size for a lid that is a fair part of it and
+    the wrong size for a lid that is not: measured on sRGB against Display P3,
+    a slit of 204.1 Lab² around a lid whose whole area is 25.8 — 790% of the
+    thing it was meant to help. Exactly the mistake reverted in a1c6111, in a
+    different place, which is why it is pinned here across pairs rather than
+    on the one pair the rest of this file uses.
+    """
+    import ti3gamut
+    from gamutview import close_the_cut
+    from references import reference_gamut
+    pairs = [("sRGB", "Display P3"), ("sRGB", "Adobe RGB (1998)"),
+             ("Display P3", "Rec.2020")]
+    looked = capped = 0
+    for a_name, b_name in pairs:
+        gamuts = [(a_name, reference_gamut(a_name, steps=20)),
+                  (b_name, reference_gamut(b_name, steps=20))]
+        ti3gamut._LAST_CUT = None
+        ti3gamut._LAST_CAP = None
+        out, _f, stands, _l = ti3gamut.recut_where_they_part(gamuts)
+        cut = [(a_name, out[0][1]), (b_name, out[1][1])]
+        for which in (0, 1):
+            piece = cut[which][1]
+            other = cut[1 - which][1]
+            faces = np.asarray(piece.faces, int)
+            keep = np.asarray(stands[which], bool)[faces].all(axis=1)
+            if keep.sum() < 4:
+                continue
+            try:
+                built_at, _skin, built = close_the_cut(
+                    piece.vertices, faces[keep], other.vertices, other.faces,
+                    _MIDDLE, under=(piece.vertices, piece.faces))
+            except ValueError:
+                continue
+            got = ti3gamut.cap_over_the_cut(cut, stands, which)
+            if got is None or not len(built):
+                continue
+            built_at = np.asarray(built_at, float)
+            drawn_at = np.asarray(got[0], float)
+            seam = _seam_of(built)
+            moved = float(np.median(np.linalg.norm(
+                built_at[seam] - drawn_at[seam], axis=1)))
+            v, f = built_at, np.asarray(built, int)
+            seen: dict = {}
+            for tri in f:
+                for a, b in ((tri[0], tri[1]), (tri[1], tri[2]),
+                             (tri[2], tri[0])):
+                    k = (min(int(a), int(b)), max(int(a), int(b)))
+                    seen[k] = seen.get(k, 0) + 1
+            rim = [k for k, n in seen.items() if n == 1]
+            perimeter = sum(float(np.linalg.norm(v[a] - v[b])) for a, b in rim)
+            p0, p1, p2 = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
+            area = float(0.5 * np.linalg.norm(
+                np.cross(p1 - p0, p2 - p0), axis=1).sum())
+            share = perimeter * moved / max(1e-9, area)
+            looked += 1
+            if moved < _a_share_of_the_shape(piece) - 1e-9:
+                capped += 1
+            assert share <= 0.05 + 1e-6, (
+                f"{a_name} vs {b_name}, {cut[which][0]}'s lid: the tuck opens "
+                f"a slit of {100 * share:.1f}% of the lid's own area")
+    assert looked >= 4, f"only {looked} lids were looked at, which proves little"
+    assert capped >= 2, (
+        f"only {capped} of {looked} lids were held back by the cap at all — "
+        f"a cap that never fires cannot be seen to work")
