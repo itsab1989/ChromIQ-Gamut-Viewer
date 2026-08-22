@@ -142,9 +142,29 @@ GAMUTVIEW_NO_ARGYLL=1 ../gv-venv/bin/python -m pytest -q
 ```
 
 At the time of writing: **1017 passed**, and **1013 passed + 4 skipped**.
-Version **2.51.0** (tagged; assets to confirm). Eight releases: v2.49.0,
-v2.50.0, v2.50.1 (correcting a false claim in v2.50.0), v2.50.2, v2.50.3,
-v2.50.4, v2.50.5 and v2.51.0.
+Version **2.52.0** (released, 11 assets). Nine releases: v2.49.0, v2.50.0,
+v2.50.1 (correcting a false claim in v2.50.0), v2.50.2, v2.50.3, v2.50.4,
+v2.50.5, v2.51.0 and v2.52.0.
+
+⚠ **ASK A SHAPE WHOSE ANSWER IS ARITHMETIC.** He asked for demo files built to
+expose faults, and they are the best instrument in this repository. An
+ellipsoid has an exact volume and two of them meet in an exact ellipse, so a
+number can be wrong in a way no opinion can argue with. What it found:
+
+* the cut converges properly (0.51% -> 0.03% as the mesh refines), which
+  RETIRED my claim that the seam wobbled -- I had compared an ellipse against
+  a circle;
+* the volume is honest and its error is counting: -3.0% at 400 patches,
+  -0.06% at 20,000, so two charts of one paper differ by 2.3%;
+* coverage lands inside the ± it prints, and that ± is not decoration;
+* **and the drift comparison was keeping one of every repeated patch**, so a
+  chart re-saved in another order was a different reading. Fixed in v2.52.0.
+
+⚠ **AND CHECK THE CLAIM THE CODE ITSELF MAKES.** The drift fault was found by
+testing the docstring's own promise -- that patches are paired on DEVICE
+values and not on the sample number -- with a shuffle. My first idea (move
+every patch equally and expect equal distances) was simply wrong: CIEDE2000
+weights by chroma and hue.
 
 ⚠ **A SAVED PAGE'S HEAD IS BUILT IN FOUR PLACES**, and nothing in the code
 makes them visible to each other: `_write_dark_html`, `write_two_views_html`,
