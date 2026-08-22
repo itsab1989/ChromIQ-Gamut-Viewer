@@ -142,9 +142,28 @@ GAMUTVIEW_NO_ARGYLL=1 ../gv-venv/bin/python -m pytest -q
 ```
 
 At the time of writing: **1017 passed**, and **1013 passed + 4 skipped**.
-Version **2.50.5** (released, 11 assets). Seven releases: v2.49.0, v2.50.0,
-v2.50.1 (correcting a false claim in v2.50.0), v2.50.2, v2.50.3, v2.50.4 and
-v2.50.5.
+Version **2.51.0** (tagged; assets to confirm). Eight releases: v2.49.0,
+v2.50.0, v2.50.1 (correcting a false claim in v2.50.0), v2.50.2, v2.50.3,
+v2.50.4, v2.50.5 and v2.51.0.
+
+⚠ **A SAVED PAGE'S HEAD IS BUILT IN FOUR PLACES**, and nothing in the code
+makes them visible to each other: `_write_dark_html`, `write_two_views_html`,
+`write_side_by_side_html` (all in ti3gamut) and `page_html` in gamut_app for a
+run. One line added to the obvious one looked complete and covered **19 pages
+of 25**. The rest were found by counting the files on disk. Anything that
+belongs in every saved page needs all four, and
+`test_a_saved_page_says_what_to_paint` now checks the ARTIFACTS rather than
+one writer.
+
+⚠ **THE CAP WAS ATTACKED AND SIX FAULTS CAME OUT**, all fixed in v2.51.0: a
+lid built in the wrong place (a copy of the shape's own skin, 5.9 Lab adrift,
+which I had cited as proof it worked); a lid between shapes closer than 1 Lab,
+which can only speckle; a lid left drawn over a shape faded to nothing; a lid
+with no standing mask, so a saved page could not fade it; a tick offered where
+nothing can be closed (including the demo pair); and a tick dimmed where a lid
+WOULD be drawn, because the rule never read `_style_other`. It is still off by
+default: with it on the seam shows the triangles of the shape the lid is cut
+from, and raising **Detail** shrinks them.
 
 ⚠ **A FOLDED GROUP IS NOT A MISSING CONTROL.** Measuring Detail's availability
 in a fresh-preferences window read `isVisible() == False` in EVERY state,
