@@ -814,6 +814,31 @@ _LAST_CAP: "tuple | None" = None
 #: 1.32 Lab on a paper -- within a third of a Lab of the number it replaces,
 #: which is why no Lab verdict moves. In XYZ sRGB against Display P3 is
 #: 0.02648 of the picture across, and gets its lid.
+#:
+#: ⚠ AND THE HATCHING IS ONLY VISIBLE ON AN OPAQUE PICTURE. I spent a cycle
+#: failing to reproduce it and very nearly argued this threshold away on that
+#: failure. Every one of those measurements drew the two shapes
+#: SEMI-TRANSPARENT, which is `build_figure`'s default for a pair -- and a
+#: see-through shell hides the fight completely, so the lid came out taking
+#: speckle AWAY in five settings of six. With `opacity=1.0`, which is what the
+#: window's own slider gives at 100, the diagonal stripes are there at once.
+#: `scratch/does_it_hatch.py`, counting the speckle the LID adds:
+#:
+#:     one paper, months apart      share 0.00213    1,077    hatches
+#:     sRGB vs Adobe RGB in Luv     share 0.00369    1,820    hatches
+#:     two different papers         share 0.01795       57    clean
+#:     a paper against sRGB         share 0.02203      740    HATCHES
+#:
+#: ⚠ SO THE SHARE IS A PROXY AND NOT THE THING. The last row is ALLOWED by
+#: this threshold and hatches more than the two it refuses; 0.01795 is clean
+#: and 0.02203 is not, so the ordering does not even hold. What decides it is
+#: how much of the lid ends up within a hair of the skin, which is a question
+#: about the two surfaces and not about one number between them. Left as it
+#: is, because a proxy whose failures are written down is worth more than a
+#: fourth threshold guessed from a model -- the last two were both wrong.
+#:
+#: ⚠ AND A HOSTILE REVIEW'S "THIS PAIR DRAWS CLEANLY" WAS THE SAME MISTAKE.
+#: sRGB against Adobe RGB in CIELUV is the worst hatcher of the four.
 TOO_CLOSE_TO_CLOSE = 0.005
 
 
