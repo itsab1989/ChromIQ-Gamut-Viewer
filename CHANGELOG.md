@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.52.1
+
+### 🔍 The cut and the out-of-reach marking, checked against arithmetic
+
+Neither was wrong, and that is worth saying as plainly as a fault would be.
+
+A cut through an ellipsoid is an exact ellipse, so every point of **Slice it at
+one lightness** can be asked how far it is from where it belongs: **0.02–0.05%
+off on average, 0.19% at worst**, at four different heights.
+
+Whether a colour is inside a shape is a yes or no with no tolerance in it, so
+**Show what it cannot print** was given patches at 0.99 and 1.01 of the
+surface — **0% called out of reach at 0.99, 100% at 1.01**. Exact at a one per
+cent margin.
+
+Both are held by tests now, so they cannot quietly stop being true.
+
 ## v2.52.0
 
 ### 📏 A colour printed twice is one colour, measured twice
