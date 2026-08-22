@@ -888,10 +888,25 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
     # cap about a different middle handed back the one built for the first --
     # the very same object. No caller varies it today, which is exactly how a
     # cache like this is wrong for a year and then wrong in the picture.
-    key = (_what_was_cut_last(gamuts, None), tuple(np.round(middle, 6)))
+    # ⚠ THE MIDDLE IS KEPT WITH THE ANSWER, NOT IN THE KEY. It belongs to the
+    # question -- asking about a different middle must not hand back the
+    # other's lid -- but putting it in the key made the two shapes of a pair
+    # disagree about the key OUTSIDE Lab, where the middle is `theirs`'s own
+    # centroid and therefore different for each of them. Every call then took
+    # the `else` and emptied the store the other had just filled.
+    #
+    # Measured, six asks alternating between the two shapes of one pair:
+    #     Lab   close_the_cut ran 2 times  (1.59 s)
+    #     XYZ   close_the_cut ran 6 times  (4.65 s)
+    # A fade drag in XYZ or Luv rebuilt both lids on every step. The comment
+    # above about one entry per shape describes a fix that worked in one of
+    # the three spaces.
+    key = _what_was_cut_last(gamuts, None)
+    here = tuple(np.round(middle, 6))
     if _LAST_CAP is not None and _LAST_CAP[0] == key:
-        if int(which) in _LAST_CAP[1]:
-            return _LAST_CAP[1][int(which)]
+        kept = _LAST_CAP[1].get(int(which))
+        if kept is not None and kept[0] == here:
+            return kept[1]
     else:
         _LAST_CAP = (key, {})
     done = _LAST_CAP[1]
@@ -903,10 +918,10 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
         # A shape the middle is not inside cannot be capped this way, and
         # close_the_cut says so rather than guessing. The picture keeps its
         # opening, which is what it had before this option existed.
-        done[int(which)] = None
+        done[int(which)] = (here, None)
         return None
     if not len(lid):
-        done[int(which)] = None
+        done[int(which)] = (here, None)
         return None
     # PAINTED IN THE OTHER SHAPE'S OWN COLOURS, read where each ray leaves it.
     # The lid IS that shape's surface, so the reader is looking at the very
@@ -925,7 +940,7 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
                + where[:, 1:2] * (paint[tri[:, 2]] - paint[tri[:, 0]]))
     colours[hit < 0] = 0.5
     answer = (corners, lid, np.clip(colours, 0.0, 1.0))
-    done[int(which)] = answer
+    done[int(which)] = (here, answer)
     return answer
 
 
