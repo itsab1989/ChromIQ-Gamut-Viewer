@@ -1496,6 +1496,7 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
         if not alive.all():
             rays = np.where(alive[:, None], rays, np.array([1.0, 0.0, 0.0]))
         far = floor_of(rays)
+        ceiling = None
         if roof_of is not None:
             ceiling = roof_of(rays)
             # The same share, for the same reason: a flat step here distorts
@@ -1522,7 +1523,29 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
         # whole gap and swells what the lid encloses: measured, +61.7% against
         # a ray count, where it had been +1.9%. Tied to the drop, the error it
         # can add is one per cent of the answer wherever the shapes are.
-        step = np.minimum(clearance, 0.01 * np.maximum(0.0, reach - far))
+        # ⚠ MEASURED FROM THE CEILING, NOT FROM WHERE THE POINT IS NOW.
+        #
+        # `reach` is the radius of the point handed in, and this is re-entered
+        # on points that are ALREADY on the floor -- once for the midpoints of
+        # every lid edge, and once per smoothing pass for every corner that is
+        # not on the seam. For those, `reach - far` is zero by construction, so
+        # the step is zero and the point is laid EXACTLY on the other shape.
+        # The clearance annihilates itself.
+        #
+        # Measured on his profile against sRGB, before this: of 4,569 lid
+        # corners, 100% sat within 0.01 Lab of sRGB, the median hold was
+        # 0.000000 Lab, and 13.8% had crossed to the wrong side of it. 63% of
+        # the lid's AREA was outside the surface it is meant to be held under,
+        # which is a depth buffer being asked to choose between two surfaces
+        # in the same place, thousands of times, across the whole lid.
+        #
+        # The ceiling is a function of the ray's DIRECTION, so it is the same
+        # answer however often this is re-entered. The shape of the rule is
+        # unchanged -- still a hundredth of the local drop, still capped by
+        # *clearance* -- and the reason for that shape is the paragraph above.
+        _top = reach if ceiling is None else np.where(
+            np.isfinite(ceiling), ceiling, reach)
+        step = np.minimum(clearance, 0.01 * np.maximum(0.0, _top - far))
         far = np.maximum(0.0, far - step)
         unit = rays / np.maximum(1e-12, np.linalg.norm(rays, axis=1, keepdims=True))
         return middle + unit * far[:, None]
