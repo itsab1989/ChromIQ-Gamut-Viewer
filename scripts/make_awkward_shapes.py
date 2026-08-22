@@ -20,6 +20,9 @@ mystery:
                          wrongly bridges them
     ball-with-a-dent     a dent deep enough that the rim of the cut is not
                          convex, which a lid made of a flat disc would show
+    ball-shifted         the same ball, moved sideways: two equal spheres
+                         cross in a perfect CIRCLE, so any tooth or flag on
+                         that seam is the drawing's and not the data's
     pancake / column     flat against tall: they cross in a ring, so the
                          opening is an annulus rather than a cap
 
@@ -95,6 +98,14 @@ def make(folder) -> dict:
     made["ball-with-a-dent"] = write(
         folder, "ball-with-a-dent",
         MIDDLE + u * dent[:, None] * np.array([40, 45, 45]))
+    # ⚠ THE SEAM TEST, and the reason it is a pair of BALLS. Two equal
+    # spheres, offset, both containing the middle: where they cross is a
+    # mathematically perfect CIRCLE. Anything the picture shows on that seam
+    # that is not a smooth circle -- teeth, flags, a sawtooth -- is the
+    # drawing's, not the data's, and there is nothing to argue about.
+    made["ball-shifted"] = write(
+        folder, "ball-shifted",
+        MIDDLE + np.array([0, 18, 0]) + u * np.array([40, 45, 45]))
     made["pancake"] = write(folder, "pancake", MIDDLE + u * np.array([10, 46, 46]))
     made["column"] = write(folder, "column", MIDDLE + u * np.array([46, 12, 12]))
     return made

@@ -1083,3 +1083,38 @@ cp -R /var/folders/1b/*/T/showme-*/ ~/develop/ChromIQ-Gamut-Viewer/fixtures/
 ```
 
 and then a decision about whether the audits should look there as well.
+
+---
+
+## REPORTED 2026-08-22: THE PICTURE BLINKS BLACK ON EVERY REDRAW
+
+*"sometimes they show wholes for a split seconds before they become whole …
+it would be nice if you could rather hold them back until they are complete"*
+
+MEASURED, watching the view itself at 50 ms intervals through one fade change:
+
+    120 frames watched, 16 unlike the settled picture
+    t+3.56s  182,888 px unlike  -- the view is entirely BLACK
+    t+3.88s  182,888 px unlike  -- still black
+    t+4.22s    7,970 px unlike  -- the picture, all but settled
+    t+4.57s          0          -- settled
+
+So it is not a partial shape first: the view empties, stays empty for about
+0.7 s, and the new picture then arrives nearly whole. `_show_page` loads
+straight into the live view (`self._view.setUrl(...)`), and a browser paints
+the blank document before it paints the plot.
+
+⚠ THE OBVIOUS CURE HAS ALREADY FAILED ONCE, and its own note says why: a
+second view was loaded and the two swapped on `loadFinished`, and it left the
+frame EMPTY -- the widget put into the layout was the one just sent to
+about:blank. Reported then with a photograph of a window with no picture in
+it. `_show_page`'s docstring asks for a cure "proved by a driver that watches
+the frame rather than the address in it", which is now written:
+scratch-side frame watching, comparing `win._view.grab()` against the settled
+picture.
+
+SAFER SHAPE FOR THE FIX, and the reason: do not swap widgets at all. Grab the
+last good frame into a QLabel laid OVER the view, load as now, and drop the
+label once the frame has settled. A frozen picture cannot become an empty
+viewer -- the worst it can do is show the previous picture a moment too long,
+which is exactly what was asked for.
