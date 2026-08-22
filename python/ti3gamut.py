@@ -3896,6 +3896,95 @@ _WHEEL_JS = """
 #: The quick handover uses a door the library does not advertise, so every
 #: step of reaching it is checked and any failure falls back to the front door
 #: rather than breaking the page.
+#: GIVE THE DEPTH BUFFER ITS BITS BACK.
+#:
+#: The drawing library never sets a near or far plane, so gl-plot3d falls back
+#: to zNear 0.01 and zFar 1000 -- a hundred-thousand to one range over a scene
+#: that is a unit cube. Depth precision is spent nearest the eye, so almost all
+#: of it lands in empty space in front of the shapes and the surfaces share
+#: what is left.
+#:
+#: ⚠ AND THIS MACHINE'S DEPTH BUFFER IS SIXTEEN BITS, not the 24 one assumes:
+#: measured through the window's own viewer, `gl.getParameter(gl.DEPTH_BITS)`
+#: is 16. At 16 bits with that range, one step of depth is larger than a Lab
+#: at the distance these shapes are drawn from -- which is why a lid laid a
+#: median 0.116 Lab under the skin cannot be told from it, and why the picture
+#: hatches wherever the two run close.
+#:
+#: Fitted to the eight corners of the scene's own bounds along the view
+#: direction, so nothing can be clipped however the reader turns or zooms, and
+#: assigned rather than redrawn -- the library re-reads both on every
+#: projection update, so there is no loop and no cost per frame beyond the
+#: arithmetic. Silent if anything it needs is missing: a page that cannot do
+#: this draws exactly what it drew before.
+_DEPTH_JS = """
+(function () {
+  function fit(gl) {
+    try {
+      var cam = gl.camera, b = gl.bounds;
+      if (!cam || !cam.eye || !cam.center || !b || !b[0] || !b[1]) return;
+      var ex = cam.eye[0], ey = cam.eye[1], ez = cam.eye[2];
+      var vx = cam.center[0] - ex, vy = cam.center[1] - ey, vz = cam.center[2] - ez;
+      var len = Math.sqrt(vx * vx + vy * vy + vz * vz);
+      if (!(len > 0)) return;
+      vx /= len; vy /= len; vz /= len;
+      var lo = Infinity, hi = -Infinity, i, j, k, t;
+      for (i = 0; i < 2; i++) for (j = 0; j < 2; j++) for (k = 0; k < 2; k++) {
+        t = (b[i][0] - ex) * vx + (b[j][1] - ey) * vy + (b[k][2] - ez) * vz;
+        if (t < lo) lo = t;
+        if (t > hi) hi = t;
+      }
+      if (!isFinite(lo) || !isFinite(hi) || !(hi > lo)) return;
+      // A FIFTH OF THE DEPTH OF THE SCENE, either side. Enough that a corner
+      // cannot be clipped by rounding or by a camera that moves between this
+      // and the frame it is used on, and small enough to be worth doing.
+      var pad = 0.2 * (hi - lo) + 1e-3;
+      var near = Math.max(1e-3, lo - pad), far = hi + pad;
+      if (!(far > near)) return;
+      if (Math.abs(gl.zNear - near) > 1e-9 || Math.abs(gl.zFar - far) > 1e-9) {
+        gl.zNear = near;
+        gl.zFar = far;
+      }
+    } catch (e) { /* a page that cannot do this draws what it drew before */ }
+  }
+  function arm(gd) {
+    if (!gd || !gd._fullLayout) return;
+    Object.keys(gd._fullLayout).forEach(function (key) {
+      if (key.indexOf("scene") !== 0) return;
+      var sc = gd._fullLayout[key]._scene, gl = sc && sc.glplot;
+      if (!gl || gl.__cqDepth) return;
+      gl.__cqDepth = true;
+      // ⚠ CHAINED ON `onrender`, AND IT DOES NOT REDRAW. The library reads
+      // both planes on every projection update, so assigning is enough;
+      // calling redraw from inside a render is how you get a loop.
+      var was = gl.onrender;
+      gl.onrender = function () {
+        fit(gl);
+        if (typeof was === "function") return was.apply(this, arguments);
+      };
+      fit(gl);
+    });
+  }
+  function sweep() {
+    var all = document.querySelectorAll(".js-plotly-plot"), n;
+    for (n = 0; n < all.length; n++) arm(all[n]);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", sweep);
+  }
+  sweep();
+  // A SCENE CAN ARRIVE LATE -- a page that draws two views, or one the reader
+  // has just given a different shape to. Cheap, and it stops once every scene
+  // it can see is armed.
+  var tries = 0;
+  var again = setInterval(function () {
+    sweep();
+    if (++tries > 40) clearInterval(again);
+  }, 250);
+})();
+"""
+
+
 _ORDER_JS = """
 window.cqOrder = (function () {
   var plots = [], raf = null, still = 0, watch = null, fast = true;
@@ -8535,7 +8624,7 @@ def write_two_views_html(views, out: Path, mode: str = "dark", spin=None,
         background:transparent; color:inherit; }}
  .cq-views button[aria-pressed] {{ border-color:{colours['text']}; }}
 </style></head><body>{switch}{''.join(blocks)}{written}
-<script>{_ORDER_JS}</script><script>{_WHEEL_JS}</script><script>{_CAPTION_JS}</script>{turn}{swap}
+<script>{_DEPTH_JS}</script><script>{_ORDER_JS}</script><script>{_WHEEL_JS}</script><script>{_CAPTION_JS}</script>{turn}{swap}
 </body></html>"""
     Path(out).write_text(html, encoding="utf-8")
     return Path(out)
@@ -8700,7 +8789,7 @@ def write_side_by_side_html(pages, out: Path, mode: str = "dark",
           font-family:Menlo,Consolas,"Courier New",monospace;
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
  .half > div:last-child {{ flex:1 1 auto; min-height:0; }}
-</style></head><body><div class="row">{''.join(blocks)}</div>{written}{resize}{link}<script>{_ORDER_JS}</script><script>{_WHEEL_JS}</script><script>{_CAPTION_JS}</script>{_spin_script(ids, ({"flat": True, **(spin or {})} if flat else spin), mode, controls, offer)}</body></html>"""
+</style></head><body><div class="row">{''.join(blocks)}</div>{written}{resize}{link}<script>{_DEPTH_JS}</script><script>{_ORDER_JS}</script><script>{_WHEEL_JS}</script><script>{_CAPTION_JS}</script>{_spin_script(ids, ({"flat": True, **(spin or {})} if flat else spin), mode, controls, offer)}</body></html>"""
     # AND IF IT HAS TO FETCH THE VIEWER, IT SAYS SO WHEN IT CANNOT GET IT.
     # The same notice every other page gets: the walk through three addresses,
     # the retry, and the word after thirty seconds. It re-runs EVERY drawing
@@ -9722,7 +9811,7 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     # makes a see-through shape look like the solid one it is, and a page
     # without any movement in it can still be dragged round by hand. See
     # _ORDER_JS for what it fixes and what it was measured to cost.
-    order = f"<script>{_ORDER_JS}</script><script>{_WHEEL_JS}</script>"
+    order = f"<script>{_DEPTH_JS}</script><script>{_ORDER_JS}</script><script>{_WHEEL_JS}</script>"
     html = (html.replace("</body>", order + "</body>", 1)
             if "</body>" in html else html + order)
     turn = _spin_script(["scene0"], spin, mode, controls, offer)
