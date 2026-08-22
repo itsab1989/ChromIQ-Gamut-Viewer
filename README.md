@@ -886,9 +886,21 @@ These counts are taken below the toolbar. Its icons speckle exactly the way a
 hatched seam does, and while they were in frame they were being counted as
 part of the picture.
 
-Nothing is clipped by the closer planes: the axis box, its grid walls and every
-tick label survive at each of twelve camera angles, checked by counting the
-pixels the library drew that the fitted planes do not.
+Nothing is clipped by the closer planes. Every corner of the drawn box sits
+between them from twelve camera angles, including ones inside the shape, with
+room to spare — and the axis box, its grid walls and every tick label survive
+in the pictures themselves.
+
+That last check is worth describing, because the obvious way to make it says
+the opposite. Counting *pixels the library drew that the fitted planes do not*
+comes back with a few hundred at some angles, which reads as damage. Looking at
+them, they are not: at one angle every one of them has the same line still
+drawn a pixel away — the line moved, it did not go. At another, a segment of an
+axis line was **brighter than the rest of the same line**, 70 against 20,
+because with no depth precision an edge on the far side of the box was showing
+through the near side; fitted, that segment matches its own line and the count
+calls its removal damage. Nothing coloured is ever lost, and the whole picture
+is there both ways.
 
 ⚠ **Nothing in the drawing library is modified.** It is a script of this
 application's own, written into its own pages, which sets two numbers after the
