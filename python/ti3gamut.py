@@ -1160,36 +1160,56 @@ def cap_over_the_cut(gamuts, stands, which, centre=None, paint="true"):
             _n = _at.get((float(_p[0]), float(_p[1]), float(_p[2])))
             if _n is not None:
                 colours[_v] = _own[_n]
-        # ⚠ AND NEVER MORE THAN A HAIR OF THE LID ITSELF. Half a Lab of the
+        # ⚠ AND NEVER SO FAR THAT IT RESHAPES THE LID. Half a Lab of the
         # SHAPE is the right size for a lid that is a fair part of it, and
-        # the wrong size for a lid that is a sliver: the tuck opens a slit
-        # around the whole rim, rim perimeter times tuck, and on a small lid
-        # that slit is the lid. Measured, slit against the lid's own area:
+        # the wrong size for a lid that is a sliver: the rim is then most of
+        # the lid, and pulling it in stretches the triangles that touch it
+        # into a skirt. Measured, the lid's own area before and after the
+        # full tuck:
         #
-        #     his profile vs sRGB        3.6%   and   4.4%
-        #     Display P3  vs Rec.2020    0.7%   and  39.0%
-        #     sRGB        vs Adobe RGB   9.0%   and  69.8%
-        #     sRGB        vs Display P3  0.4%   and 790.3%   <- the lid is
-        #                                                       25.8 Lab² and
-        #                                                       the slit 204.1
+        #     his profile vs sRGB          -0.74%   and  -1.36%
+        #     Display P3  vs Rec.2020      -0.10%   and +10.90%
+        #     sRGB        vs Adobe RGB     +0.81%   and +16.22%
+        #     sRGB        vs Display P3    -0.09%   and +566.87%   <- 25.8 Lab²
+        #                                                             of lid
         #
-        # This is the same mistake as the rule reverted in a1c6111, in a
-        # different place: a threshold that is a share of the SHAPE, applied
-        # to something that need not be a fair part of the shape at all. So
-        # it is capped at a twentieth of the lid's own area spread along its
-        # own rim, which leaves every pair above at or under 5% and leaves
-        # his own pair -- 3.6% and 4.4% -- exactly where it was measured.
-        _rim_len = sum(
-            float(np.linalg.norm(corners[_a] - corners[_b]))
-            for _a, _b in (_k for _k, _n in _edges.items() if _n == 1))
+        # ⚠ AND THIS IS MEASURED, NOT MODELLED. The first version of this cap
+        # took `rim perimeter x tuck` for the area removed and held it under a
+        # twentieth of the lid. A hostile review measured what actually
+        # happens: the rim corners move and the triangles touching them
+        # STRETCH, so nothing is removed at all -- the lid GROWS. On the
+        # sliver above the model said 790.3% lost where the truth is 566.87%
+        # gained. The cap was right and its reason was wrong, which is worse
+        # than either, so the reason is now the thing itself: the largest tuck
+        # that leaves the lid's own area within a fiftieth of what it was.
+        _tuck = float(np.linalg.norm(
+            np.asarray(mine.vertices, float).max(axis=0)
+            - np.asarray(mine.vertices, float).min(axis=0))) / 400.0
         _p0, _p1, _p2 = corners[_tri[:, 0]], corners[_tri[:, 1]], corners[_tri[:, 2]]
-        _lid_area = float(0.5 * np.linalg.norm(
+        _was = float(0.5 * np.linalg.norm(
             np.cross(_p1 - _p0, _p2 - _p0), axis=1).sum())
-        _tuck = min(
-            float(np.linalg.norm(
-                np.asarray(mine.vertices, float).max(axis=0)
-                - np.asarray(mine.vertices, float).min(axis=0))) / 400.0,
-            0.05 * _lid_area / max(1e-9, _rim_len))
+
+        def _area_after(_by):
+            _v = np.asarray(corners, float).copy()
+            _rr = _v[_seam] - middle
+            _ddd = np.linalg.norm(_rr, axis=1)
+            _v[_seam] = middle + _rr * (
+                np.maximum(0.0, _ddd - _by) / np.maximum(1e-12, _ddd))[:, None]
+            _a, _b, _c = _v[_tri[:, 0]], _v[_tri[:, 1]], _v[_tri[:, 2]]
+            return float(0.5 * np.linalg.norm(
+                np.cross(_b - _a, _c - _a), axis=1).sum())
+
+        if _was > 0 and abs(_area_after(_tuck) / _was - 1.0) > 0.02:
+            # THE LARGEST ONE THAT STILL FITS, found by halving the interval
+            # rather than by a formula, because the formula was the fault.
+            _lo, _hi = 0.0, _tuck
+            for _ in range(16):
+                _mid = 0.5 * (_lo + _hi)
+                if abs(_area_after(_mid) / _was - 1.0) > 0.02:
+                    _hi = _mid
+                else:
+                    _lo = _mid
+            _tuck = _lo
         _r = corners[_seam] - middle
         _dd = np.linalg.norm(_r, axis=1)
         corners = np.asarray(corners, float).copy()

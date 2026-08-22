@@ -43,19 +43,10 @@ def _a_share_of_the_shape(piece):
         - np.asarray(piece.vertices, float).min(axis=0))) / 400.0
 
 
-def _a_twentieth_of_the_lid(corners, faces):
-    """The tuck that opens a slit of a twentieth of the lid's own area."""
+def _area_of(corners, faces):
     v, f = np.asarray(corners, float), np.asarray(faces, int)
-    seen: dict = {}
-    for tri in f:
-        for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
-            k = (min(int(a), int(b)), max(int(a), int(b)))
-            seen[k] = seen.get(k, 0) + 1
-    rim = [k for k, n in seen.items() if n == 1]
-    perimeter = sum(float(np.linalg.norm(v[a] - v[b])) for a, b in rim)
     a, b, c = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
-    area = float(0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1).sum())
-    return 0.05 * area / max(1e-9, perimeter)
+    return float(0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1).sum())
 
 
 def _seam_of(faces):
@@ -109,21 +100,24 @@ def built_and_drawn():
 @pytest.mark.parametrize("which", (0, 1))
 def test_every_seam_corner_is_tucked_and_by_how_much(built_and_drawn, which):
     built_at, built, drawn_at, _drawn, _colours, piece = built_and_drawn[which]
-    # ⚠ AND CAPPED BY THE LID'S OWN SIZE. The tuck opens a slit around the
-    # whole rim -- perimeter times tuck -- and half a Lab of the SHAPE is the
-    # wrong size for a lid that is a sliver of it: measured on sRGB against
-    # Display P3, a slit of 204.1 Lab² around a lid of 25.8, which is 790% of
-    # the thing it was meant to help.
-    want = min(_a_share_of_the_shape(piece), _a_twentieth_of_the_lid(built_at,
-                                                                     built))
     seam = _seam_of(built)
     assert len(seam) > 100, "no seam to speak of, so this measures nothing"
     was = np.linalg.norm(built_at[seam] - _MIDDLE, axis=1)
     now = np.linalg.norm(drawn_at[seam] - _MIDDLE, axis=1)
     moved = was - now
-    assert np.allclose(moved, want, atol=1e-9), (
-        f"the seam moved by {moved.min():.6f}..{moved.max():.6f} Lab where "
-        f"{want:.6f} was asked for")
+    # ⚠ ONE NUMBER FOR THE WHOLE RIM, AND THIS DOES NOT RE-DERIVE IT. The
+    # size is capped by what the tuck does to the lid's own area, found by
+    # halving rather than by a formula -- a formula was the fault the last
+    # cap had — so predicting it here would be this test copying that search.
+    # What must hold is that every corner moved by the SAME amount, that the
+    # amount is real, and that it never passes the share of the shape.
+    assert np.ptp(moved) < 1e-9, (
+        f"the seam moved by {moved.min():.6f}..{moved.max():.6f} Lab — the "
+        f"tuck is not one number for the whole rim")
+    assert moved.min() > 0.0, "the seam did not move at all"
+    assert np.median(moved) <= _a_share_of_the_shape(piece) + 1e-9, (
+        f"the seam moved {np.median(moved):.6f} Lab, past the "
+        f"{_a_share_of_the_shape(piece):.6f} this may never exceed")
     # AND STRAIGHT DOWN ITS OWN RAY, not sideways: the lid must still be the
     # same set of directions as the hole, or it is a different surface.
     #
@@ -297,16 +291,26 @@ def test_the_lid_is_lit_the_way_the_shape_it_copies_is():
         f"the lid lights itself by the wrong shape's rule: {seen}")
 
 
-def test_the_tuck_never_takes_more_than_a_twentieth_of_the_lid():
+def test_the_tuck_never_reshapes_the_lid():
     """A THRESHOLD THAT IS A SHARE OF THE SHAPE, APPLIED TO A SLIVER OF IT.
 
-    The tuck opens a slit around the whole rim — perimeter times tuck. Half a
-    Lab of the SHAPE is the right size for a lid that is a fair part of it and
-    the wrong size for a lid that is not: measured on sRGB against Display P3,
-    a slit of 204.1 Lab² around a lid whose whole area is 25.8 — 790% of the
-    thing it was meant to help. Exactly the mistake reverted in a1c6111, in a
-    different place, which is why it is pinned here across pairs rather than
-    on the one pair the rest of this file uses.
+    Half a Lab of the SHAPE is the right size for a lid that is a fair part of
+    it and the wrong size for a lid that is not: the rim is then most of the
+    lid, and pulling it in stretches the triangles that touch it into a skirt.
+    Measured, the lid's own area before and after the full tuck:
+
+        his profile vs sRGB          -0.74%   and  -1.36%
+        Display P3  vs Rec.2020      -0.10%   and +10.90%
+        sRGB        vs Adobe RGB     +0.81%   and +16.22%
+        sRGB        vs Display P3    -0.09%   and +566.87%
+
+    ⚠ AND THIS IS THE MEASURED QUANTITY, NOT A MODELLED ONE. The first cap
+    took `rim perimeter × tuck` for area removed and held it under a twentieth
+    of the lid. A hostile review measured what happens: nothing is removed —
+    the rim corners move and the triangles touching them STRETCH, so the lid
+    GROWS. On the sliver above the model said 790.3% lost where the truth is
+    566.87% gained. The cap was right and its reason was wrong, and this test
+    asserted the reason.
     """
     import ti3gamut
     from gamutview import close_the_cut
@@ -342,25 +346,23 @@ def test_the_tuck_never_takes_more_than_a_twentieth_of_the_lid():
             seam = _seam_of(built)
             moved = float(np.median(np.linalg.norm(
                 built_at[seam] - drawn_at[seam], axis=1)))
-            v, f = built_at, np.asarray(built, int)
-            seen: dict = {}
-            for tri in f:
-                for a, b in ((tri[0], tri[1]), (tri[1], tri[2]),
-                             (tri[2], tri[0])):
-                    k = (min(int(a), int(b)), max(int(a), int(b)))
-                    seen[k] = seen.get(k, 0) + 1
-            rim = [k for k, n in seen.items() if n == 1]
-            perimeter = sum(float(np.linalg.norm(v[a] - v[b])) for a, b in rim)
-            p0, p1, p2 = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
-            area = float(0.5 * np.linalg.norm(
-                np.cross(p1 - p0, p2 - p0), axis=1).sum())
-            share = perimeter * moved / max(1e-9, area)
+            was = _area_of(built_at, built)
+            now = _area_of(drawn_at, built)
+            change = abs(now / max(1e-9, was) - 1.0)
             looked += 1
             if moved < _a_share_of_the_shape(piece) - 1e-9:
                 capped += 1
-            assert share <= 0.05 + 1e-6, (
-                f"{a_name} vs {b_name}, {cut[which][0]}'s lid: the tuck opens "
-                f"a slit of {100 * share:.1f}% of the lid's own area")
+            # ⚠ AND A CAP THAT COLLAPSES TO NOTHING IS NOT A CAP. Holding the
+            # area still is trivially satisfied by never tucking, and that
+            # would turn the seam fix off on exactly the lids that needed
+            # capping — the ones this loop exists to look at. Mutating the
+            # search to return 0 passed every other check in this file.
+            assert moved > 0.0, (
+                f"{a_name} vs {b_name}, {cut[which][0]}'s lid is not tucked "
+                f"at all — the cap took the whole of it")
+            assert change <= 0.02 + 1e-6, (
+                f"{a_name} vs {b_name}, {cut[which][0]}'s lid: the tuck "
+                f"changes the lid's own area by {100 * change:.2f}%")
     assert looked >= 4, f"only {looked} lids were looked at, which proves little"
     assert capped >= 2, (
         f"only {capped} of {looked} lids were held back by the cap at all — "
