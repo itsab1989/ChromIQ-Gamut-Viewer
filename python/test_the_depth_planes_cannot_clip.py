@@ -8,8 +8,12 @@ in front of the shapes. This machine's depth buffer is SIXTEEN bits
 bits over that range one step of depth is larger than a Lab at the distance
 these shapes are drawn from. A lid laid a median 0.116 Lab under the skin
 cannot be told from it, and the picture hatches wherever the two run close.
-Fitted, the lid's own speckle went 121 → 2, 158 → 1, 193 → 4 and 34 → 1 at
-four cameras on a page a reader would get.
+Fitted, the lid's own speckle went 121 → 2, 158 → 5 and 193 → 17 at three of
+four cameras on a page a reader would get. ⚠ AT THE FOURTH — seen from below
+— it is 34 → 132, WORSE than leaving the planes alone, and that is not
+understood. It is written here because the first version of this docstring
+quoted 34 → 1: numbers taken before the box was corrected, which made the one
+camera that got worse read as the best of the four.
 
 ⚠ THE SHIPPED FUNCTION IS WHAT RUNS HERE, not a copy of it in Python. A copy
 is a test of the copy: it drifts, and it passes while the thing it stands for
