@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.50.5
+
+### 🎚 Detail is dimmed where it cannot act
+
+**Detail** rebuilds the shape you are comparing *against* — and only when that
+is one of the named colour spaces. It never touches the shape from the file
+you opened. Measured, with the slider taken from 20 to 40:
+
+| | 20 | 40 |
+|---|---|---|
+| an ICC profile you opened | 4,926 faces | 4,926 |
+| a measured chart you opened | 978 faces | 978 |
+| the comparison, sRGB | 4,332 faces | **18,252** |
+
+It stayed live with **Compare with** set to *Nothing*, with a profile of your
+own as the comparison (that path is drawn from what is in the file, at the
+detail it already has), and with *everything the eye can see* (a fixed shape).
+In each of those a drag answered with nothing.
+
+It now dims — the number beside it too — and its hover says which of those it
+is. This is the same rule the window applies to the lid, the drift marker and
+the shine sliders: a control offered where it cannot act is worse than one
+that is not there.
+
 ## v2.50.4
 
 ### 🗒 The shortened hover no longer grows back the moment you use the panel
