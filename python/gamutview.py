@@ -1453,6 +1453,31 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
     ray. A corner whose slide would turn a triangle inside out is put back:
     a folded lid is one that passes through itself.
 
+    ⚠ AND THE HOLD IS NOT THE LEVER FOR THE HATCHING. On an OPAQUE picture --
+    the only kind that shows it -- the lid puts a diagonal hatch on the
+    surface wherever the two shapes converge, because *hold* below is a
+    hundredth of the LOCAL DROP and the local drop goes to nothing exactly
+    there. Raising that share does clear the hatch, and it costs a real
+    property: the lid stops following the floor and hangs in the gap, which
+    two measurements of one paper measure directly.
+
+        share             two papers months apart   his profile vs sRGB,
+                          (volume, 5% is the bar)   speckle the lid adds
+        0.01 (ships)               +2.0%   pass              1,114
+        0.05                       +7.0%   FAIL                456
+        0.10                      +12.0%   FAIL                327
+        0.25                      +26.4%   FAIL                283
+        the clearance, flat       +61.7%   FAIL                310
+
+    There is no share that keeps the volume AND clears the hatch, because
+    where the two surfaces converge there is no room to hold the lid in. The
+    lever that could work is not DRAWING the lid where the gap is below what
+    the picture can separate -- a local form of `TOO_CLOSE_TO_CLOSE`,
+    calibrated on `scripts/show_the_hatching.py` rather than on a model. The
+    first attempt at that used a share of the SHAPE and no picture at all,
+    and withheld 97% of a lid; it was reverted.
+
+
     ⚠ AND *sag* IS A SHARE OF THE GAP, NOT A NUMBER OF Lab. It was 0.25 Lab
     flat, which is a fine tolerance on two shapes about 20 Lab apart and a
     useless one on two that are 2 Lab apart — and the second is the
