@@ -847,6 +847,45 @@ It keeps up while the shape turns — **61 frames a second on every kind of
 page**, from a single 978-triangle chart to a 19,230-triangle comparison at
 full Detail, and on a page holding two scenes side by side.
 
+### And the depth buffer is given its precision back
+
+That handles the surfaces you can see through. A *solid* surface is drawn by
+the depth buffer, which compares distances — and it was being asked to do that
+with almost no precision to work with.
+
+The drawing library never sets a near or a far plane, so it falls back to
+0.01 and 1000: a hundred-thousand-to-one range over a picture the size of a
+unit cube. Depth precision is spent nearest the eye, so nearly all of it lands
+in the empty space in front of the shapes. **On the sixteen-bit depth buffer
+this machine reports, one step of depth then comes out larger than a Lab** at
+the distance these shapes are drawn from. Two surfaces closer together than
+that cannot be told apart at all, and the picture hatches with fine diagonal
+stripes wherever they run close — most visibly along the seam where a lid
+meets the skin it closes, which is why **Close where it is cut** was held back.
+
+Every page this application writes now fits those two planes to the box the
+camera actually sees, as you turn it. Measured on a real page at four camera
+angles, counting only the speckle the lid itself adds:
+
+| | before | after |
+|---|---|---|
+| as saved | 121 | **2** |
+| angled | 158 | **5** |
+| from above | 193 | **17** |
+| from below | 34 | 132 |
+
+Three of the four are cured. **The fourth is worse than leaving it alone**, and
+that is not yet understood, so it is written down here rather than left for you
+to find. Nothing is clipped by the closer planes: the axis box, its grid walls
+and every tick label survive at each of five camera angles, checked by counting
+the pixels the library drew that the fitted planes do not.
+
+⚠ **Nothing in the drawing library is modified.** It is a script of this
+application's own, written into its own pages, which sets two numbers after the
+library has drawn. A page saved *without* the viewer inside it — the small one,
+which fetches the viewer when its reader opens it — carries that script too and
+was checked in a real browser fetching a real viewer.
+
 ### Two shapes that cross are drawn right as well
 
 Ordering each shape's own triangles fixes each shape. It could not fix two of
