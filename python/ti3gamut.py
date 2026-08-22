@@ -10315,6 +10315,27 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                     _al = np.asarray(alphas, float)
                     if _on.any():
                         _lid_alpha = float(_al[_on].max())
+                # ⚠ AND TWO MORE LEVERS TRIED AND FOUND WANTING, so nobody
+                # spends a night on them again. Both measured on his profile
+                # against sRGB at full opacity, the hatch the lid adds
+                # against what it CLOSES looking into the opening:
+                #
+                #   ONE SURFACE INSTEAD OF TWO -- keep the other shape's own
+                #   skin at full strength under the hole rather than laying an
+                #   opaque copy of it there. It works, and it is not a cure:
+                #   the other shape's agreeing part IS the floor of this
+                #   shape's hole (B is inside A along a ray exactly when A
+                #   stands along it), so un-fading it un-fades everything.
+                #   Measured 550 pixels from a picture with NO FADE AT ALL,
+                #   and the hatch barely moved: 1,067 -> 1,044.
+                #
+                #   AN ORTHOGRAPHIC CAMERA -- a linear depth buffer instead of
+                #   one that spends its precision near the eye. This is the
+                #   one knob the drawing library does expose, and it helps:
+                #   hatch 1,074 -> 408. It also costs what the lid closes,
+                #   425,743 -> 269,179, and changes the look of every picture
+                #   in the application. A reader's choice, not a fix.
+                #
                 # ⚠ AND NEVER AN ALPHA IT WAS NOT ASKED FOR. Any alpha below
                 # 1 moves this mesh onto the drawing library's transparent
                 # path, where meshes are blended instead of depth-tested --
