@@ -123,3 +123,41 @@ def test_the_lid_still_carries_a_mask_the_page_can_fade_by(figure_with_a_lid):
             f"{len(list(lid.vertexcolor))} colours")
         assert set(stand) == {"1"}, (
             f"{lid.name}'s mask is not all standing: {sorted(set(stand))}")
+
+
+def test_the_lid_ships_no_corner_it_does_not_draw(figure_with_a_lid):
+    """HALF OF ONE LID'S CORNERS WERE CARRIED AND NEVER USED.
+
+    `close_the_cut` hands back ONE array for the piece and its lid, because
+    the two share the seam by BEING the same corners — so the piece's own
+    inside corners come with it and no lid triangle names them. Measured on
+    Glossy-paper against sRGB at Detail 20 before this was trimmed: sRGB's lid
+    shipped 7,053 corners and used 3,472, so 3,581 of them — 50.8% — carried a
+    position, a colour and a character of the fade mask into every saved page
+    and were never drawn. A page with two lids in it went from 5,898,144 to
+    5,672,517 bytes, and the picture is identical to the pixel.
+
+    ⚠ TRIMMED WHERE THE TRACE IS BUILT, NOT IN `cap_over_the_cut`, whose
+    corners keep `close_the_cut`'s numbering. That is what lets a check
+    compare built against drawn corner for corner, which is how the tuck is
+    held to being one number straight down each ray.
+    """
+    lids = _lids(figure_with_a_lid)
+    assert lids, "no lid was drawn at all"
+    for lid in lids:
+        corners = len(lid.x)
+        assert corners > 100, f"{lid.name} has hardly any corners"
+        used = set(int(n) for n in lid.i) | set(int(n) for n in lid.j) \
+            | set(int(n) for n in lid.k)
+        assert max(used) < corners, (
+            f"{lid.name} names corner {max(used)} of {corners}")
+        spare = corners - len(used)
+        assert spare == 0, (
+            f"{lid.name} ships {corners} corners and draws {len(used)} — "
+            f"{spare} ({100 * spare / corners:.1f}%) are carried into every "
+            f"saved page and never used")
+        assert len(list(lid.vertexcolor)) == corners, (
+            f"{lid.name} has {len(list(lid.vertexcolor))} colours for "
+            f"{corners} corners")
+        assert len((lid.meta or {}).get("stand", "")) == corners, (
+            f"{lid.name}'s fade mask is not one character per corner")

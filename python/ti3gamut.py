@@ -10321,6 +10321,26 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                      f"{int(round(_c[1] * 255))},"
                      f"{int(round(_c[2] * 255))},{_lid_alpha:.3f})")
                     for _c in np.asarray(_colours, float)]
+                # ⚠ ONLY THE CORNERS THE LID ACTUALLY USES. `close_the_cut`
+                # hands back ONE array for the piece and its lid, because the
+                # two share the seam by BEING the same corners -- so the piece's
+                # own inside corners come with it, and no lid triangle names
+                # them. Measured, Glossy-paper against sRGB at Detail 20:
+                # sRGB's lid ships 7,053 corners and uses 3,472, so 3,581 of
+                # them -- 50.8% -- carry a position, a colour and a character
+                # of the fade mask into every saved page and are never drawn.
+                # The paper's lid ships 3,202 and wastes 731.
+                #
+                # Dropped HERE and not in `cap_over_the_cut`, whose corners are
+                # numbered the way `close_the_cut` numbered them: that is what
+                # lets a check compare the two corner for corner, and it is
+                # how the tuck is held to being radial.
+                _used = np.unique(_faces)
+                _renumber = np.full(len(_corners), -1, int)
+                _renumber[_used] = np.arange(len(_used))
+                _corners = _corners[_used]
+                _faces = _renumber[_faces]
+                _colours = [_colours[int(_n)] for _n in _used]
                 fig.add_trace(go.Mesh3d(
                     x=_corners[:, 1], y=_corners[:, 2], z=_corners[:, 0],
                     i=_faces[:, 0], j=_faces[:, 1], k=_faces[:, 2],
