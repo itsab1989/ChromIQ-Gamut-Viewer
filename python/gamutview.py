@@ -1557,6 +1557,28 @@ def close_the_cut(vertices, faces, other_vertices, other_faces, centre, *,
             f"from {tuple(np.round(middle, 3))}, not {4 * np.pi:.4f} — the "
             f"middle is outside it or it folds, and sliding corners down "
             f"their rays onto it would land them anywhere")
+    # ⚠ AND THE SAME IS TRUE OF THE SHAPE BEING CAPPED. The check above asks
+    # it of the OTHER shape and stops there, which was half the question: the
+    # rim slides down ITS OWN rays, so a piece whose middle lies outside it
+    # has rays that leave through the wrong side and land wherever they like.
+    #
+    # Measured on a ball and a small shape sitting off to one side of it
+    # (scripts/make_awkward_shapes.py: ball, ball-just-poking). Capping the
+    # small one, which covers 0.5405 of the view from (50, 0, 0), produced
+    # 7,999 triangles that LOOKED like a lid and were a duplicate of the
+    # piece's own front skin: 0.000 Lab from its own surface -- coincident,
+    # so z-fighting -- and 5.918 Lab from the shape it was supposedly cut
+    # from, painted with colours sampled over there. Nothing refused it, and
+    # it was cited as evidence the feature worked.
+    if under is not None:
+        held = covers_the_sphere_once(np.asarray(under[0], float),
+                                      np.asarray(under[1], int), middle)
+        if abs(held - 4.0 * np.pi) > 1e-2:
+            raise ValueError(
+                f"the shape being capped covers {held:.4f} of the view from "
+                f"{tuple(np.round(middle, 3))}, not {4 * np.pi:.4f} — its own "
+                f"rim cannot be slid down rays that leave through the wrong "
+                f"side of it")
     lid = onto_the_floor(kept)
     # ONLY THE SEAM IS SHARED, and it is shared BY BEING THE SAME CORNERS.
     # The seam keeps the piece's own numbering, so its corners cannot drift

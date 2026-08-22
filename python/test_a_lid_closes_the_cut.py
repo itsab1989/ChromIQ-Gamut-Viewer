@@ -378,3 +378,73 @@ def test_the_lid_cannot_run_away(papers):
                        reference_gamut("sRGB", steps=24), 0)
     assert 0 < len(lid) <= 8000, (
         f"the paper against sRGB needs {len(lid):,} lid triangles")
+
+
+# ---------------------------------------------------------------------------
+# What a hostile reading found on 2026-08-22, from the shapes in
+# scripts/make_awkward_shapes.py. The guard above asks the coverage question of
+# the shape being capped AGAINST and stopped there; capping a shape the middle
+# is OUTSIDE went unrefused and produced a lid in the wrong place.
+# ---------------------------------------------------------------------------
+
+
+def _awkward(tmp_path_factory, name):
+    import sys as _sys
+    import numpy as _np
+    import ti3gamut as _t
+    from gamutview import build_gamut as _b
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
+                            / "scripts"))
+    import make_awkward_shapes as _m
+    folder = tmp_path_factory.mktemp("awkward")
+    _m.make(folder)
+    return _b(_np.asarray(_t.read_measurement(folder / f"{name}.ti3").lab,
+                          float), input_space="lab")
+
+
+@pytest.fixture(scope="module")
+def off_to_one_side(tmp_path_factory):
+    """A ball, and a small shape beside it that the middle is outside of."""
+    return (_awkward(tmp_path_factory, "ball"),
+            _awkward(tmp_path_factory, "ball-just-poking"))
+
+
+def test_a_shape_the_middle_is_outside_is_refused(off_to_one_side):
+    """It is not capped, and not capped WRONGLY, which is what happened.
+
+    Unrefused, this returned 7,999 triangles that looked like a lid and were a
+    duplicate of the piece's own front skin: 0.000 Lab from its own surface,
+    5.918 Lab from the shape it was supposedly cut from, painted with colours
+    sampled over there. A picture nobody could tell was wrong.
+    """
+    import ti3gamut
+    from gamutview import covers_the_sphere_once
+    ball, sliver = off_to_one_side
+    covered = covers_the_sphere_once(sliver.vertices, sliver.faces, _MIDDLE)
+    assert covered < 4 * np.pi - 1e-2, (
+        "this shape is meant to be one the middle is outside; if it now wraps "
+        "the middle the case has evaporated and this test proves nothing")
+    gamuts = [("ball", ball), ("sliver", sliver)]
+    out, _f, stands, _l = ti3gamut.recut_where_they_part(gamuts)
+    cut = [("ball", out[0][1]), ("sliver", out[1][1])]
+    assert ti3gamut.cap_over_the_cut(cut, stands, 1) is None, (
+        "a shape the middle is outside was capped anyway")
+
+
+def test_the_ordinary_pairs_still_get_their_lids(tmp_path_factory):
+    """The other half of the rule: it must refuse ONLY the broken case.
+
+    Dimming or refusing too widely is how the drift marker's tick was broken;
+    these are the pairs that must keep working.
+    """
+    import ti3gamut
+    for one, two in (("two-lobes", "ball"), ("pancake", "column"),
+                     ("ball-with-a-dent", "ball")):
+        a = _awkward(tmp_path_factory, one)
+        b = _awkward(tmp_path_factory, two)
+        gamuts = [(one, a), (two, b)]
+        out, _f, stands, _l = ti3gamut.recut_where_they_part(gamuts)
+        cut = [(one, out[0][1]), (two, out[1][1])]
+        made = [ti3gamut.cap_over_the_cut(cut, stands, i) for i in (0, 1)]
+        assert any(m is not None for m in made), (
+            f"{one} + {two}: neither shape got a lid, and both should")
