@@ -17,7 +17,13 @@ from gamutview import build_gamut
 OUT = (ROOT.parent / "scratch" / "hatchtest").resolve(); OUT.mkdir(exist_ok=True)
 DEMO = ROOT / "demo"
 app = QApplication.instance() or QApplication(sys.argv)
-view = QWebEngineView(); view.resize(1600, 1050); view.show()
+view = QWebEngineView(); view.resize(1600, 1050)
+# ⚠ A WINDOW WITH A NAME ON IT. This has to be SHOWN -- the artifact is
+# a depth-buffer effect and QWebEngineView is a native surface, so an
+# offscreen grab does not reproduce it. Blank while each page loads,
+# which is what "why are there empty windows popping up?" was about.
+view.setWindowTitle("ChromIQ — showing the hatching (a test window)")
+view.show()
 def pump(s):
     end = time.time()+s
     while time.time() < end: app.processEvents(); time.sleep(0.01)
