@@ -772,6 +772,53 @@ _ACCENT_L_CAP = 0.92
 _LAST_CAP: "tuple | None" = None
 
 
+def a_lid_could_be_built(gamuts, centre=None) -> bool:
+    """Could `cap_over_the_cut` make a lid for either of these two shapes?
+
+    ASKED SO THE TICK CAN SAY NO IN ADVANCE. The lid is cut from the OTHER
+    shape's surface by sliding corners down their rays onto it, which only
+    means anything if that shape wraps the middle those rays leave from.
+    `close_the_cut` checks exactly that and raises when it fails; the raise is
+    caught and turned into "no lid", silently.
+
+    Silently is the fault. Measured on a pair built to provoke it -- a ball,
+    and a small one sitting off to one side so the middle is outside it --
+    the tick was live, and ticking it changed 0 pixels of 6,000,000. A control
+    that invites a click and answers with nothing is the thing this window
+    fixes wherever it finds it.
+
+    THE SAME QUESTION THE DRAWING ASKS, and deliberately not a cheaper
+    likeness of it: the coverage test and the middle are lifted from
+    cap_over_the_cut and close_the_cut rather than restated. It stops short of
+    building the lid, which is the slow half, so this is safe to call whenever
+    a control needs to know.
+
+    It does NOT ask whether anything is cut away -- that needs the standing
+    masks, which the window does not keep. A pair with nothing cut away has no
+    opening, and the tick over-offers there still.
+    """
+    from gamutview import covers_the_sphere_once
+
+    if len(gamuts) != 2:
+        return False
+    for which in (0, 1):
+        theirs = gamuts[1 - which][1]
+        try:
+            if centre is None:
+                middle = ((50.0, 0.0, 0.0)
+                          if getattr(theirs, "space", "lab") == "lab"
+                          else np.asarray(theirs.vertices, float).mean(axis=0))
+            else:
+                middle = centre
+            covered = covers_the_sphere_once(theirs.vertices, theirs.faces,
+                                             np.asarray(middle, float))
+        except Exception:                                    # noqa: BLE001
+            continue
+        if abs(covered - 4.0 * np.pi) <= 1e-2:
+            return True
+    return False
+
+
 def cap_over_the_cut(gamuts, stands, which, centre=None):
     """The piece of the OTHER shape that closes this one's opening.
 
@@ -9819,10 +9866,50 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
             _lid = cap_over_the_cut(gamuts, stands, i)
             if _lid is not None:
                 _corners, _faces, _colours = _lid
+                # ⚠ THE LID FADES WITH THE PIECE IT CLOSES, in the window and
+                # on the page. It did neither.
+                #
+                # The wall of a shape that has been faded away is not a thing
+                # to keep drawing. Measured at agree 0.5 with "where they
+                # differ" at nothing: the shell's own colours went to
+                # rgba(15,12,21,0.000) and the lid stayed at opacity 0.55
+                # with opaque colours -- two coloured membranes hanging where
+                # the reader had just emptied the picture.
+                #
+                # The lid belongs to the STANDING side: it is the wall of
+                # what is left, so it takes the standing alpha here and an
+                # all-"1" mask for the page, whose fade reads
+                # `mark.charAt(v) === "1" ? differAt : agreeAt`. The comment
+                # below records the same fault caught for the legend row and
+                # not for the fade.
+                # `standing` is the per-vertex mask, and `stand` is that same
+                # mask only when the shell is split in two -- reading `stand`
+                # here left the lid opaque at every fade, which is the fault
+                # this block was written to remove.
+                _lid_alpha = 1.0
+                if alphas is not None and standing is not None:
+                    _on = np.asarray(standing, bool)
+                    _al = np.asarray(alphas, float)
+                    if _on.any():
+                        _lid_alpha = float(_al[_on].max())
+                if _lid_alpha < 1.0:
+                    # NOT `_with_alpha`, WHICH CANNOT SEE THESE. It edits the
+                    # text of a colour and hands anything without a bracket
+                    # back untouched -- and the lid's colours are float
+                    # triples in 0..1, not "rgb(...)" strings. Passing them
+                    # through it changed nothing at all, which looked exactly
+                    # like a fade that had been applied.
+                    _colours = [
+                        f"rgba({int(round(_c[0] * 255))},"
+                        f"{int(round(_c[1] * 255))},"
+                        f"{int(round(_c[2] * 255))},{_lid_alpha:.3f})"
+                        for _c in np.asarray(_colours, float)]
                 fig.add_trace(go.Mesh3d(
                     x=_corners[:, 1], y=_corners[:, 2], z=_corners[:, 0],
                     i=_faces[:, 0], j=_faces[:, 1], k=_faces[:, 2],
                     vertexcolor=_colours, flatshading=True,
+                    **({"meta": {"stand": "1" * len(_corners)}}
+                       if stand is not None else {}),
                     opacity=float(base_i), name=f"{name} — where it is cut",
                     # ⚠ ON THE SHAPE'S OWN ROW, NOT A ROW OF ITS OWN. A saved
                     # page keys the reader's controls on `legendgroup || name`
