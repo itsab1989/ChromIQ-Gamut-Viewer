@@ -1436,11 +1436,27 @@ def compare_measurements(before, after, *, top: int = 8) -> Drift:
             "and at least one of these files does not carry them. Without "
             "them there is no way to tell which patch corresponds to which.")
 
+    # ⚠ A REPEATED PATCH IS ONE PATCH, MEASURED TWICE. Charts repeat colours
+    # on purpose -- demo/Glossy-paper.ti3 has 110 device values printed more
+    # than once, 243 of its 1,168 patches. This took the FIRST of each and
+    # threw the rest away, which had two costs: the comparison ran on 1,035
+    # patches of 1,168, and the answer depended on the ORDER of the file.
+    # Measured, shuffling the second chart: average 0.7652 -> 0.7683, worst
+    # 2.5639 -> 2.6526. A chart re-saved in another order was a different
+    # reading.
+    #
+    # Averaged instead, which is what the repeats are printed for: the answer
+    # uses every patch, cannot depend on the order, and carries less of the
+    # instrument's own noise.
     def index(m):
         out = {}
         for i, dev in enumerate(np.round(m.device, 5)):
-            out.setdefault(tuple(dev), i)      # first wins, as read
+            out.setdefault(tuple(dev), []).append(i)
         return out
+
+    def averaged(m, where):
+        lab = np.asarray(m.lab, float)
+        return {k: lab[at].mean(axis=0) for k, at in where.items()}
 
     ia, ib = index(before), index(after)
     shared = [k for k in ia if k in ib]
@@ -1457,8 +1473,9 @@ def compare_measurements(before, after, *, top: int = 8) -> Drift:
             "comparison needs two readings of one chart; for two different "
             "charts, compare the gamuts instead.")
 
-    lab_a = np.array([before.lab[ia[k]] for k in shared])
-    lab_b = np.array([after.lab[ib[k]] for k in shared])
+    mean_a, mean_b = averaged(before, ia), averaged(after, ib)
+    lab_a = np.array([mean_a[k] for k in shared])
+    lab_b = np.array([mean_b[k] for k in shared])
     de = delta_e_2000(lab_a, lab_b)
     order = np.argsort(de)[::-1][:top]
     worst = [(f"R{k[0]*100:.0f} G{k[1]*100:.0f} B{k[2]*100:.0f}",
