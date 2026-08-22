@@ -1154,3 +1154,37 @@ none of it exists in a saved page. Whether an exported page blinks in a
 browser is unmeasured -- and worth measuring, because the cure there would be
 inside the page (hide the plot until `plotly_afterplot`) and would be the
 same fix as (3).
+
+---
+
+## WHICH ACTIONS BLINK, MEASURED 2026-08-22
+
+Driven with his profile and sRGB, watching whether `_show_page` runs:
+
+    drag How solid it looks        changes it in place
+    drag Depth                     changes it in place
+    tick the walls and grid off    changes it in place
+    tick Show rings inside         REWRITES THE PAGE
+    first shape solid -> outline   REWRITES THE PAGE
+    page colours dark -> light     REWRITES THE PAGE
+    colour space Lab -> XYZ        REWRITES THE PAGE
+
+⚠ **AND FADES DO NOT BLINK, WHICH CORRECTS MY OWN REPORT.** The blink I
+measured on a fade was mine: `_push_fade` sets `_fade_live` from an
+ASYNCHRONOUS callback, and my driver called `_after_fade()` before it landed,
+so the release fell through to a rebuild. Let go after a moment, as a person
+does, and `_fade_live` is True and nothing is rebuilt. Any future driver that
+measures a fade must wait for that callback or it will provoke the very fault
+it is looking for.
+
+WHERE THE WORK IS, if this is worth doing:
+
+* **rings** and **colour space** genuinely need new geometry -- a rebuild
+  there is honest, and `audit_sliders` already records rings that way.
+* **page colours** change nothing but appearance. Backgrounds and axes can be
+  relaid out in place and the vertex colours restyled; this is the strongest
+  candidate.
+* **solid -> outline** has a precedent that says it need not rebuild: a SAVED
+  PAGE already offers the reader "draw the edges instead of the surface" and
+  does it live, without reloading anything. Whatever the page does, the window
+  could do.
