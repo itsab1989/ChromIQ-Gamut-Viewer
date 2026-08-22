@@ -884,7 +884,31 @@ def which_shapes_could_be_capped(gamuts, centre=None) -> list:
     return answers
 
 
-def cap_over_the_cut(gamuts, stands, which, centre=None):
+def _painted_floats(gamut, paint: str, index: int):
+    """A gamut's vertex colours the way the reader asked, as floats in 0..1.
+
+    `_paint_vertices` answers in the drawing library's own words -- "rgb(r,g,b)"
+    strings, or None to mean "use the gamut's own" -- and a lid has to
+    INTERPOLATE colours across a triangle, which no string can do.
+    """
+    chosen = _paint_vertices(gamut, paint, index)
+    if chosen is None:
+        return np.asarray(gamut.colors, float)
+    out = np.empty((len(chosen), 3), float)
+    for n, one in enumerate(chosen):
+        got = re.findall(r"[-+]?\d*\.?\d+", str(one))
+        # ⚠ REFUSED RATHER THAN GUESSED. A colour this cannot read would come
+        # back as black and look like a painting fault; there is no shade of
+        # grey between understanding a colour and not.
+        if len(got) < 3:
+            raise ValueError(
+                f"cannot read the colour {one!r} that painting {paint!r} gave "
+                f"vertex {n}; expected three numbers")
+        out[n] = [float(got[0]), float(got[1]), float(got[2])]
+    return np.clip(out / 255.0, 0.0, 1.0)
+
+
+def cap_over_the_cut(gamuts, stands, which, centre=None, paint="true"):
     """The piece of the OTHER shape that closes this one's opening.
 
     WHY. Fade "where they agree" away and what is left of a shape has a hole
@@ -953,7 +977,11 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
     # above about one entry per shape describes a fix that worked in one of
     # the three spaces.
     key = _what_was_cut_last(gamuts, None)
-    here = tuple(np.round(middle, 6))
+    # ⚠ THE PAINTING IS PART OF THE QUESTION. The lid's colours are worked
+    # out here, so a store that remembers only the middle hands back the lid
+    # painted the way the reader asked LAST time -- and the fade is a redraw,
+    # so it would come back wrong on the very next drag.
+    here = (tuple(np.round(middle, 6)), str(paint))
     if _LAST_CAP is not None and _LAST_CAP[0] == key:
         kept = _LAST_CAP[1].get(int(which))
         if kept is not None and kept[0] == here:
@@ -992,11 +1020,26 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
     rays = corners - middle
     _far, hit, where = _rays_onto(theirs.vertices, theirs.faces,
                                   middle)(rays, and_where=True)
-    paint = np.asarray(theirs.colors, float)
+    # ⚠ THE WAY THE READER ASKED, NOT ALWAYS THE TRUE COLOURS. The lid read
+    # `theirs.colors` from the day it was written and knew nothing of
+    # `_paint_vertices`, so in four of the five paintings it was a patch of
+    # TRUE COLOUR inside a shape painted some other way. Measured at his
+    # settings, the pixels the lid changes against the same picture with no
+    # lid, and how far out they are:
+    #
+    #     True colours     349 px, median  23 of 255
+    #     One colour each  2,652        median  79      <- a white plume in a
+    #     By lightness     1,471        median  44         flat blue shape
+    #     By chroma        1,471        median 157
+    #     In the accents   1,162        median  20
+    #
+    # THE OTHER SHAPE'S index, because the lid IS the other shape's skin and
+    # "one colour each" hands out a colour per shape.
+    _their_paint = _painted_floats(theirs, paint, 1 - which)
     tri = np.asarray(theirs.faces, int)[np.maximum(hit, 0)]
-    colours = (paint[tri[:, 0]]
-               + where[:, 0:1] * (paint[tri[:, 1]] - paint[tri[:, 0]])
-               + where[:, 1:2] * (paint[tri[:, 2]] - paint[tri[:, 0]]))
+    colours = (_their_paint[tri[:, 0]]
+               + where[:, 0:1] * (_their_paint[tri[:, 1]] - _their_paint[tri[:, 0]])
+               + where[:, 1:2] * (_their_paint[tri[:, 2]] - _their_paint[tri[:, 0]]))
     colours[hit < 0] = 0.5
     # ⚠ AND THE DRAWN RIM IS TUCKED A HAIR UNDER THE ONE IT IS SEWN TO.
     #
@@ -1077,7 +1120,7 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
         _at = {}
         for _n, _p in enumerate(np.round(np.asarray(mine.vertices, float), 7)):
             _at.setdefault((float(_p[0]), float(_p[1]), float(_p[2])), _n)
-        _own = np.asarray(mine.colors, float)
+        _own = _painted_floats(mine, paint, which)
         for _v in _seam:
             _p = np.round(corners[_v], 7)
             _n = _at.get((float(_p[0]), float(_p[1]), float(_p[2])))
@@ -10115,7 +10158,7 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
         # the coloured solid is.
         if (cap and agree < 1.0 and standing is not None
                 and marked is None and how in ("solid", "solid+mesh")):
-            _lid = cap_over_the_cut(gamuts, stands, i)
+            _lid = cap_over_the_cut(gamuts, stands, i, paint=paint_i)
             if _lid is not None:
                 _corners, _faces, _colours = _lid
                 # ⚠ THE LID FADES WITH THE PIECE IT CLOSES, in the window and
