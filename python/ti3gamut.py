@@ -998,96 +998,99 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
                + where[:, 0:1] * (paint[tri[:, 1]] - paint[tri[:, 0]])
                + where[:, 1:2] * (paint[tri[:, 2]] - paint[tri[:, 0]]))
     colours[hit < 0] = 0.5
-    # ⚠ AND NOT WHERE THE SKIN IS ALREADY THERE. TOO_CLOSE_TO_CLOSE asks
-    # this of the two shapes AS A WHOLE and refuses the lid outright; the
-    # same thing happens in PATCHES on shapes that are far apart overall.
-    # Where the piece's own skin all but touches the shape below it the hole
-    # is that shallow, the lid is laid a hair under a surface the picture is
-    # already drawing, and the depth buffer picks between them facet by facet:
-    # a herringbone of grey teeth on a smooth pale slope, measured at 1,875
-    # pixels his settings never asked for.
+    # ⚠ AND THE DRAWN RIM IS TUCKED A HAIR UNDER THE ONE IT IS SEWN TO.
     #
-    # ⚠ HERE AND NOT IN `close_the_cut`, which must keep handing back a
-    # CLOSED solid -- the volume is read off it, and a lid with holes in it
-    # encloses nothing. This drops triangles from what is DRAWN and leaves
-    # the geometry whole.
+    # The lid and the piece meet at a FOLD along the seam, and they meet BY
+    # BEING THE SAME CORNERS -- which is what makes the lid close the hole,
+    # and what leaves the two surfaces at exactly the same depth all along
+    # that line. Seen anywhere near edge-on the picture has nothing to choose
+    # between them and chooses in bites: a beaded thread, and where the two
+    # shapes converge a herringbone of teeth. Sewing the colours (below) took
+    # the count down and not the error -- the surviving pixels were still a
+    # median 42 of 255 out. The tie itself has to go, and the only way it can
+    # go is for the drawn rim to stop being in the same place.
     #
-    # ⚠ AND ONLY WHERE ALL THREE CORNERS ARE IN THE SQUEEZE. The seam's own
-    # corners sit exactly ON the skin -- that is what makes the lid meet the
-    # hole -- so any test that fires on one corner takes the whole rim ring
-    # with it and opens the very seam this exists to close.
-    # A HUNDREDTH OF THE SHAPE, and measured rather than chosen. Swept on his
-    # profile against sRGB at his own settings, counting the pixels the lid
-    # changes against the same picture with no lid at all:
+    # Half a Lab of the shape, down each corner's own ray. Swept at his
+    # settings with BOTH numbers, because the obvious one is minimised by
+    # drawing no lid at all: OUTSIDE is what the lid changes at his camera
+    # where it ought to be invisible, INSIDE is what it closes when you look
+    # into the opening from underneath.
     #
-    #     nothing dropped   4,659      a four-hundredth   2,679
-    #     an eight-hundredth 4,104     a two-hundredth    2,264
-    #                                  A HUNDREDTH          868
+    #     tucked by     OUTSIDE       INSIDE
+    #     nothing         2,847       77,467
+    #     diag/1600       1,783       76,940
+    #     diag/800        1,161       75,756
+    #     DIAG/400          349       74,475      <- the knee
+    #     diag/200          114       73,582
     #
-    # An eight-hundredth is the clearance itself, which by construction the
-    # lid always has, so it drops nothing the clearance had not already
-    # settled. It has to be several times that to reach the patches where
-    # the two surfaces run near enough to parallel that no radial gap
-    # separates them on screen at all.
-    _shy = float(np.linalg.norm(
-        np.asarray(mine.vertices, float).max(axis=0)
-        - np.asarray(mine.vertices, float).min(axis=0))) / 100.0
-    if _shy > 0 and len(lid):
+    # The 3.9% is not a tear. Photographed from inside with the other shape
+    # drawn as a cage, tucked and untucked are the same picture and only the
+    # LIDLESS one shows the opening; what it costs is scattered pixels along
+    # the rim.
+    #
+    # ⚠ FROM WHAT IS DRAWN, NEVER FROM WHAT IS BUILT. `close_the_cut` still
+    # returns the piece's own corners unmoved -- 0.000000000 Lab, which
+    # `test_a_lid_closes_the_cut.py` asserts and which every closure check
+    # there rests on. This moves the copy that goes to the picture.
+    #
+    # ⚠ AND THIS REPLACED A RULE THAT LOOKED BETTER AND WAS WORSE. Its
+    # predecessor did not DRAW lid triangles whose every corner had less than
+    # a hundredth of the shape of room under the skin. It scored well on the
+    # one picture it was tuned on and a hostile review found what it cost
+    # elsewhere: on sRGB against Display P3 -- two reference spaces, the
+    # default space, the default Detail -- it withheld 97.1% of one lid, and
+    # the picture became indistinguishable from having no lid at all. 103
+    # configurations were flagged, the worst at 98.06%. Measured against the
+    # tuck on his own pair it earns nothing: tuck alone 349 / 74,475, tuck
+    # and rule together 355 / 74,468. A rule that costs a feature elsewhere
+    # and buys nothing here is not a fix.
+    if len(lid):
         _tri = np.asarray(lid, int)
-        _ray = corners - middle
-        _reach = np.linalg.norm(_ray, axis=1)
-        _skin_at = _rays_onto(mine.vertices, mine.faces, middle)(_ray)
-        _room = np.where(np.isfinite(_skin_at), _skin_at - _reach, np.inf)
-        _room_enough = _room[_tri].max(axis=1) >= _shy
-        # ⚠ AND NEVER A TRIANGLE THAT OWNS A PIECE OF THE SEAM. The seam's
-        # corners are ON the skin -- room zero, by the construction that makes
-        # the lid meet the hole -- so the rim ring fails this test everywhere
-        # its third corner is also in the squeeze. Measured without this
-        # guard: 413 of the printer's 1,134 seam edges and 291 of sRGB's 877
-        # stopped being covered at all, which is the lid coming away from the
-        # very edge it exists to close, leaving an opening up to 2.98 Lab
-        # deep. A triangle carrying a seam edge is kept whatever its room.
         _edges = {}
         for _f in _tri:
             for _a, _b in ((_f[0], _f[1]), (_f[1], _f[2]), (_f[2], _f[0])):
                 _k = (_a, _b) if _a < _b else (_b, _a)
                 _edges[_k] = _edges.get(_k, 0) + 1
-        _seam = {_k for _k, _n in _edges.items() if _n == 1}
-        _on_seam = np.array([
-            any(((_f[_i], _f[_j]) if _f[_i] < _f[_j] else (_f[_j], _f[_i])) in _seam
-                for _i, _j in ((0, 1), (1, 2), (2, 0)))
-            for _f in _tri], bool) if _seam else np.zeros(len(_tri), bool)
-        _drawn = _tri[_room_enough | _on_seam]
-        if len(_drawn) >= 4:
-            lid = _drawn
+        _seam = sorted({_i for _k, _n in _edges.items() if _n == 1 for _i in _k})
         # ⚠ AND THE SEAM TAKES THE PIECE'S OWN COLOUR. The rim corners ARE
-        # the piece's corners -- the cut put them there and `close_the_cut`
-        # keeps its numbering so they cannot drift -- so the two surfaces
-        # paint THE SAME POINT. They did not agree about it: measured on his
-        # profile against sRGB, a median 5.3 of 255 apart and up to 41.3,
-        # and on sRGB's own lid up to 53.3. Each shape colours its skin from
-        # its own measurements, and where they cross those answers differ.
+        # the piece's corners, so the two surfaces paint THE SAME POINT. They
+        # did not agree about it: measured on his profile against sRGB, a
+        # median 5.3 of 255 apart and up to 41.3, and on sRGB's own lid up to
+        # 53.3. Each shape colours its skin from its own measurements, and
+        # where they cross those answers differ.
         #
-        # The rim is the one place the lid and the skin must touch, so the
-        # depth buffer's tie there cannot be moved somewhere else. What CAN
-        # be taken away is the thing the tie shows: two colours for one
-        # point. Sewn to the piece's, a bite out of the seam paints what the
-        # seam was going to be painted anyway.
-        # ⚠ TO SEVEN PLACES, WHICH IS WHERE `weld_by_position` LEAVES THEM.
-        # It hands back `np.unique(np.round(v, 7))`, so a rim corner is the
-        # piece's corner ROUNDED -- as much as 8.4e-08 Lab from it. Matched on
-        # the raw numbers, 0 of 299 corners were found and the whole rule
-        # silently painted nothing, which looked exactly like a rule that had
-        # nothing to paint.
+        # ⚠ MATCHED ON THE WELDED NUMBERS. `weld_by_position` hands back
+        # `np.unique(np.round(v, 7))`, so a rim corner is the piece's corner
+        # ROUNDED -- as much as 8.4e-08 Lab from it. Matched on the raw
+        # numbers, 0 of 299 corners were found, the rule painted nothing, and
+        # the picture came back byte-identical: 3,074 pixels before and 3,074
+        # after. That is what a rule that cannot see its own subject looks
+        # like from the outside.
+        #
+        # ⚠ THIS IS TRUE COLOURS ONLY. `_paint_vertices` can put the whole
+        # shape in one flat colour, or in an accent family, and neither the
+        # lid nor this sewing knows: measured, the sewn seam is 197.5 of 255
+        # from the skin beside it in "one flat colour". The lid has painted
+        # itself from `theirs.colors` since it was written, so this is not
+        # new -- but "one point, one colour" is true in one of the five modes
+        # and the queue carries it as the next job.
         _at = {}
         for _n, _p in enumerate(np.round(np.asarray(mine.vertices, float), 7)):
             _at.setdefault((float(_p[0]), float(_p[1]), float(_p[2])), _n)
-        _paint = np.asarray(mine.colors, float)
-        for _v in sorted({_i for _k in _seam for _i in _k}):
+        _own = np.asarray(mine.colors, float)
+        for _v in _seam:
             _p = np.round(corners[_v], 7)
             _n = _at.get((float(_p[0]), float(_p[1]), float(_p[2])))
             if _n is not None:
-                colours[_v] = _paint[_n]
+                colours[_v] = _own[_n]
+        _tuck = float(np.linalg.norm(
+            np.asarray(mine.vertices, float).max(axis=0)
+            - np.asarray(mine.vertices, float).min(axis=0))) / 400.0
+        _r = corners[_seam] - middle
+        _dd = np.linalg.norm(_r, axis=1)
+        corners = np.asarray(corners, float).copy()
+        corners[_seam] = middle + _r * (
+            np.maximum(0.0, _dd - _tuck) / np.maximum(1e-12, _dd))[:, None]
     answer = (corners, lid, np.clip(colours, 0.0, 1.0))
     done[int(which)] = (here, answer)
     return answer
