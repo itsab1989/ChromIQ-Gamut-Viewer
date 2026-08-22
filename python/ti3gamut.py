@@ -10315,6 +10315,21 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                     _al = np.asarray(alphas, float)
                     if _on.any():
                         _lid_alpha = float(_al[_on].max())
+                # ⚠ AND NEVER AN ALPHA IT WAS NOT ASKED FOR. Any alpha below
+                # 1 moves this mesh onto the drawing library's transparent
+                # path, where meshes are blended instead of depth-tested --
+                # which does take the hatching away, and takes the lid with
+                # it. Measured on his profile against sRGB at full opacity,
+                # the hatch it adds against what it CLOSES looking into the
+                # opening:
+                #
+                #     opaque       hatch 1,241     closes 317,929
+                #     alpha 0.999  hatch   187     closes   1,947
+                #     alpha 0.95   hatch   200     closes   1,916
+                #     alpha 0.70   hatch   199     closes   1,937
+                #
+                # A thousandth of transparency costs 99.4% of the closing.
+                #
                 # ⚠ ALWAYS AS TEXT, NOT ONLY WHEN THE FADE HAS ALREADY BITTEN.
                 #
                 # NOT `_with_alpha`, WHICH CANNOT SEE FLOATS. It edits the
