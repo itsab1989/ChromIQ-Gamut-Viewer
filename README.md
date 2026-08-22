@@ -356,9 +356,9 @@ nothing to close rather than accepting a click and answering with nothing: it
 wants two shapes, *Where they agree* below full, and at least one of the two
 drawn as a surface. A cross-section, two rooms, a run of profiles, or a
 picture marking out-of-reach colours is a different construction, and the tick
-says which one is in the way. A saved page carries the lid exactly as the
-window drew it — the reader can still fade the shapes, but the lid is fixed as
-saved.
+says which one is in the way. A saved page carries the lid and fades it with
+the shape it closes, exactly as the window does — the lid is the wall of what
+stands out, so it goes when that does.
 
 ### Every shape, styled its own way
 
