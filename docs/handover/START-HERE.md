@@ -142,9 +142,25 @@ GAMUTVIEW_NO_ARGYLL=1 ../gv-venv/bin/python -m pytest -q
 ```
 
 At the time of writing: **1017 passed**, and **1013 passed + 4 skipped**.
-Version **2.50.4** (released, 11 assets). Six releases on 2026-08-21:
-v2.49.0, v2.50.0, v2.50.1 (correcting a false claim in v2.50.0), v2.50.2,
-v2.50.3 and v2.50.4.
+Version **2.50.5** (released, 11 assets). Seven releases: v2.49.0, v2.50.0,
+v2.50.1 (correcting a false claim in v2.50.0), v2.50.2, v2.50.3, v2.50.4 and
+v2.50.5.
+
+⚠ **A FOLDED GROUP IS NOT A MISSING CONTROL.** Measuring Detail's availability
+in a fresh-preferences window read `isVisible() == False` in EVERY state,
+including the one where the slider demonstrably works — and that nearly had a
+correct fix reverted as pointless. Six groups start folded; `audit_panel`
+opens them first for exactly this reason. Unfolded, the row is shown in all
+four states and only its ENABLED flag differs.
+
+⚠ **AND FOUR OTHER INSTRUMENTS WERE WRONG BEFORE ONE WAS RIGHT**, all in the
+same investigation, all failing towards a tidy answer: a run that compared 40
+with 40 because the scratch preferences carried the value between windows; a
+change-detector that fired on the slider's own number redrawing in the panel;
+a picture comparison that counted antialiasing; and a `grab()` of a rectangle
+with negative coordinates, which returns a null pixmap and a `save()` that
+quietly answers False. What settled it asks the built shape for its FACE COUNT
+and never looks at pixels at all.
 
 ⚠ **ASK THE QUESTION IN THE STATE HE IS IN, NOT THE ONE THE WINDOW STARTS
 IN.** v2.50.3's shortened hovers grew back the moment a tickbox was turned on
