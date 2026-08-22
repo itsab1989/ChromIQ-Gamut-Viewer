@@ -1225,3 +1225,41 @@ blink is mostly the harness; the change touches every picture the window
 draws; and the project's own rule -- the same picture however you reach it --
 would demand the pixel comparison above on every kind of scene before it could
 ship. Worth doing only if he asks for it in ordinary use.
+
+
+---
+
+## THE SEAM: WHICH THEORY IS IT? MEASURED 2026-08-22
+
+The job asked this to be settled before anything was changed. It is settled,
+and the answer is that NEITHER standing theory explains it alone.
+
+Driven at his settings -- his profile against sRGB, agree 45, both drawn as
+surfaces -- counting how many pixels the lid changes:
+
+    Detail  6   sRGB about   400 faces    2,673 pixels
+    Detail 20   sRGB       4,332 faces    2,057 pixels
+    Detail 40   sRGB      18,252 faces    1,885 pixels
+
+A FORTY-FIVE-FOLD finer comparison removes THIRTY PER CENT. If the artifact
+were the facets of the shape the lid is cut from, the visible area would fall
+about sevenfold. So resolution modulates it and cannot remove it.
+
+And the queue's older theory -- that the lid and the piece are classified
+separately so their rims disagree -- does not fit either: the lid's rim IS the
+piece's own corners, unmoved, and `test_a_lid_closes_the_cut.py` asserts it.
+
+WHAT IS LEFT AT DETAIL 40, looked at rather than counted: not a sawtooth but a
+fine vertical COMB where the lid runs nearly parallel to the skin, and a
+serrated top edge. Both absent with the lid off.
+
+MY MECHANISM, now under hostile review: in `close_the_cut` the lid is held
+under the skin by `step = min(clearance, 0.01 * (reach - far))`. At the rim
+the drop `reach - far` goes to zero, so the clearance goes to zero exactly
+where the two surfaces meet, and the depth buffer is left to choose between
+them pixel by pixel.
+
+⚠ DO NOT ACT ON THAT PARAGRAPH UNTIL THE REVIEW COMES BACK. The last three
+things I was sure of about this lid -- that the 7,999-face lid proved it
+worked, that the seam wobbled 3.4 Lab, that the teeth were the comparison's
+facets -- were each refuted by a measurement.
