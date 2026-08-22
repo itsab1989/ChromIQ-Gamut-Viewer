@@ -284,3 +284,126 @@ def test_it_is_remembered_between_sessions():
     assert '("close_cut", self._close_cut, "check", False)' in body, (
         "the lid's tick is not in `_persisted()`, so it comes back unticked "
         "however the reader left it")
+
+
+# ---------------------------------------------------------------------------
+# What the hostile review of 2026-08-22 found: the conditions above are every
+# one the drawing tests EXCEPT the two that decide most often — whether a lid
+# can be made at all, and which styles the picture was really drawn with.
+# ---------------------------------------------------------------------------
+
+
+def test_the_pair_that_ships_is_not_offered_a_lid_it_cannot_have():
+    """Glossy against Matte: one stands everywhere, the other nowhere.
+
+    Every older condition passes — two shapes, faded, solid, one room, no
+    marking — and `cap_over_the_cut` returns None for both. Measured before
+    this: the tick was live and ticking it changed nothing on screen.
+    """
+    import numpy as np
+    import ti3gamut
+    from gamutview import build_gamut
+    demo = pathlib.Path(__file__).resolve().parent.parent / "demo"
+    made = []
+    for name in ("Glossy-paper", "Matte-paper"):
+        if not (demo / f"{name}.ti3").is_file():
+            pytest.skip("no demo papers")
+        m = ti3gamut.read_measurement(demo / f"{name}.ti3")
+        made.append((name, build_gamut(np.asarray(m.lab, float),
+                                       input_space="lab",
+                                       drive_values=np.asarray(m.device, float))))
+    assert ti3gamut.which_shapes_could_be_capped(made) == [False, False]
+    out, _s, stands, _l = ti3gamut.recut_where_they_part(made)
+    cut = [(made[0][0], out[0][1]), (made[1][0], out[1][1])]
+    assert all(ti3gamut.cap_over_the_cut(cut, stands, i) is None for i in (0, 1)), (
+        "the prediction and the drawing must agree, or one of them is lying")
+
+
+def test_a_pair_that_can_be_capped_still_is():
+    """The other direction: refusing too widely is the worse mistake."""
+    import numpy as np
+    import ti3gamut
+    from gamutview import build_gamut
+    demo = pathlib.Path(__file__).resolve().parent.parent / "demo"
+    made = []
+    for name in ("Glossy-paper", "Glossy-paper-months-later"):
+        if not (demo / f"{name}.ti3").is_file():
+            pytest.skip("no demo papers")
+        m = ti3gamut.read_measurement(demo / f"{name}.ti3")
+        made.append((name, build_gamut(np.asarray(m.lab, float),
+                                       input_space="lab",
+                                       drive_values=np.asarray(m.device, float))))
+    assert ti3gamut.which_shapes_could_be_capped(made) == [True, True]
+
+
+def test_it_offers_rather_than_dims_when_it_cannot_tell():
+    """A question it cannot answer must not silently turn into "no".
+
+    Swallowing the failure and answering [False, False] dims the tick, and
+    dimming one that would have worked is how the drift marker's tick was
+    broken. The helper raises; the window offers.
+    """
+    import ti3gamut
+    with pytest.raises(Exception):
+        ti3gamut.which_shapes_could_be_capped([None, None])
+    assert _window().enabled, (
+        "the window must fall back to offering when the question cannot be "
+        "answered")
+
+
+def _window_with(gamuts, styles=("solid", "solid")):
+    """The real rule, run against real shapes and the styles really drawn."""
+    import gamut_app
+    who = type("Stub", (), {})()
+    who._close_cut = _Tick()
+    who._agree, who._differ = _Slider(30), _Slider(100)
+    who._style_mine, who._style_second = _Combo("solid"), _Combo("solid")
+    who._side_by_side, who._slice_on = _Box(False), _Box(False)
+    who._run_drawn = False
+    who._scene_inputs = (list(gamuts), None, list(styles), None)
+    gamut_app.GamutApp._apply_closing_availability(who)
+    return who._close_cut
+
+
+def _demo_pair(one, two):
+    import numpy as np
+    import ti3gamut
+    from gamutview import build_gamut
+    demo = pathlib.Path(__file__).resolve().parent.parent / "demo"
+    made = []
+    for name in (one, two):
+        if not (demo / f"{name}.ti3").is_file():
+            pytest.skip("no demo papers")
+        m = ti3gamut.read_measurement(demo / f"{name}.ti3")
+        made.append((name, build_gamut(np.asarray(m.lab, float),
+                                       input_space="lab",
+                                       drive_values=np.asarray(m.device, float))))
+    return made
+
+
+def test_the_rule_itself_dims_on_the_pair_that_cannot_be_capped():
+    """Drives `_apply_closing_availability`, not the helper underneath it.
+
+    Written because the first version of these tests exercised only the
+    helper: switching the rule's own use of it back off left all of them
+    passing.
+    """
+    tick = _window_with(_demo_pair("Glossy-paper", "Matte-paper"))
+    assert not tick.enabled, "offered on a pair where no lid can be made"
+    assert "Nothing here can be closed" in tick.tip
+
+
+def test_the_rule_itself_stays_live_where_a_lid_is_made():
+    tick = _window_with(_demo_pair("Glossy-paper", "Glossy-paper-months-later"))
+    assert tick.enabled, "dimmed on a pair that does get a lid"
+
+
+def test_the_style_that_counts_is_the_one_drawn():
+    """A comparison's style comes from `_style_other`, which the rule never
+    read. With the paper an outline and the comparison solid, the drawing caps
+    the comparison — so the tick must stay live."""
+    pair = _demo_pair("Glossy-paper", "Glossy-paper-months-later")
+    assert _window_with(pair, styles=("mesh", "solid")).enabled, (
+        "dimmed although the shape the drawing would cap is drawn solid")
+    assert not _window_with(pair, styles=("mesh", "mesh")).enabled, (
+        "offered although nothing in the picture is drawn as a surface")

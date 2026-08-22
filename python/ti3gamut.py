@@ -772,51 +772,65 @@ _ACCENT_L_CAP = 0.92
 _LAST_CAP: "tuple | None" = None
 
 
-def a_lid_could_be_built(gamuts, centre=None) -> bool:
-    """Could `cap_over_the_cut` make a lid for either of these two shapes?
+def which_shapes_could_be_capped(gamuts, centre=None) -> list:
+    """For each of two shapes, would `cap_over_the_cut` give it a lid?
 
-    ASKED SO THE TICK CAN SAY NO IN ADVANCE. The lid is cut from the OTHER
-    shape's surface by sliding corners down their rays onto it, which only
-    means anything if that shape wraps the middle those rays leave from.
-    `close_the_cut` checks exactly that and raises when it fails; the raise is
-    caught and turned into "no lid", silently.
+    ASKED SO A TICK CAN SAY NO IN ADVANCE, and asked the way the drawing asks
+    rather than by a cheaper likeness of it. Every gate below is lifted from
+    `cap_over_the_cut` and `close_the_cut`: two shapes; something of this one
+    standing but not all of it; at least four whole faces left; and BOTH the
+    shape being capped and the shape capped against wrapping the middle.
 
-    Silently is the fault. Measured on a pair built to provoke it -- a ball,
-    and a small one sitting off to one side so the middle is outside it --
-    the tick was live, and ticking it changed 0 pixels of 6,000,000. A control
-    that invites a click and answers with nothing is the thing this window
-    fixes wherever it finds it.
+    ⚠ THE STANDING MASKS ARE THE HALF A COVERAGE TEST CANNOT SEE, and they are
+    the half that matters most often. `demo/Glossy-paper.ti3` against
+    `demo/Matte-paper.ti3` -- the pair that ships -- has one shape standing
+    everywhere and the other nowhere, so neither can be capped, while every
+    coverage test passes with flying colours. An earlier version of this
+    function looked only at coverage, answered "yes" for that pair, and would
+    have left the tick lit over a picture where ticking it does nothing.
 
-    THE SAME QUESTION THE DRAWING ASKS, and deliberately not a cheaper
-    likeness of it: the coverage test and the middle are lifted from
-    cap_over_the_cut and close_the_cut rather than restated. It stops short of
-    building the lid, which is the slow half, so this is safe to call whenever
-    a control needs to know.
-
-    It does NOT ask whether anything is cut away -- that needs the standing
-    masks, which the window does not keep. A pair with nothing cut away has no
-    opening, and the tick over-offers there still.
+    IT IS CHEAP BECAUSE THE RE-CUT IS REMEMBERED. `recut_where_they_part`
+    keeps its last answer keyed on content, so asking here costs 0.4 ms once
+    the picture has been drawn from the same pair, and it stops short of
+    building a lid, which is the slow half.
     """
     from gamutview import covers_the_sphere_once
 
+    # ⚠ IT RAISES RATHER THAN GUESSING "no". Swallowing a failure here and
+    # answering [False, False] dims the tick, and dimming a control that would
+    # have worked is the worse of the two mistakes -- it is how the drift
+    # marker's tick was broken. The caller decides what to do when this cannot
+    # tell, and the window's caller offers the tick.
     if len(gamuts) != 2:
-        return False
+        return [False, False]
+    cut, _splits, stands, _lost = recut_where_they_part(gamuts)
+    if stands is None:
+        raise ValueError("no standing masks, so this cannot tell")
+    answers = []
     for which in (0, 1):
-        theirs = gamuts[1 - which][1]
-        try:
-            if centre is None:
-                middle = ((50.0, 0.0, 0.0)
-                          if getattr(theirs, "space", "lab") == "lab"
-                          else np.asarray(theirs.vertices, float).mean(axis=0))
-            else:
-                middle = centre
-            covered = covers_the_sphere_once(theirs.vertices, theirs.faces,
-                                             np.asarray(middle, float))
-        except Exception:                                    # noqa: BLE001
+        standing = np.asarray(stands[which], bool)
+        mine = cut[which][1]
+        theirs = cut[1 - which][1]
+        faces = np.asarray(mine.faces, int)
+        if (not standing.any() or standing.all()
+                or standing[faces].all(axis=1).sum() < 4):
+            answers.append(False)
             continue
-        if abs(covered - 4.0 * np.pi) <= 1e-2:
-            return True
-    return False
+        middle = centre
+        if middle is None:
+            middle = ((50.0, 0.0, 0.0)
+                      if getattr(theirs, "space", "lab") == "lab"
+                      else np.asarray(theirs.vertices, float).mean(axis=0))
+        middle = np.asarray(middle, float)
+        wraps = True
+        for shape in (theirs, mine):
+            covered = covers_the_sphere_once(shape.vertices, shape.faces,
+                                             middle)
+            if abs(covered - 4.0 * np.pi) > 1e-2:
+                wraps = False
+                break
+        answers.append(wraps)
+    return answers
 
 
 def cap_over_the_cut(gamuts, stands, which, centre=None):

@@ -15221,7 +15221,39 @@ class GamutApp(QMainWindow):
                      or self._slice_on.isChecked()
                      or getattr(self, "_run_drawn", False))
         marking = bool(stashed and any(m is not None for m in (stashed[3] or ())))
-        can = shapes == 2 and faded and solid and alone and not marking
+        # ⚠ THE STYLES THE PICTURE WAS BUILT WITH, not the two chart menus.
+        # Reading `_style_mine` and `_style_second` misses `_style_other`,
+        # which is where a COMPARISON's style comes from (see the styles list
+        # handed to the drawing) -- so with the paper drawn as an outline and
+        # the comparison solid, this dimmed a tick the drawing would have
+        # honoured. The stash holds exactly what was drawn.
+        drawn = list(stashed[2] or ()) if stashed else []
+        surfaces = [str(s).lower().startswith(("solid", "shape")) for s in drawn]
+        if not drawn:                       # nothing drawn yet: fall back
+            surfaces = [solid, solid]
+        # ⚠ AND WHETHER A LID COULD BE MADE AT ALL, which the conditions above
+        # cannot see. `demo/Glossy-paper.ti3` against `demo/Matte-paper.ti3` --
+        # the pair that ships -- passes every one of them and gets no lid,
+        # because one shape stands everywhere and the other nowhere. Measured
+        # before this line existed: the tick was live and ticking it changed
+        # nothing. The question is asked of the drawing's own gates, and costs
+        # 0.1-0.9 ms once the picture has been drawn from the same pair.
+        possible = [True, True]
+        if shapes == 2 and faded and alone and not marking:
+            try:
+                # A LOCAL IMPORT because this module takes NAMES from
+                # ti3gamut, not the module itself -- written as
+                # `ti3gamut.which_shapes_could_be_capped` this raised
+                # NameError inside a Qt handler, where it would have been
+                # swallowed as a dimmed tick.
+                from ti3gamut import which_shapes_could_be_capped
+                possible = which_shapes_could_be_capped(stashed[0])
+            except Exception:                                # noqa: BLE001
+                possible = [True, True]
+        anywhere = any(ok and (surfaces[i] if i < len(surfaces) else False)
+                       for i, ok in enumerate(possible))
+        can = (shapes == 2 and faded and solid and alone and not marking
+               and anywhere)
         self._close_cut.setEnabled(can)
         if can:
             self._close_cut.setToolTip(
@@ -15241,6 +15273,10 @@ class GamutApp(QMainWindow):
             self._close_cut.setToolTip(
                 "Needs a shape drawn as a surface. An outline is there to be "
                 "seen through, and a lid would fill it in.")
+        elif not anywhere:
+            self._close_cut.setToolTip(
+                "Nothing here can be closed: one shape reaches past the other "
+                "everywhere, or the middle lies outside one of them.")
         elif shapes != 2:
             self._close_cut.setToolTip(
                 "Needs exactly two shapes. One has nothing to agree with; "
