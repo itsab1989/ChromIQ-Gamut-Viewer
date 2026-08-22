@@ -998,6 +998,68 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
                + where[:, 0:1] * (paint[tri[:, 1]] - paint[tri[:, 0]])
                + where[:, 1:2] * (paint[tri[:, 2]] - paint[tri[:, 0]]))
     colours[hit < 0] = 0.5
+    # ⚠ AND NOT WHERE THE SKIN IS ALREADY THERE. TOO_CLOSE_TO_CLOSE asks
+    # this of the two shapes AS A WHOLE and refuses the lid outright; the
+    # same thing happens in PATCHES on shapes that are far apart overall.
+    # Where the piece's own skin all but touches the shape below it the hole
+    # is that shallow, the lid is laid a hair under a surface the picture is
+    # already drawing, and the depth buffer picks between them facet by facet:
+    # a herringbone of grey teeth on a smooth pale slope, measured at 1,875
+    # pixels his settings never asked for.
+    #
+    # ⚠ HERE AND NOT IN `close_the_cut`, which must keep handing back a
+    # CLOSED solid -- the volume is read off it, and a lid with holes in it
+    # encloses nothing. This drops triangles from what is DRAWN and leaves
+    # the geometry whole.
+    #
+    # ⚠ AND ONLY WHERE ALL THREE CORNERS ARE IN THE SQUEEZE. The seam's own
+    # corners sit exactly ON the skin -- that is what makes the lid meet the
+    # hole -- so any test that fires on one corner takes the whole rim ring
+    # with it and opens the very seam this exists to close.
+    # A HUNDREDTH OF THE SHAPE, and measured rather than chosen. Swept on his
+    # profile against sRGB at his own settings, counting the pixels the lid
+    # changes against the same picture with no lid at all:
+    #
+    #     nothing dropped   4,659      a four-hundredth   2,679
+    #     an eight-hundredth 4,104     a two-hundredth    2,264
+    #                                  A HUNDREDTH          868
+    #
+    # An eight-hundredth is the clearance itself, which by construction the
+    # lid always has, so it drops nothing the clearance had not already
+    # settled. It has to be several times that to reach the patches where
+    # the two surfaces run near enough to parallel that no radial gap
+    # separates them on screen at all.
+    _shy = float(np.linalg.norm(
+        np.asarray(mine.vertices, float).max(axis=0)
+        - np.asarray(mine.vertices, float).min(axis=0))) / 100.0
+    if _shy > 0 and len(lid):
+        _tri = np.asarray(lid, int)
+        _ray = corners - middle
+        _reach = np.linalg.norm(_ray, axis=1)
+        _skin_at = _rays_onto(mine.vertices, mine.faces, middle)(_ray)
+        _room = np.where(np.isfinite(_skin_at), _skin_at - _reach, np.inf)
+        _room_enough = _room[_tri].max(axis=1) >= _shy
+        # ⚠ AND NEVER A TRIANGLE THAT OWNS A PIECE OF THE SEAM. The seam's
+        # corners are ON the skin -- room zero, by the construction that makes
+        # the lid meet the hole -- so the rim ring fails this test everywhere
+        # its third corner is also in the squeeze. Measured without this
+        # guard: 413 of the printer's 1,134 seam edges and 291 of sRGB's 877
+        # stopped being covered at all, which is the lid coming away from the
+        # very edge it exists to close, leaving an opening up to 2.98 Lab
+        # deep. A triangle carrying a seam edge is kept whatever its room.
+        _edges = {}
+        for _f in _tri:
+            for _a, _b in ((_f[0], _f[1]), (_f[1], _f[2]), (_f[2], _f[0])):
+                _k = (_a, _b) if _a < _b else (_b, _a)
+                _edges[_k] = _edges.get(_k, 0) + 1
+        _seam = {_k for _k, _n in _edges.items() if _n == 1}
+        _on_seam = np.array([
+            any(((_f[_i], _f[_j]) if _f[_i] < _f[_j] else (_f[_j], _f[_i])) in _seam
+                for _i, _j in ((0, 1), (1, 2), (2, 0)))
+            for _f in _tri], bool) if _seam else np.zeros(len(_tri), bool)
+        _drawn = _tri[_room_enough | _on_seam]
+        if len(_drawn) >= 4:
+            lid = _drawn
     answer = (corners, lid, np.clip(colours, 0.0, 1.0))
     done[int(which)] = (here, answer)
     return answer
