@@ -1118,3 +1118,39 @@ last good frame into a QLabel laid OVER the view, load as now, and drop the
 label once the frame has settled. A frozen picture cannot become an empty
 viewer -- the worst it can do is show the previous picture a moment too long,
 which is exactly what was asked for.
+
+⚠ **TRIED 2026-08-22, AND IT DOES NOT WORK. REVERTED.** Both shapes of it
+were built and measured, `_show_page` confirmed to run (traced, three times
+per change):
+
+* a QLabel raised over the view: the held picture showed in four frames of
+  six and the blank page still flashed through the other two;
+* the same, with the view HIDDEN behind it: unchanged, still 100% black
+  frames at t+3.56 and t+3.88.
+
+A `QWebEngineView` is a NATIVE surface. It paints above ordinary widgets
+whatever the stacking order says, and hiding it does not stop the hole it
+leaves being painted blank. Anything built out of Qt widgets over that view
+will flicker.
+
+⚠ **AND THE MEASUREMENT WAS BLIND AT FIRST**, which cost a whole attempt:
+grabbing `_view` photographs what is UNDER the overlay, so the fix looked
+like it changed nothing. `_frame` is what a person sees.
+
+WHAT IS LEFT TO TRY, in the order I would try it:
+1. **Rebuild less often.** The blink exists because a fade change writes a
+   whole new page. There is already a live path that restyles in place
+   (`_push_detail`, and the fades' own per-vertex alpha) -- widening it to
+   cover this change removes the blink instead of hiding it.
+2. A frameless top-level window over the view, which composites above a
+   native surface where a child widget does not. More machinery, and it can
+   show in the task switcher.
+3. Ask the page to paint the previous picture as its own background while it
+   loads -- inside the page, where there is no native-surface problem.
+
+NOT THE SAME QUESTION AS THE SAVED PAGES. He asked whether this helps exports
+for the web: it does not. The overlay is a Qt widget in the app window and
+none of it exists in a saved page. Whether an exported page blinks in a
+browser is unmeasured -- and worth measuring, because the cure there would be
+inside the page (hide the plot until `plotly_afterplot`) and would be the
+same fix as (3).
