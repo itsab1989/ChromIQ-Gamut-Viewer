@@ -130,6 +130,26 @@ how large its volume is.
 The volume on its own does not mean much — it is for **comparing** two papers
 measured the same way. Everything below is a comparison.
 
+**"Measured the same way" includes how many patches you printed**, and it is
+worth a number. A shape is a mesh through the colours you measured, so it sits
+just inside the real surface, and it sits further inside the fewer patches you
+have. Measured on a shape whose true volume is known exactly — an ellipsoid,
+sampled the way a chart samples a paper:
+
+| patches | volume | against the truth |
+|---|---|---|
+| 400 | 329,066 | −3.0% |
+| 800 | 334,336 | −1.5% |
+| 1,600 | 336,682 | −0.8% |
+| 3,000 | 337,937 | −0.4% |
+| 20,000 | 339,089 | −0.06% |
+
+So **a 400-patch chart and a 1,600-patch chart of the same paper differ by
+2.3%** — and always in the same direction, making the bigger chart look like
+the bigger gamut. Two papers are comparable when their charts are the same
+size; a 2% difference between charts of different sizes is the counting, not
+the paper.
+
 ### 2. Will the photos people send me survive on this paper?
 
 Set **Compare with** to **sRGB** — what most photographs and most screens
@@ -1314,7 +1334,7 @@ Tests:
 
 ```bash
 pip install -r requirements-test.txt        # pytest, and pyyaml for one file
-cd python && python -m pytest . -q          # 1,044 tests
+cd python && python -m pytest . -q          # 1,047 tests
 ```
 
 They check the colour science against published reference values rather than
