@@ -1229,7 +1229,47 @@ ship. Worth doing only if he asks for it in ordinary use.
 
 ---
 
+## ⚠⚠ THE SEAM — READ THIS ONE, THEN ONLY WHAT IT SENDS YOU TO
+
+Ten sections below were written about the seam in a single day and most are
+SUPERSEDED. Each one that is has a marker on its first line. The settled
+answer, in four sentences:
+
+  * THE CAUSE WAS THE DEPTH BUFFER, not the lid's geometry, colours, winding,
+    shading, draw order, alpha, or the closeness threshold. gl-plot3d never
+    sets a near or far plane and falls back to 0.01/1000 over a unit cube, and
+    this machine's buffer is SIXTEEN bits — one step of depth larger than a
+    Lab at the distance these shapes are drawn from.
+  * FIXED in 4470f70 (`_DEPTH_JS`), which fits the planes to the scene's own
+    corners. Speckle the lid adds, product page, four cameras: 121→2, 158→1,
+    193→4, 34→1.
+  * THE SEAM WORK IS REAL BUT SECONDARY: the tuck, the sewn seam colours and
+    the lighting are all still in and all still measured.
+  * WHAT IS LEFT is the two SHELLS fighting each other (~3,500-4,400 speckle
+    with no lid at all). Some was precision; most is geometric and may be the
+    honest answer rather than a fault. Settle that before touching it.
+
+THE SECTIONS WORTH READING, in this order:
+  1. "THE CAUSE WAS THE DEPTH BUFFER ALL ALONG" — the answer and the two
+     measurement traps that cost the week.
+  2. "THE HATCH IS NOT THE LID'S PAINT — IT IS THE LID'S DEPTH" — how it was
+     narrowed down; six levers with numbers.
+  3. "WHAT THE LITERATURE SAYS" — why a stencil and a polygon offset are not
+     reachable, and what is.
+  4. "THE TIMELINE'S OWN PICTURE GETS NEITHER SCRIPT" — open, unconfirmed.
+
+EVERYTHING ELSE ABOUT THE SEAM IS HISTORY. It is kept because two of the
+entries are retractions of my own published claims, and a record that quietly
+loses those is worth less than one that keeps them.
+
+---
+
+
 ## THE SEAM: WHICH THEORY IS IT? MEASURED 2026-08-22
+
+> ⚠ SUPERSEDED. The two theories it retires stay retired; the mechanism it
+> proposes at the end (the clearance collapsing at the rim) is NOT the
+> cause. See "THE CAUSE WAS THE DEPTH BUFFER ALL ALONG".
 
 The job asked this to be settled before anything was changed. It is settled,
 and the answer is that NEITHER standing theory explains it alone.
@@ -1263,3 +1303,921 @@ them pixel by pixel.
 things I was sure of about this lid -- that the 7,999-face lid proved it
 worked, that the seam wobbled 3.4 Lab, that the teeth were the comparison's
 facets -- were each refuted by a measurement.
+
+---
+
+## THE SEAM: SETTLED, AND WHAT IT COST TO SETTLE IT (2026-08-22, later)
+
+> ⚠ SUPERSEDED, and it was not settled. Its measurements hold; its
+> conclusion does not. See "THE CAUSE WAS THE DEPTH BUFFER ALL ALONG".
+
+WHICH THEORY. Neither of the two standing ones. Both were refuted by
+measurement, and the refutations are cheap to repeat:
+
+* NOT two lids whose rims are independent chordings of one crossing curve.
+  Capping ONE shape at a time (`scratch/whose_comb.py`) shows each lid lays
+  its own artifact, and every one of the printer's 1,134 lid rim corners sits
+  on a piece rim corner to within **8.3e-08 Lab**. A hostile review
+  reproduced 5.0e-08 per component independently.
+  ⚠ THE FIRST RUN OF THAT DRIVER SAID THE OPPOSITE, because the scratch prefs
+  store carried `sRGB = mesh` over from the previous driver and a mesh is
+  ineligible for a lid. Set every style you depend on EXPLICITLY and print
+  what it ended up as.
+* NOT the facets of the shape the lid is cut from. Detail 6 → 20 → 40 is a
+  forty-five-fold finer comparison and removes only about thirty per cent.
+
+WHAT IT IS. The lid is in the right place and still cannot be painted. No lid
+CORNER is above the skin it is held under (ring 1 sits a median 1.71 Lab
+below), and 0.01% of its AREA pokes through, by 0.072 Lab. The lid and the
+piece meet at a FOLD along the seam and they meet BY BEING THE SAME CORNERS,
+so the two surfaces are at exactly the same depth all along that line and the
+picture picks between them in bites. Painting the lid red proves whose pixels
+they are: 4,805 of the 4,873 it changes turn red. Flipping the winding moves
+0 pixels.
+
+THE CURE, in `cap_over_the_cut`: the DRAWN rim is tucked diag/400 down each
+corner's own ray. What `close_the_cut` builds is untouched — the piece's own
+corners, unmoved, which every closure check rests on.
+
+MEASURE IT WITH TWO NUMBERS. OUTSIDE = pixels the lid changes at his camera,
+where it ought to be invisible. INSIDE = pixels it CLOSES when you look into
+the opening from underneath with the other shape drawn as a cage. The first
+alone is minimised by DRAWING NO LID, and that is exactly how a bad rule
+scored well here for two commits. `scratch/two_sided.py` prints both.
+
+    where the cycle started   OUTSIDE 4,659   INSIDE 77,512
+    now                       OUTSIDE   349   INSIDE 74,475
+
+⚠ A RULE THAT SCORED WELL AND WAS WORSE, and what it cost to catch. Between
+those two lines I shipped a rule that withheld lid triangles hugging the
+skin. It halved OUTSIDE on his pair and, on sRGB against Display P3 — two
+reference spaces, the default space, the default Detail — withheld **97.1%**
+of one lid. 103 configurations flagged, worst 98.06%. Reverted in a1c6111.
+The tuck alone beats it on both numbers.
+
+### DONE (a98c08e): THE LID NOW FOLLOWS THE PAINTING
+
+`cap_over_the_cut` paints from `theirs.colors` and the seam sewing from
+`mine.colors`; neither consults `_paint_vertices`. Measured at the 297 sewn
+seam corners, Glossy against sRGB, lid against the skin beside it:
+
+    true   0.0/255      solid  197.5      chroma 150.8
+    lightness 132.4     accent  32.7
+
+So in four of the five shipped paint modes the lid is a patch of true colour
+inside a shape painted some other way. Older than any of this week's work.
+Fixed by interpolating `_paint_vertices(theirs, paint, 1 - which)` through a
+new `_painted_floats`, with `paint` reaching `cap_over_the_cut` from
+`build_figure` and joining the cap cache's key. Measured after:
+
+    True colours      349 px   One colour each 2,595   By lightness 271
+    By chroma         267      In the accents    436
+
+⚠ AND "ONE COLOUR EACH" BARELY MOVED, BECAUSE WHAT IS LEFT IS NOT THE LID.
+
+### NEXT JOB: THE TWO SHAPES FIGHT WHERE THEY CONVERGE
+
+On the ridge near the white point his profile and sRGB run a hair apart, and
+the depth buffer picks between them facet by facet. Measured in "One colour
+each", pink pixels on that ridge:
+
+    no lid at all      8,504        with the painted lid   9,385
+
+So it is there with the LID OFF, it is the two SHAPES, and it is much older
+than this week. True colours hide it because both surfaces are nearly the
+same colour there; any flat painting makes it obvious. Nothing about the lid
+will fix it — it wants either a hair of separation between the two skins, or
+one of them not drawn where they coincide, and BOTH of those are the kind of
+change that turned into a 97%-withheld lid last time. Measure with two
+numbers before touching it.
+
+### ALSO OPEN, from the same review
+
+* `cap_over_the_cut` costs ~70-76 ms more per shape than it did (a second
+  full `_rays_onto` cast). ~150 ms per pair on a 2 s call.
+* In XYZ **no pair ever gets a lid**: `TOO_CLOSE_TO_CLOSE = 1.0` is absolute
+  and the whole gamut spans about 1. Pre-existing.
+* `_at.setdefault` picks the first of several duplicate crossing corners when
+  sewing. Measured harmless today (0.0/255 spread among the duplicates) and
+  fragile.
+
+
+---
+
+## THE SECOND HOSTILE REVIEW, AND WHAT SURVIVED IT (2026-08-22, later still)
+
+Its verdict was NOT FIXED. One part was right and is fixed in c9af3b7; the
+rest did not survive checking, and the checks are cheap to repeat.
+
+RIGHT: the tuck opens a slit of rim-perimeter x tuck, and diag/400 is a share
+of the SHAPE applied to a lid that can be a sliver of it. On sRGB against
+Display P3 the slit was 790% of the lid's own area. Capped at a twentieth of
+the lid's area spread along its own rim. His pair does not move.
+
+RIGHT: `test_every_seam_corner_is_tucked_and_by_how_much` had a cosine check
+that could never fire, because a sideways slide that changes the radius is
+caught by the magnitude check first. It now measures the part of the MOVE
+that lies across the ray, and a mutation that keeps the radius exact proves
+it.
+
+DID NOT SURVIVE — and each of these is a trap worth knowing:
+
+* "52.9%-60.1% of the drawn lid's corners lie on the shape's own skin." Those
+  corners are the RIM, and the rim is 53.9% and 62.5% of those two lids —
+  a figure its own report gives. As drawn, after the tuck, 0.0%-1.0%.
+  `scratch/whose_number.py` asks it four ways.
+* "A bright white herringbone worth 14,703 speckle pixels on Display P3
+  against Rec.2020." Rendered in the app's own viewer on this machine's GPU:
+  4,876 speckle with the lid, 4,593 without — 283 apart, and the two pictures
+  are indistinguishable. ⚠ THE REVIEW RENDERED THROUGH SWIFTSHADER. Depth
+  ties are precisely what differs between a software rasteriser and the GPU
+  the user has. Ask a subagent to render through the app's own viewer, or
+  take its speckle numbers as being about its own renderer.
+* "OUTSIDE = 349 is not reproducible; 57,763." At agree 45 an opaque lid
+  replaces the see-through interior, which is the lid doing its job.
+
+### STILL OPEN
+
+* DONE (7ea4c4d): the feature was dead in CIE XYZ, because
+  `TOO_CLOSE_TO_CLOSE` was a flat 1.0 Lab asked in whatever space the reader
+  chose, and an XYZ gamut spans about 1.0 in total. It is a share (0.005) of
+  the diagonal of the two shapes TOGETHER now -- the extent the picture is
+  drawn over. All six calibration verdicts hold; the CIELAB threshold moves
+  from 1.0 to 1.32 Lab on a paper. XYZ now draws 7,530 and 7,999 triangles
+  where it drew none, and the lid is where a lid belongs: 0.00% of its area
+  outside the piece, both pieces wrapping their middle at exactly 4.0000pi.
+  ⚠ ASSERT THE PROMISE, NOT YOUR EXPECTATION. My first test asserted
+  [True, True] in every space and failed -- Display P3 contains nearly all of
+  sRGB, so sRGB has nothing to cap and rightly gets no lid in Luv or XYZ.
+  The tick and the drawing agreed all along.
+* The two shapes fight where they converge (see the section above).
+
+
+---
+
+## THE THIRD HOSTILE REVIEW (2026-08-22, evening)
+
+Verdict NOT FIXED, on a fault that was real and is now fixed (39ce9a6): a
+SAVED PAGE could not fade the lid. Its other findings, checked:
+
+DONE (39ce9a6): the page fades in JavaScript through `withAlpha`, which reads
+the TEXT of a colour and returns anything without a "(" untouched. The lid
+went out as float triples at the default "where they differ" of 100.
+134,453 -> 13,133 pixels on his own pair. ⚠ A TEST OF MINE HELD IT IN PLACE
+and its stated reason was false: writing the colours as text changes the
+window by 0 pixels.
+
+### STILL OPEN, from that review, in the order I would take them
+
+1. DONE (d1da566). THE CAP'S REASON WAS FALSE, and the cap was right. c9af3b7 said
+   the tuck removes `rim perimeter x tuck` of lid area. It does not -- the rim
+   corners move and the triangles touching them STRETCH. Measured with the cap
+   removed, real lid area before -> after: sRGB vs Display P3's sliver lid
+   25.82 -> 172.2 (it GROWS 6.7x), and across every pair at HEAD the real area
+   change is between -1.8% and +0.4%. So `_lid_area / _rim_len` in
+   `cap_over_the_cut` and the 5% assertion in `test_the_lids_seam_is_tucked.py`
+   pin arithmetic rather than geometry. Re-derive the cap from what actually
+   happens (a sliver lid stretched into a skirt) or drop it.
+   FIXED: the tuck is now the largest that leaves the lid's own AREA within a
+   fiftieth of what it was, found by halving rather than by a formula. On the
+   sliver the model said 790.3% lost where the truth is 566.87% GAINED --
+   the wrong sign, not just the wrong size.
+   ⚠ AND HOLDING THE AREA STILL IS SATISFIED PERFECTLY BY NEVER TUCKING. A
+   mutation returning 0 passed 11 of 11 checks; the loop now asserts each lid
+   is still tucked.
+2. DONE with 1: the modelled cap cost 21% of the tuck's benefit where it bit.
+   The measured cap makes the tuck 3-4x larger there -- sRGB vs Adobe RGB
+   0.0513 -> 0.2052, Display P3 vs Rec.2020 0.1070 -> 0.3780 -- and his own
+   pair does not move at all.
+3. HALF DONE (27ed86a). THE TICK'S REASON FOR REFUSING WAS WRONG when the
+   closeness threshold was why. `gamut_app.py:15285` says "one shape reaches past the other
+   everywhere, or the middle lies outside one of them" -- neither is true for
+   sRGB vs Adobe RGB in CIELUV, where both cover 4pi and thousands of faces
+   stand. AND THE REFUSAL COSTS A GOOD LID: at 0.001 that pair's outside
+   speckle goes 6,008 -> 4,885 and it closes 24,399 pixels of opening, with a
+   clean picture. The same two shapes in CIELAB get lids of 7,999 and 9,842
+   triangles. A presentational choice turns the feature off.
+   FIXED: `which_shapes_could_be_capped(..., saying=True)` returns (can it,
+   why not) and the window has a sentence per reason.
+   ⚠ STILL OPEN -- THE THRESHOLD ITSELF. That CIELUV pair's shares are
+   0.00256 and 0.00393; two readings of one paper, which MUST be refused, is
+   0.00213. They OVERLAP, so there is no threshold that keeps both verdicts
+   and no nudge will do. Either the question is wrong (median gap over the
+   picture's extent may not be what decides whether a lid can be told from
+   the skin) or the answer has to be measured from the PICTURE -- e.g. drive
+   both pairs on screen at a range of thresholds and count speckle. Do that
+   before touching TOO_CLOSE_TO_CLOSE again; the last two thresholds I set
+   from a model were both wrong.
+4. "ONE COLOUR EACH": on the ridge where the two gamuts converge, saturated
+   pink is 1,124 pixels with the lid against 272 without -- 4.1x. The
+   herringbone is the two SHAPES (see below), but the lid is opaque where the
+   agreeing shell is 45% see-through, so every pixel the depth buffer awards
+   it comes out at full strength. Cause: the clearance step at
+   `gamutview.py:1548` goes to zero exactly where the two surfaces converge.
+5. DONE (0db7773). HALF OF EACH LID'S VERTICES WERE SHIPPED AND NEVER DRAWN: `cap_over_the_cut`
+   returns `close_the_cut`'s shared corner array, which carries the piece's
+   own non-seam corners. sRGB's lid ships 7,053 corners and uses 3,472 --
+   50.8% dead, each with a colour and a mask character, in every saved page.
+   FIXED where the trace is built (not in `cap_over_the_cut`, whose numbering
+   a check depends on): a two-lid page 5,898,144 -> 5,672,517 bytes, picture
+   identical to the pixel.
+6. THE 13,133 PIXELS LEFT after the page-fade fix are a fully transparent mesh
+   still being composited. The page can recolour triangles but not drop them,
+   which is what `_solid_remainder` does in Python.
+
+⚠ AND A JAVASCRIPT ERROR I HAVE NOT PINNED DOWN. Driving the window with the
+lid ON throws 8 x "Uncaught TypeError: Cannot read properties of null
+(reading 'join')" per redraw, 0 with it off, at line 2012 of the scene HTML --
+which is inside the minified plotly bundle, in its GLSL tokenizer. It did NOT
+reproduce when I bisected the lid trace's properties one at a time, so it is
+probably on the FADE/restyle path rather than the first draw
+(`scratch/js_error.py` reproduces, `scratch/js_bisect.py` does not).
+
+
+---
+
+## THE THRESHOLD'S OWN PICTURE — REPRODUCED, AND I HAD IT BACKWARDS
+
+> ⚠ THIS SECTION CORRECTS ITSELF PART-WAY THROUGH. Read to the end before
+> acting on any number in it.
+## (2026-08-22, late; corrected the same evening in 6bd619a)
+
+`TOO_CLOSE_TO_CLOSE` exists because "the picture comes back hatched with
+diagonal stripes" for two readings of one paper, and its note records 32,308
+pixels of a 1600x1050 window changing when the tick goes on.
+
+I COULD NOT REPRODUCE THAT, on this code OR on v2.52.1 which predates this
+week's work. `scratch/find_the_hatch.py`, threshold forced to 0, two readings
+of one paper, six settings (agree 15/45/85 x his camera and from above),
+1600x1050, counting isolated-pixel speckle:
+
+    the lid's own speckle:  -96  -362  -50  -147  -2  +9
+
+The lid TAKES SPECKLE AWAY in five of six. `scratch/threshold_sweep.py` says
+the same for sRGB vs Adobe RGB in CIELUV: +33 speckle over 299,584 changed
+pixels, and the picture is clean to look at.
+
+⚠ BUT MY SETTINGS ARE NOT ITS SETTINGS: I measure 184,934 to 1,332,149 pixels
+changing where the note says 32,308, so I am not drawing the picture it drew.
+Until that picture is reproduced, "I could not find the hatching" is not "the
+hatching is gone", and the threshold stays where it is. THIS IS THE OPEN
+QUESTION, and it is worth real effort: if the hatching is genuinely cured by
+this week's work then the threshold is refusing good lids in every space, and
+that is the project's own worse mistake at its largest.
+
+⚠⚠ RESOLVED, AND THE PARAGRAPHS ABOVE ARE WRONG. The hatching is there on
+THIS code. Every measurement above drew the two shapes SEMI-TRANSPARENT --
+`build_figure`'s default for a pair -- and a see-through shell hides the
+fight completely. With `opacity=1.0`, which is what the window's slider gives
+at 100 and therefore what a reader sees, the diagonal stripes appear at once.
+
+RUN `scripts/show_the_hatching.py`. The speckle the LID adds:
+
+    one paper, months apart      share 0.00213    1,077    hatches
+    sRGB vs Adobe RGB in Luv     share 0.00369    1,820    hatches
+    two different papers         share 0.01795       57    clean
+    a paper against sRGB         share 0.02203      740    HATCHES
+
+SO: the review's "that CIELUV pair draws cleanly" is the same mistake -- it is
+the worst hatcher of the four, and the threshold is right to refuse it. Queue
+item 3's second half is ANSWERED: not a fault.
+
+BUT THE SHARE IS A PROXY AND A POOR ONE: the last row is ALLOWED and hatches
+more than the two refused; the ordering does not even hold. A better rule
+would ask how much of the LID ends up within a hair of the skin, which is
+about two surfaces rather than one number between them. Anyone taking that
+on: measure it on the four pairs above with `opacity=1.0`, and do not set a
+threshold from a model -- three of mine were wrong that way.
+
+⚠ AND THE LESSON THAT COST THE MOST THIS WEEK: every "I could not find it"
+here has turned out to be an instrument that could not see it. Semi-
+transparent shapes hid the hatching; a pink-pixel count hid the teeth; a
+cosine hid a sideways slide. Before believing a negative, make the thing
+appear on purpose first.
+
+
+---
+
+## THE SEAM IS FIXED AT THE DEFAULT AND NOT AT FULL OPACITY (2026-08-22, night)
+
+> ⚠⚠ WRONG, AND CORRECTED IN 4470f70. The window does NOT default to 55%:
+> `_shared` is opacity 1.0 (`gamut_app.py:7009`) and the slider's default is
+> 100. The 55% only applies when the timeline panel owns the picture. So the
+> hatching was the DEFAULT view, not one slider away from it.
+
+HIS OWN PAIR, with the instrument that can see hatching:
+
+    opacity 1.00    the lid adds 1,114 speckle    hatches
+    opacity 0.55    the lid adds     76 speckle   clean
+
+The window sets 55% itself the first time two shapes appear
+(`_matched_the_shell_opacity`, gamut_app.py) -- so the picture he is SHOWN is
+clean, and every OUTSIDE/INSIDE number in the commits is honest for it. One
+slider away it hatches. Do not quote "OUTSIDE 348" without saying which.
+
+THE HOLD IS NOT THE LEVER (measured, table in `close_the_cut`'s docstring):
+no share keeps the narrow-pair volume within 5% AND clears the hatch, because
+where two surfaces converge there is no room to hold a lid in.
+
+### THE ONE THING LEFT TO TRY, and how not to repeat my mistake
+
+Do not DRAW the lid where the gap is below what the PICTURE can separate.
+That is a local form of TOO_CLOSE_TO_CLOSE. My first attempt (reverted in
+a1c6111) used a share of the SHAPE, no picture, and withheld 97% of a lid on
+sRGB against Display P3.
+
+THIS TIME THERE IS AN INSTRUMENT: `scripts/show_the_hatching.py` draws a pair
+OPAQUE and counts the speckle the lid adds. Calibrate the local threshold on
+it, and hold any candidate to BOTH numbers:
+  * the speckle the lid adds at opacity 1.0 (must fall)
+  * how much of the lid is withheld (must stay small on every pair in
+    `scratch/shy_probe.py`, which is where 97% showed up)
+and check `two_sided.py` at the default opacity has not moved.
+
+
+---
+
+## THE HATCH IS NOT THE LID'S PAINT — IT IS THE LID'S DEPTH (2026-08-22, night)
+
+Three levers tried against the hatching at opacity 1.0 on his own pair
+(1,114 speckle the lid adds). ALL THREE DEAD, with numbers:
+
+1. HOLD THE LID FURTHER UNDER THE SKIN -- see the table in `close_the_cut`.
+   No share keeps the narrow-pair volume within 5% and clears the hatch.
+2. WITHHOLD LID TRIANGLES WHOSE CORNERS HUG THE SKIN, calibrated small this
+   time (diag/8000 .. diag/1000, i.e. a tenth to eight times the clearance):
+   1,114 -> 1,096 -> 1,089 -> 1,067 -> 1,038. Nearly nothing, and the demo
+   paper does not move AT ALL (737 throughout). The hatch is not there.
+3. DRAW THE LID AFTER THE SHELLS instead of before: 1,114 both ways, to the
+   pixel. Draw order is not it either.
+
+⚠ AND WHY THEY ARE DEAD. Paint the lid pure red at opacity 1.0 and measure
+the hatch INSIDE THAT RUN (not across runs -- a red lid breaks the depth ties
+differently, and comparing one run's hatch against another run's pixels is
+how I first got 13.6%):
+
+    the hatch is 1,189 pixels, of which 219 are red -- 18.4%.
+    the red lid covers 2,170 pixels of the whole 1600x1050 frame.
+
+So the lid is very nearly INVISIBLE at full opacity and still adds ~1,000
+speckle pixels, 81.6% of which show the SHELLS' colours. It is not painting
+the hatch; it is writing DEPTH at the crossing surface and changing which
+shell wins, pixel by pixel. Only 5.6% of the hatch is near a place the shells
+already fight, so these are new fights, not amplified old ones.
+
+THAT REFRAMES THE JOB: the remaining artifact is not "the lid looks wrong",
+it is "a third opaque surface at the crossing changes how two nearly
+coincident shells resolve". Anything that helps must either move the lid OFF
+the crossing surface (no room -- lever 1) or stop it writing depth where it
+is not seen (not expressible through the drawing library, as far as I know).
+Worth asking whether the lid should be drawn at full opacity at all when the
+shells are opaque -- the picture he is shown uses 55%, where it is clean.
+
+
+---
+
+## WHAT THE LITERATURE SAYS, AND THE FIRST NEW LEVER IN FIVE CYCLES
+## (2026-08-22, night — Basti asked whether anyone has solved this already)
+
+THEY HAVE, AND THE ANSWER NAMES OUR MISTAKE. Capping a clipped solid is a
+classic problem. The three standard cures are:
+
+  1. STENCIL-BUFFER CAPPING (SIGGRAPH '97/'99 course notes, "Capping Clipped
+     Solids with the Stencil Buffer"): embed ONE capping polygon in the
+     clipping plane and let the stencil trim it to the solid's interior.
+  2. POLYGON OFFSET / depth bias (`glPolygonOffset`) for coplanar surfaces.
+  3. Change the GEOMETRY so two surfaces are not in the same place --
+     "merging coincident vertices, removing duplicate faces, or offsetting
+     surfaces by a tiny amount".
+
+NONE OF THE FIRST TWO IS REACHABLE HERE. Plotly's `mesh3d` exposes no stencil
+and no polygon offset; the gl3d traces go through gl-mesh3d/regl and the trace
+attributes are colour, lighting, flatshading and opacity. Cure 3 is the one I
+have been attempting for five cycles, and the volume forbids it (see the table
+in `close_the_cut`).
+
+⚠ BUT NOTE WHAT CURE 1 ACTUALLY DOES: it caps with ONE surface. We draw the
+other shape's skin TWICE -- once as its own shell, once as the lid laid a
+median 0.116 Lab beneath it. That duplicate is the fight.
+
+AND THE LID IS NOT REDUNDANT, which I checked before getting excited: with the
+other shape drawn SOLID it still closes 426,841 pixels (more than the 317,929
+with it drawn as a cage). The reason is the whole of it:
+
+    THE LID IS AN OPAQUE COPY OF A SURFACE THE READER HAS FADED.
+    At agree 45 the other shape's skin is see-through in the agreeing region,
+    so the hole shows; the lid blocks it. Two surfaces in the same place at
+    different opacities is a depth fight, and no offset this library exposes
+    can settle it.
+
+### THE LEVER THAT FOLLOWS, AND IT IS NEW
+
+Do not ADD a surface to close the hole. Stop FADING the one already there.
+
+The fade is per-vertex. The part of the other shape's skin that lies under
+this shape's standing part could simply be kept at full strength, instead of
+being faded and then covered by an opaque copy of itself. That is cure 1 in
+this application's own terms: cap with ONE surface, the one that is already
+in the scene, trimmed by the mask rather than by a stencil.
+
+WHAT TO CHECK BEFORE BUILDING IT:
+  * is the region "the other shape's skin under this one's standing part"
+    exactly what `stands` already marks? If so this is a mask change, not a
+    geometry change, and `cap_over_the_cut` could go entirely.
+  * both numbers, as always: the hatch at opacity 1.0 (`scripts/
+    show_the_hatching.py`) and what it closes (`scratch/two_sided.py`).
+  * what it does to a saved page's fade, which reads the same masks.
+
+SOURCES
+  https://www.opengl.org/archives/resources/code/samples/sig99/advanced99/notes/node21.html
+  https://www.opengl.org/archives/resources/code/samples/sig99/advanced99/notes/node20.html
+  https://en.wikipedia.org/wiki/Z-fighting
+  https://plotly.github.io/plotly.py-docs/generated/plotly.graph_objects.Mesh3d.html
+
+
+---
+
+## COULD WE WRITE THE POLYGON OFFSET OURSELVES? (Basti asked, 2026-08-22)
+
+TECHNICALLY YES. The viewer is `plotly.min.js` from the installed package
+(4,851,164 bytes, in the venv), inlined into every saved page by
+`include_plotlyjs="inline"`. Its shaders are in there as readable source:
+`gl_Position` appears 129 times, `gl_FragDepth` 3. A depth bias could be
+injected by string surgery on that bundle.
+
+I ADVISE AGAINST IT, for three reasons that are not about difficulty:
+
+  1. IT WOULD APPLY TO EVERY mesh3d, NOT THE LID. Polygon offset has to be
+     per-trace or it shifts everything equally and cancels. gl-mesh3d exposes
+     no per-trace uniform we could key on, so the patch would need a new one
+     threaded from the trace attributes through the bundle -- a fork of the
+     library, not a patch.
+  2. EVERY SAVED PAGE WOULD CARRY A MODIFIED VENDOR LIBRARY to whoever it is
+     sent to. This application's whole point is handing a page to someone
+     else; handing them a patched plotly is a different kind of promise.
+  3. IT BREAKS ON EVERY plotly UPDATE, silently, in a 4.8 MB minified file.
+
+WHAT IS CHEAP AND AVAILABLE INSTEAD, in the order I would take them:
+  * ORTHOGRAPHIC CAMERA -- already measured: hatch 1,074 -> 408 for 37% of
+    what the lid closes. It is one line and it is a reader's choice, so it
+    belongs in the window as an option, not as a silent default.
+  * LEAVE IT: the picture a reader is actually shown uses 55% opacity, where
+    his own pair measures 76 speckle -- clean. The hatch needs the opacity
+    slider at 100.
+  * SAY IT: the lid's tooltip could name the one setting it does not survive.
+
+⚠ AND WHAT IS NOT WORTH TRYING, measured, six levers, numbers in the source.
+
+
+---
+
+## THE SEAM: THE CAUSE WAS THE DEPTH BUFFER ALL ALONG (2026-08-22, 4470f70)
+
+Not the lid's geometry. Not its colours, winding, shading, draw order, alpha,
+or the threshold. THE DRAWING LIBRARY NEVER SETS A NEAR OR FAR PLANE: gl-plot3d
+falls back to zNear 0.01 / zFar 1000 over a scene that is a unit cube, so
+nearly all the depth precision is spent in empty space in front of the shapes.
+
+⚠ AND THE DEPTH BUFFER HERE IS SIXTEEN BITS. `gl.getParameter(gl.DEPTH_BITS)`
+through the window's own viewer returns 16, not 24. At 16 bits over that range
+one step of depth is bigger than a Lab at the distance these shapes are drawn
+from, so a lid laid a median 0.116 Lab under the skin CANNOT be told from it.
+Everything else I measured for a week was downstream of that.
+
+`_DEPTH_JS` (python/ti3gamut.py) fits zNear/zFar to the eight corners of
+`glplot.bounds` along the view direction, chained on `onrender`, assigned
+without a redraw. Product page, opacity 1.0, four cameras, speckle the LID
+adds: 121 -> 2, 158 -> 5, 193 -> 17 and 34 -> 132.
+⚠ THESE ARE THE CORRECTED NUMBERS. This line first read "121 -> 2,
+158 -> 1, 193 -> 4, 34 -> 1", measured before the box was corrected in
+f085156 -- which made the ONE CAMERA THAT GOT WORSE read as the best of
+the four. Any number in this file taken before f085156 is suspect.
+
+### TWO MEASUREMENT TRAPS THAT COST A WEEK, AND BOTH ARE STILL LIVE
+
+1. ⚠ `fig.to_html(...)` IS NOT THE PRODUCT'S PAGE. It carries none of this
+   application's scripts -- no `_ORDER_JS`, no `_spin_script`, and now no
+   `_DEPTH_JS`. Every scratch driver that used it (`show_the_hatching.py`,
+   `his_pair_hatch.py`, `does_it_hatch.py`, `lid_alpha_trade.py`, ...) was
+   measuring a different page. The same pair: 740 speckle by that route, 707
+   on a page a reader gets. USE `ti3gamut.write_html`.
+2. ⚠ AND `write_html` LEAVES opacity=None, which `build_figure` turns into
+   0.55 for a pair. THE WINDOW PASSES 1.0 (`gamut_app.py:7009`, slider default
+   100 at `:11655`). A page written without `opacity=1.0` is not what a reader
+   sees, and the hatching is invisible at 0.55. I told Basti the window
+   defaulted to 55% -- it does not; `_match_the_opacity_to_the_shells` only
+   fires when the timeline panel owns the picture.
+
+`scratch/product_page.py` does both correctly and is the driver to copy.
+
+### STILL OPEN
+* The two SHELLS still fight each other (~3,500-4,400 speckle with no lid at
+  all). Some of it WAS depth precision -- two cameras improved by ~470 and
+  ~276 with the near plane -- but most survives. A review argues the rest is
+  geometric: the two surfaces really do cross, and which is in front IS the
+  answer the reader is reading, so biasing one would move the crossing curve
+  and misreport a gamut's size. Do not "fix" it without settling that.
+* The Plotly `join` error, 8 per redraw with the lid on (see earlier entry).
+* No test pins `_DEPTH_JS` yet.
+
+
+---
+
+## THE TIMELINE'S OWN PICTURE GETS NEITHER SCRIPT (found 2026-08-22)
+
+`TimelineDialog._draw` (`gamut_app.py:5431`) writes its view with a plain
+`figure.write_html(...)`, not through `_write_dark_html`. So the picture in
+that dialog carries NEITHER `_ORDER_JS` NOR `_DEPTH_JS`.
+
+It matters because that dialog draws SEE-THROUGH SURFACES: `_cloud_figure`
+(`gamut_app.py:5680`) goes through `build_figure`, and
+`_match_the_opacity_to_the_shells` (`:16081`) exists solely to set those
+shells to 55% — which is the exact configuration `_ORDER_JS` was written for.
+The README says the far-to-near ordering applies to "both the window and every
+saved page" (README.md:840); this is a picture inside the window that does not
+get it.
+
+⚠ NOT YET CONFIRMED ON SCREEN. This is read off the code, not photographed —
+drive the timeline with a run of profiles and check
+`typeof window.cqOrder` on its page before believing it, and before changing
+anything. If it is real, the fix is to route that view through the same writer
+the rest of the window uses rather than to inject the scripts a second way.
+
+⚠ AND CHECK WHETHER THE README'S CLAIM HAS TO CHANGE TOO, or whether fixing
+the dialog makes it true again. Prefer making it true.
+
+
+---
+
+## THE DEPTH FIX: WHAT A REVIEW FOUND, AND WHAT IS STILL OPEN (2026-08-22)
+
+A hostile review of `_DEPTH_JS` returned "it regresses" and was right. Ten
+faults; four are fixed, six are open. Fixed:
+
+  * ⚠ THE PLANES WERE FITTED TO THE WRONG BOX. `gl.bounds` is the data's box
+    BEFORE the model matrix and the camera sits after it, so the far plane cut
+    the axis box away: 113,649 pixels erased from above, 256,077 along b*,
+    axis titles printed twice. The drawn box is exactly ±aspect/2. Fixed in
+    f085156; erased pixels along b* went 13,413 -> 28.
+  * THE PAD had to change with it: it was a share of the VIEW-ALIGNED span,
+    which collapses looking down an axis -- exactly where the tick text lives.
+    It is half the box across now. ⚠ A wider pad brings the hatching back
+    (0.9 of the box -> speckle 227/112/230/130), so this is a knee, not a
+    free parameter.
+  * MY TEST WAS CIRCULAR AND ALL ITS CAMERAS WERE DIAGONAL, where the error
+    cancels. It checks the DRAWN box now and carries five axis-aligned eyes.
+  * `_ORDER_JS`'s 82-line doc block had been annexed by `_DEPTH_JS` (no blank
+    line between them). Given back in 3d42e9d.
+
+### STILL OPEN, worth doing in this order
+
+1. ⚠ ONE CAMERA IS WORSE THAN NO FIX AT ALL. Seen from below the lid's own
+   speckle is 132 against 34 with the planes left alone; the other three are
+   2, 5, 17 against 121, 158, 193. Not explained. Find out whether it is the
+   fix or a pre-existing fight it exposes before claiming the seam is done.
+2. THE 25 PAGES IN `docs/pages` STILL CARRY THE OLD RENDERING -- 25 of 25 have
+   `window.cqOrder`, 0 of 25 have the depth script. They are what the README
+   points a reader at. Regenerating them is a big diff; check first whether
+   the pictures actually change.
+3. `Plotly.toImage` -- THE PNG BUTTON -- DOES NOT GET THE FIX. A review
+   measured 0 pixels different between fitted and unfitted planes on an
+   exported image: it renders a clone with no chain. Anything a reader saves
+   as a picture still hatches.
+4. THE TIMELINE PANEL (`gamut_app.py:5431`) writes with a plain
+   `figure.write_html`, so it gets neither `_ORDER_JS` nor `_DEPTH_JS` --
+   measured `armed:false, zNear:0.01`. It is the one panel whose shells are
+   deliberately see-through.
+5. SETTLED, AND MY CLAIM WAS WRONG. I said `write_slice_html` "gets neither
+   script". It gets BOTH -- a cross-section page carries `cqOrder` twice and
+   `__cqDepth` five times -- because it writes through `_write_dark_html`,
+   which injects them. My check had read only the function's own body with
+   `ast`, not what it calls.
+   AND THE SCRIPT CORRECTLY DOES NOTHING THERE: asked of the running page,
+   `scenes: 0`. A cross-section is flat, there is no depth buffer to fit, and
+   the picture is two overlapping polygons with axes and a key
+   (`scratch/slicearms/slice.png`). Nothing to do.
+6. THE "98-99% GONE" IN 4470f70 OVERSTATES IT. The before column reproduces
+   exactly; the after column does not (a review measured 1/13/3/11 against the
+   claimed 2/1/4/1). Re-take on `write_html` pages at three or more cameras
+   before quoting it anywhere a reader will see.
+
+⚠ AND THE PAD WAS CHOSEN FROM FIVE CAMERAS ON ONE PAIR. It is the least
+justified number in the change.
+
+
+---
+
+## THE NO-VIEWER EXPORT IS STILL UNPROVEN ON A REAL PAGE (2026-08-22)
+
+Basti asked whether the depth fix reaches the exported web files, "especially
+the ones without the viewer included". Measured:
+
+    with the viewer inlined   6,232,347 bytes   armed, planes 0.71 / 4.49
+    without it                1,389,727 bytes   the script IS in the file
+
+⚠ BUT THE SECOND ONE HAS NEVER BEEN SEEN TO WORK. In a QWebEngineView here the
+viewer never arrives and the page shows its own notice, "The 3D viewer did not
+arrive". `curl` fetches the same URL in 2.7 s and 4,851,164 bytes, so the
+machine IS connected and it is QWebEngine's fetch that does not complete. The
+fix for a LATE viewer (the sweep now runs until a scene is armed rather than
+for ten seconds) is proved only in a node harness -- viewer landing at sweep
+0, 5, 100 and 400 -- not on a page that really downloaded one.
+
+TO FINISH IT: open `scratch/cdnreal/cdn.html` in a real browser (Safari or
+Chrome, not the embedded view) and check
+`gd._fullLayout.scene._scene.glplot.onrender.__cqDepth` in its console. One
+minute of work, and it is the only way to be sure the file people are actually
+sent carries the fix.
+
+⚠ AND A LESSON ABOUT MY OWN DRIVERS. This ran for forty seconds reporting
+"nothing drawn yet" while the window said, in plain words, why. I had saved
+the screenshot and not looked at it. The drivers now return the page's own
+visible text when they cannot find a figure, and START-HERE says to look
+before concluding.
+
+
+---
+
+## ZOOM IS CLEAN (2026-08-22, `scratch/zoom_check.py`)
+
+The planes are fitted every frame, so zoom was the case least sure of. Same
+direction, seven distances, his own pair, pixels the library drew that the
+fitted planes erase:
+
+    0.30x (eye inside the shape)   0.0010 / 2.6677    erased 0
+    0.55x                          0.0010 / 3.3172    erased 1
+    0.90x                          0.4499 / 4.2265    erased 6
+    1.30x                          1.4891 / 5.2657    erased 2
+    2.60x                          4.8665 / 8.6431    erased 5
+    5.00x                         11.1017 / 14.8783   erased 2
+    12.0x                         29.2877 / 33.0643   erased 2
+
+Pulled right in the near plane clamps and nothing is lost; pushed far out the
+range tightens to 1.1:1 against the library's 100,000:1.
+
+⚠ AND THE THIRD INSTRUMENT ERROR OF THE SAME FAMILY. The first run of this
+reported 0.0100 / 1000.0000 at EVERY distance, which reads exactly like the
+fix never applying. It was the driver: it loads the fitted page and then the
+unfitted one, and asks the page that loaded LAST. Ending the loop on the
+fitted page fixed it. Every "the fix did not work" and every "I could not find
+it" in this whole week has been the instrument, not the code -- semi-
+transparent shapes hid the hatching, a pink-pixel count hid the teeth, a
+cosine hid a sideways slide, a page written by `fig.to_html` was not the
+product's page, and now a readout of the wrong page. CHECK WHAT THE
+MEASUREMENT IS POINTING AT BEFORE BELIEVING WHAT IT SAYS.
+
+
+---
+
+## THE "FROM BELOW" CAMERA: THE FLAG IS REAL AND STILL THERE (2026-08-22)
+
+The one camera where the depth fix left things worse (speckle the lid adds:
+132, against 34 with the planes left alone) has now been LOOKED AT rather than
+counted: `scratch/px-0.5/low-pair.png`.
+
+IT IS A TRIANGULAR FLAP. A pale wedge with dotted edges projects above the
+surface along one edge, where the lidless picture is clean. That is the "row
+of triangular flags" the job description names -- so the seam artifact is NOT
+fully cured, and this camera is where what remains of it shows.
+
+WHY THE FIX MADE IT WORSE, most likely: with the depth buffer given its
+precision back, a lid triangle that genuinely sticks out now WINS RELIABLY
+instead of flickering. The fix did not create the flap; it stopped hiding it
+behind a fight.
+
+⚠ AND IT IS NOT RADIAL POKE-THROUGH. Measured on his own pair with 120,000
+samples: 0 of 8,000 triangles of the printer's lid are outside its own skin,
+and 1 of 7,999 of sRGB's, worst +0.0002 Lab. The lid is where it belongs
+ALONG EVERY RAY FROM THE MIDDLE.
+
+SO THE INSTRUMENT CANNOT SEE IT, AGAIN. A ray from the middle asks how deep a
+point is along that ray. A flat lid triangle strung across a concave part of
+the rim sticks out AT THE SILHOUETTE -- sideways, past the edge of the shape
+-- and no radial test asks about that. Whoever takes this next: measure the
+silhouette, not the radius. Render the lid alone against the piece alone and
+compare outlines, or test each lid triangle against the piece's surface by
+distance rather than along a ray.
+
+It is 132 pixels at one camera, so it is small -- but it is the ORIGINAL
+FAULT, and it is the reason not to claim the seam is finished.
+
+
+---
+
+## THE FLAP MEASURED AT LAST: SEVEN TRIANGLES (2026-08-22, `scratch/flap.py`)
+
+Asked WITHOUT assuming the shape is star-shaped about the middle -- count
+crossings along an arbitrary direction, odd is inside -- on his own pair:
+
+    printer's lid   8,000 triangles,   0 with their middle outside the piece
+    sRGB's lid      7,999 triangles,   7 outside  (0.09%), sitting
+                    46.5..93.8 Lab from the middle of a shape spanning 132.8
+
+THE RADIAL TEST FOUND NONE OF THEM. `_where_the_ray_leaves` from the middle
+asks one distance per direction, which is only meaningful if the surface is
+star-shaped about that middle; where the rim is concave a flat lid triangle
+strung across the dent sticks out SIDEWAYS and every radial test says it is
+fine. Two of them did, at 120,000 samples.
+
+⚠ THIS IS THE ORIGINAL FAULT -- "a row of triangular flags where the lid meets
+the skin" -- and seven triangles is the right size for the single flap
+photographed from below (`scratch/px-0.5/low-pair.png`, 132 speckle pixels).
+
+### HOW TO FIX IT, and what to check
+
+Withhold or pull back those triangles in the DRAWN copy only, exactly as the
+tuck does, so `close_the_cut` still hands back a closed solid and the volume
+is unaffected.
+  ⚠ CHECK FIRST whether any of the seven owns a SEAM edge. Dropping one that
+    does opens the seam, which is the fault the seam guard exists to stop.
+  ⚠ AND HOLD IT TO THE THREE NUMBERS: the flap gone from the picture at the
+    "from below" camera (132 -> ?), nothing withheld on the reference pairs in
+    `scratch/shy_probe.py` (a broad withholding rule took 97% of a lid once),
+    and `two_sided.py` unmoved at the default.
+  ⚠ AND SEVEN IS A SMALL POPULATION. A rule that fires on seven triangles of
+    16,000 must be shown to fire on the RIGHT seven -- render the lid alone
+    with those triangles coloured, and look.
+
+
+---
+
+## THE FLAP FIX: DIAGNOSIS COMPLETE, IMPLEMENTATION HAS TWO CONSTRAINTS
+## (2026-08-22, `scratch/flap.py`, `scratch/flap_detail.py`, worktree
+## `scratch/flapfix`)
+
+WHAT THE SEVEN ARE, on his own pair (sRGB's lid, 7,999 triangles):
+  * NONE owns a seam edge -- so dropping them cannot reopen the seam, which
+    was the first guard.
+  * ALL SEVEN ARE AT RING 1 FROM THE RIM. The flap is a rim phenomenon,
+    exactly as the fault description says: "where the lid meets the skin".
+  * three pairs share an edge, and they span 109.7 Lab -- so THREE PLACES,
+    not one.
+  * their area is 1.64 of 24,133 Lab^2: 0.007% of the lid.
+  * the printer's lid has none at all.
+
+A FIRST IMPLEMENTATION IS IN `scratch/flapfix` AND IS NOT READY, for two
+reasons that measurement found:
+
+  1. ⚠ IT MUST RUN AFTER THE TUCK, NOT BEFORE. Placed before, it drops 15
+     triangles instead of 7 -- the tuck pulls the rim in by ~0.7 Lab, which
+     pulls some of them back inside. Judge the geometry that is actually
+     DRAWN.
+  2. ⚠ IT COSTS 12.7 SECONDS FOR BOTH LIDS, against about 2 before. The
+     crossing test is 8,000 points x 9,192 faces x 2 directions. That is far
+     too slow: `cap_over_the_cut` is on the path of a first draw.
+
+     THE WAY OUT IS RING 1. Every one of the seven is one ring from the rim,
+     so the test never needs to run over the whole lid. Rings 0-2 would cover
+     them with a fraction of the work; a spatial bucket over the piece's faces
+     would cut it much further.
+
+⚠ AND THE THIRD GUARD IS STILL UNDONE: colour those triangles and LOOK, to
+prove a rule that fires on seven of eight thousand fires on the RIGHT seven.
+Then the three numbers: the flap gone from the "from below" camera (132 -> ?),
+nothing withheld on `scratch/shy_probe.py`'s reference pairs, and
+`two_sided.py` unmoved at the default.
+
+
+---
+
+## THE FLAP FIX: CORRECT, AND STILL TOO SLOW (2026-08-22)
+
+The version in `scratch/flapfix2` (worktree removed; the diff is described
+here in full) withholds EXACTLY the right triangles:
+
+    printer's lid   8,000 drawn,  0 withheld
+    sRGB's lid      7,992 drawn,  7 withheld
+
+matching `scratch/flap.py`'s independent count. Two constraints from the
+previous attempt are met: it runs AFTER the tuck, and it only tests triangles
+within one ring of the rim, which is where every one of the seven is.
+
+⚠ WHAT STOPS IT SHIPPING IS THE COST.
+
+    baseline (no test)                 3.9 s for both lids
+    whole lid, two directions         12.7 s
+    rings=2, two directions            8.2 s
+    rings=1, two directions            7.4 s
+    rings=1, ONE direction             6.0 s
+
++3.5 s on a first draw is too much for a feature meant to be on by default.
+
+⚠ AND DO NOT BUY THE LAST 1.4 SECONDS BY DROPPING THE SECOND DIRECTION. It is
+there because a ray that grazes an edge is miscounted, and a miscount there
+calls an INSIDE triangle outside -- which puts a hole in the lid. A slow draw
+is better than a hole.
+
+### THE OPTIMISATION THAT IS LEFT
+
+The cost is faces, not points: every candidate is tested against all 9,192 of
+the piece's triangles. For a FIXED direction, a face can only be crossed by
+the ray from P if P's projection onto the plane perpendicular to that
+direction falls inside the face's 2D extent. Bucket the faces into a grid over
+that projection once per direction, and each point tests tens of faces instead
+of nine thousand.
+
+That is the whole remaining work, and it is ordinary. Everything about WHICH
+triangles to drop is settled and measured.
+
+
+---
+
+## THE WALL THAT COMES IN FRONT OF THE SHAPE (2026-08-23) — REPORTED BY BASTI,
+## CAUSED BY THE DEPTH FIX, MECHANISM SETTLED
+
+He reported it twice, and both reports were right:
+
+> "for this one the wall were placed very weird"
+> "they are in the box only the walls move in front of it sometimes"
+> "so far i did not see it in your stills but only in the moving ones"
+
+HE IS RIGHT ABOUT THE STILLS TOO. At 24 cameras round the orbit with the spin
+STOPPED, the walls cover at most 26 pixels of the shape — nothing. It is only
+ever seen moving because the fault lives in a band of camera azimuth under a
+degree wide, and a spinning page crosses it in a few frames.
+
+### IT IS MINE. The numbers, at one camera, spin stopped, camera read back and
+### verified equal to 1e-6:
+
+    wall pixels drawn over the shape     before the depth fix        1
+                                         after  the depth fix    2,386
+
+`docs/pages/22-a-run-with-its-shapes.html` against its own committed copy from
+before `4f3b6fd`. 2,149 of those 2,386 pixels are exactly #141414, which is
+`SCENE_COLOURS["dark"]["plot"]` — the wall background — sitting on top of the
+gamut. Turning the x wall off through relayout takes it to 100.
+
+### THE MECHANISM, AND IT IS ARITHMETIC
+
+gl-plot3d paints one of each axis's two faces, and which one is in
+`glplot.axes.lastCubeProps.axis` as a sign per axis. Painted on the face the
+CAMERA IS ON, the wall is in front of everything:
+
+    the wall is wrong  <=>  axis[i] * eye[i] > 0
+
+Swept through the band with the spin stopped, eleven cameras, the rule against
+the pixels:
+
+    eye y      axis        rule       pixels covered
+    -0.300   [ 1, 1,-1]    clean            0
+    -0.150   [ 1, 1,-1]    clean            1
+    -0.080   [ 1, 1,-1]    clean            0
+    -0.040   [-1, 1,-1]    COVERED      2,377
+    -0.017   [-1, 1,-1]    COVERED      2,387
+     0.000   [-1, 1,-1]    COVERED      2,388
+     0.017   [-1, 1,-1]    COVERED      2,394
+     0.040   [-1, 1,-1]    COVERED      2,420
+     0.080   [ 1,-1,-1]    clean            2
+     0.150   [ 1,-1,-1]    clean            0
+     0.300   [ 1,-1,-1]    clean            0
+
+ELEVEN OF ELEVEN. The camera's x never moves — it is fixed at -2.0166 — and
+the library still flips the X face as Y crosses zero, which is why the band is
+where it is.
+
+⚠ THE FIX DID NOT CREATE THIS, IT STOPPED HIDING IT. With the library's own
+0.01/1000 over 16 bits, one depth step is bigger than the whole scene, so
+nothing was ordered by depth at all and the shape won by draw order. Given its
+precision back, the near wall correctly wins — over a wall the library should
+not have painted. The same sentence covers the "from below" flap: the fix did
+not make either fault, it stopped a fight that was hiding them.
+
+### WHAT WORKS AND WHAT DOES NOT
+
+    Plotly.relayout(gd, {"scene.xaxis.showbackground": false})   2,386 -> 100
+    glplot.axes.backgroundEnable[0] = false, then a forced frame  2,386 -> 2,386
+
+The second does nothing: the library re-applies that array from the layout on
+every frame, so the only lever is relayout.
+
+⚠ AND A RELAYOUT PER FRAME IS NOT OBVIOUSLY SAFE. His very first screenshot
+was of a driver of MINE that called `Plotly.relayout` for the camera while the
+page's own spin was also writing it; the frames in between are on neither
+path, and that is what "the walls were placed very weird" was. Any cure that
+relayouts on a spinning page must be photographed on a spinning page before it
+is believed. Toggle only on the verdict CHANGING (about eight times a
+revolution), never every frame, and remember each axis's ORIGINAL
+`showbackground` so a page saved with the walls off is not given walls.
+
+### THE INSTRUMENT, and it took four tries
+
+`scratch/wallover.py` — wall grey with shape colour on both sides ACROSS it.
+Three earlier versions each looked like a clean result and were not:
+
+  * counting coloured pixels frame to frame measured the SPIN (a shape turning
+    "loses" 10,921 pixels between two frames three apart);
+  * asking for colour on all FOUR sides can never fire on a line of any
+    orientation — what is above a vertical line is the line;
+  * and the sensitivity check that was supposed to catch that pasted a 94-pixel
+    SLAB, whose middle has no colour within five pixels either side, and
+    concluded the check was blind when the test was.
+
+It now proves itself on a pasted line before it reports anything, and the
+run stops if that proof fails.
+
+⚠ ALSO FOUND BY A CHECK THAT EARNED ITS KEEP: `str(np.float64(1.6))` is
+`"np.float64(1.6)"`, which is not JavaScript. A driver built its camera from
+`round(1.6*np.cos(t), 4)` and every `Plotly.relayout` was silently a no-op, so
+24 cameras of numbers were all taken at whatever camera happened to be there.
+Caught only because the camera is read back and compared to what was asked.
+Read the camera back, always.

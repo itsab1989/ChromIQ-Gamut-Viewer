@@ -4139,6 +4139,167 @@ window.cqCaption = (function () {
 90.7% of the colour Glossy-paper can print also fits inside Adobe RGB (1998).
 52.7% of Adobe RGB (1998) fits inside Glossy-paper.
 The two numbers differ because fitting inside is not the same question in both directions.</div><script>
+(function () {
+  function fit(gl) {
+    try {
+      // ⚠ THE BOX THAT IS DRAWN, NOT `gl.bounds`. `bounds` is the data's own
+      // box BEFORE the model matrix; the camera lives after it. Read off a
+      // running page: bounds spanned 1.0625 on every axis while the model
+      // scaled by (1.0310, 1.3829, 0.5847) and shifted z by -0.2924, so the
+      // drawn box was off-centre by half a unit in z and up to 38% the wrong
+      // size per axis. Fitted to that, the far plane cut the axis box away at
+      // the cameras four buttons on every saved page produce: 113,649 pixels
+      // erased at "above", 79,031 at "angle", 256,077 looking along b*, with
+      // the axis titles printed twice.
+      //
+      // The drawn box is exactly +/- aspect/2 about the origin -- checked
+      // against the model matrix to seven digits -- and needs no matrix.
+      var cam = gl.camera, a = gl.aspect;
+      if (!cam || !cam.eye || !cam.center || !a || a.length !== 3) return;
+      var b = [[-a[0] / 2, -a[1] / 2, -a[2] / 2],
+               [a[0] / 2, a[1] / 2, a[2] / 2]];
+      if (!(a[0] > 0 && a[1] > 0 && a[2] > 0)) return;
+      var ex = cam.eye[0], ey = cam.eye[1], ez = cam.eye[2];
+      var vx = cam.center[0] - ex, vy = cam.center[1] - ey, vz = cam.center[2] - ez;
+      var len = Math.sqrt(vx * vx + vy * vy + vz * vz);
+      if (!(len > 0)) return;
+      vx /= len; vy /= len; vz /= len;
+      var lo = Infinity, hi = -Infinity, i, j, k, t;
+      for (i = 0; i < 2; i++) for (j = 0; j < 2; j++) for (k = 0; k < 2; k++) {
+        t = (b[i][0] - ex) * vx + (b[j][1] - ey) * vy + (b[k][2] - ez) * vz;
+        if (t < lo) lo = t;
+        if (t > hi) hi = t;
+      }
+      if (!isFinite(lo) || !isFinite(hi) || !(hi > lo)) return;
+      // ⚠ AND THE PAD HAS TO COVER WHAT LIVES OUTSIDE THE BOX. The shapes sit
+      // inside it; the tick marks, the tick numbers and the axis titles do
+      // not, and a pad sized only for rounding clips them. Measured by the
+      // pixels the library draws that this erases, at the page's own
+      // "look from" buttons -- see the test.
+      // ⚠ A SHARE OF THE BOX, NOT OF THE VIEW-ALIGNED SPAN. The tick marks,
+      // the tick numbers and the axis titles are drawn OUTSIDE the box, and
+      // how far outside does not change with the camera -- but `hi - lo`
+      // does: looking straight down an axis the box is barely deep at all, so
+      // a share of it collapses exactly where the furniture needs covering.
+      // Measured, pixels the library drew that this erased, looking along b*:
+      // a fifth of the span erased 13,419; a fifth of the box, 31.
+      // And widening the SPAN share until the clipping stopped brought the
+      // hatching back -- at 1.0 the lid's own speckle went 3 -> 207 -- because
+      // the pad then swallows the precision at every other camera too.
+      var across = Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+      // HALF THE BOX ACROSS, measured at both ends. Pixels the library drew
+      // that this erases, and the speckle the lid adds, on his own pair:
+      //
+      //     pad      along b*   along a*   above  |  hatch at four cameras
+      //     0.2      13,413     10,889    8,156   |   3    0    3    4
+      //     0.5          28         53       28   |   2    5   17  132
+      //     0.9           -          -        -   |  227  112  230  130
+      //
+      // A fifth of the box is tight enough to leave the axis furniture
+      // outside the far plane; nine tenths spends so much depth on empty
+      // space that the hatching comes back. Half clears the furniture at
+      // every camera and keeps the hatching cured at three of the four --
+      // the fourth, seen from below, is 132 against 34 with no fix at all,
+      // and is written into the queue rather than counted as fixed.
+      var pad = 0.5 * across + 1e-3;
+      // ⚠ NEVER CLOSER THAN THE LIBRARY'S OWN FLOOR. Clamped at 1e-3 this
+      // handed the depth buffer a near plane TEN TIMES CLOSER than gl-plot3d
+      // would have, and perspective depth resolution is proportional to the
+      // near plane -- so wherever the clamp bit, the fix was three to
+      // forty-eight times WORSE than doing nothing. Measured by a hostile
+      // review, the speckle the lid adds:
+      //
+      //     eye x   no fix   with 1e-3   with 0.01
+      //     1.0       134         6          6
+      //     0.864     106       302        106
+      //     0.7        33       341         53
+      //     0.5         9       434          7
+      //
+      // and the camera this change was said to make worse -- 34 against 132 --
+      // is 27 with the floor at 0.01. It is one token, it is reached by one
+      // and a half clicks of the page's own wheel zoom, and it guarantees the
+      // fitted planes can never be worse than leaving them alone.
+      var near = Math.max(0.01, lo - pad), far = hi + pad;
+      if (!(far > near)) return;
+      if (Math.abs(gl.zNear - near) > 1e-9 || Math.abs(gl.zFar - far) > 1e-9) {
+        gl.zNear = near;
+        gl.zFar = far;
+      }
+    } catch (e) { /* a page that cannot do this draws what it drew before */ }
+  }
+  function arm(gd) {
+    if (!gd || !gd._fullLayout) return;
+    Object.keys(gd._fullLayout).forEach(function (key) {
+      if (key.indexOf("scene") !== 0) return;
+      var sc = gd._fullLayout[key]._scene, gl = sc && sc.glplot;
+      if (!gl) return;
+      // ⚠ THE MARK GOES ON THE FUNCTION, NOT ON THE SCENE. Written as a flag
+      // on the object it says "armed" for ever -- so if the library ever
+      // assigns `onrender` again, this one is gone and is never put back, and
+      // the only symptom is the hatching quietly returning.
+      if (gl.onrender && gl.onrender.__cqDepth) return;
+      // ⚠ CHAINED ON `onrender`, AND IT DOES NOT REDRAW. The library reads
+      // both planes on every projection update, so assigning is enough;
+      // calling redraw from inside a render is how you get a loop.
+      var was = gl.onrender;
+      var mine = function () {
+        fit(gl);
+        if (typeof was === "function") return was.apply(this, arguments);
+      };
+      mine.__cqDepth = true;
+      gl.onrender = mine;
+      fit(gl);
+    });
+  }
+  function watch(gd) {
+    // ⚠ ONE FUNCTION PER DIV, BECAUSE `var` IS NOT PER-ITERATION. Written
+    // inline in the loop below, every handler closed over the SAME `gd` and
+    // saw whatever it held after the loop -- the LAST div. On a page with two
+    // rooms, a redraw of the left one re-armed the right one and the left was
+    // never armed again.
+    if (gd.__cqDepthWatched || typeof gd.on !== "function") return;
+    gd.__cqDepthWatched = true;
+    try {
+      gd.on("plotly_afterplot", function () { arm(gd); });
+    } catch (e) { gd.__cqDepthWatched = false; }
+  }
+  function sweep() {
+    var all = document.querySelectorAll(".js-plotly-plot"), n, gd;
+    for (n = 0; n < all.length; n++) {
+      gd = all[n];
+      arm(gd);
+      // ⚠ AND ARM WHATEVER IS DRAWN NEXT, FOR AS LONG AS THE PAGE LIVES. A
+      // scene is rebuilt whenever the reader opens another file, changes the
+      // colour space, or adds a comparison, and the new one is a NEW glplot.
+      // A bounded sweep -- this ran forty times over ten seconds -- leaves
+      // every scene made after that unarmed, silently.
+      watch(gd);
+    }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", sweep);
+  }
+  sweep();
+  // ⚠ IT SWEEPS FOR TWO MINUTES AND DOES NOT STOP EARLY.
+  //
+  // Stopping "once something is armed" abandons whatever appears NEXT: a page
+  // with two rooms draws the second one later, and 1.25 s after the first
+  // room drew there was no longer anything looking. Driven under node with
+  // the second room arriving at sweep 5, 40 and 200, it was never armed.
+  //
+  // Asking "is every scene armed" instead does not help either -- at sweep 5
+  // the only scene there IS armed, so it still stops. The honest answer is to
+  // keep looking for a while and let `plotly_afterplot` carry it after that.
+  // `fit` costs 0.038 microseconds, so 480 ticks of a 250 ms timer is nothing
+  // to weigh against a page that silently keeps the hatching.
+  var tries = 0;
+  var again = setInterval(function () {
+    sweep();
+    tries += 1;
+    if (tries > 480) clearInterval(again);
+  }, 250);
+})();
+</script><script>
 window.cqOrder = (function () {
   var plots = [], raf = null, still = 0, watch = null, fast = true;
   var listening = false;

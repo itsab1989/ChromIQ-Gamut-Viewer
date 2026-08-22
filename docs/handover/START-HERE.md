@@ -3,6 +3,33 @@
 Written 2026-08-20 for a fresh session, because the old one had grown slow.
 Nothing in here assumes you remember anything.
 
+> ### ⚠ IF YOU MEASURE A PICTURE, READ THIS FIRST (added 2026-08-22)
+>
+> Two traps cost a week. Both are still live and both look exactly like a
+> clean result:
+>
+> 1. **`fig.to_html(...)` is not this application's page.** It carries none
+>    of its scripts — `_ORDER_JS`, `_spin_script`, `_DEPTH_JS`. Use
+>    `ti3gamut.write_html(...)`. The same pair measured 740 speckle one way
+>    and 707 the other.
+> 2. **`write_html` leaves `opacity=None`, which becomes 0.55 for a pair.**
+>    The window passes **1.0** (`gamut_app.py:7009`, slider default 100). At
+>    0.55 the fault under investigation is invisible. Pass `opacity=1.0`.
+>
+> `scratch/product_page.py` does both correctly — copy it rather than writing
+> a new driver.
+>
+> 3. **When a driver reports "nothing drawn", LOOK AT THE WINDOW before
+>    concluding anything.** A page that cannot fetch its viewer shows this
+>    application's own notice — *"The 3D viewer did not arrive"* — and from
+>    the outside that is indistinguishable from a slow load. I read it as "no
+>    network" and was wrong twice. The scratch drivers now return the page's
+>    own visible text when they cannot find a figure.
+>
+> And the general form of it, which caught me three times: **every "I could
+> not find it" here has turned out to be an instrument that could not see
+> it.** Before believing a negative, make the thing appear on purpose first.
+
 **Read this file, then `QUEUE-when-the-cron-resumes.md` beside it, in full.**
 The queue carries the ten things Basti reported from his own first hands-on
 session, each with the diagnosis already made and the traps already met. Do
