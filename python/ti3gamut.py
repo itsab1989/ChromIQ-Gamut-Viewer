@@ -3843,6 +3843,7 @@ _WHEEL_JS = """
 #: erased looking from above. See `fit` for the numbers.
 _DEPTH_JS = """
 (function () {
+  var armedAny = false;
   function fit(gl) {
     try {
       // ⚠ THE BOX THAT IS DRAWN, NOT `gl.bounds`. `bounds` is the data's own
@@ -3934,6 +3935,7 @@ _DEPTH_JS = """
       };
       mine.__cqDepth = true;
       gl.onrender = mine;
+      armedAny = true;
       fit(gl);
     });
   }
@@ -3959,12 +3961,20 @@ _DEPTH_JS = """
     document.addEventListener("DOMContentLoaded", sweep);
   }
   sweep();
-  // AND A SHORT SWEEP FOR THE FIRST DRAW, because the graph div may not exist
-  // yet when this runs. After that the event above carries it.
+  // ⚠ AND IT KEEPS LOOKING UNTIL THERE IS SOMETHING TO ARM. A page saved
+  // WITHOUT the viewer inside it fetches that viewer from the network when
+  // the reader opens it, and nothing is drawn until it arrives. A sweep that
+  // gave up after ten seconds -- this did, forty times at 250ms -- left every
+  // such page on a slow connection with no fix at all, silently, which is the
+  // one kind of page that travels furthest from here.
+  //
+  // So: stop once a scene has actually been armed and the event below can
+  // carry it, and otherwise keep looking for two minutes before giving up.
   var tries = 0;
   var again = setInterval(function () {
     sweep();
-    if (++tries > 40) clearInterval(again);
+    tries += 1;
+    if ((armedAny && tries > 4) || tries > 480) clearInterval(again);
   }, 250);
 })();
 """

@@ -280,3 +280,62 @@ def test_the_arming_survives_the_two_ways_it_used_to_stop(tmp_path):
         "nothing")
     assert got["late_after"] and got["late_fitted"], (
         f"a scene built after the opening sweep is never armed: {got}")
+
+
+_LATE = r"""
+// A page saved WITHOUT the viewer inside it: nothing is drawn until the
+// viewer arrives from the network, which on a slow connection is long after
+// a bounded sweep would have given up.
+let timer = null, arrived = false;
+const scenes = {};
+const gl = {camera: {eye: [1.5, 1.5, 1.5], center: [0, 0, 0]},
+            aspect: [1.0954679926284856, 1.4693597294706, 0.6212582573094755],
+            zNear: 0.01, zFar: 1000, onrender: null};
+const gd = {_fullLayout: scenes, on() {}};
+global.document = {readyState: "complete", addEventListener() {},
+                   querySelectorAll: () => (arrived ? [gd] : [])};
+global.setInterval = (fn) => { timer = fn; return 1; };
+global.clearInterval = () => { timer = null; };
+eval(require("fs").readFileSync(process.argv[2], "utf8"));
+const AFTER = Number(process.argv[3]);
+let n = 0;
+for (; n < 900 && timer; n++) {
+  if (n === AFTER) { arrived = true; scenes.scene = {_scene: {glplot: gl}}; }
+  timer();
+}
+console.log(JSON.stringify({armed: !!(gl.onrender && gl.onrender.__cqDepth),
+                            fitted: gl.zNear !== 0.01, sweeps: n,
+                            still_sweeping: !!timer}));
+"""
+
+
+@pytest.mark.skipif(_NODE is None, reason="no node on the path to run it with")
+@pytest.mark.parametrize("late", [0, 5, 100, 400])
+def test_a_page_whose_viewer_arrives_late_is_still_fixed(late, tmp_path):
+    """THE PAGE THAT TRAVELS FURTHEST IS THE ONE WITHOUT THE VIEWER IN IT.
+
+    Saved that way it is 1.4 MB instead of 6.2 MB and fetches the viewer when
+    the reader opens it — so nothing exists to arm until the network answers.
+    The sweep used to run forty times at 250 ms and stop: on any connection
+    slower than ten seconds the fix never happened, and the only symptom was
+    the hatching being there.
+
+    It now stops when a scene has actually been armed, and otherwise keeps
+    looking for two minutes.
+    """
+    import ti3gamut
+    script = tmp_path / "depth.js"
+    script.write_text(ti3gamut._DEPTH_JS)
+    page = tmp_path / "late.js"
+    page.write_text(_LATE)
+    done = subprocess.run([_NODE, str(page), str(script), str(late)],
+                          capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr[:600]
+    got = json.loads(done.stdout)
+    assert got["armed"] and got["fitted"], (
+        f"a viewer arriving at sweep {late} was never armed: {got}")
+    assert not got["still_sweeping"], (
+        f"it is still sweeping after arming: {got}")
+    assert got["sweeps"] <= late + 8, (
+        f"it swept {got['sweeps']} times for a viewer that arrived at "
+        f"{late} — it should stop once there is something armed")
