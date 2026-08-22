@@ -63,7 +63,22 @@ prefs.use_a_scratch_store()
 #: Named here with the reason, so that "this one rebuilds" is a decision on
 #: the record rather than an exception somebody added to make a check pass.
 MUST_RECOMPUTE = {
-    "detail": "the shape itself is worked out again at the new fineness",
+    # MEASURED 2026-08-22, because this said "the shape itself" and that is
+    # not what happens. The slider taken from 20 to 40, and the built shapes
+    # asked for their face counts: an opened ICC profile stayed at 4,926 and
+    # an opened measurement at 978, while the comparison went 4,332 -> 18,252.
+    # It rebuilds the shape you compare AGAINST, and only when that is one of
+    # the named spaces -- see _push_detail, and _apply_detail_availability for
+    # where it is now dimmed.
+    "detail": "the shape you compare against is worked out again at the new "
+              "fineness",
+    # ⚠ UNUSED, AND WRONG IF IT EVER WERE USED. `self._quality` is the movie
+    # writer's quality, 40..100, handed to movie.writer_for -- it has nothing
+    # to do with a shape. No run of this check has ever printed a "quality"
+    # row, because that slider lives in the save dialog and not in the column
+    # this walks. Left here rather than deleted: if a future panel does carry
+    # one, the name is already spoken for and the next person should give it
+    # its own reason instead of inheriting this one.
     "quality": "the shape itself is worked out again at the new fineness",
     "slice_at": "a cross-section is a different set of points at every height",
     "rings": "the rings are geometry: new lines, not a new colour",
