@@ -10248,18 +10248,37 @@ def build_figure(gamuts, title: str, opacity: float | None = None,
                     _al = np.asarray(alphas, float)
                     if _on.any():
                         _lid_alpha = float(_al[_on].max())
-                if _lid_alpha < 1.0:
-                    # NOT `_with_alpha`, WHICH CANNOT SEE THESE. It edits the
-                    # text of a colour and hands anything without a bracket
-                    # back untouched -- and the lid's colours are float
-                    # triples in 0..1, not "rgb(...)" strings. Passing them
-                    # through it changed nothing at all, which looked exactly
-                    # like a fade that had been applied.
-                    _colours = [
-                        f"rgba({int(round(_c[0] * 255))},"
-                        f"{int(round(_c[1] * 255))},"
-                        f"{int(round(_c[2] * 255))},{_lid_alpha:.3f})"
-                        for _c in np.asarray(_colours, float)]
+                # ⚠ ALWAYS AS TEXT, NOT ONLY WHEN THE FADE HAS ALREADY BITTEN.
+                #
+                # NOT `_with_alpha`, WHICH CANNOT SEE FLOATS. It edits the
+                # TEXT of a colour and hands anything without a bracket back
+                # untouched -- and the lid's colours arrive as float triples
+                # in 0..1. That was known, and the answer was to rewrite them
+                # only when `_lid_alpha < 1.0`, which is the case the WINDOW
+                # had already handled. The SAVED PAGE fades for itself, in
+                # JavaScript, through the same rule (`withAlpha`) -- so at the
+                # default "where they differ" of 100 the lid went out as
+                # floats and the page could never fade it afterwards.
+                #
+                # Measured by a hostile review, two lobes against a ball at
+                # agree 50 with the page's own "where they differ" driven to
+                # nothing: the shell reached rgba(0,158,156,0.000) and the
+                # lid's first colour was still [0, 0.2758, 0.2234] --
+                # 196,012 pixels of opaque lid where the WINDOW draws 0.
+                #
+                # This is the very fault `test_the_lid_fades_with_what_it_
+                # closes.py` is named for, fixed on the Python side and left
+                # standing in the page's JavaScript, and the only check on it
+                # asked whether the mask EXISTS rather than whether the page
+                # could use it.
+                _colours = [
+                    (f"rgb({int(round(_c[0] * 255))},"
+                     f"{int(round(_c[1] * 255))},"
+                     f"{int(round(_c[2] * 255))})" if _lid_alpha >= 1.0 else
+                     f"rgba({int(round(_c[0] * 255))},"
+                     f"{int(round(_c[1] * 255))},"
+                     f"{int(round(_c[2] * 255))},{_lid_alpha:.3f})")
+                    for _c in np.asarray(_colours, float)]
                 fig.add_trace(go.Mesh3d(
                     x=_corners[:, 1], y=_corners[:, 2], z=_corners[:, 0],
                     i=_faces[:, 0], j=_faces[:, 1], k=_faces[:, 2],

@@ -80,14 +80,31 @@ def test_half_way_is_half_way(two_papers):
     assert half.endswith("0.500)"), f"expected a half fade, got {half!r}"
 
 
-def test_full_strength_leaves_the_colours_exactly_as_they_were(two_papers):
-    """The other direction, which this project holds to everywhere: at the top
-    of the slider the picture is not merely close to unchanged, it IS
-    unchanged."""
-    whole = _lid_of(two_papers, 1.0).vertexcolor
-    assert not isinstance(whole[0], str), (
-        "at full strength the lid's colours were rewritten as text, which puts "
-        "the mesh on the library's transparent path for no reason")
+def test_full_strength_carries_no_alpha_at_all(two_papers):
+    """At the top of the slider the lid must not be asked to be transparent.
+
+    ⚠ THIS USED TO SAY "AND MUST NOT BE TEXT EITHER", on the reasoning that
+    text puts the mesh on the library's transparent path. That reasoning was
+    wrong, and it cost a saved page its fade: the page fades in JavaScript
+    through a rule that reads the TEXT of a colour and hands anything without
+    a "(" straight back, so a lid written as float triples could never be
+    faded by a reader. See `test_a_saved_page_can_fade_the_lid.py` — 134,453
+    pixels of opaque lid at a setting where the window draws none.
+
+    Measured before overruling it: writing the lid's colours as "rgb(...)"
+    instead of floats changes the window's picture by 0 pixels, worst channel
+    2 of 255, which is the rounding to whole numbers and nothing else. The
+    shells have always been text.
+
+    What is worth holding is the part underneath: at full strength there is no
+    alpha on it.
+    """
+    whole = list(_lid_of(two_papers, 1.0).vertexcolor)
+    assert whole, "the lid has no colours at all"
+    for one in (whole[0], whole[len(whole) // 2], whole[-1]):
+        assert "rgba" not in str(one), (
+            f"at full strength the lid wears {one!r} — an alpha it was never "
+            f"asked for puts the mesh on the library's transparent path")
 
 
 def test_the_saved_page_can_fade_it(two_papers):
