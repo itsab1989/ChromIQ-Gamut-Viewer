@@ -772,6 +772,54 @@ _ACCENT_L_CAP = 0.92
 _LAST_CAP: "tuple | None" = None
 
 
+#: How far apart two shapes must be for a lid between them to mean anything.
+#:
+#: DRIVEN AND PHOTOGRAPHED, not reasoned about. Two readings of one paper are
+#: about half a Lab apart, and a lid cut from one and laid inside the other
+#: then sits within a hair of the skin over large areas. The picture comes
+#: back hatched with diagonal stripes -- a depth buffer asked to choose
+#: between two surfaces in the same place -- and 32,308 pixels of a 1600x1050
+#: window change when the tick goes on, none of them for a reason a reader
+#: would want.
+#:
+#: HOLDING IT CLEAR DOES NOT FIX IT. A floor of 0.05 Lab under the skin was
+#: tried: the stripes thinned to 17,803 pixels and stayed. There is no room to
+#: push harder either -- a flat step was measured at +61.7% on what the lid
+#: encloses, which is why the step is a hundredth of the LOCAL drop.
+#:
+#: So below this the lid is refused. Measured apart, median over directions
+#: both shapes answer for:
+#:     a dented ball against a ball      0.000 Lab   refused
+#:     one paper, months apart           0.535 Lab   refused
+#:     two different papers              4.041 Lab   capped
+#:     a pancake against a column       10.436 Lab   capped
+#:     two lobes against a ball         14.923 Lab   capped
+TOO_CLOSE_TO_CLOSE = 1.0
+
+
+def how_far_apart(one, two, middle, rays: int = 1500) -> float:
+    """The median gap between two surfaces, seen from *middle*.
+
+    Only directions BOTH answer for: where one of them is not there the
+    question is not "how far apart" but "is it there at all", which is the
+    standing mask's business and not this.
+    """
+    from gamutview import _where_the_ray_leaves
+
+    rng = np.random.default_rng(11)
+    u = rng.normal(size=(int(rays), 3))
+    u /= np.linalg.norm(u, axis=1)[:, None]
+    middle = np.asarray(middle, float)
+    a = _where_the_ray_leaves(np.asarray(one.vertices, float),
+                              np.asarray(one.faces, int), middle, u)
+    b = _where_the_ray_leaves(np.asarray(two.vertices, float),
+                              np.asarray(two.faces, int), middle, u)
+    both = np.isfinite(a) & np.isfinite(b)
+    if not both.any():
+        return float("inf")
+    return float(np.median(np.abs(a - b)[both]))
+
+
 def which_shapes_could_be_capped(gamuts, centre=None) -> list:
     """For each of two shapes, would `cap_over_the_cut` give it a lid?
 
@@ -822,6 +870,9 @@ def which_shapes_could_be_capped(gamuts, centre=None) -> list:
                       if getattr(theirs, "space", "lab") == "lab"
                       else np.asarray(theirs.vertices, float).mean(axis=0))
         middle = np.asarray(middle, float)
+        if how_far_apart(mine, theirs, middle) < TOO_CLOSE_TO_CLOSE:
+            answers.append(False)
+            continue
         wraps = True
         for shape in (theirs, mine):
             covered = covers_the_sphere_once(shape.vertices, shape.faces,
@@ -910,6 +961,14 @@ def cap_over_the_cut(gamuts, stands, which, centre=None):
     else:
         _LAST_CAP = (key, {})
     done = _LAST_CAP[1]
+    # ⚠ AND NOT WHERE THE TWO ARE ALL BUT THE SAME SHAPE. See
+    # TOO_CLOSE_TO_CLOSE: a lid between surfaces half a Lab apart cannot be
+    # told from the skin, and the picture comes back hatched. Refused here
+    # rather than drawn badly, and `which_shapes_could_be_capped` asks the
+    # same question so the tick dims instead of promising it.
+    if how_far_apart(mine, theirs, middle) < TOO_CLOSE_TO_CLOSE:
+        done[int(which)] = (here, None)
+        return None
     try:
         corners, _skin, lid = close_the_cut(
             mine.vertices, faces[keep], theirs.vertices, theirs.faces, middle,

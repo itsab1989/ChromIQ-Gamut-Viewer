@@ -32,14 +32,17 @@ _DEMO = pathlib.Path(__file__).resolve().parent.parent / "demo"
 def a_cut_pair():
     import ti3gamut
     from gamutview import build_gamut
-    made = []
-    for name in ("Glossy-paper", "Glossy-paper-months-later"):
-        if not (_DEMO / f"{name}.ti3").is_file():
-            pytest.skip("no demo papers to cut")
-        m = ti3gamut.read_measurement(_DEMO / f"{name}.ti3")
-        made.append((name, build_gamut(np.asarray(m.lab, float),
-                                       input_space="lab",
-                                       drive_values=np.asarray(m.device, float))))
+    # FAR ENOUGH APART TO BE CAPPED AT ALL: two readings of one paper are
+    # 0.535 Lab apart and are refused now (ti3gamut.TOO_CLOSE_TO_CLOSE).
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
+                           / "scripts"))
+    import make_awkward_shapes
+    import tempfile
+    folder = pathlib.Path(tempfile.mkdtemp(prefix="apart-"))
+    make_awkward_shapes.make(folder)
+    made = [(n, build_gamut(np.asarray(
+        ti3gamut.read_measurement(folder / f"{n}.ti3").lab, float),
+        input_space="lab")) for n in ("two-lobes", "ball")]
     out, _s, stands, _l = ti3gamut.recut_where_they_part(made)
     return [(made[0][0], out[0][1]), (made[1][0], out[1][1])], stands
 
@@ -82,9 +85,13 @@ def test_a_different_middle_is_a_different_question(a_cut_pair, monkeypatch):
     there = ti3gamut.cap_over_the_cut(cut, stands, 0, centre=(52.0, 1.0, -1.0))
     assert len(calls) == 2, "the second middle was answered from the first"
     if here is not None and there is not None:
-        assert not np.allclose(np.asarray(here[0]), np.asarray(there[0])), (
-            "two middles gave the very same lid, so one of them is not the "
-            "lid for its own question")
+        one, two = np.asarray(here[0]), np.asarray(there[0])
+        # A different corner COUNT is already proof they are different lids;
+        # comparing values would raise on the shape mismatch, which is how
+        # this first failed.
+        different = one.shape != two.shape or not np.allclose(one, two)
+        assert different, ("two middles gave the very same lid, so one of "
+                           "them is not the lid for its own question")
 
 
 def test_the_same_question_twice_is_answered_once(a_cut_pair, monkeypatch):

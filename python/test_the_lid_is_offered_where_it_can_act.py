@@ -321,19 +321,8 @@ def test_the_pair_that_ships_is_not_offered_a_lid_it_cannot_have():
 
 def test_a_pair_that_can_be_capped_still_is():
     """The other direction: refusing too widely is the worse mistake."""
-    import numpy as np
     import ti3gamut
-    from gamutview import build_gamut
-    demo = pathlib.Path(__file__).resolve().parent.parent / "demo"
-    made = []
-    for name in ("Glossy-paper", "Glossy-paper-months-later"):
-        if not (demo / f"{name}.ti3").is_file():
-            pytest.skip("no demo papers")
-        m = ti3gamut.read_measurement(demo / f"{name}.ti3")
-        made.append((name, build_gamut(np.asarray(m.lab, float),
-                                       input_space="lab",
-                                       drive_values=np.asarray(m.device, float))))
-    assert ti3gamut.which_shapes_could_be_capped(made) == [True, True]
+    assert ti3gamut.which_shapes_could_be_capped(_far_apart_pair()) == [True, True]
 
 
 def test_it_offers_rather_than_dims_when_it_cannot_tell():
@@ -365,6 +354,26 @@ def _window_with(gamuts, styles=("solid", "solid")):
     return who._close_cut
 
 
+def _far_apart_pair():
+    """Two shapes far enough apart that a lid between them means something.
+
+    Two readings of one paper are 0.535 Lab apart and are refused now; see
+    ti3gamut.TOO_CLOSE_TO_CLOSE and the hatched picture that prompted it.
+    """
+    import tempfile
+    import numpy as np
+    import ti3gamut
+    from gamutview import build_gamut
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
+                           / "scripts"))
+    import make_awkward_shapes
+    folder = pathlib.Path(tempfile.mkdtemp(prefix="apart-"))
+    make_awkward_shapes.make(folder)
+    return [(n, build_gamut(np.asarray(
+        ti3gamut.read_measurement(folder / f"{n}.ti3").lab, float),
+        input_space="lab")) for n in ("two-lobes", "ball")]
+
+
 def _demo_pair(one, two):
     import numpy as np
     import ti3gamut
@@ -394,7 +403,7 @@ def test_the_rule_itself_dims_on_the_pair_that_cannot_be_capped():
 
 
 def test_the_rule_itself_stays_live_where_a_lid_is_made():
-    tick = _window_with(_demo_pair("Glossy-paper", "Glossy-paper-months-later"))
+    tick = _window_with(_far_apart_pair())
     assert tick.enabled, "dimmed on a pair that does get a lid"
 
 
@@ -402,7 +411,7 @@ def test_the_style_that_counts_is_the_one_drawn():
     """A comparison's style comes from `_style_other`, which the rule never
     read. With the paper an outline and the comparison solid, the drawing caps
     the comparison — so the tick must stay live."""
-    pair = _demo_pair("Glossy-paper", "Glossy-paper-months-later")
+    pair = _far_apart_pair()
     assert _window_with(pair, styles=("mesh", "solid")).enabled, (
         "dimmed although the shape the drawing would cap is drawn solid")
     assert not _window_with(pair, styles=("mesh", "mesh")).enabled, (

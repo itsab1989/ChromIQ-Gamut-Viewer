@@ -438,8 +438,12 @@ def test_the_ordinary_pairs_still_get_their_lids(tmp_path_factory):
     these are the pairs that must keep working.
     """
     import ti3gamut
-    for one, two in (("two-lobes", "ball"), ("pancake", "column"),
-                     ("ball-with-a-dent", "ball")):
+    # ⚠ NOT ball-with-a-dent + ball. Those two lie on top of each other
+    # everywhere but the dent -- 0.000 Lab apart at the median -- so a lid
+    # between them is refused now, and rightly: every corner of it landed
+    # within 0.05 Lab of the skin, which the picture shows as hatching. See
+    # test_two_shapes_that_all_but_coincide_are_refused below.
+    for one, two in (("two-lobes", "ball"), ("pancake", "column")):
         a = _awkward(tmp_path_factory, one)
         b = _awkward(tmp_path_factory, two)
         gamuts = [(one, a), (two, b)]
@@ -448,3 +452,29 @@ def test_the_ordinary_pairs_still_get_their_lids(tmp_path_factory):
         made = [ti3gamut.cap_over_the_cut(cut, stands, i) for i in (0, 1)]
         assert any(m is not None for m in made), (
             f"{one} + {two}: neither shape got a lid, and both should")
+
+
+def test_two_shapes_that_all_but_coincide_are_refused(tmp_path_factory):
+    """A lid you cannot tell from the skin is a lid that only speckles.
+
+    DRIVEN AND PHOTOGRAPHED. Two readings of one paper are 0.535 Lab apart,
+    and the picture came back hatched with diagonal stripes wherever the lid
+    lay on the surface -- 32,308 pixels of a 1600x1050 window changed when the
+    tick went on, none of them for a reason a reader would want. Holding the
+    lid 0.05 Lab clear thinned the stripes to 17,803 and left them there;
+    there is no room to push harder, because a flat step was measured at
+    +61.7% on what the lid encloses.
+
+    A dented ball against a plain one is the extreme of the same thing: they
+    are 0.000 Lab apart at the median.
+    """
+    import ti3gamut
+    a = _awkward(tmp_path_factory, "ball-with-a-dent")
+    b = _awkward(tmp_path_factory, "ball")
+    assert ti3gamut.how_far_apart(a, b, _MIDDLE) < ti3gamut.TOO_CLOSE_TO_CLOSE
+    gamuts = [("dent", a), ("ball", b)]
+    out, _f, stands, _l = ti3gamut.recut_where_they_part(gamuts)
+    cut = [("dent", out[0][1]), ("ball", out[1][1])]
+    assert all(ti3gamut.cap_over_the_cut(cut, stands, i) is None for i in (0, 1))
+    assert ti3gamut.which_shapes_could_be_capped(gamuts) == [False, False], (
+        "the tick would promise a lid the drawing refuses to make")

@@ -30,18 +30,26 @@ _DEMO = pathlib.Path(__file__).resolve().parent.parent / "demo"
 
 
 @pytest.fixture(scope="module")
-def two_papers():
+def two_papers(tmp_path_factory):
+    """Two shapes FAR ENOUGH APART to be capped at all.
+
+    The demo pair was used here first, and it is two readings of one paper --
+    0.535 Lab apart, which `cap_over_the_cut` now refuses because a lid
+    between surfaces that close cannot be told from the skin and the picture
+    comes back hatched. See ti3gamut.TOO_CLOSE_TO_CLOSE.
+    """
     import ti3gamut
     from gamutview import build_gamut
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent
+                           / "scripts"))
+    import make_awkward_shapes
+    folder = tmp_path_factory.mktemp("apart")
+    make_awkward_shapes.make(folder)
     made = []
-    for name in ("Glossy-paper", "Glossy-paper-months-later"):
-        where = _DEMO / f"{name}.ti3"
-        if not where.is_file():
-            pytest.skip("no demo papers to cut")
-        m = ti3gamut.read_measurement(where)
+    for name in ("two-lobes", "ball"):
+        m = ti3gamut.read_measurement(folder / f"{name}.ti3")
         made.append((name, build_gamut(np.asarray(m.lab, float),
-                                       input_space="lab",
-                                       drive_values=np.asarray(m.device, float))))
+                                       input_space="lab")))
     return made
 
 
