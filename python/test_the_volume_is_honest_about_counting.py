@@ -58,3 +58,50 @@ def test_the_gap_the_readme_quotes_is_still_the_gap():
     gap = 100 * (big - small) / small
     assert 1.5 < gap < 3.2, (
         f"the README says about 2.3%; this build gives {gap:.2f}%")
+
+
+# ---------------------------------------------------------------------------
+# AND THE OTHER NUMBER A READER ACTS ON: coverage. The tests elsewhere ask it
+# for more than 0.99 or less than 0.80, which cannot tell a right answer from
+# a plausible one. Concentric ellipsoids have an exact answer -- a shape half
+# the size holds an eighth of the volume -- so the number AND the ± it prints
+# beside itself can both be checked.
+# ---------------------------------------------------------------------------
+
+
+def test_coverage_lands_on_a_ratio_that_is_known_exactly():
+    from gamutview import coverage
+    big = _ball(20000)
+    for factor in (0.5, 0.7, 0.9):
+        small = _ball(20000, seed=2)
+        small = _scaled(factor, seed=2)
+        got, err = coverage(big, small)
+        truth = factor ** 3
+        assert abs(got - truth) < max(3 * err, 0.005), (
+            f"{factor}x: covered {100*got:.2f}% against a true "
+            f"{100*truth:.2f}%, and it claims ±{100*err:.2f}")
+
+
+def test_the_error_it_prints_is_not_decoration():
+    """A ± that is too small is worse than none: it invites trust it has not
+    earned. Ten different samplings of one pair should scatter by about the
+    error it claims, not by ten times it."""
+    from gamutview import coverage
+    big = _ball(6000)
+    spread = []
+    for seed in range(4, 14):
+        got, err = coverage(big, _scaled(0.7, seed=seed))
+        spread.append(got)
+    scatter = float(np.std(spread))
+    _got, claimed = coverage(big, _scaled(0.7, seed=4))
+    assert scatter < 8 * claimed, (
+        f"it claims ±{100*claimed:.2f} and ten samplings scatter by "
+        f"{100*scatter:.2f} — the error bar is too kind")
+
+
+def _scaled(factor, seed=2):
+    from gamutview import build_gamut
+    rng = np.random.default_rng(seed)
+    u = rng.normal(size=(20000, 3))
+    u /= np.linalg.norm(u, axis=1)[:, None]
+    return build_gamut(_MIDDLE + u * (_AXES * factor), input_space="lab")
