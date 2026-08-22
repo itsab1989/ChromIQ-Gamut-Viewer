@@ -471,7 +471,12 @@ def test_two_shapes_that_all_but_coincide_are_refused(tmp_path_factory):
     import ti3gamut
     a = _awkward(tmp_path_factory, "ball-with-a-dent")
     b = _awkward(tmp_path_factory, "ball")
-    assert ti3gamut.how_far_apart(a, b, _MIDDLE) < ti3gamut.TOO_CLOSE_TO_CLOSE
+    # ⚠ ASKED THROUGH THE RULE, NOT THROUGH THE CONSTANT. TOO_CLOSE_TO_CLOSE
+    # is a share of the picture's own extent now, not a number of Lab -- it
+    # was calibrated in CIELAB and asked in whatever space the reader chose,
+    # and an XYZ gamut spans about 1.0 in total, so in XYZ it refused every
+    # pair there is.
+    assert ti3gamut.a_lid_could_not_be_told_from_the_skin(a, b, _MIDDLE)
     gamuts = [("dent", a), ("ball", b)]
     out, _f, stands, _l = ti3gamut.recut_where_they_part(gamuts)
     cut = [("dent", out[0][1]), ("ball", out[1][1])]

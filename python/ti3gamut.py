@@ -787,14 +787,48 @@ _LAST_CAP: "tuple | None" = None
 #: push harder either -- a flat step was measured at +61.7% on what the lid
 #: encloses, which is why the step is a hundredth of the LOCAL drop.
 #:
-#: So below this the lid is refused. Measured apart, median over directions
-#: both shapes answer for:
-#:     a dented ball against a ball      0.000 Lab   refused
-#:     one paper, months apart           0.535 Lab   refused
-#:     two different papers              4.041 Lab   capped
-#:     a pancake against a column       10.436 Lab   capped
-#:     two lobes against a ball         14.923 Lab   capped
-TOO_CLOSE_TO_CLOSE = 1.0
+#: So below this the lid is refused.
+#:
+#: ⚠ AND IT IS A SHARE OF THE PICTURE, NOT A NUMBER OF Lab. Written as a flat
+#: 1.0 it was calibrated in CIELAB and asked in whatever space the reader
+#: chose -- and a CIE XYZ gamut spans about 1.0 IN TOTAL, so in XYZ it refused
+#: every pair there is. Measured: `which_shapes_could_be_capped` answered
+#: [False, False] for sRGB against Display P3 and for his own profile against
+#: sRGB, and the picture with the tick on and the tick off differed by 0
+#: pixels. Dimming a control that would have worked is the worse mistake, and
+#: this dimmed it for a whole colour space.
+#:
+#: The five pairs it was calibrated on, as a share of the diagonal of the two
+#: shapes together -- which is the extent the picture is drawn over, and so
+#: the scale a depth buffer works in:
+#:
+#:     a dented ball against a ball      0.000 Lab   0.00000   refused
+#:     one paper, months apart           0.566 Lab   0.00213   refused
+#:     two different papers              4.749 Lab   0.01795   capped
+#:     his paper against sRGB            6.697 Lab   0.02203   capped
+#:     a pancake against a column       11.157 Lab   0.07007   capped
+#:     two lobes against a ball         14.664 Lab   0.09076   capped
+#:
+#: A two-hundredth sits 2.3x above the closest thing it must refuse and 3.6x
+#: below the closest thing it must keep, and it puts the CIELAB threshold at
+#: 1.32 Lab on a paper -- within a third of a Lab of the number it replaces,
+#: which is why no Lab verdict moves. In XYZ sRGB against Display P3 is
+#: 0.02648 of the picture across, and gets its lid.
+TOO_CLOSE_TO_CLOSE = 0.005
+
+
+def a_lid_could_not_be_told_from_the_skin(one, two, middle) -> bool:
+    """Do these two run too close for a lid between them to be seen as one?
+
+    THE PICTURE'S OWN EXTENT is the divisor -- both shapes together, since
+    both are drawn and the axes span both. Asked of either shape alone the
+    answer moves with which of them is bigger, and the question is about what
+    the picture can separate, not about either shape.
+    """
+    across = np.vstack([np.asarray(one.vertices, float),
+                        np.asarray(two.vertices, float)])
+    span = float(np.linalg.norm(across.max(axis=0) - across.min(axis=0)))
+    return how_far_apart(one, two, middle) < TOO_CLOSE_TO_CLOSE * span
 
 
 def how_far_apart(one, two, middle, rays: int = 1500) -> float:
@@ -870,7 +904,7 @@ def which_shapes_could_be_capped(gamuts, centre=None) -> list:
                       if getattr(theirs, "space", "lab") == "lab"
                       else np.asarray(theirs.vertices, float).mean(axis=0))
         middle = np.asarray(middle, float)
-        if how_far_apart(mine, theirs, middle) < TOO_CLOSE_TO_CLOSE:
+        if a_lid_could_not_be_told_from_the_skin(mine, theirs, middle):
             answers.append(False)
             continue
         wraps = True
@@ -994,7 +1028,7 @@ def cap_over_the_cut(gamuts, stands, which, centre=None, paint="true"):
     # told from the skin, and the picture comes back hatched. Refused here
     # rather than drawn badly, and `which_shapes_could_be_capped` asks the
     # same question so the tick dims instead of promising it.
-    if how_far_apart(mine, theirs, middle) < TOO_CLOSE_TO_CLOSE:
+    if a_lid_could_not_be_told_from_the_skin(mine, theirs, middle):
         done[int(which)] = (here, None)
         return None
     try:
