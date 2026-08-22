@@ -1188,3 +1188,40 @@ WHERE THE WORK IS, if this is worth doing:
   PAGE already offers the reader "draw the edges instead of the surface" and
   does it live, without reloading anything. Whatever the page does, the window
   could do.
+
+
+---
+
+## THE BLINK: WHAT IT IS WORTH, AFTER HE SAID WHERE HE SAW IT
+
+*"my complaint rose when i was watching your automated tests. i don't exactly
+know what you did"*
+
+That matters, and it agrees with what the measurements found:
+
+* **fades do not blink** in ordinary use -- the rebuild I measured on one was
+  my own driver releasing before the live push's asynchronous callback landed;
+* opacity, depth and the walls/grid all change in place;
+* what genuinely rewrites the page is new geometry: opening a file, changing
+  the comparison, rings, a change of colour space -- and a test driver does
+  those back to back, over and over, which is what he was watching.
+
+SO THE FLASH HE SAW IS LARGELY THE TEST HARNESS, not the application in use.
+
+⚠ A CURE EXISTS AND IS CHEAP TO REACH, if it is ever wanted: the whole figure
+can be pushed into the page ALREADY OPEN. Measured, his profile against sRGB:
+0.8 MB of figure JSON, `Plotly.react` answered "reacted" in **0.1 s**, against
+about 0.7 s of blank for a reload. `traces_for_restyle` already does the
+narrow version of this for a detail change.
+
+WHAT WOULD HAVE TO BE PROVED FIRST, and was NOT proved here: that the pushed
+picture is the same picture as a rebuilt one. My comparison built two
+different scenes (two shapes against three) and measured 166,465 differing
+pixels, which says nothing about `react` and everything about the test. The
+real check is the same scene both ways, expecting 0 pixels above threshold.
+
+RECOMMENDATION: do not rebuild the redraw path for this. The user-visible
+blink is mostly the harness; the change touches every picture the window
+draws; and the project's own rule -- the same picture however you reach it --
+would demand the pixel comparison above on every kind of scene before it could
+ship. Worth doing only if he asks for it in ordinary use.
