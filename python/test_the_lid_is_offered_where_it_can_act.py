@@ -11,6 +11,7 @@ cannot, because this window's own rule, paid for four times, is that a control
 offered where it cannot act is worse than one that is not there.
 """
 import pathlib
+import re
 import sys
 
 import numpy as np
@@ -416,3 +417,60 @@ def test_the_style_that_counts_is_the_one_drawn():
         "dimmed although the shape the drawing would cap is drawn solid")
     assert not _window_with(pair, styles=("mesh", "mesh")).enabled, (
         "offered although nothing in the picture is drawn as a surface")
+
+
+def test_the_reason_the_reader_is_given_is_the_reason_the_drawing_had():
+    """ONE SENTENCE FOR FOUR REFUSALS, NAMING TWO OF THEM.
+
+    The tick used to answer every "nothing here can be closed" with "one shape
+    reaches past the other everywhere, or the middle lies outside one of
+    them". A hostile review found the third gate: sRGB against Adobe RGB in
+    CIELUV is refused because the two run TOO CLOSE for a lid to be told from
+    the skin — and there, both shapes cover the view exactly (12.5664) and
+    thousands of faces stand, so neither of the two stated reasons is true.
+
+    A control that says no for a reason it did not have is worse than one
+    that says nothing.
+    """
+    import ti3gamut
+    from references import reference_gamut
+    a = reference_gamut("sRGB", steps=20, space="luv")
+    b = reference_gamut("Adobe RGB (1998)", steps=20, space="luv")
+    gamuts = [("sRGB", a), ("Adobe RGB (1998)", b)]
+    ti3gamut._LAST_CUT = None
+    ti3gamut._LAST_CAP = None
+    said = ti3gamut.which_shapes_could_be_capped(gamuts, saying=True)
+    assert [ok for ok, _why in said] == [False, False], (
+        "this pair is expected to be refused; if that changed, the tooltip "
+        "this test is about is no longer reachable by this route")
+    assert all(why == "too close together" for _ok, why in said), (
+        f"the rule refuses for {[w for _o, w in said]}, and the reader is "
+        f"about to be told something else")
+    tick = _window_with(gamuts)
+    assert not tick.enabled
+    assert "middle lies outside" not in tick.tip, (
+        f"the reader is told the middle may lie outside a shape, and both "
+        f"shapes wrap it: {tick.tip!r}")
+    assert "reaches past the other everywhere" not in tick.tip, (
+        f"the reader is told nothing is cut away, and thousands of faces "
+        f"stand: {tick.tip!r}")
+    assert "close" in tick.tip and len(tick.tip) <= 200, (
+        f"the reader is not told the reason the drawing had: {tick.tip!r}")
+
+
+def test_every_reason_the_rule_can_give_has_words_for_it():
+    """A REASON WITH NO SENTENCE FALLS BACK TO THE OLD ONE, silently. Each of
+    the rule's own answers must map to something that does not name a gate it
+    did not fail."""
+    import inspect
+    import gamut_app
+    import ti3gamut
+    said = inspect.getsource(ti3gamut.which_shapes_could_be_capped)
+    reasons = set(re.findall(r'reasons\.append\("([^"]+)"\)', said))
+    assert len(reasons) >= 3, (
+        f"only {sorted(reasons)} — this test cannot see the rule's answers")
+    words = inspect.getsource(gamut_app.GamutApp._apply_closing_availability)
+    for why in reasons:
+        assert f'"{why}":' in words, (
+            f"the rule can answer {why!r} and the window has no sentence for "
+            f"it, so the reader gets the catch-all instead")

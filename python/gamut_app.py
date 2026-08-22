@@ -15247,6 +15247,7 @@ class GamutApp(QMainWindow):
         # nothing. The question is asked of the drawing's own gates, and costs
         # 0.1-0.9 ms once the picture has been drawn from the same pair.
         possible = [True, True]
+        why_not = ["", ""]
         if shapes == 2 and faded and alone and not marking:
             try:
                 # A LOCAL IMPORT because this module takes NAMES from
@@ -15255,7 +15256,9 @@ class GamutApp(QMainWindow):
                 # NameError inside a Qt handler, where it would have been
                 # swallowed as a dimmed tick.
                 from ti3gamut import which_shapes_could_be_capped
-                possible = which_shapes_could_be_capped(stashed[0])
+                said = which_shapes_could_be_capped(stashed[0], saying=True)
+                possible = [ok for ok, _why in said]
+                why_not = [why for _ok, why in said]
             except Exception:                                # noqa: BLE001
                 possible = [True, True]
         anywhere = any(ok and (surfaces[i] if i < len(surfaces) else False)
@@ -15282,9 +15285,30 @@ class GamutApp(QMainWindow):
                 "Needs a shape drawn as a surface. An outline is there to be "
                 "seen through, and a lid would fill it in.")
         elif not anywhere:
+            # ⚠ THE REASON THE DRAWING GAVE, NOT A LIST OF THE REASONS IT
+            # COULD HAVE GIVEN. This was one sentence for four different
+            # refusals and it named two of them; a hostile review caught the
+            # third, on sRGB against Adobe RGB in CIELUV, where the reader was
+            # told the middle might lie outside a shape while both shapes
+            # covered the view exactly and thousands of faces stood. A control
+            # that says no for a reason it did not have is worse than one that
+            # says nothing.
+            _said = [w for w in why_not if w]
             self._close_cut.setToolTip(
-                "Nothing here can be closed: one shape reaches past the other "
-                "everywhere, or the middle lies outside one of them.")
+                {"too close together":
+                    "These two run too close together for a lid between them "
+                    "to be seen: it would lie within a hair of the skin and "
+                    "the picture would come back hatched.",
+                 "nothing is cut away":
+                    "Nothing here can be closed: one shape reaches past the "
+                    "other everywhere, so neither has an opening.",
+                 "the middle is outside one of them":
+                    "The middle lies outside one of these shapes, and a lid "
+                    "is built by sliding the rim down rays from there.",
+                 }.get(_said[0] if _said else "",
+                       "Nothing here can be closed: one shape reaches past "
+                       "the other everywhere, or the middle lies outside one "
+                       "of them."))
         elif shapes != 2:
             self._close_cut.setToolTip(
                 "Needs exactly two shapes. One has nothing to agree with; "

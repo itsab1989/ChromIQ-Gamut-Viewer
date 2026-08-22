@@ -854,7 +854,8 @@ def how_far_apart(one, two, middle, rays: int = 1500) -> float:
     return float(np.median(np.abs(a - b)[both]))
 
 
-def which_shapes_could_be_capped(gamuts, centre=None) -> list:
+def which_shapes_could_be_capped(gamuts, centre=None, *,
+                                 saying: bool = False) -> list:
     """For each of two shapes, would `cap_over_the_cut` give it a lid?
 
     ASKED SO A TICK CAN SAY NO IN ADVANCE, and asked the way the drawing asks
@@ -871,6 +872,16 @@ def which_shapes_could_be_capped(gamuts, centre=None) -> list:
     function looked only at coverage, answered "yes" for that pair, and would
     have left the tick lit over a picture where ticking it does nothing.
 
+    ⚠ AND IT CAN SAY WHICH GATE STOPPED IT. With *saying*, each answer comes
+    back as (can it, why not) -- because the window used to give ONE sentence
+    for four different refusals, and that sentence named two of them. A
+    hostile review found the third: sRGB against Adobe RGB in CIELUV is
+    refused for being too close, and the reader was told "one shape reaches
+    past the other everywhere, or the middle lies outside one of them", when
+    both shapes cover the view exactly and thousands of faces stand. A
+    control that says no for a reason it did not have is worse than one that
+    says nothing.
+
     IT IS CHEAP BECAUSE THE RE-CUT IS REMEMBERED. `recut_where_they_part`
     keeps its last answer keyed on content, so asking here costs 0.4 ms once
     the picture has been drawn from the same pair, and it stops short of
@@ -884,11 +895,12 @@ def which_shapes_could_be_capped(gamuts, centre=None) -> list:
     # marker's tick was broken. The caller decides what to do when this cannot
     # tell, and the window's caller offers the tick.
     if len(gamuts) != 2:
-        return [False, False]
+        return ([(False, "there are not two shapes")] * 2 if saying
+                else [False, False])
     cut, _splits, stands, _lost = recut_where_they_part(gamuts)
     if stands is None:
         raise ValueError("no standing masks, so this cannot tell")
-    answers = []
+    answers, reasons = [], []
     for which in (0, 1):
         standing = np.asarray(stands[which], bool)
         mine = cut[which][1]
@@ -897,6 +909,7 @@ def which_shapes_could_be_capped(gamuts, centre=None) -> list:
         if (not standing.any() or standing.all()
                 or standing[faces].all(axis=1).sum() < 4):
             answers.append(False)
+            reasons.append("nothing is cut away")
             continue
         middle = centre
         if middle is None:
@@ -906,6 +919,7 @@ def which_shapes_could_be_capped(gamuts, centre=None) -> list:
         middle = np.asarray(middle, float)
         if a_lid_could_not_be_told_from_the_skin(mine, theirs, middle):
             answers.append(False)
+            reasons.append("too close together")
             continue
         wraps = True
         for shape in (theirs, mine):
@@ -915,7 +929,15 @@ def which_shapes_could_be_capped(gamuts, centre=None) -> list:
                 wraps = False
                 break
         answers.append(wraps)
-    return answers
+        # ⚠ SPELLED OUT, NOT FOLDED INTO A CONDITIONAL. The window has to have
+        # a sentence for every answer this can give, and the check that holds
+        # it to that reads them off THIS source -- a reason it cannot see is
+        # a reason with no words, which falls back to the catch-all silently.
+        if wraps:
+            reasons.append("")
+        else:
+            reasons.append("the middle is outside one of them")
+    return (list(zip(answers, reasons)) if saying else answers)
 
 
 def _painted_floats(gamut, paint: str, index: int):
