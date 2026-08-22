@@ -7,6 +7,10 @@ we left of"*.
 
 Read them in this order:
 
+0. **[KICK-OFF.md](KICK-OFF.md)** — paste this into a new session and the work
+   carries on. Written 2026-08-22, when the cron job was stopped; it is the
+   current one, and it says how to work as well as what is left. The older
+   prompt below is kept for the record.
 1. **[the-cron-prompt.md](the-cron-prompt.md)** — the standing instructions,
    verbatim. Paste it into a new session and the job runs as before.
 2. **[START-HERE.md](START-HERE.md)** — the state of the work, the rules
