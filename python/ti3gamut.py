@@ -9381,6 +9381,36 @@ def _write_dark_html(fig, out: Path, mode: str = "dark", spin=None,
     head = ('<meta name="viewport" '
             'content="width=device-width,initial-scale=1">')
     if "</head>" in html:
+        # ⚠ AND WHAT THE BROWSER SHOULD PAINT BEFORE IT HAS READ ANY OF THIS.
+        #
+        # The style above sets the page's colours, and the browser cannot obey
+        # it until it has parsed the head -- which on these pages means past
+        # five megabytes of inlined viewer. Measured, opening a saved page and
+        # watching the frames every 50 ms:
+        #
+        #     t+0.06s   100% WHITE      <- the browser's own blank canvas
+        #     t+0.51s   100% dark       <- the style has arrived
+        #     t+0.98s   the shape
+        #
+        # `color-scheme` is the one thing a browser acts on before CSS: it
+        # decides what the canvas is painted before anything else exists.
+        # Measured with it, the same page: 0% white in the first frame.
+        #
+        # AS EARLY AS THE CHARSET, deliberately. Added before </head> it comes
+        # after the viewer's own script tag, which is exactly the wait it is
+        # meant to cover.
+        _scheme = ("dark" if _looks_dark(_PAGE_BACKGROUND) else "light")
+        _tag = f'<meta name="color-scheme" content="{_scheme}">'
+        # ⚠ THE EXACT TAG, not the words. Asked as "color-scheme" not in
+        # html, this never fired once: the page's own script watches
+        # `prefers-color-scheme`, so the guard matched JavaScript and skipped
+        # the meta on every page.
+        if 'name="color-scheme"' not in html:
+            _at = re.search(r"<meta charset=[^>]*>", html)
+            if _at:
+                html = html[:_at.end()] + _tag + html[_at.end():]
+            else:
+                html = html.replace("<head>", "<head>" + _tag, 1)
         html = html.replace("</head>", head + style + "</head>", 1)
     else:
         html = head + style + html
@@ -9789,6 +9819,22 @@ def _room_shape(extent):
     longest = max(sides)
     return dict(x=sides[0] / longest, y=sides[1] / longest,
                 z=sides[2] / longest)
+
+
+def _looks_dark(colour: str) -> bool:
+    """Is this page colour a dark one? Asked of the colour, not of a name.
+
+    The page's mode is a word ("dark", "light", and the two accent
+    colourings), and a new one added later would have to remember to appear in
+    a list here. Its background cannot lie about how bright it is.
+    """
+    text = str(colour).strip()
+    if not text.startswith("#") or len(text) not in (4, 7):
+        return True
+    if len(text) == 4:
+        text = "#" + "".join(c * 2 for c in text[1:])
+    r, g, b = (int(text[i:i + 2], 16) for i in (1, 3, 5))
+    return (0.299 * r + 0.587 * g + 0.114 * b) < 128
 
 
 def build_figure(gamuts, title: str, opacity: float | None = None,
