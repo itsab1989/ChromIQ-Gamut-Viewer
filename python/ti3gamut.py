@@ -3814,88 +3814,6 @@ _WHEEL_JS = """
 """
 
 
-#: Turns the shape by itself. Two ways, because they answer two questions: all
-#: the way round is for getting the feel of a shape you have just opened, and a
-#: small swing back and forth is for JUDGING A DENT -- the parallax reads depth
-#: on a flat screen the way a still picture never can, without throwing away
-#: the viewpoint you chose.
-#:
-#: Four things it must never do, each of which is a rule in the code below:
-#:
-#: 1. Fight the user. Any mouse gesture stops it at once, and it waits until
-#:    they have finished before moving again. A wheel has no mouseup, so the
-#:    pause is a timer, the same idiom cqLinkCameras uses.
-#: 2. Undo their zoom or their tilt. Only the horizontal angle is driven; the
-#:    distance and the height are read back from the live camera every frame,
-#:    so whatever they set is kept.
-#: 3. Drag them back to an angle they deliberately left. Back-and-forth takes
-#:    its centre from wherever the camera is when they let go.
-#: 4. Spin a hidden window. A page nobody is looking at does no work.
-#:
-#: Both scenes are driven from here rather than through cqLinkCameras, which
-#: deliberately lets only the view being DRAGGED lead -- with nobody dragging,
-#: the follower would never move.
-#: WHY A SEE-THROUGH SHAPE HAS TO BE PUT IN ORDER BEFORE IT IS DRAWN.
-#:
-#: A shape drawn solid hides itself: the graphics card keeps the depth of what
-#: it has already painted, and a triangle further away is thrown out. A shape
-#: drawn even slightly see-through does not. Reading the drawing library's own
-#: render loop (plotly.min.js, where it draws the transparent pass):
-#:
-#:     depthMask(false); blendFunc(ONE, ONE_MINUS_SRC_ALPHA);
-#:     ... every see-through object drawn, in the order it sits in memory ...
-#:
-#: Depth WRITING is off for that pass. So a see-through shape never hides
-#: itself: every triangle is blended in, the near ones and the far ones, in
-#: whatever order they happen to sit in the file -- and with that blend the
-#: LAST one to land on a pixel is the one that mostly shows. "Last in memory"
-#: has nothing whatever to do with "nearest to the eye", so pieces of the far
-#: side punch through the near side in hard-edged, triangle-shaped patches.
-#: That is the "rough triangles" and the "sliced" look, and it is why the
-#: same shape is fine at one angle and torn in half at another.
-#:
-#: MEASURED, before any of this was written. One paper, five camera angles,
-#: at a THOUSANDTH of transparency -- where nothing can possibly blend, so
-#: anything that changes is this and not see-through-ness:
-#:
-#:     angle              unlike the solid one   after ordering
-#:     1.5, 1.5, 1.5             46.8%                0.5%
-#:     -1.8, 0.6, 0.4            84.0%                0.3%
-#:     0.2, -2.0, 1.1            56.8%                0.2%
-#:     1.0, 1.0, -1.7            92.1%                0.3%
-#:     -0.9, -1.4, -0.9           0.9%                0.3%
-#:
-#: The last row is why it is only seen SOMETIMES. And the brightness moves
-#: with it: 123.7 against the solid shape's 153.3 at one angle, 153.5 once
-#: ordered. So the "it goes dark as soon as it is see-through" and the "it
-#: looks sliced" are one fault, not two.
-#:
-#: WHAT IS DONE ABOUT IT: put the triangles in memory farthest-first before
-#: each frame, which is what the blend has always expected and never had. Two
-#: decisions in here were made on measurement rather than taste:
-#:
-#: 1. BY DIRECTION, NOT BY DISTANCE FROM THE EYE. The first attempt worked out
-#:    where the eye was among the measurements and sorted by distance from it.
-#:    It put the eye INSIDE the shape -- 11.6, 7.0, 18.9, for a shape running
-#:    from -79 to 82 -- and made the picture worse at three angles out of five.
-#:    A direction needs no division by a small number and no centre.
-#:
-#: 2. BUCKETS, NOT A COMPARISON SORT, AND THE DRAWN OBJECT, NOT THE FRONT
-#:    DOOR. At the largest size that occurs (18,252 triangles, which is what
-#:    the Detail slider builds at 40) the obvious way costs 48.5 ms a frame --
-#:    twenty frames a second, and the picture stutters. Dropping the triangles
-#:    into buckets by depth and handing the list straight to the object that
-#:    was drawn costs 0.48 ms: a hundred times less, and three per cent of a
-#:    frame, so it can be kept up while the shape is turning.
-#:
-#:        triangles   sort+hand over, carefully   the same, quickly
-#:              978            10.12 ms                0.26 ms
-#:            5,310            22.72 ms                0.38 ms
-#:           19,230            48.54 ms                0.48 ms
-#:
-#: The quick handover uses a door the library does not advertise, so every
-#: step of reaching it is checked and any failure falls back to the front door
-#: rather than breaking the page.
 #: GIVE THE DEPTH BUFFER ITS BITS BACK.
 #:
 #: The drawing library never sets a near or far plane, so gl-plot3d falls back
@@ -3911,12 +3829,18 @@ _WHEEL_JS = """
 #: median 0.116 Lab under the skin cannot be told from it, and why the picture
 #: hatches wherever the two run close.
 #:
-#: Fitted to the eight corners of the scene's own bounds along the view
-#: direction, so nothing can be clipped however the reader turns or zooms, and
-#: assigned rather than redrawn -- the library re-reads both on every
-#: projection update, so there is no loop and no cost per frame beyond the
-#: arithmetic. Silent if anything it needs is missing: a page that cannot do
-#: this draws exactly what it drew before.
+#: Fitted to the eight corners of the box THE CAMERA SEES -- +/- aspect/2
+#: about the origin, not `gl.bounds`, which is the data's own box before the
+#: model matrix -- and padded by half that box across, so the tick text and
+#: axis titles that live outside it are not cut away. Assigned rather than
+#: redrawn: the library re-reads both on every projection update, so there is
+#: no loop and no cost per frame beyond the arithmetic. Silent if anything it
+#: needs is missing: a page that cannot do this draws what it drew before.
+#:
+#: ⚠ THE SENTENCE THIS REPLACES SAID "the scene's own bounds ... so nothing
+#: can be clipped however the reader turns or zooms". Both halves were false
+#: and a hostile review measured it: 113,649 pixels of grid wall and tick text
+#: erased looking from above. See `fit` for the numbers.
 _DEPTH_JS = """
 (function () {
   function fit(gl) {
@@ -4046,6 +3970,93 @@ _DEPTH_JS = """
 """
 
 
+#: ⚠ THIS BLOCK BELONGS TO `_ORDER_JS`, and for one commit it did
+#: not. `_DEPTH_JS` was inserted directly beneath it with no blank
+#: line, so Python attached all 82 lines to the new constant and left
+#: the ordering -- the thing they actually describe -- with no
+#: documentation at all. Found by a hostile review of the change.
+#: Turns the shape by itself. Two ways, because they answer two questions: all
+#: the way round is for getting the feel of a shape you have just opened, and a
+#: small swing back and forth is for JUDGING A DENT -- the parallax reads depth
+#: on a flat screen the way a still picture never can, without throwing away
+#: the viewpoint you chose.
+#:
+#: Four things it must never do, each of which is a rule in the code below:
+#:
+#: 1. Fight the user. Any mouse gesture stops it at once, and it waits until
+#:    they have finished before moving again. A wheel has no mouseup, so the
+#:    pause is a timer, the same idiom cqLinkCameras uses.
+#: 2. Undo their zoom or their tilt. Only the horizontal angle is driven; the
+#:    distance and the height are read back from the live camera every frame,
+#:    so whatever they set is kept.
+#: 3. Drag them back to an angle they deliberately left. Back-and-forth takes
+#:    its centre from wherever the camera is when they let go.
+#: 4. Spin a hidden window. A page nobody is looking at does no work.
+#:
+#: Both scenes are driven from here rather than through cqLinkCameras, which
+#: deliberately lets only the view being DRAGGED lead -- with nobody dragging,
+#: the follower would never move.
+#: WHY A SEE-THROUGH SHAPE HAS TO BE PUT IN ORDER BEFORE IT IS DRAWN.
+#:
+#: A shape drawn solid hides itself: the graphics card keeps the depth of what
+#: it has already painted, and a triangle further away is thrown out. A shape
+#: drawn even slightly see-through does not. Reading the drawing library's own
+#: render loop (plotly.min.js, where it draws the transparent pass):
+#:
+#:     depthMask(false); blendFunc(ONE, ONE_MINUS_SRC_ALPHA);
+#:     ... every see-through object drawn, in the order it sits in memory ...
+#:
+#: Depth WRITING is off for that pass. So a see-through shape never hides
+#: itself: every triangle is blended in, the near ones and the far ones, in
+#: whatever order they happen to sit in the file -- and with that blend the
+#: LAST one to land on a pixel is the one that mostly shows. "Last in memory"
+#: has nothing whatever to do with "nearest to the eye", so pieces of the far
+#: side punch through the near side in hard-edged, triangle-shaped patches.
+#: That is the "rough triangles" and the "sliced" look, and it is why the
+#: same shape is fine at one angle and torn in half at another.
+#:
+#: MEASURED, before any of this was written. One paper, five camera angles,
+#: at a THOUSANDTH of transparency -- where nothing can possibly blend, so
+#: anything that changes is this and not see-through-ness:
+#:
+#:     angle              unlike the solid one   after ordering
+#:     1.5, 1.5, 1.5             46.8%                0.5%
+#:     -1.8, 0.6, 0.4            84.0%                0.3%
+#:     0.2, -2.0, 1.1            56.8%                0.2%
+#:     1.0, 1.0, -1.7            92.1%                0.3%
+#:     -0.9, -1.4, -0.9           0.9%                0.3%
+#:
+#: The last row is why it is only seen SOMETIMES. And the brightness moves
+#: with it: 123.7 against the solid shape's 153.3 at one angle, 153.5 once
+#: ordered. So the "it goes dark as soon as it is see-through" and the "it
+#: looks sliced" are one fault, not two.
+#:
+#: WHAT IS DONE ABOUT IT: put the triangles in memory farthest-first before
+#: each frame, which is what the blend has always expected and never had. Two
+#: decisions in here were made on measurement rather than taste:
+#:
+#: 1. BY DIRECTION, NOT BY DISTANCE FROM THE EYE. The first attempt worked out
+#:    where the eye was among the measurements and sorted by distance from it.
+#:    It put the eye INSIDE the shape -- 11.6, 7.0, 18.9, for a shape running
+#:    from -79 to 82 -- and made the picture worse at three angles out of five.
+#:    A direction needs no division by a small number and no centre.
+#:
+#: 2. BUCKETS, NOT A COMPARISON SORT, AND THE DRAWN OBJECT, NOT THE FRONT
+#:    DOOR. At the largest size that occurs (18,252 triangles, which is what
+#:    the Detail slider builds at 40) the obvious way costs 48.5 ms a frame --
+#:    twenty frames a second, and the picture stutters. Dropping the triangles
+#:    into buckets by depth and handing the list straight to the object that
+#:    was drawn costs 0.48 ms: a hundred times less, and three per cent of a
+#:    frame, so it can be kept up while the shape is turning.
+#:
+#:        triangles   sort+hand over, carefully   the same, quickly
+#:              978            10.12 ms                0.26 ms
+#:            5,310            22.72 ms                0.38 ms
+#:           19,230            48.54 ms                0.48 ms
+#:
+#: The quick handover uses a door the library does not advertise, so every
+#: step of reaching it is checked and any failure falls back to the front door
+#: rather than breaking the page.
 _ORDER_JS = """
 window.cqOrder = (function () {
   var plots = [], raf = null, still = 0, watch = null, fast = true;
