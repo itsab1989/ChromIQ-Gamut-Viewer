@@ -11244,6 +11244,7 @@ class GamutApp(QMainWindow):
         # settled here as well as during construction.
         self._apply_side_by_side_availability()
         self._apply_closing_availability()
+        self._apply_detail_availability()
         self._apply_flat_availability()
         # …and the folded groups, for exactly the same reason.
         for box in self.findChildren(QGroupBox):
@@ -13922,6 +13923,7 @@ class GamutApp(QMainWindow):
             return False
         self._scene_inputs = (list(gamuts), clouds, styles, lost)
         self._apply_closing_availability()
+        self._apply_detail_availability()
         wanted = traces_for_restyle(figure)
         if not wanted:
             return False
@@ -15587,11 +15589,13 @@ class GamutApp(QMainWindow):
     def _on_agree_changed(self, value: int) -> None:
         self._agree_lbl.setText(self._fade_words(value))
         self._apply_closing_availability()
+        self._apply_detail_availability()
         self._push_fade()
 
     def _on_differ_changed(self, value: int) -> None:
         self._differ_lbl.setText(self._fade_words(value))
         self._apply_closing_availability()
+        self._apply_detail_availability()
         self._push_fade()
 
     def _surfaces_for_live(self) -> dict:
@@ -15768,7 +15772,58 @@ class GamutApp(QMainWindow):
         """Side by side changes which other controls make sense."""
         self._apply_side_by_side_availability()
         self._apply_closing_availability()
+        self._apply_detail_availability()
         self._redraw()
+
+    def _apply_detail_availability(self) -> None:
+        """Dim Detail where there is nothing for it to work out more finely.
+
+        WHAT IT ACTUALLY GOVERNS, measured rather than assumed: the shape you
+        are COMPARING against, and only when that is one of the named colour
+        spaces. Driven with the slider taken from 20 to 40 --
+
+            the file you opened   an ICC profile   4,926 faces both times
+                                  a measured chart    978 faces both times
+            the comparison        sRGB              4,332 -> 18,252 faces
+
+        -- so it never touches the shape from your own file, whichever kind it
+        is, and it does nothing at all with the comparison set to "Nothing" or
+        to a profile of your own (that branch calls _build_one, which takes no
+        step count). It stayed live in every one of those states, inviting a
+        drag that could not answer.
+
+        THE SAME RULE THIS WINDOW APPLIES ELSEWHERE, and the same trap: see
+        _apply_closing_availability, where dimming on a paraphrase of the
+        drawing's condition instead of the condition itself broke the feature
+        in four states at once. So this asks what _on_compare_changed asks --
+        is the comparison a reference space -- and nothing else.
+        """
+        slider = getattr(self, "_detail", None)
+        if slider is None:
+            return
+        choice = self._compare.currentData() if hasattr(self, "_compare") else None
+        can = bool(choice) and choice[0] == "space"
+        slider.setEnabled(can)
+        label = getattr(self, "_detail_lbl", None)
+        if label is not None:
+            label.setEnabled(can)
+        if can:
+            slider.setToolTip(
+                "How finely the shape you are comparing against is worked "
+                "out. More steps means a smoother comparison and a slower "
+                "redraw.")
+        elif choice and choice[0] == "icc":
+            slider.setToolTip(
+                "Not for a comparison of your own: a profile or measurement "
+                "is drawn from what is in it, at the detail it already has.")
+        elif choice and choice[0] == "visible":
+            slider.setToolTip(
+                "Not for everything the eye can see — that shape is a fixed "
+                "one, not worked out in steps.")
+        else:
+            slider.setToolTip(
+                "Needs something in Compare with: this sets how finely the "
+                "shape you compare against is worked out, and nothing else.")
 
     def _apply_side_by_side_availability(self) -> None:
         """Show the controls that only mean something in one arrangement.
@@ -16047,6 +16102,7 @@ class GamutApp(QMainWindow):
             self._refresh_style_controls()
             self._apply_side_by_side_availability()
             self._apply_closing_availability()
+            self._apply_detail_availability()
             self._update_volume()
             self._update_coverage()
             self._update_drift()
@@ -16075,6 +16131,7 @@ class GamutApp(QMainWindow):
         self._refresh_style_controls()
         self._apply_side_by_side_availability()
         self._apply_closing_availability()
+        self._apply_detail_availability()
         gamuts, clouds, styles, lost = self._scene_contents()
         # A NEW FILE EVERY TIME. Writing to one name and loading the same URL
         # let the web view serve its cached copy, so switching to light left
@@ -16221,6 +16278,7 @@ class GamutApp(QMainWindow):
             # picture and the tick lags a step behind. Driven on screen it
             # said "needs exactly two shapes" with two shapes on the screen.
             self._apply_closing_availability()
+            self._apply_detail_availability()
             write_html(gamuts, out, self._scene_title(),
                        # SPLIT WHETHER OR NOT IT IS FADED RIGHT NOW, AND FOR
                        # THIS WINDOW AS WELL AS FOR A PAGE SOMEBODY IS SENT.
