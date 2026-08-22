@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.52.0
+
+### 📏 A colour printed twice is one colour, measured twice
+
+Charts repeat patches on purpose — the demo chart prints 110 of its device
+values more than once, **243 of its 1,168 patches**. *Has anything changed?*
+kept only the first of each and discarded the rest, which cost two things:
+
+* the comparison ran on **1,035 patches of 1,168**;
+* **the answer depended on the order of the file.** Re-saving a chart in
+  another order moved the average from 0.7652 to 0.7683 and the biggest
+  difference from **2.5639 to 2.6526** — 3.5%, for no reason in the world.
+
+Repeats are averaged now, which is what they are printed for. Every patch
+counts, the order cannot matter, and where a colour was read twice the
+instrument's own noise is halved.
+
+### 📊 The two numbers you act on, checked against arithmetic
+
+**Volume.** A shape is a mesh through the colours you measured, so it sits
+just inside the real surface — and further inside the fewer patches you have.
+Against an ellipsoid, whose volume is exact: −3.0% at 400 patches, −0.8% at
+1,600, −0.06% at 20,000. So **two charts of the same paper, 400 patches
+against 1,600, differ by 2.3%** — always making the bigger chart look like the
+bigger gamut. The README says so in numbers now, with tests holding them.
+
+**Coverage.** Concentric shapes have an exact answer: a shape half the size
+holds an eighth of the volume. Measured 12.35% against a true 12.50%, 34.22%
+against 34.30%, 73.06% against 72.90% — each inside the ± it prints, and that
+± is now checked too.
+
 ## v2.51.0
 
 ### 🪟 A saved page no longer flashes white before it draws
