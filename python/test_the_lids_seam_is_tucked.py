@@ -197,13 +197,27 @@ def test_the_seam_is_painted_the_pieces_own_colour(built_and_drawn, which):
 
 
 def test_no_pair_has_its_lid_taken_away():
-    """WHAT IS DRAWN IS WHAT WAS BUILT.
+    """NOTHING MAY QUIETLY TAKE A LID AWAY.
 
-    The rule this replaced withheld triangles that hugged the skin. On sRGB
-    against Display P3 — the default space, the default Detail — it withheld
-    97.1% of one lid and the picture became indistinguishable from having no
-    lid at all; 103 configurations were flagged, the worst at 98.06%. Nothing
-    may quietly take a lid away again.
+    The rule this was written against withheld triangles that hugged the
+    skin. On sRGB against Display P3 — the default space, the default Detail
+    — it withheld 97.1% of one lid and the picture became indistinguishable
+    from having no lid at all; 103 configurations were flagged, the worst at
+    98.06%.
+
+    ⚠ IT NO LONGER ASKS FOR *EQUAL*, and the reason is worth keeping. A few
+    triangles of a lid genuinely lie OUTSIDE the piece they close: where the
+    rim is concave, a flat triangle strung across the dent sticks out
+    sideways past the silhouette. On his own pair that is 7 of 7,999 — 0.09%,
+    1.64 of 24,133 Lab², none of them owning a seam edge — and they are
+    withheld from the DRAWN copy only.
+
+    So the bound, not equality. A handful is a flap; a share of the lid is an
+    instrument that has stopped measuring one. The same rule wanted 974 of
+    7,116 on sRGB against Display P3, where the standing piece is 290
+    triangles and its lid is a ribbon lying on the shell it copies, so
+    "inside" is a coin toss — `cap_over_the_cut` refuses to withhold anything
+    at that size, and this is the test that would notice if it stopped.
     """
     import ti3gamut
     from gamutview import close_the_cut
@@ -236,11 +250,15 @@ def test_no_pair_has_its_lid_taken_away():
             if got is None or not len(built):
                 continue
             looked += 1
-            assert len(got[1]) == len(built), (
+            room = max(8, int(0.01 * len(built)))
+            assert len(built) - len(got[1]) <= room, (
                 f"{a_name} vs {b_name}, {cut[which][0]}'s lid: "
                 f"{len(built) - len(got[1])} of {len(built)} triangles "
                 f"({100 * (1 - len(got[1]) / len(built)):.1f}%) are built and "
-                f"not drawn")
+                f"not drawn, which is more than the {room} a flap can be")
+            assert len(got[1]) <= len(built), (
+                f"{a_name} vs {b_name}: {len(got[1])} drawn against "
+                f"{len(built)} built — the drawn lid has GROWN")
     assert looked >= 4, f"only {looked} lids were looked at, which proves little"
 
 
@@ -367,3 +385,58 @@ def test_the_tuck_never_reshapes_the_lid():
     assert capped >= 2, (
         f"only {capped} of {looked} lids were held back by the cap at all — "
         f"a cap that never fires cannot be seen to work")
+
+
+def test_the_lid_does_not_hang_outside_the_piece_it_closes():
+    """⚠ THIS IS THE FAULT THE WHOLE FEATURE WAS HELD BACK FOR — "a row of
+    triangular flags where the lid meets the skin".
+
+    THE LID IS THE HOLE'S OWN TRIANGLES slid down their own rays, so where the
+    rim is CONCAVE a flat triangle strung across the dent lies outside the
+    piece SIDEWAYS, past the silhouette. On his own pair that is 7 of 7,999,
+    in three places, every one of them one ring from the rim.
+
+    ⚠ NO RADIAL TEST CAN SEE IT, and two of them said the lid was perfect. A
+    ray from the middle asks how deep the surface is in one direction, which
+    is only a question if the shape is star-shaped about that middle; a
+    sideways flap never crosses the ray. Measured at 120,000 samples: 0 of
+    8,000 triangles outside, worst +0.0002 Lab. Counting crossings along an
+    arbitrary direction asks "is this inside", which is the question.
+
+    ⚠ AND IT MUST BE JUDGED ON THE GEOMETRY THAT IS DRAWN, AFTER THE TUCK.
+    The tuck pulls the rim in about 0.7 Lab and pulls some of them back
+    inside: judged before it, the same rule drops 15 instead of 7.
+
+    sRGB against Adobe RGB is the case the suite can reach without his own
+    profile: ten triangles of sRGB's lid, and none of Adobe RGB's.
+    """
+    import ti3gamut
+    from references import reference_gamut
+    gamuts = [("sRGB", reference_gamut("sRGB", steps=20)),
+              ("Adobe RGB (1998)", reference_gamut("Adobe RGB (1998)", steps=20))]
+    ti3gamut._LAST_CUT = None
+    ti3gamut._LAST_CAP = None
+    out, _f, stands, _l = ti3gamut.recut_where_they_part(gamuts)
+    cut = [(gamuts[0][0], out[0][1]), (gamuts[1][0], out[1][1])]
+    real = ti3gamut._sticks_out_of
+    try:
+        ti3gamut._LAST_CAP = None
+        drawn = ti3gamut.cap_over_the_cut(cut, stands, 0)
+        # ⚠ THE CONTROL, AND WITHOUT IT THIS TEST PASSES ON A RULE THAT NEVER
+        # RUNS. "Ten fewer than built" needs a `built` measured the same way.
+        ti3gamut._sticks_out_of = lambda p, v, f, cells=48: np.zeros(len(p), bool)
+        ti3gamut._LAST_CAP = None
+        whole = ti3gamut.cap_over_the_cut(cut, stands, 0)
+    finally:
+        ti3gamut._sticks_out_of = real
+        ti3gamut._LAST_CAP = None
+    assert drawn is not None and whole is not None, "sRGB has no lid here"
+    took = len(whole[1]) - len(drawn[1])
+    assert took > 0, (
+        f"nothing was withheld from sRGB's lid against Adobe RGB — ten "
+        f"triangles of it hang outside the piece, and the rule that finds "
+        f"them has stopped finding anything ({len(drawn[1])} drawn of "
+        f"{len(whole[1])} built)")
+    assert took <= max(8, int(0.01 * len(whole[1]))), (
+        f"{took} of {len(whole[1])} withheld, which is a share of the lid "
+        f"rather than a flap")

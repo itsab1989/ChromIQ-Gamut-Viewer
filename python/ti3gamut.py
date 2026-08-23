@@ -989,6 +989,89 @@ def _painted_floats(gamut, paint: str, index: int):
     return np.clip(out / 255.0, 0.0, 1.0)
 
 
+def _sticks_out_of(points, vertices, faces, cells: int = 48):
+    """Which points lie OUTSIDE a closed surface, without assuming star-shape.
+
+    ⚠ WHY NOT A RAY FROM THE MIDDLE. That asks "how far is the surface in this
+    direction", which is only a question if the surface is star-shaped about
+    that middle. Where the rim is concave a flat lid triangle strung across
+    the dent lies outside the piece SIDEWAYS, past the silhouette, and every
+    radial test says it is fine: two of them, at 120,000 samples, reported 0
+    of 8,000 triangles outside while the picture showed a flap.
+
+    Counting crossings answers "is this inside", which is the question, and a
+    dent cannot fool it.
+
+    ⚠ TWO DIRECTIONS, because a ray that grazes an edge is miscounted, and a
+    miscount here calls an INSIDE triangle outside -- which puts a hole in the
+    lid. The second direction costs about a fifth of a second and a hole
+    cannot be bought back.
+
+    ⚠ AND BUCKETED, or it is unaffordable. The cost is FACES, not points:
+    asked plainly, every candidate is tested against all 9,192 triangles of
+    the piece and a pair of lids takes 12.7 seconds against 3.9 without it.
+    For a fixed direction a face can only be crossed by the ray from a point
+    if that point's projection perpendicular to the direction falls inside the
+    face's own 2D extent -- so the faces are bucketed by that projection once,
+    and each point tests the few in its own cell. The same answer, both lids
+    in 0.8 s.
+    """
+    P = np.asarray(points, float)
+    V = np.asarray(vertices, float)
+    F = np.asarray(faces, int)
+    if not len(P) or not len(F):
+        return np.zeros(len(P), bool)
+    a, b, c = V[F[:, 0]], V[F[:, 1]], V[F[:, 2]]
+    e1, e2 = b - a, c - a
+    away = np.zeros(len(P), bool)
+    for way in ((0.37, 0.51, 0.77), (-0.81, 0.29, -0.51)):
+        d = np.asarray(way, float)
+        d = d / np.linalg.norm(d)
+        other = (np.array([1.0, 0.0, 0.0]) if abs(d[0]) < 0.9
+                 else np.array([0.0, 1.0, 0.0]))
+        u = np.cross(d, other)
+        u = u / np.linalg.norm(u)
+        v = np.cross(d, u)
+        fu = np.stack([a @ u, b @ u, c @ u], axis=1)
+        fv = np.stack([a @ v, b @ v, c @ v], axis=1)
+        lo_u, hi_u = fu.min(axis=1), fu.max(axis=1)
+        lo_v, hi_v = fv.min(axis=1), fv.max(axis=1)
+        u0, v0 = lo_u.min(), lo_v.min()
+        du = (hi_u.max() - u0) / cells or 1.0
+        dv = (hi_v.max() - v0) / cells or 1.0
+        grid: dict = {}
+        iu0 = np.clip(((lo_u - u0) / du).astype(int), 0, cells - 1)
+        iu1 = np.clip(((hi_u - u0) / du).astype(int), 0, cells - 1)
+        iv0 = np.clip(((lo_v - v0) / dv).astype(int), 0, cells - 1)
+        iv1 = np.clip(((hi_v - v0) / dv).astype(int), 0, cells - 1)
+        for n in range(len(F)):
+            for i in range(iu0[n], iu1[n] + 1):
+                for j in range(iv0[n], iv1[n] + 1):
+                    grid.setdefault((i, j), []).append(n)
+        h = np.cross(d, e2)
+        det = np.einsum("ij,ij->i", e1, h)
+        live = np.abs(det) > 1e-12
+        inv = np.zeros_like(det)
+        inv[live] = 1.0 / det[live]
+        pu = np.clip(((P @ u - u0) / du).astype(int), 0, cells - 1)
+        pv = np.clip(((P @ v - v0) / dv).astype(int), 0, cells - 1)
+        hits = np.zeros(len(P), int)
+        for n in range(len(P)):
+            near = grid.get((int(pu[n]), int(pv[n])))
+            if not near:
+                continue
+            at = np.asarray(near, int)
+            s = P[n] - a[at]
+            uu = np.einsum("ij,ij->i", s, h[at]) * inv[at]
+            q = np.cross(s, e1[at])
+            vv = (q @ d) * inv[at]
+            t = np.einsum("ij,ij->i", q, e2[at]) * inv[at]
+            hits[n] = int((live[at] & (uu >= 0) & (uu <= 1) & (vv >= 0)
+                           & (uu + vv <= 1) & (t > 1e-9)).sum())
+        away |= (hits % 2) == 0
+    return away
+
+
 def cap_over_the_cut(gamuts, stands, which, centre=None, paint="true"):
     """The piece of the OTHER shape that closes this one's opening.
 
@@ -1262,6 +1345,51 @@ def cap_over_the_cut(gamuts, stands, which, centre=None, paint="true"):
         corners = np.asarray(corners, float).copy()
         corners[_seam] = middle + _r * (
             np.maximum(0.0, _dd - _tuck) / np.maximum(1e-12, _dd))[:, None]
+    # ⚠ AND THE FEW TRIANGLES THAT REALLY DO STICK OUT ARE NOT DRAWN.
+    #
+    # THIS IS THE FAULT THE FEATURE WAS HELD BACK FOR: "a row of triangular
+    # flags where the lid meets the skin". The lid is the piece's own
+    # triangles slid down their own rays, so where the rim is CONCAVE a flat
+    # triangle strung across the dent lies outside the piece.
+    #
+    # Measured on his own pair: the printer's lid has none, and sRGB's has
+    # SEVEN -- three places, every one of them ONE RING from the rim, 1.64 of
+    # 24,133 Lab² (0.007% of the lid), and not one owning a seam edge, so
+    # dropping them cannot open the seam.
+    #
+    # ⚠ AFTER THE TUCK, NOT BEFORE. The tuck pulls the rim in about 0.7 Lab,
+    # which pulls some of these back inside: judged before it, this drops 15
+    # instead of 7. What matters is the geometry that is DRAWN.
+    #
+    # ⚠ AND FROM WHAT IS DRAWN, NEVER FROM WHAT IS BUILT, like the tuck above
+    # it: `close_the_cut` still hands back a closed solid.
+    if len(lid):
+        _tri = np.asarray(lid, int)
+        _cen = (corners[_tri[:, 0]] + corners[_tri[:, 1]]
+                + corners[_tri[:, 2]]) / 3.0
+        _gone = _sticks_out_of(_cen, mine.vertices, mine.faces)
+        # ⚠ A FLAP IS A HANDFUL OF TRIANGLES. IF THE ANSWER IS A SHARE OF THE
+        # LID, THE TEST IS NOT SEEING A FLAP AND NOTHING IS WITHHELD.
+        #
+        # On his own pair it is 7 of 7,999 -- 0.09%. On sRGB against Display
+        # P3 the same rule wanted 974 of 7,116, which is 13.7% and a hundred
+        # and fifty times the rate, and looking at it says why: sRGB barely
+        # stands outside Display P3 at all, so the standing piece is 290
+        # triangles and its lid is a thin ribbon lying ON the shell it copies.
+        # There the centroids sit within numerical noise of the surface and
+        # "inside" is a coin toss -- the withheld ones are 0.648 Lab from the
+        # piece's corners against 0.423 for the kept ones, which is no
+        # separation at all.
+        #
+        # A broad withholding rule took 97.1% of a lid here once (a1c6111) and
+        # the picture became indistinguishable from having no lid. This is the
+        # guard that makes that impossible: the flap is a defect of a few
+        # triangles at a concave rim, and anything bigger is the instrument.
+        _ROOM = max(8, int(0.01 * len(_tri)))
+        if _gone.sum() > _ROOM:
+            _gone = np.zeros(len(_tri), bool)
+        if _gone.any() and (~_gone).sum() >= 4:
+            lid = _tri[~_gone]
     answer = (corners, lid, np.clip(colours, 0.0, 1.0))
     done[int(which)] = (here, answer)
     return answer
