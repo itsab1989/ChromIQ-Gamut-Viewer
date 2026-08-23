@@ -4058,6 +4058,77 @@ _DEPTH_JS = """
       }
     } catch (e) { /* a page that cannot do this draws what it drew before */ }
   }
+  // ⚠ AND THE LIBRARY SOMETIMES PAINTS A WALL ON THE CAMERA'S OWN SIDE.
+  //
+  // Reported: "they are in the box only the walls move in front of it
+  // sometimes", and "so far i did not see it in your stills but only in the
+  // moving ones". Both halves are right. gl-plot3d paints one of each axis's
+  // two faces and records which in `axes.lastCubeProps.axis`; painted on the
+  // face the camera is on, the wall is in front of everything and takes a
+  // bite out of the shape. That is exactly
+  //
+  //     axis[i] * eye[i] > 0
+  //
+  // Swept through the band with the spin stopped and the camera read back,
+  // eleven cameras, the rule against the pixels covered:
+  //
+  //     eye y      axis        rule       covered
+  //     -0.150   [ 1, 1,-1]    clean            1
+  //     -0.040   [-1, 1,-1]    COVERED      2,377
+  //      0.000   [-1, 1,-1]    COVERED      2,388
+  //      0.040   [-1, 1,-1]    COVERED      2,420
+  //      0.080   [ 1,-1,-1]    clean            2
+  //
+  // Eleven of eleven. The camera's x never moves -- it is fixed at -2.0166 --
+  // and the library still flips the X face as Y crosses zero, which is why
+  // the band is under a degree wide and why only a moving page shows it.
+  //
+  // ⚠ THIS FIX DID NOT MAKE IT, IT STOPPED HIDING IT. With 0.01/1000 over 16
+  // bits one depth step is bigger than the whole scene, so nothing was
+  // ordered by depth and the shape won by draw order alone.
+  //
+  // ⚠ AND SETTING `axes.backgroundEnable` DOES NOTHING: the library rebuilds
+  // that array from the layout on every frame. Measured -- 2,386 pixels
+  // covered before and 2,386 after. Relayout is the only lever, so it is
+  // used ONLY when the verdict changes, which on a turning page is about
+  // eight times a revolution and not once a frame.
+  var SIDES = ["xaxis", "yaxis", "zaxis"];
+  function wrongWall(gl) {
+    try {
+      var ax = gl.axes, cp = ax && ax.lastCubeProps, e = gl.camera && gl.camera.eye;
+      if (!cp || !cp.axis || !e || e.length !== 3) return null;
+      var bad = [false, false, false], i;
+      for (i = 0; i < 3; i++) bad[i] = cp.axis[i] * e[i] > 0;
+      return bad;
+    } catch (x) { return null; }
+  }
+  function walls(gd, key, gl) {
+    var bad = wrongWall(gl);
+    if (!bad) return;
+    var want = (bad[0] ? "1" : "0") + (bad[1] ? "1" : "0") + (bad[2] ? "1" : "0");
+    if (gl.__cqWallSaid === want || gl.__cqWallBusy) return;
+    gl.__cqWallSaid = want;
+    // ⚠ NEVER GIVE A PAGE WALLS IT DID NOT HAVE. Saved with the backgrounds
+    // off -- the see-through colouring does exactly that -- turning them
+    // "back" on would be this script inventing furniture.
+    var had = gl.__cqWallWas, i, change = {}, any = false;
+    if (!had) return;
+    for (i = 0; i < 3; i++) {
+      var on = had[i] && !bad[i];
+      change[key + "." + SIDES[i] + ".showbackground"] = on;
+      if (on !== had[i]) any = true;
+    }
+    gl.__cqWallBusy = true;
+    // ⚠ OUT OF THE RENDER, ALWAYS. Calling relayout from inside onrender is
+    // how a page redraws itself for ever.
+    setTimeout(function () {
+      try { if (typeof Plotly !== "undefined") Plotly.relayout(gd, change); }
+      catch (x) { /* a page that cannot do this keeps its walls */ }
+      gl.__cqWallBusy = false;
+    }, 0);
+    return any;
+  }
+
   function arm(gd) {
     if (!gd || !gd._fullLayout) return;
     Object.keys(gd._fullLayout).forEach(function (key) {
@@ -4075,10 +4146,21 @@ _DEPTH_JS = """
       var was = gl.onrender;
       var mine = function () {
         fit(gl);
+        walls(gd, key, gl);
         if (typeof was === "function") return was.apply(this, arguments);
       };
       mine.__cqDepth = true;
       gl.onrender = mine;
+      // What this page asked for, kept once, so the wall rule can only ever
+      // take a wall away and never add one.
+      if (!gl.__cqWallWas) {
+        try {
+          var sc2 = gd._fullLayout[key];
+          gl.__cqWallWas = [!!sc2.xaxis.showbackground,
+                            !!sc2.yaxis.showbackground,
+                            !!sc2.zaxis.showbackground];
+        } catch (x) { gl.__cqWallWas = null; }
+      }
       fit(gl);
     });
   }
