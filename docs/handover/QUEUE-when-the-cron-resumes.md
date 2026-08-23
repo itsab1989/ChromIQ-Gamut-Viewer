@@ -2221,3 +2221,61 @@ run stops if that proof fails.
 24 cameras of numbers were all taken at whatever camera happened to be there.
 Caught only because the camera is read back and compared to what was asked.
 Read the camera back, always.
+
+
+---
+
+## THE WALL IS CURED (2026-08-23, `b987731`)
+
+The rule from the entry above is now in `_DEPTH_JS`. Only when the verdict
+CHANGES does it relayout that axis's `showbackground` off, and only for an
+axis that had one — a page saved with the walls off is never given walls.
+
+MEASURED ON A TURNING PAGE, which is the only place it matters and the only
+place a relayout could do harm:
+
+    frames with a wall over the shape   110 of 320   ->   3 of 320
+    blank frames                                 0   ->   0
+    camera step, max over median              1.4x   ->   2.1x
+
+A barely visible hitch about eight times a revolution, against a third of all
+frames having a wall across the gamut. The three that remain are the frame
+the band is entered on, where the relayout lands one frame late.
+
+⚠ IT DOES NOT HAPPEN ON HIS OWN PAIR AT ALL. His profile against sRGB, the
+same eleven cameras: at most 17 pixels covered, rule or no rule. A cure
+measured only on his pair would have reported a clean result from a picture
+that never had the fault — which is the same shape of mistake as a check that
+cannot see.
+
+⚠ AND THE BLOCK WENT INTO THE WRONG SCRIPT FIRST. `function arm(gd) {` occurs
+TWICE in `ti3gamut.py` and a string anchor took the one in
+`_LINK_CAMERAS_JS`. It parsed, and 20 of 24 tests passed. Caught only by
+asserting `var SIDES` was in `_DEPTH_JS` afterwards. Both neighbours are now
+asserted byte-identical after any such move. START-HERE already says to print
+the enclosing `def` before editing; this is the same rule for a string
+anchor — CHECK THE ANCHOR IS UNIQUE.
+
+⚠ AND A THRESHOLD THAT FAILS ON A WORKING CHECK IS THE SAME FAULT AS A CHECK
+THAT CANNOT SEE. `scratch/wallover.py`'s proof demanded a flat 150 and got
+126 on a shorter pasted line, so it stopped a run in which it had plainly
+worked. It scales with the line it pastes now.
+
+
+---
+
+## WHAT IS LEFT BEFORE A RELEASE (2026-08-23)
+
+1. A hostile subagent has NOT yet seen the finished seam. That is the
+   release criterion in the job description and it is not met.
+2. From the hostile review of the depth work, two findings are still open and
+   both are real:
+   * `fit()` can be deleted from inside the render wrapper and all 1,117
+     tests stay green. The planes then freeze at the camera the page armed
+     at, and about a dozen wheel notches in, the near plane cuts the front
+     off the gamut — silently. THE ENTIRE PER-FRAME MECHANISM IS UNTESTED.
+   * the 250 ms sweep period is held by nothing: both node harnesses throw
+     the delay away, so `}, 250)` can become `}, 10)` — which re-creates the
+     bug e1d2650 fixed — or `}, 20000)`, with the file green.
+3. The flap rule ships but changes no pixel anybody can find (see the entry
+   above); that is written into its commit message and should stay written.
