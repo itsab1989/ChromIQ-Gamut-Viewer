@@ -168,7 +168,12 @@ Both gates, from inside `fork`:
 GAMUTVIEW_NO_ARGYLL=1 ../gv-venv/bin/python -m pytest -q
 ```
 
-At the time of writing: **1017 passed**, and **1013 passed + 4 skipped**.
+⚠ THIS COUNT WAS STALE BY A HUNDRED TESTS and nobody noticed for a
+week — it read 1017/1013 while KICK-OFF.md and the queue both said
+1,117, and the truth on 2026-08-29 was **1124 passed**, and **1120 passed
++ 4 skipped**. Both measured on the day, not copied from anywhere.
+The lesson is this file's own: NUMBERS IN PROSE ROT, and the only
+defence is measuring them rather than carrying them forward.
 Version **2.52.1** (released, 11 assets). **THE CRON JOB WAS STOPPED HERE,
 2026-08-22, at his word.** To carry on, paste `KICK-OFF.md` (this folder, his
 Desktop, and fork/docs/handover/) into a new session: it carries the method as
@@ -666,7 +671,8 @@ case misbehaved.
 
 ⚠ **NUMBERS IN PROSE ROT, AND ONLY SOME OF THEM CAN BE GUARDED.** Three were
 found stale by reading, not by any rule: the suite was called 851 tests when
-it is 1,017, the showcase pages were called ten when the script writes 25, and
+it is 1,017 — a figure which had ITSELF rotted to 1,124 by 2026-08-29, so
+this entry is an example of its own rule — the showcase pages were called ten when the script writes 25, and
 these checks were called 60,076 when they are 65,836. The first two are asked
 now by `audit_the_readme_is_true` — `--collect-only` counts in 0.37s, and the
 pages are counted on the disk. **The third cannot be**: knowing it costs the
