@@ -75,6 +75,24 @@ HOW TO WORK, every cycle:
   * A MEASUREMENT THAT CANNOT SEE THE THING LOOKS EXACTLY LIKE ONE THAT FOUND
     NOTHING WRONG. Every new rule must refuse an empty or implausibly small
     population. This has cost four separate days.
+  * ⚠⚠ DIAGNOSE FROM REAL SCREENSHOTS, NOT FROM NUMBERS. Basti, 2026-08-29:
+    "we already noticed that you judging from off screen measurements and data
+    points only tends to get things wrong. thats why i demanded you to analyse
+    real screenshots for your diagnostics." RENDER IT, OPEN THE PNG, LOOK AT
+    IT, then measure. A number confirms what a picture showed; it does not
+    decide what is true. In ONE session five numeric measurements each gave a
+    confident, clean-looking, WRONG verdict and a photograph overturned every
+    one: "0 wall pixels" at 11 still cameras against 75 of 160 TURNING frames;
+    "orthographic erases the picture" (SwiftShader) against a visible shape
+    with gridlines across it on the real GPU; "the near plane cuts the front
+    off" against a page that goes BLACK zooming out; a docstring claiming
+    headless Firefox cannot photograph WebGL against a full gamut, 30,177 lit
+    pixels; and a toggle reporting "changed 0 px" with walls plainly on
+    screen. Five pictures corrected five numbers; no number corrected a
+    picture. IF A NUMBER AND A PICTURE DISAGREE, THE PICTURE IS RIGHT.
+    SAY WHICH RENDERER every picture came from: QtWebEngine is the app;
+    headless chromium is SwiftShader; headless WebKit is the real Apple GPU.
+    THIS BINDS SUBAGENTS TOO — put it in every brief.
   * DRIVE IT ON SCREEN, photograph it, and LOOK at the picture yourself —
     screenshots do not reach him, and reasoning from trace data once shipped a
     regression that the first screenshot settled in a glance.
