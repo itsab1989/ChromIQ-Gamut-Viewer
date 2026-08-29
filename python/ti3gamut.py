@@ -3987,6 +3987,40 @@ _DEPTH_JS = """
       // against the model matrix to seven digits -- and needs no matrix.
       var cam = gl.camera, a = gl.aspect;
       if (!cam || !cam.eye || !cam.center || !a || a.length !== 3) return;
+      // ⚠ AN ORTHOGRAPHIC SCENE IS NOT OURS TO FIT, AND FITTING IT BREAKS THE
+      // PICTURE. Everything below measures distances ALONG THE VIEW FROM THE
+      // EYE, which is what a perspective frustum is built from. gl-plot3d's
+      // orthographic path is `ortho(-re, re, -1, 1, zNear, zFar)`, whose box
+      // is normalised and nowhere near those distances, so planes of 0.744
+      // and 4.452 swallow the scene.
+      //
+      // ⚠ AND THE SYMPTOM DEPENDS ON THE RENDERER, which is why this is
+      // guarded rather than tuned. Same page, same planes, same `_ortho`:
+      //
+      //     chromium / SwiftShader   an EMPTY AXIS BOX, no gamut at all
+      //     webkit   / Apple GPU     the shape drawn, but the gridlines
+      //                              drawn ACROSS the front of it
+      //
+      // A cure judged only in headless chromium would have been judged
+      // against a picture no reader on this hardware ever sees.
+      //
+      // Nothing shipped reaches orthographic today -- but the queue's own
+      // next-recommended lever is to offer it as a reader's choice, and the
+      // two features are mutually exclusive as they stand. Put the library's
+      // own fallback back rather than merely returning: the scene may have
+      // been fitted while it was still perspective, and a stale perspective
+      // plane is exactly what erases it.
+      //
+      // ⚠ MEASURED, NOT GUESSED. `_ortho` sits on BOTH `gl.camera` and
+      // `gl.cameraParams`, false in perspective and true in orthographic,
+      // asked of a real page in both engines.
+      if ((cam && cam._ortho) || (gl.cameraParams && gl.cameraParams._ortho)) {
+        if (gl.zNear !== 0.01 || gl.zFar !== 1000) {
+          gl.zNear = 0.01;
+          gl.zFar = 1000;
+        }
+        return;
+      }
       var b = [[-a[0] / 2, -a[1] / 2, -a[2] / 2],
                [a[0] / 2, a[1] / 2, a[2] / 2]];
       if (!(a[0] > 0 && a[1] > 0 && a[2] > 0)) return;

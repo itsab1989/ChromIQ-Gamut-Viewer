@@ -307,6 +307,141 @@ console.log(JSON.stringify(out));
             f"cannot measure — it must leave them alone")
 
 
+#: An orthographic scene, exactly as a real page reports one. ⚠ MEASURED,
+#: NOT GUESSED: asked of a running page in two engines, `_ortho` is false in
+#: perspective and true in orthographic on BOTH `gl.camera` and
+#: `gl.cameraParams`. A review quoted the minified line `z._ortho=!0` without
+#: establishing what `z` was, and a guard on the wrong object is a guard that
+#: silently never fires.
+_ORTHO_CASES = """
+var out = [];
+[["perspective, the control", {}, {}],
+ ["orthographic on the camera", {_ortho: true}, {}],
+ ["orthographic on cameraParams", {}, {_ortho: true}],
+ ["orthographic on both", {_ortho: true}, {_ortho: true}]
+].forEach(function (c) {
+  var cam = {eye: [1.5, 1.5, 1.5], center: [0, 0, 0]};
+  if (c[1]._ortho) cam._ortho = true;
+  var gl = {camera: cam, aspect: ASPECT, bounds: BOUNDS,
+            cameraParams: c[2], zNear: 0.01, zFar: 1000};
+  fit(gl);
+  out.push([c[0], gl.zNear, gl.zFar]);
+  // AND AGAIN FROM A SCENE ALREADY FITTED WHILE IT WAS PERSPECTIVE, which
+  // is the real sequence: a reader turns orthographic on after looking.
+  gl.zNear = 0.7440993657831864; gl.zFar = 4.452053056923445;
+  fit(gl);
+  out.push([c[0] + " (already fitted)", gl.zNear, gl.zFar]);
+});
+console.log(JSON.stringify(out));
+"""
+
+
+@pytest.mark.skipif(_NODE is None, reason="no node on the path to run it with")
+def test_an_orthographic_scene_is_left_to_the_library():
+    """FITTING AN ORTHOGRAPHIC SCENE BREAKS THE PICTURE, AND THE SYMPTOM
+    DEPENDS ON THE RENDERER — which is why this is a guard and not a tuning.
+
+    Everything `fit` measures is a distance ALONG THE VIEW FROM THE EYE,
+    which is what a perspective frustum is built from. gl-plot3d's
+    orthographic path is `ortho(-re, re, -1, 1, zNear, zFar)`, over a
+    normalised box nowhere near those distances, so planes of 0.744 and
+    4.452 swallow the whole scene.
+
+    PHOTOGRAPHED ON A REAL PAGE, same page, same planes, same `_ortho`:
+
+        chromium / SwiftShader   an EMPTY AXIS BOX, no gamut at all
+        webkit   / Apple GPU     the shape drawn, but the gridlines drawn
+                                 ACROSS the front of it, and the wall rule
+                                 suppressing all three walls
+
+    ⚠ SO A CURE MEASURED ONLY IN HEADLESS CHROMIUM WOULD HAVE BEEN JUDGED
+    AGAINST A PICTURE NOBODY ON THIS HARDWARE SEES. Headless chromium falls
+    back to SwiftShader; headless WebKit renders on the Apple GPU.
+
+    Nothing shipped reaches orthographic today. The queue's own
+    next-recommended lever is to offer it as a reader's choice, at which
+    point the two features are mutually exclusive — so this is pinned
+    BEFORE that feature is built, not after it breaks.
+
+    THE SECOND HALF OF EACH CASE IS THE ONE THAT MATTERS: a scene fitted
+    while it was still perspective, then turned orthographic. Merely
+    returning would leave the stale perspective planes in place, which is
+    exactly what erases the picture, so the library's own fallback has to be
+    put back.
+    """
+    body = _the_shipped_fit()
+    harness = body + _ORTHO_CASES.replace("BOUNDS", json.dumps(_BOUNDS)) \
+                                 .replace("ASPECT", json.dumps(_ASPECT))
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(harness)
+        where = f.name
+    done = subprocess.run([_NODE, where], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr[:600]
+    got = json.loads(done.stdout)
+    by_name = {name: (near, far) for name, near, far in got}
+
+    # The control must really fit, or the rest of this proves nothing: a
+    # guard that refused EVERY scene would pass every assertion below.
+    near, far = by_name["perspective, the control"]
+    assert (near, far) != (0.01, 1000), (
+        "the perspective control was not fitted at all, so this test cannot "
+        "tell a working guard from a fit that never runs")
+    assert 0 < near < far < 50, f"the control fitted absurdly: {near}, {far}"
+
+    for name, (near, far) in by_name.items():
+        if name.startswith("perspective"):
+            continue
+        assert (near, far) == (0.01, 1000), (
+            f"{name}: the planes are {near}, {far} — an orthographic scene "
+            f"must be left with the library's own fallback. Fitted, the "
+            f"picture is an empty box in SwiftShader and has its gridlines "
+            f"drawn across the shape on the Apple GPU")
+
+
+@pytest.mark.skipif(_NODE is None, reason="no node on the path to run it with")
+def test_taking_the_orthographic_guard_out_is_caught():
+    """THE MUTATION, RUN HERE, ON EVERY GATE — and it proves it landed.
+
+    Without the guard an orthographic scene keeps the perspective planes,
+    which is the shipped fault. If this ever stops failing, the check above
+    has gone blind and says so in the words this project greps for.
+    """
+    import ti3gamut
+    src = ti3gamut._DEPTH_JS
+    anchor = "if ((cam && cam._ortho) || (gl.cameraParams && gl.cameraParams._ortho)) {"
+    assert src.count(anchor) == 1, (
+        "THE MUTATION DID NOT LAND: the orthographic guard does not read as "
+        "this file expects — re-anchor it on what `fit` says today")
+    hurt = src.replace(anchor, "if (false) {", 1)
+    assert hurt != src, "THE MUTATION DID NOT LAND: the script is unchanged"
+
+    at = hurt.index("function fit(")
+    depth, end = 0, None
+    for n in range(hurt.index("{", at), len(hurt)):
+        if hurt[n] == "{":
+            depth += 1
+        elif hurt[n] == "}":
+            depth -= 1
+            if depth == 0:
+                end = n + 1
+                break
+    harness = hurt[at:end] + _ORTHO_CASES.replace("BOUNDS", json.dumps(_BOUNDS)) \
+                                         .replace("ASPECT", json.dumps(_ASPECT))
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(harness)
+        where = f.name
+    done = subprocess.run([_NODE, where], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr[:600]
+    got = {name: (near, far) for name, near, far in json.loads(done.stdout)}
+    fitted = [n for n, planes in got.items()
+              if not n.startswith("perspective") and planes != (0.01, 1000)]
+    assert fitted, (
+        "THE MUTATION DID NOT LAND: with the orthographic guard disabled the "
+        "planes were still left alone, so the check above is proving nothing")
+
+
 _PAGE = r"""
 // A fake page, so the arming can be driven through the two ways it used to
 // stop working in silence.

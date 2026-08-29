@@ -1395,7 +1395,7 @@ Tests:
 
 ```bash
 pip install -r requirements-test.txt        # pytest, and pyyaml for one file
-cd python && python -m pytest . -q          # 1,117 tests
+cd python && python -m pytest . -q          # 1,126 tests
 ```
 
 They check the colour science against published reference values rather than
