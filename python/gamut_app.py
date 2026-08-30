@@ -7469,7 +7469,7 @@ class GamutApp(QMainWindow):
         self._mode = NoScrollComboBox(g_build)
         self._mode.addItem("Follow the real edge", "device")
         self._mode.addItem("Wrap it in a simple skin", "hull")
-        self._mode.currentIndexChanged.connect(self._rebuild)
+        self._mode.currentIndexChanged.connect(self._on_shape_setting)
         mode_hint = Hint(
             "Follow the real edge is the one to use. The edge of what a printer "
             "can print is not smooth — it has real "
@@ -8039,7 +8039,7 @@ class GamutApp(QMainWindow):
         self._white.currentIndexChanged.connect(self._on_white_changed)
         cv.addWidget(self._white)
         self._relative = QCheckBox("Judge each paper against its own white", g_cs)
-        self._relative.stateChanged.connect(self._on_relative_changed)
+        self._relative.stateChanged.connect(self._on_shape_setting)
         rel_hint = Hint(
             "Papers are not equally bright — a warm rag paper starts off duller "
             "than a bright glossy one. Tick this and each paper is judged "
@@ -14652,7 +14652,8 @@ class GamutApp(QMainWindow):
                 # setting back and forth pays once.
                 key = (str(self._reference_path),
                        self._white.currentData(), self._build_space(),
-                       self._detail.value(), self._relative.isChecked())
+                       self._detail.value(), self._relative.isChecked(),
+                       self._mode.currentData())
                 hit = self._reference_cache.get(key)
                 if hit is None:
                     hit = self._build_one(self._reference_path)
@@ -14677,8 +14678,8 @@ class GamutApp(QMainWindow):
             self._reference_m = None
             self._compare.setCurrentIndex(0)
 
-    def _on_relative_changed(self) -> None:
-        """Judge everything against the same white — the comparison included.
+    def _on_shape_setting(self) -> None:
+        """A setting that changes the SHAPE — rebuild the comparison too.
 
         ⚠ THE COMPARISON WAS NOT REBUILT WHEN THIS TICK MOVED, and once the
         comparison began honouring the tick at build time, that omission
@@ -14699,6 +14700,15 @@ class GamutApp(QMainWindow):
         fix the comparison was built by a reader with no white mode at all,
         so it was consistently absolute -- wrong, but stable. Correct at build
         time and inconsistent afterwards is worse.
+
+        ⚠ AND THE SAME FAULT WAS LIVE FOR "How the shape is worked out",
+        which was wired straight to `_rebuild` and so left the comparison on
+        the old setting -- hull against real-edge, which is a 5.9% difference
+        in volume on a real printer. That one predates all of this. Both go
+        through here now, because the fault is the CLASS of setting, not the
+        tick: anything that changes what a shape IS has to change every shape
+        on screen, or two of them are being held against each other under
+        different rules.
         """
         self._rebuild_reference()
         if self._slots:
