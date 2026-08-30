@@ -735,3 +735,82 @@ def test_an_ordinary_message_keeps_the_measure_it_always_had(styled):
         assert dialog.width() == Notice.WIDTH, (
             f"an ordinary message grew to {dialog.width()}")
         dialog.close()
+
+
+# --------------------------------------------------------------------------
+# Counted both ways
+#
+# ⚠ THE ARTEFACT THAT FOOLED THREE REVIEWERS OF THIS APPLICATION, and the
+# owner's own decision about what to do with it, taken on 2026-08-30 with the
+# three alternatives and their costs in front of him: say both numbers,
+# always. A chart is placed through a profile's relative colorimetric table,
+# where the paper's white IS L* 100 by definition; a measurement read
+# absolutely keeps the white the instrument saw. Everything light then floats
+# above the measured shape for no reason to do with the printer.
+#
+# The tick box already existed. So did a warning. So did a docstring
+# recording the same measurement. Three people LOOKING FOR FAULTS read it as
+# a printer fault anyway, so more words in the same place were not the
+# answer.
+# --------------------------------------------------------------------------
+
+
+def both_ways(measured_beyond, own_beyond, white_l, ticked):
+    """The sentence, with the two counts and the paper it came from."""
+    import gamut_app
+    report = SimpleNamespace(n_beyond=own_beyond if ticked else measured_beyond)
+    other = SimpleNamespace(n_beyond=measured_beyond if ticked else own_beyond)
+    twin = SimpleNamespace(white_lab=(white_l, -0.4, -3.3))
+    held = SimpleNamespace(white_lab=(white_l, -0.4, -3.3))
+    stub = SimpleNamespace(
+        _relative=SimpleNamespace(isChecked=lambda: ticked),
+        _slots=[("a-paper.ti3", None, held)],
+        _measurement_at=lambda path: held)
+    return gamut_app.GamutApp._counted_both_ways(
+        stub, "a-paper.ti3", report, other, twin)
+
+
+def test_both_counts_are_printed_whichever_mode_the_reader_is_in(app):
+    """The whole point: a reader must not have to know which mode they are in
+    to read the line correctly."""
+    off = both_ways(725, 7, 91.2, ticked=False)
+    on = both_ways(725, 7, 91.2, ticked=True)
+    for said in (off, on):
+        assert "725 outside as your instrument measured the paper" in said
+        assert "7 once the paper is judged against its own white" in said
+    assert "8.8 L* apart" in off and "8.8 L* apart" in on, (
+        "the same two numbers, the same way round, in both modes")
+
+
+def test_the_lightness_gap_is_taken_from_the_file_not_from_a_constant(app):
+    """A sentence carrying a hard-coded 8.8 would be wrong for everybody but
+    the one printer it was written on."""
+    assert "6.2 L* apart" in both_ways(150, 0, 93.8, ticked=False)
+    assert "8.8 L* apart" in both_ways(725, 7, 91.2, ticked=False)
+    assert "L* 93.8" in both_ways(150, 0, 93.8, ticked=False)
+
+
+def test_a_paper_already_at_L100_does_not_claim_a_gap(app):
+    """Nothing to explain, so nothing is said about it -- but the two counts
+    are still both printed, because that is what was asked for."""
+    said = both_ways(3, 3, 100.0, ticked=False)
+    assert "L* apart" not in said
+    assert "the same answer" in said and "3 outside" in said
+
+
+def test_the_reader_is_told_where_the_switch_is(app):
+    said = both_ways(725, 7, 91.2, ticked=False)
+    assert "Judge each paper against its own white" in said, (
+        "naming the control is the difference between a fact and an action")
+    assert "What the colours are measured against" in said, (
+        "and the box it lives in, because the panel is long")
+
+
+def test_when_the_file_cannot_be_read_both_ways_the_old_warning_still_fires(
+        app):
+    """A Lab-only .ti3 is exactly that case: `read_ti3` refuses to read one
+    against its own white, by design, because Lab is already referenced to a
+    white point. Nothing may crash and the reader must still be told."""
+    said = caution(measured=True, judging_relative=False)
+    assert "measured against different whites" in said
+    assert "Judge each paper against its own white" in said

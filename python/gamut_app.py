@@ -7054,6 +7054,9 @@ class GamutApp(QMainWindow):
         # Papers rebuilt in CIELAB for judging, keyed by everything that
         # changes the shape. See _in_lab.
         self._lab_gamuts: dict = {}
+        #: The same papers read against the other white, for the two-sided
+        #: count. See _the_other_white.
+        self._other_whites: dict = {}
         #: Per-shape overrides, by slot (0, 1) and 2 for the comparison. A key
         #: is present only when that shape has been set on its own; otherwise
         #: it follows the shared value, so "global" needs no bookkeeping.
@@ -13269,6 +13272,51 @@ class GamutApp(QMainWindow):
         self._lab_gamuts[key] = built
         return built
 
+    def _the_other_white(self, path, measured: bool):
+        """The same measured paper, read against the OTHER white.
+
+        ⚠ THIS EXISTS BECAUSE ONE NUMBER CANNOT ANSWER THE QUESTION, AND THE
+        WRONG ONE HAS FOOLED THREE SEPARATE REVIEWERS OF THIS APPLICATION.
+        A chart is placed through a profile's relative colorimetric table, and
+        "relative colorimetric" means, by definition, that the paper's white
+        becomes L* 100. A measurement read absolutely keeps the white the
+        instrument saw -- L* 93.8 on the demo glossy paper, L* 91.2 on a real
+        printer's. Every light patch in the chart then floats above the
+        measured shape by that difference, for no reason to do with the
+        printer at all: 725 patches "outside" at 4.03 dE, which become 7 at
+        1.50 the moment each paper is judged against its own white.
+
+        The tick box that fixes it was already here. So was a warning. So was
+        a docstring recording the same measurement. Three people LOOKING FOR
+        FAULTS still read it as a printer fault, so more words in the same
+        place were not the answer: the answer, chosen by the owner on
+        2026-08-30, is to count it BOTH WAYS and print both, so that nobody
+        has to know which mode they are in to read the answer right.
+
+        Returns ``None``, never raises, when the file cannot be read the other
+        way -- a Lab-only .ti3 is exactly that case, since `read_ti3` refuses
+        `relative=True` on one by design.
+        """
+        if not measured or path is None:
+            return None
+        white = self._white.currentData()
+        flipped = not self._relative.isChecked()
+        key = (str(path), white, flipped, self._mode.currentData(),
+               self._detail.value())
+        hit = self._other_whites.get(key)
+        if hit is not None:
+            return hit
+        try:
+            other = read_measurement(Path(path), white, flipped)
+            drive = (None if self._mode.currentData() == "hull"
+                     else other.device)
+            built = build_gamut(other.lab, drive, input_space="lab",
+                                space="lab", white_point=white)
+        except Exception:          # noqa: BLE001 — a readout never crashes
+            return None
+        self._other_whites[key] = (built, other)
+        return built, other
+
     def _update_chart_numbers(self) -> None:
         """The three questions, answered against whatever else is open."""
         import chart as chart_mod
@@ -13314,8 +13362,22 @@ class GamutApp(QMainWindow):
                 continue
             same = (path is not None and self._chart_profile is not None
                     and Path(path) == Path(self._chart_profile))
-            lines.append(self._chart_verdict(name, report, same)
-                         + self._white_mismatch_caution(measured))
+            # COUNTED BOTH WAYS WHENEVER THE FILE ALLOWS IT. The caution is
+            # the fallback for a measurement that cannot be read the other
+            # way, not the first answer: words in the panel were tried and
+            # three reviewers walked past them.
+            both = None
+            twin = self._the_other_white(path, measured)
+            if twin is not None:
+                try:
+                    both = (chart_mod.outside_report(lab, twin[0],
+                                                     against=name), twin[1])
+                except Exception:      # noqa: BLE001 — never crash a readout
+                    both = None
+            lines.append(
+                self._chart_verdict(name, report, same)
+                + (self._counted_both_ways(path, report, *both) if both
+                   else self._white_mismatch_caution(measured)))
         self._chart_rows.setText(
             "\n\n".join(lines) if lines else
             "Nothing else is open to count them against. Open the profile as "
@@ -13380,6 +13442,60 @@ class GamutApp(QMainWindow):
     #: managed against its own profile was 1.3 ΔE, and it fell to 0.05 as the
     #: surface was sampled more finely. Twice that leaves ample room.
     CHART_BUILDER_SUSPECT = 2.0
+
+    def _measurement_at(self, path):
+        """The measurement a slot is holding, by its path, or None."""
+        for held, _g, m in self._slots:
+            if path is not None and held is not None and Path(held) == Path(path):
+                return m
+        return None
+
+    def _counted_both_ways(self, path, report, other, twin) -> str:
+        """Both answers, side by side, whichever mode the reader is in.
+
+        THE OWNER'S DECISION, 2026-08-30, put to him with the three
+        alternatives and their costs: say both numbers, always. It changes no
+        default and asks the reader to know nothing about colorimetry to read
+        the line correctly -- which is the whole point, since the people it
+        misled were looking for faults at the time.
+
+        `report` is the count against the shape as it is being read now;
+        `other` is the count against the same paper read the other way;
+        `twin` is that other reading, which carries the paper's own white.
+        """
+        ticked = self._relative.isChecked()
+        measured_count, own_count = ((other, report) if ticked
+                                     else (report, other))
+        if measured_count.n_beyond == own_count.n_beyond:
+            counted = (f"\nCounted both ways it is the same answer: "
+                       f"{own_count.n_beyond} outside, whether the paper is "
+                       f"taken as the instrument measured it or judged "
+                       f"against its own white.")
+        else:
+            counted = (f"\nCounted both ways, because these are two "
+                       f"questions and not one: {measured_count.n_beyond} "
+                       f"outside as your instrument measured the paper, and "
+                       f"{own_count.n_beyond} once the paper is judged "
+                       f"against its own white.")
+        # AND WHY THEY DIFFER, IN THE FIGURE THAT CAUSES IT. Computed from
+        # this file, never a constant: a different paper prints a different
+        # number, and a sentence carrying a hard-coded 8.8 would be wrong for
+        # everyone but the printer it was written on.
+        # THE PAPER'S WHITE AS THE INSTRUMENT SAW IT, which is on whichever
+        # of the two readings was made absolutely: the twin when the tick is
+        # on, the slot's own measurement when it is off.
+        white = (twin.white_lab if ticked
+                 else getattr(self._measurement_at(path), "white_lab", None))
+        gap = ""
+        if white is not None and abs(white[0] - 100.0) > 0.05:
+            gap = (f" The two are {abs(100.0 - white[0]):.1f} L* apart: "
+                   f"placing a patch through a profile puts the paper's "
+                   f"white at L* 100, and your instrument measured this one "
+                   f"at L* {white[0]:.1f}. Neither is wrong — the second is "
+                   f"the one that matches what you will actually print.")
+        return (counted + gap + " The switch is “Judge each paper against "
+                "its own white”, under “What the colours are measured "
+                "against”.")
 
     def _white_mismatch_caution(self, measured: bool) -> str:
         """Warn when a chart is being counted against two different whites.
@@ -13853,6 +13969,7 @@ class GamutApp(QMainWindow):
         # the same name would be judged against the shape it used to have.
         # Emptying it here costs one rebuild and cannot be wrong.
         self._lab_gamuts.clear()
+        self._other_whites.clear()
         # A rebuilt shape is a different object, and everything worked out
         # about the old pair describes shapes that are gone.
         self._forget_the_pair()
