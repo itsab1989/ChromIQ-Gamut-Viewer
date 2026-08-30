@@ -2279,3 +2279,90 @@ worked. It scales with the line it pastes now.
      bug e1d2650 fixed — or `}, 20000)`, with the file green.
 3. The flap rule ships but changes no pixel anybody can find (see the entry
    above); that is written into its commit message and should stay written.
+
+---
+
+## WHAT IS LEFT BEFORE A RELEASE (2026-08-30) — the 2026-08-23 list is DONE
+
+All three items from the 2026-08-23 list are closed:
+
+1. ~~a hostile subagent has not seen the finished seam~~ — four have, and they
+   found more than the seam.
+2. ~~`fit()` deletable with all tests green; the 250 ms sweep held by nothing~~
+   — both pinned by
+   `python/test_the_depth_fix_does_not_stop_after_the_first_frame.py`, each
+   mutation run on every gate and asserted to have landed.
+3. the flap rule still changes no pixel anybody can find; that stays written
+   into its commit message.
+
+### ⚠⚠ AND THE BIG ONE, WHICH THE RECORD HAD BACKWARDS
+
+The record said the depth fix "did not create the wall fault, it stopped hiding
+it". **It CAUSED it.** gl-plot3d picks which of each wall's two faces to paint
+by orienting against the NDC origin, whose pre-image sits `2nf/(n+f)` in front
+of the eye — so it MOVES WITH THE PLANES WE SET. Fitted symmetrically about the
+box it landed INSIDE the box, the orientation test went ambiguous over wide
+arcs, and the library fell through to a projected-area tie-break that paints
+the bigger-looking — i.e. NEARER — face.
+
+    page 22, 240 turning frames, a wall shown on the camera's own side
+    our old fit, no wall rule ............ 81/240   33.8%
+    the fit as it is now ................. 5/240    2.1%
+    stock library, no fit at all ......... 4/240    1.7%   <- the control
+
+`fit()` now keeps that point at 0.4 of the distance to the nearest corner.
+γ anywhere in 0.2..0.9 gives identical picks — a plateau, not a knife edge.
+THE WHOLE WALL RULE IS DELETED (~90 lines).
+
+⚠ AND PATCHING THE BUNDLED PLOTLY WAS REFUSED FOR A REASON WORTH KEEPING: a
+page saved WITHOUT the viewer fetches an unmodified plotly from the CDN when
+its reader opens it, so nothing patched into our own copy could ever reach the
+file that travels furthest from here. Basti asked for exactly that case. All
+four exports are proved by screenshot, the no-viewer ones verified to have
+really fetched `https://cdn.plot.ly/plotly-3.7.0.min.js`.
+
+### THE OTHER FIVE, all fixed
+
+* FOUR PUBLISHED PAGES had NEITHER `_DEPTH_JS` NOR `_ORDER_JS` — 15, 16, 17,
+  19, the timeline pages. They are NOT 2D line graphs; a review said so and was
+  wrong. `TimelineDialog.page_html` writes its page by hand, and its own
+  comment already recorded that this is "how four published pages came to have
+  no such script at all". All 25 carry everything now.
+* KNUT'S REPORT: "184 on the edge" printed one line above "every patch sits
+  inside", in BOTH judging branches. Root cause is Argyll's tessellation chord
+  error (predicted 0.069 median vs 0.0696 observed), not a fault here.
+* A page saved without walls regained them at load (`applyPicture` forcing
+  hardcoded defaults) — and my first fix for it CLOBBERED the reader's
+  remembered choice, which a regression check caught.
+* A page saved orthographic opened perspective: `setCam` dropped `projection`.
+* An invisible axis read as a grid, so the button opened pressed over a
+  boxless page.
+
+### ⚠ THE VEIN THAT PAID BEST THIS WEEK: A CHECK PINNING THE FAULT
+
+Five times, most sharply `test_a_patch_too_close_to_see_is_on_the_edge...`,
+which asserted a verdict said BOTH "1 on the edge" AND "every patch sits
+inside" of the same message. The check was not missing Knut's fault; it was
+DEMANDING it. **When a test fails after a fix, ask which of the two is wrong.**
+
+### AND THE INSTRUMENT LEDGER GREW AGAIN
+
+`cqSpin` has no `stop()` (use `set({on:false})`); `gl.camera.eye` is not the
+layout camera; a thin-line detector cannot see a slab; `sys.argv` emptied for
+Qt BEFORE the argument is read silently measures the default page; a page
+written without `spin=` carries no `cqSpin` at all, so "turning" frames are
+identical stills; and `show_the_hatching.py`'s speckle counter both MISSED real
+hatching and FLAGGED phantom hatching (1064 -> 161 run to run). Basti's rule —
+diagnose from screenshots, and if a number and a picture disagree the picture
+is right — was vindicated six times in one session.
+
+### WHAT IS ACTUALLY LEFT
+
+1. The release: bump, CHANGELOG, tag, push, confirm 11 assets. Notes drafted at
+   `scratch/CHANGELOG-2.53.0-draft.md`.
+2. STILL BASTI'S DECISION: the 30-second black window on a slow download.
+3. NOT BUILT, DESIGNED ONLY: the full audit tool he asked for —
+   `docs/DESIGN-the-full-audit.md`, with nine numbered open questions he has
+   not answered yet. `scripts/audit.py` already discovers controls dynamically
+   and `drive_all_combinations.py` already crosses 6,912 combinations; what is
+   missing is a single entry point and a friendly report on his Desktop.
