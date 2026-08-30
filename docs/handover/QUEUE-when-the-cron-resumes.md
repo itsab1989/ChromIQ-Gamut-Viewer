@@ -2356,10 +2356,30 @@ hatching and FLAGGED phantom hatching (1064 -> 161 run to run). Basti's rule —
 diagnose from screenshots, and if a number and a picture disagree the picture
 is right — was vindicated six times in one session.
 
+### ⚠ RELEASED: v2.53.0, 2026-08-30, 11 assets confirmed. THE CRON JOB IS
+### DELETED. Nothing is running.
+
+Two more faults were found by the release check itself, after the tag list was
+written, and both were fixed before it went out:
+
+* A PRESS THAT DID NOTHING RISKY WAS MARKED AS A CRASH. A page leaves a mark
+  before applying remembered choices and clears it once it is up; finding it
+  set next time means the last attempt hung, so the choices are discarded.
+  Sound. But `handler()` wrote the mark on EVERY press and only `push()` took
+  it off -- so walls off, press zoom, reload, and EVERY remembered choice was
+  gone. Present since 2026-08-16. Fixed by settling on the next tick, and the
+  guard was then ATTACKED to prove it still works: a `while(true){}` in a
+  handler with the tab killed, and frame starvation with rAF swallowed. Both
+  still leave the mark set. GUARD INTACT, measured rather than reasoned.
+* AND THE PAGES DID NOT CARRY IT. Fixing `handler()` in ti3gamut.py left all
+  25 published pages on the old one. ⚠ THIS IS THE THIRD TIME THAT EXACT MISS
+  HAS HAPPENED and f23af11's own message already called it "the second time".
+  CHANGING THE WRITER IS NOT SHIPPING THE PAGES. Rebuild every time.
+
 ### WHAT IS ACTUALLY LEFT
 
-1. The release: bump, CHANGELOG, tag, push, confirm 11 assets. Notes drafted at
-   `scratch/CHANGELOG-2.53.0-draft.md`.
+1. ~~The release~~ DONE: v2.53.0, 11 assets, both gates green (1,129 and
+   1,125 + 4), pages and screenshots rebuilt and live.
 2. STILL BASTI'S DECISION: the 30-second black window on a slow download.
 3. NOT BUILT, DESIGNED ONLY: the full audit tool he asked for —
    `docs/DESIGN-the-full-audit.md`, with nine numbered open questions he has
