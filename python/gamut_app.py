@@ -212,6 +212,8 @@ LIGHT_CONTROLS = (
 #: 0.47 ΔEab on average and 1.01 at worst, and across instrument pairs by 0.8
 #: to 1.9. That is bias rather than noise, so averaging does not remove it.
 #:
+#: ⚠ ΔEab, NOT ΔE2000, and the difference is not cosmetic. ICC White Paper 22 reports its instrument figures in CIELAB ΔE*ab, and this application's thresholds are ΔE2000. Printing one beside the other as though they were the same unit is the trap the standards literature warns about, and it was published here once already. Measured across 4,000 directions: 1.01 ΔEab is a median 0.98 ΔE2000 at a paper-white neutral (range 0.63-1.47), 1.13 at a mid neutral and 0.63 at a saturated red. So near a paper white -- which is where this sentence is printed -- they are about the same size, and that is the only place the comparison is made.
+#:
 #: THE THRESHOLDS THEMSELVES ARE UNCHANGED. They are a sound trade convention
 #: and no number a returning reader has seen moves; only the claim about what
 #: an eye can do is corrected. Decided by the owner on 2026-08-30, with the
@@ -219,7 +221,8 @@ LIGHT_CONTROLS = (
 DE_RULES_OF_THUMB = (
     "Those are rules of thumb rather than cut-offs: published thresholds for "
     "the smallest visible difference run from about 0.8 to 3, and on the same "
-    "patch two identical instruments can disagree by as much as 1.")
+    "patch two identical instruments can disagree by as much as 1 ΔEab — "
+    "about the same size as 1 ΔE2000 near a paper white.")
 
 TICK_ROW = 20
 
@@ -5211,8 +5214,9 @@ class TimelineDialog(QDialog):
             return (f"{spans}: nothing here that most people would notice. "
                     f"The biggest difference anywhere in the cube is ΔE "
                     f"{d.worst:.2f}, below the usual rule of thumb for a "
-                    f"difference worth chasing — and no larger than two "
-                    f"identical instruments can disagree by on one patch.")
+                    f"difference worth chasing — and no larger than the "
+                    f"1 ΔEab two identical instruments can disagree by on "
+                    f"one patch.")
         scale = ("findable by a careful eye" if d.worst < drift_series.OBVIOUS
                  else "hard to miss")
         share = 100.0 * d.over_one / max(d.matched, 1)
@@ -7084,6 +7088,13 @@ class GamutApp(QMainWindow):
         # Papers rebuilt in CIELAB for judging, keyed by everything that
         # changes the shape. See _in_lab.
         self._lab_gamuts: dict = {}
+        #: The comparison's own measurement, when it has one. Judging needs
+        #: it: see _judging_shapes.
+        self._reference_m = None
+        #: Comparisons already built, by everything that changes the shape.
+        #: A photograph costs 3 seconds to turn into a gamut; a reader who
+        #: nudges a setting and nudges it back should pay that once.
+        self._reference_cache: dict = {}
         #: The same papers read against the other white, for the two-sided
         #: count. See _both_whites.
         self._other_whites: dict = {}
@@ -8028,7 +8039,7 @@ class GamutApp(QMainWindow):
         self._white.currentIndexChanged.connect(self._on_white_changed)
         cv.addWidget(self._white)
         self._relative = QCheckBox("Judge each paper against its own white", g_cs)
-        self._relative.stateChanged.connect(self._rebuild)
+        self._relative.stateChanged.connect(self._on_relative_changed)
         rel_hint = Hint(
             "Papers are not equally bright — a warm rag paper starts off duller "
             "than a bright glossy one. Tick this and each paper is judged "
@@ -12656,6 +12667,7 @@ class GamutApp(QMainWindow):
         """
         choice = self._compare.currentData()
         self._reference = None
+        self._reference_m = None
         if not (choice and choice[0] == "icc"):
             self._reference_path = None
         self._compare_note.setText("")
@@ -12693,6 +12705,7 @@ class GamutApp(QMainWindow):
                 self._reference_path = Path(path)
                 chosen = Path(path)
                 built, _m = self._build_one(chosen)
+                self._reference_m = _m
                 self._reference = (_profile_label(chosen), built)
                 self._compare_note.setText(
                     "The gamut this profile describes, asked of the profile "
@@ -12718,6 +12731,7 @@ class GamutApp(QMainWindow):
             Notice.warn(
                 self, "That comparison could not be prepared", str(exc))
             self._reference = None
+            self._reference_m = None
             self._compare.setCurrentIndex(0)
             return
         self._chart_profile_offer()
@@ -13225,8 +13239,15 @@ class GamutApp(QMainWindow):
                         and self._reference_path.suffix.lower()
                         not in (".icc", ".icm", ".gam"))
             out.append((self._reference[0],
+                        # ⚠ ITS MEASUREMENT, NOT None. Handing None here
+                        # sent `_in_lab` to `icc_gamut` with a .ti3, which
+                        # cannot read one -- so in any space but CIELAB the
+                        # chart was counted against the UNCONVERTED hull:
+                        # "480 of 480 outside, worst ΔE 99.2" in CIE XYZ,
+                        # three lines above the correct "255 ... and 178".
                         self._in_lab(self._reference[1],
-                                     self._reference_path, None),
+                                     self._reference_path,
+                                     getattr(self, "_reference_m", None)),
                         self._reference_path, measured))
         return out
 
@@ -14623,7 +14644,23 @@ class GamutApp(QMainWindow):
                 # changed. Found while fixing the both-ways count, which is
                 # how a paper opened this way came to be judged against the
                 # wrong white in the first place.
-                built, _m = self._build_one(self._reference_path)
+                # ⚠ CACHED, because this branch now reaches `_build_one`,
+                # which for a PHOTOGRAPH runs `image_gamut` — measured at
+                # 3.0 seconds of blocked main thread, and it ran on every
+                # white-point, detail or space change. The key holds
+                # everything that changes the shape, so a reader toggling a
+                # setting back and forth pays once.
+                key = (str(self._reference_path),
+                       self._white.currentData(), self._build_space(),
+                       self._detail.value(), self._relative.isChecked())
+                hit = self._reference_cache.get(key)
+                if hit is None:
+                    hit = self._build_one(self._reference_path)
+                    if len(self._reference_cache) > 8:
+                        self._reference_cache.clear()
+                    self._reference_cache[key] = hit
+                built, _m = hit
+                self._reference_m = _m
                 self._reference = (_profile_label(self._reference_path),
                                    built)
             elif choice[0] == "visible":
@@ -14637,7 +14674,37 @@ class GamutApp(QMainWindow):
         except Exception as exc:      # noqa: BLE001 — always explain
             Notice.warn(self, "That comparison could not be rebuilt", str(exc))
             self._reference = None
+            self._reference_m = None
             self._compare.setCurrentIndex(0)
+
+    def _on_relative_changed(self) -> None:
+        """Judge everything against the same white — the comparison included.
+
+        ⚠ THE COMPARISON WAS NOT REBUILT WHEN THIS TICK MOVED, and once the
+        comparison began honouring the tick at build time, that omission
+        turned into a number that changed when an unrelated control moved.
+        Measured with a paper as the comparison, tick ON, one nudge of
+        Detail apart, nothing about white touched:
+
+            coverage        66.9%  ->  82.9%
+            "Both can print"  67%  ->  83%
+            comparison volume     +24%
+
+        and the colour families reported as winning changed with it. The tick
+        was wired to `_rebuild`, which walks the slots only, so the comparison
+        kept whatever mode it was opened in and then silently adopted the
+        current one at the next unrelated rebuild.
+
+        Found by a regression pass over the fix that caused it: before that
+        fix the comparison was built by a reader with no white mode at all,
+        so it was consistently absolute -- wrong, but stable. Correct at build
+        time and inconsistent afterwards is worse.
+        """
+        self._rebuild_reference()
+        if self._slots:
+            self._rebuild()
+        else:
+            self._redraw()
 
     def _rebuild(self) -> None:
         """A setting that changes the shape — rebuild every loaded measurement."""
@@ -17613,8 +17680,9 @@ class GamutApp(QMainWindow):
             return said
         return said + (
             "\nEach profile is built from measurements, and two identical "
-            "instruments can disagree by as much as 1 ΔE on the same patch, "
-            "so a difference this small need not mean the device moved."
+            "instruments can disagree by as much as 1 ΔEab on the same patch "
+            "— about the same size as 1 ΔE2000 near a paper white — so a "
+            "difference this small need not mean the device moved."
             if profiles else
             "\nOn the same patch two identical instruments can disagree by "
             "as much as 1 ΔE, so a difference this small may be the "

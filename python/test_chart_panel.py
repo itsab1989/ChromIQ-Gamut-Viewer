@@ -857,15 +857,22 @@ def test_no_wording_anywhere_claims_a_difference_is_invisible_to_everyone(app):
     import re
     root = pathlib.Path(__file__).resolve().parent
     # (nobody|anybody|no one|nothing) ... (can|could) see  — any wording.
+    # ⚠ EVERY FORM IT HAS ESCAPED IN, and each of these was a real escape:
+    # a space, a hyphen ("nobody-can-see-this band", in an alt attribute), and
+    # a line break inside the sentence. Spelled-out "Delta E" counts as the
+    # topic too, because a page wrote it that way.
     claims = (
-        re.compile(r"\b(nobody|no one|anybody|anyone|everybody|everyone)\b"
-                   r"[^.]{0,40}?\b(can|could)\s+see", re.I),
+        re.compile(r"\b(nobody|no[- ]one|anybody|anyone|everybody|everyone)\b"
+                   r"[-\s]{1,3}(can|could)[-\s]{1,3}see", re.I),
         re.compile(r"becomes visible at all", re.I),
         re.compile(r"\binvisible to (anyone|everybody|the eye)\b", re.I),
     )
     seen = 0
-    for name in ("gamut_app.py", "drift_series.py", "chart.py",
-                 "ti3gamut.py"):
+    # ⚠ references.py WAS NOT SCANNED, and a live sentence sat in it. A
+    # sweep that names its own files will always name too few, so this takes
+    # every module in the package.
+    for name in sorted(f.name for f in root.glob("*.py")
+                       if not f.name.startswith("test_")):
         tree = ast.parse((root / name).read_text())
         docs = set()
         for holder in ast.walk(tree):
@@ -876,11 +883,25 @@ def test_no_wording_anywhere_claims_a_difference_is_invisible_to_everyone(app):
                         and isinstance(body[0].value, ast.Constant)
                         and isinstance(body[0].value.value, str)):
                     docs.add(id(body[0].value))
+        # ⚠ f-STRINGS TOO. An f-string is a JoinedStr of pieces, so a claim
+        # with a value interpolated into the middle of it is invisible to a
+        # scan of plain constants — proven by putting one there.
+        texts = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.JoinedStr):
+                joined = "".join(
+                    part.value if isinstance(part, ast.Constant)
+                    and isinstance(part.value, str) else " 0 "
+                    for part in node.values)
+                texts.append((node.lineno, joined))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
                 continue
             if id(node) in docs:
                 continue
+            texts.append((node.lineno, node.value))
+        for lineno, text in texts:
+            node = type("N", (), {"value": text, "lineno": lineno})()
             seen += 1
             for claim in claims:
                 for found in claim.finditer(node.value):
@@ -894,7 +915,8 @@ def test_no_wording_anywhere_claims_a_difference_is_invisible_to_everyone(app):
                     # sentence.
                     near = node.value[max(0, found.start() - 140):
                                       found.end() + 140]
-                    if not re.search(r"ΔE|\bdE\b|difference|moved", near, re.I):
+                    if not re.search(r"ΔE|\bdE\b|Delta ?E|difference|moved",
+                                     near, re.I):
                         continue
                     raise AssertionError(
                         f"{name}:{node.lineno} still tells a reader "

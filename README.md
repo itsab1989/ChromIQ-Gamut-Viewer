@@ -288,7 +288,7 @@ gamut surface is worked out from a grid of samples, and between them the real
 boundary bulges out a little further than the shape drawn through them. So a
 handful of patches always land a whisker outside any surface, including the
 surface of the profile that placed them. Anything within **1 ΔE** — closer than
-anyone can see with the two side by side — is counted as *on the edge* rather
+most people would not notice with the two side by side — is counted as *on the edge* rather
 than outside.
 
 **Judge both against the same white.** A chart is placed relative to the
@@ -654,7 +654,7 @@ Open two or more profiles of the same device and you get two lines:
 * **how far it moved since the one before**.
 
 They disagree by design, and both are needed. Five steps of half a ΔE each look
-like nothing happening and add up to a difference anybody can see; and a run
+like nothing happening and add up to a difference that is hard to miss; and a run
 whose steps are all the same size means something quite different from one with
 a single jump in it. The first will keep creeping. The second already happened,
 on a date you can go and look up — so the page names it.

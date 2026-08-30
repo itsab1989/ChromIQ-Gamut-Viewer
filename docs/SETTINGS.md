@@ -666,7 +666,7 @@ between them would be mostly that rather than drift, and a picture of it would
 look exactly like a device that had moved.
 
 **The colour scale is fixed**, not stretched to whatever is in front of it, so
-two of these pictures can be held against each other: below ΔE 1 nobody can see
+two of these pictures can be held against each other: below ΔE 1 most people would not notice
 the difference, above 3 anybody can, and red means the same amount in every one
 of them.
 
