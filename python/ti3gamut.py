@@ -72,6 +72,14 @@ class Measurement:
     lab: np.ndarray               # (N, 3) CIE Lab under the chosen white point
     instrument: str
     n_patches: int
+    #: Which patch was taken as the paper's white when `relative=True`, in
+    #: plain words -- "the patch printed with no ink", or "the brightest
+    #: patch, because this file does not say what was printed". Empty when
+    #: the measurement was read absolutely and no white was chosen.
+    #:
+    #: ⚠ IT IS RECORDED BECAUSE CHOOSING IT WRONG IS CATASTROPHIC AND SILENT.
+    #: See the note in `read_ti3`.
+    white_from: str = ""
 
 
 #: Measurement files that are not .ti3, and the ArgyllCMS tool that turns each
@@ -205,12 +213,62 @@ def read_ti3(path: Path, white_point: str = "D50",
         return table.numbers(name)[:, 0]
 
     have = set(columns)
+    # ⚠ THE DEVICE VALUES ARE READ FIRST NOW, because the white point below
+    # needs them. They used to be parsed thirty lines further down, which is
+    # why the media white was chosen without ever consulting them.
+    device = None
+    for names in _DEVICE_SETS:
+        if set(names) <= have and len(names) == 3:
+            device = np.column_stack([column(c) for c in names]) / 100.0
+            break
+
+    white_from = ""
     if set(_XYZ) <= have:
         xyz = np.column_stack([column(c) for c in _XYZ]) / 100.0
         if relative:
-            # Media white = the brightest patch. A relative-colorimetric view.
-            xyz = xyz / xyz[np.argmax(xyz[:, 1])][1] * 1.0
-            wp_xyz = xyz[np.argmax(xyz[:, 1])]
+            # ⚠⚠ THE PAPER'S WHITE IS THE PATCH PRINTED WITH NO INK, NOT
+            # WHICHEVER PATCH CAME BACK BRIGHTEST. This used to take the
+            # greatest Y and never look at what was printed to get it.
+            #
+            # On every genuine measurement those are the same patch: 258 of
+            # the .ti3 files on this machine carry both device values and
+            # XYZ, and on 243 of them the brightest patch IS the blank one.
+            # Reflective paper cannot be printed brighter than it is, so this
+            # guard is not curing an observed field fault -- it refuses a
+            # silent catastrophe on a file that lies.
+            #
+            # The fifteen that differ are one synthetic fixture and its
+            # copies, whose brightest patch is device 100/100/0 -- YELLOW.
+            # Taken for the paper white it did this, the moment somebody
+            # ticked "Judge each paper against its own white":
+            #
+            #     every patch moved   mean 53.33 dE2000, max 87.20
+            #     b* of the real white           -998.31
+            #     gamut volume        5,111,329 -> 26,494,611   (+418%)
+            #
+            # and the panel went on calling that paper white "neutral".
+            #
+            # So: the patch printed at FULL SCALE on every channel is the
+            # white. Not merely the greatest value present -- a chart that
+            # never printed a blank would then hand its most saturated patch
+            # the white's name, with full confidence, which is the very
+            # failure this guard exists to refuse. A file with no full-scale
+            # patch falls back to the brightest one and SAYS that it did.
+            pick = None
+            if device is not None and len(device) == len(xyz):
+                blank = np.nonzero(np.isclose(device, 1.0, atol=1e-6)
+                                   .all(axis=1))[0]
+                if len(blank):
+                    # A chart usually holds the white patch more than once;
+                    # the brightest of those readings is the least noisy.
+                    pick = int(blank[np.argmax(xyz[blank, 1])])
+                    white_from = "the patch printed with no ink"
+            if pick is None:
+                pick = int(np.argmax(xyz[:, 1]))
+                white_from = ("the brightest patch, because this file does "
+                              "not say what was printed")
+            xyz = xyz / xyz[pick][1] * 1.0
+            wp_xyz = xyz[pick]
             xyz = xyz * (np.array([0.96422, 1.0, 0.82521]) / wp_xyz)
         lab = xyz_to_lab(xyz, white_point)
     elif set(_LAB) <= have:
@@ -224,12 +282,6 @@ def read_ti3(path: Path, white_point: str = "D50",
             f"{path.name} has no XYZ or Lab columns — it may be a .ti1/.ti2 "
             "(a chart that has not been measured yet) rather than a .ti3")
 
-    device = None
-    for names in _DEVICE_SETS:
-        if set(names) <= have and len(names) == 3:
-            device = np.column_stack([column(c) for c in names]) / 100.0
-            break
-
     instrument = ""
     for line in text.splitlines():
         if line.startswith("TARGET_INSTRUMENT"):
@@ -237,7 +289,8 @@ def read_ti3(path: Path, white_point: str = "D50",
             break
 
     return Measurement(name=path.stem, device=device, lab=lab,
-                       instrument=instrument, n_patches=len(rows))
+                       instrument=instrument, n_patches=len(rows),
+                       white_from=white_from)
 
 
 def neutral_axis(measurement, tolerance: float = 0.02):
