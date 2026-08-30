@@ -4167,6 +4167,40 @@ These are two profiles, so this is how far apart the two DESCRIPTIONS are — no
       // against the model matrix to seven digits -- and needs no matrix.
       var cam = gl.camera, a = gl.aspect;
       if (!cam || !cam.eye || !cam.center || !a || a.length !== 3) return;
+      // ⚠ AN ORTHOGRAPHIC SCENE IS NOT OURS TO FIT, AND FITTING IT BREAKS THE
+      // PICTURE. Everything below measures distances ALONG THE VIEW FROM THE
+      // EYE, which is what a perspective frustum is built from. gl-plot3d's
+      // orthographic path is `ortho(-re, re, -1, 1, zNear, zFar)`, whose box
+      // is normalised and nowhere near those distances, so planes of 0.744
+      // and 4.452 swallow the scene.
+      //
+      // ⚠ AND THE SYMPTOM DEPENDS ON THE RENDERER, which is why this is
+      // guarded rather than tuned. Same page, same planes, same `_ortho`:
+      //
+      //     chromium / SwiftShader   an EMPTY AXIS BOX, no gamut at all
+      //     webkit   / Apple GPU     the shape drawn, but the gridlines
+      //                              drawn ACROSS the front of it
+      //
+      // A cure judged only in headless chromium would have been judged
+      // against a picture no reader on this hardware ever sees.
+      //
+      // Nothing shipped reaches orthographic today -- but the queue's own
+      // next-recommended lever is to offer it as a reader's choice, and the
+      // two features are mutually exclusive as they stand. Put the library's
+      // own fallback back rather than merely returning: the scene may have
+      // been fitted while it was still perspective, and a stale perspective
+      // plane is exactly what erases it.
+      //
+      // ⚠ MEASURED, NOT GUESSED. `_ortho` sits on BOTH `gl.camera` and
+      // `gl.cameraParams`, false in perspective and true in orthographic,
+      // asked of a real page in both engines.
+      if ((cam && cam._ortho) || (gl.cameraParams && gl.cameraParams._ortho)) {
+        if (gl.zNear !== 0.01 || gl.zFar !== 1000) {
+          gl.zNear = 0.01;
+          gl.zFar = 1000;
+        }
+        return;
+      }
       var b = [[-a[0] / 2, -a[1] / 2, -a[2] / 2],
                [a[0] / 2, a[1] / 2, a[2] / 2]];
       if (!(a[0] > 0 && a[1] > 0 && a[2] > 0)) return;
@@ -4230,7 +4264,53 @@ These are two profiles, so this is how far apart the two DESCRIPTIONS are — no
       // is 27 with the floor at 0.01. It is one token, it is reached by one
       // and a half clicks of the page's own wheel zoom, and it guarantees the
       // fitted planes can never be worse than leaving them alone.
-      var near = Math.max(0.01, lo - pad), far = hi + pad;
+      // ⚠⚠ THE NEAR PLANE IS NOT FREE: IT DECIDES WHICH WALL THE LIBRARY
+      // PAINTS. This is the whole reason the walls were being drawn in front
+      // of the shape, and it was THIS FUNCTION doing it.
+      //
+      // gl-plot3d's cube.js chooses which of each axis's two faces to paint by
+      // orienting against the NDC origin. The pre-image of that origin sits
+      // exactly `2*near*far/(near+far)` in front of the eye — so it MOVES WITH
+      // THE PLANES. Fitted symmetrically about the box, as this did before,
+      // that point lands `r^2/D` from the box CENTRE: inside the box, which is
+      // the most ambiguous place it could possibly be. The orientation test
+      // then goes undecided over wide arcs and falls through to cube.js's
+      // projected-AREA tie-break, which paints the bigger-looking face — and
+      // the nearer face always looks bigger.
+      //
+      // MEASURED, on a real page in the app's own viewer: 86.2% of frames
+      // picked the wrong face in the worst regime, 29.2% on the published
+      // page 22, against 1.2% with no fit at all. The shape has nothing to do
+      // with it: a ball in that same box and camera reaches 85.4%.
+      //
+      // SO THE CURE IS TO PUT THAT POINT WHERE IT CANNOT BE AMBIGUOUS —
+      // comfortably IN FRONT of the box, at a fraction of the distance to the
+      // nearest corner. Solving `2*n*f/(n+f) = H` for the near plane gives
+      // `n = H*f / (2*f - H)`, which is the line below.
+      //
+      // ⚠ AND IT COSTS THE DEPTH BUFFER ALMOST NOTHING, which is the only
+      // reason this is the right cure rather than a trade. The planes exist
+      // because gl-plot3d sets none and a 16-bit buffer over its 0.01/1000
+      // fallback makes one depth step bigger than a Lab unit. Measured worst
+      // step: 0.07 L* here, against 3.5 L* with no fit. The hatching stays
+      // cured, settled by looking at pictures at opacity 1.0 rather than by a
+      // speckle count — that counter was itself caught miscounting, twice.
+      //
+      // ⚠ AND IT WORKS AGAINST THE STOCK LIBRARY, which is what makes it the
+      // ROOT fix. Patching the bundled viewer would have cured only the pages
+      // that carry it: a page exported WITHOUT the viewer fetches an
+      // unmodified plotly from the CDN when its reader opens it, and that is
+      // the file that travels furthest from here. Verified on a real network
+      // fetch in headed Chromium and WebKit: 76.9% / 76.2% wrong before,
+      // 1.9% / 1.9% after.
+      var far = hi + pad;
+      //: How far in front of the nearest corner the reference point sits, as
+      //: a share of the distance to it. Anywhere in 0.4..0.75 gives EXACT
+      //: agreement with the unfitted library's own choice, in every scenario
+      //: tried -- spins, drags, four box shapes, tilted orbits, zooms, two
+      //: rooms and the real window -- so this is a plateau, not a knife edge.
+      var H = 0.4 * Math.max(lo, 0);
+      var near = Math.max(0.01, H * far / (2 * far - H));
       if (!(far > near)) return;
       if (Math.abs(gl.zNear - near) > 1e-9 || Math.abs(gl.zFar - far) > 1e-9) {
         gl.zNear = near;
@@ -4238,6 +4318,29 @@ These are two profiles, so this is how far apart the two DESCRIPTIONS are — no
       }
     } catch (e) { /* a page that cannot do this draws what it drew before */ }
   }
+  // ⚠ THE WALL RULE THAT USED TO LIVE HERE IS GONE, AND ON PURPOSE.
+  //
+  // It watched for the library painting a wall on the camera's own side and
+  // relayouted that wall away. It was treating a symptom THIS FILE CAUSED:
+  // the near plane decides which face cube.js picks (see `fit`), and with the
+  // planes chosen properly the library picks correctly by itself. Measured
+  // after the fit change: exact agreement with the unfitted library's own
+  // choice in every scenario tried -- spins, drags, four box shapes, tilted
+  // orbits, zooms, two rooms, and the real window.
+  //
+  // AND IT WAS NOT HARMLESS. It re-added walls a reader had deliberately
+  // turned off (119 frames of 120) and could blank whole rooms in the window,
+  // breaking this project's own promise that a page saved without walls never
+  // gains them. A cure that must be guarded against itself is the wrong cure.
+  //
+  // ⚠ AND THE GRID HALF WAS NEVER CURABLE THIS WAY IN ANY CASE. `showgrid[i]`
+  // does not rule lines on plane i; it removes the i-FAMILY from the OTHER
+  // TWO planes, and gl-plot3d's own `gridEnable` is per-family too. Toggling
+  // it left one family ruled across everything -- "four or five sheets of
+  // glass" in Basti's own screenshots. Fixing the CAUSE fixes the panel, the
+  // grid, the ticks and the axis labels together, because all four follow the
+  // same face pick.
+
   function arm(gd) {
     if (!gd || !gd._fullLayout) return;
     Object.keys(gd._fullLayout).forEach(function (key) {

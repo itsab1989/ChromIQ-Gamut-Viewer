@@ -6078,7 +6078,23 @@ class TimelineDialog(QDialog):
         # published pages came to have no such script at all while the audit
         # that watches for exactly this said "Clean". It watches for this one
         # now too.
-        from ti3gamut import _CAPTION_JS, SCENE_COLOURS
+        # ⚠ AND THE DEPTH AND ORDER SCRIPTS TOO, FOR THE SAME REASON THE
+        # CAPTION ONE IS HERE. The comment above says the caption script
+        # had to be added by hand "which is how four published pages came
+        # to have no such script at all" -- and those same four pages went
+        # on missing the other two. Measured on the published set:
+        # 15, 16, 17 and 19 carry a real 3D scene (a mesh3d, a scatter3d
+        # and a scene layout) with ZERO `__cqDepth` and ZERO `cqOrder`,
+        # while every page written by ti3gamut's own writer carries both.
+        #
+        # So they kept gl-plot3d's 0.01/1000 over a 16-bit buffer -- the
+        # hatching this project spent a week curing -- and never got the
+        # far-to-near ordering the README promises "the window and every
+        # saved page" have. A hand-written page is a page that misses
+        # whatever is added elsewhere, every time, and this is the second
+        # time it has cost exactly these four files.
+        from ti3gamut import (_CAPTION_JS, _DEPTH_JS, _ORDER_JS,
+                              SCENE_COLOURS)
         # THE CHOICE FIRST, THE WINDOW SECOND. This page — the run's graph —
         # was the one route that ignored "what colours should it open in",
         # because it is written here rather than by the shared writer. Caught
@@ -6167,7 +6183,7 @@ drifting, and no arithmetic can separate the two.</p>
 <p class="caveat">The numbers are ΔE2000. Below 1 nobody can see the
 difference; above 3 anybody can.</p>
 {self._families_html() if words else ''}</div>
-<script>{_CAPTION_JS}</script></body></html>
+<script>{_DEPTH_JS}</script><script>{_ORDER_JS}</script><script>{_CAPTION_JS}</script></body></html>
 """
 
     def _family_rows(self) -> list:

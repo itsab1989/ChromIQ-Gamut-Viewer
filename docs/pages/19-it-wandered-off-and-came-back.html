@@ -3920,6 +3920,1136 @@ drifting, and no arithmetic can separate the two.</p>
 difference; above 3 anybody can.</p>
 <p class="verdict">year-2019 to year-2023 — which colour families moved:</p><ul class="families"><li>reds: stayed the same (ΔE 0.2, 137 patches)</li><li>yellows: stayed the same (ΔE 0.2, 134 patches)</li><li>greens: stayed the same (ΔE 0.2, 86 patches)</li><li>cyans: stayed the same (ΔE 0.2, 121 patches)</li><li>blues: stayed the same (ΔE 0.3, 132 patches)</li><li>magentas: stayed the same (ΔE 0.3, 108 patches)</li><li>greys: stayed the same (ΔE 0.5, 11 patches)</li></ul><p class="caveat">These are two profiles, so this is how far apart the two DESCRIPTIONS are — not how far the printer moved. Each profile is one day's measurements of one chart, so a faded chart or a change in how they were built is inside these numbers too. Where one family stops and the next begins is a line this window draws, not one that exists in nature. The families are centred on reds around 0°, yellows around 90°, greens around 150°, cyans around 195°, blues around 270°, magentas around 330° of hue, and each one reaches half way to its neighbours. Anything less colourful than chroma 5 is called a grey instead, because below that a colour's hue is mostly noise and would put it in a family at random. Of these 729 colours, 123 sit within 5° of one of those lines and could honestly have been counted either side of it.</p></div>
 <script>
+(function () {
+  function fit(gl) {
+    try {
+      // ⚠ THE BOX THAT IS DRAWN, NOT `gl.bounds`. `bounds` is the data's own
+      // box BEFORE the model matrix; the camera lives after it. Read off a
+      // running page: bounds spanned 1.0625 on every axis while the model
+      // scaled by (1.0310, 1.3829, 0.5847) and shifted z by -0.2924, so the
+      // drawn box was off-centre by half a unit in z and up to 38% the wrong
+      // size per axis. Fitted to that, the far plane cut the axis box away at
+      // the cameras four buttons on every saved page produce: 113,649 pixels
+      // erased at "above", 79,031 at "angle", 256,077 looking along b*, with
+      // the axis titles printed twice.
+      //
+      // The drawn box is exactly +/- aspect/2 about the origin -- checked
+      // against the model matrix to seven digits -- and needs no matrix.
+      var cam = gl.camera, a = gl.aspect;
+      if (!cam || !cam.eye || !cam.center || !a || a.length !== 3) return;
+      // ⚠ AN ORTHOGRAPHIC SCENE IS NOT OURS TO FIT, AND FITTING IT BREAKS THE
+      // PICTURE. Everything below measures distances ALONG THE VIEW FROM THE
+      // EYE, which is what a perspective frustum is built from. gl-plot3d's
+      // orthographic path is `ortho(-re, re, -1, 1, zNear, zFar)`, whose box
+      // is normalised and nowhere near those distances, so planes of 0.744
+      // and 4.452 swallow the scene.
+      //
+      // ⚠ AND THE SYMPTOM DEPENDS ON THE RENDERER, which is why this is
+      // guarded rather than tuned. Same page, same planes, same `_ortho`:
+      //
+      //     chromium / SwiftShader   an EMPTY AXIS BOX, no gamut at all
+      //     webkit   / Apple GPU     the shape drawn, but the gridlines
+      //                              drawn ACROSS the front of it
+      //
+      // A cure judged only in headless chromium would have been judged
+      // against a picture no reader on this hardware ever sees.
+      //
+      // Nothing shipped reaches orthographic today -- but the queue's own
+      // next-recommended lever is to offer it as a reader's choice, and the
+      // two features are mutually exclusive as they stand. Put the library's
+      // own fallback back rather than merely returning: the scene may have
+      // been fitted while it was still perspective, and a stale perspective
+      // plane is exactly what erases it.
+      //
+      // ⚠ MEASURED, NOT GUESSED. `_ortho` sits on BOTH `gl.camera` and
+      // `gl.cameraParams`, false in perspective and true in orthographic,
+      // asked of a real page in both engines.
+      if ((cam && cam._ortho) || (gl.cameraParams && gl.cameraParams._ortho)) {
+        if (gl.zNear !== 0.01 || gl.zFar !== 1000) {
+          gl.zNear = 0.01;
+          gl.zFar = 1000;
+        }
+        return;
+      }
+      var b = [[-a[0] / 2, -a[1] / 2, -a[2] / 2],
+               [a[0] / 2, a[1] / 2, a[2] / 2]];
+      if (!(a[0] > 0 && a[1] > 0 && a[2] > 0)) return;
+      var ex = cam.eye[0], ey = cam.eye[1], ez = cam.eye[2];
+      var vx = cam.center[0] - ex, vy = cam.center[1] - ey, vz = cam.center[2] - ez;
+      var len = Math.sqrt(vx * vx + vy * vy + vz * vz);
+      if (!(len > 0)) return;
+      vx /= len; vy /= len; vz /= len;
+      var lo = Infinity, hi = -Infinity, i, j, k, t;
+      for (i = 0; i < 2; i++) for (j = 0; j < 2; j++) for (k = 0; k < 2; k++) {
+        t = (b[i][0] - ex) * vx + (b[j][1] - ey) * vy + (b[k][2] - ez) * vz;
+        if (t < lo) lo = t;
+        if (t > hi) hi = t;
+      }
+      if (!isFinite(lo) || !isFinite(hi) || !(hi > lo)) return;
+      // ⚠ AND THE PAD HAS TO COVER WHAT LIVES OUTSIDE THE BOX. The shapes sit
+      // inside it; the tick marks, the tick numbers and the axis titles do
+      // not, and a pad sized only for rounding clips them. Measured by the
+      // pixels the library draws that this erases, at the page's own
+      // "look from" buttons -- see the test.
+      // ⚠ A SHARE OF THE BOX, NOT OF THE VIEW-ALIGNED SPAN. The tick marks,
+      // the tick numbers and the axis titles are drawn OUTSIDE the box, and
+      // how far outside does not change with the camera -- but `hi - lo`
+      // does: looking straight down an axis the box is barely deep at all, so
+      // a share of it collapses exactly where the furniture needs covering.
+      // Measured, pixels the library drew that this erased, looking along b*:
+      // a fifth of the span erased 13,419; a fifth of the box, 31.
+      // And widening the SPAN share until the clipping stopped brought the
+      // hatching back -- at 1.0 the lid's own speckle went 3 -> 207 -- because
+      // the pad then swallows the precision at every other camera too.
+      var across = Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+      // HALF THE BOX ACROSS, measured at both ends. Pixels the library drew
+      // that this erases, and the speckle the lid adds, on his own pair:
+      //
+      //     pad      along b*   along a*   above  |  hatch at four cameras
+      //     0.2      13,413     10,889    8,156   |   3    0    3    4
+      //     0.5          28         53       28   |   2    5   17  132
+      //     0.9           -          -        -   |  227  112  230  130
+      //
+      // A fifth of the box is tight enough to leave the axis furniture
+      // outside the far plane; nine tenths spends so much depth on empty
+      // space that the hatching comes back. Half clears the furniture at
+      // every camera and keeps the hatching cured at three of the four --
+      // the fourth, seen from below, is 132 against 34 with no fix at all,
+      // and is written into the queue rather than counted as fixed.
+      var pad = 0.5 * across + 1e-3;
+      // ⚠ NEVER CLOSER THAN THE LIBRARY'S OWN FLOOR. Clamped at 1e-3 this
+      // handed the depth buffer a near plane TEN TIMES CLOSER than gl-plot3d
+      // would have, and perspective depth resolution is proportional to the
+      // near plane -- so wherever the clamp bit, the fix was three to
+      // forty-eight times WORSE than doing nothing. Measured by a hostile
+      // review, the speckle the lid adds:
+      //
+      //     eye x   no fix   with 1e-3   with 0.01
+      //     1.0       134         6          6
+      //     0.864     106       302        106
+      //     0.7        33       341         53
+      //     0.5         9       434          7
+      //
+      // and the camera this change was said to make worse -- 34 against 132 --
+      // is 27 with the floor at 0.01. It is one token, it is reached by one
+      // and a half clicks of the page's own wheel zoom, and it guarantees the
+      // fitted planes can never be worse than leaving them alone.
+      // ⚠⚠ THE NEAR PLANE IS NOT FREE: IT DECIDES WHICH WALL THE LIBRARY
+      // PAINTS. This is the whole reason the walls were being drawn in front
+      // of the shape, and it was THIS FUNCTION doing it.
+      //
+      // gl-plot3d's cube.js chooses which of each axis's two faces to paint by
+      // orienting against the NDC origin. The pre-image of that origin sits
+      // exactly `2*near*far/(near+far)` in front of the eye — so it MOVES WITH
+      // THE PLANES. Fitted symmetrically about the box, as this did before,
+      // that point lands `r^2/D` from the box CENTRE: inside the box, which is
+      // the most ambiguous place it could possibly be. The orientation test
+      // then goes undecided over wide arcs and falls through to cube.js's
+      // projected-AREA tie-break, which paints the bigger-looking face — and
+      // the nearer face always looks bigger.
+      //
+      // MEASURED, on a real page in the app's own viewer: 86.2% of frames
+      // picked the wrong face in the worst regime, 29.2% on the published
+      // page 22, against 1.2% with no fit at all. The shape has nothing to do
+      // with it: a ball in that same box and camera reaches 85.4%.
+      //
+      // SO THE CURE IS TO PUT THAT POINT WHERE IT CANNOT BE AMBIGUOUS —
+      // comfortably IN FRONT of the box, at a fraction of the distance to the
+      // nearest corner. Solving `2*n*f/(n+f) = H` for the near plane gives
+      // `n = H*f / (2*f - H)`, which is the line below.
+      //
+      // ⚠ AND IT COSTS THE DEPTH BUFFER ALMOST NOTHING, which is the only
+      // reason this is the right cure rather than a trade. The planes exist
+      // because gl-plot3d sets none and a 16-bit buffer over its 0.01/1000
+      // fallback makes one depth step bigger than a Lab unit. Measured worst
+      // step: 0.07 L* here, against 3.5 L* with no fit. The hatching stays
+      // cured, settled by looking at pictures at opacity 1.0 rather than by a
+      // speckle count — that counter was itself caught miscounting, twice.
+      //
+      // ⚠ AND IT WORKS AGAINST THE STOCK LIBRARY, which is what makes it the
+      // ROOT fix. Patching the bundled viewer would have cured only the pages
+      // that carry it: a page exported WITHOUT the viewer fetches an
+      // unmodified plotly from the CDN when its reader opens it, and that is
+      // the file that travels furthest from here. Verified on a real network
+      // fetch in headed Chromium and WebKit: 76.9% / 76.2% wrong before,
+      // 1.9% / 1.9% after.
+      var far = hi + pad;
+      //: How far in front of the nearest corner the reference point sits, as
+      //: a share of the distance to it. Anywhere in 0.4..0.75 gives EXACT
+      //: agreement with the unfitted library's own choice, in every scenario
+      //: tried -- spins, drags, four box shapes, tilted orbits, zooms, two
+      //: rooms and the real window -- so this is a plateau, not a knife edge.
+      var H = 0.4 * Math.max(lo, 0);
+      var near = Math.max(0.01, H * far / (2 * far - H));
+      if (!(far > near)) return;
+      if (Math.abs(gl.zNear - near) > 1e-9 || Math.abs(gl.zFar - far) > 1e-9) {
+        gl.zNear = near;
+        gl.zFar = far;
+      }
+    } catch (e) { /* a page that cannot do this draws what it drew before */ }
+  }
+  // ⚠ THE WALL RULE THAT USED TO LIVE HERE IS GONE, AND ON PURPOSE.
+  //
+  // It watched for the library painting a wall on the camera's own side and
+  // relayouted that wall away. It was treating a symptom THIS FILE CAUSED:
+  // the near plane decides which face cube.js picks (see `fit`), and with the
+  // planes chosen properly the library picks correctly by itself. Measured
+  // after the fit change: exact agreement with the unfitted library's own
+  // choice in every scenario tried -- spins, drags, four box shapes, tilted
+  // orbits, zooms, two rooms, and the real window.
+  //
+  // AND IT WAS NOT HARMLESS. It re-added walls a reader had deliberately
+  // turned off (119 frames of 120) and could blank whole rooms in the window,
+  // breaking this project's own promise that a page saved without walls never
+  // gains them. A cure that must be guarded against itself is the wrong cure.
+  //
+  // ⚠ AND THE GRID HALF WAS NEVER CURABLE THIS WAY IN ANY CASE. `showgrid[i]`
+  // does not rule lines on plane i; it removes the i-FAMILY from the OTHER
+  // TWO planes, and gl-plot3d's own `gridEnable` is per-family too. Toggling
+  // it left one family ruled across everything -- "four or five sheets of
+  // glass" in Basti's own screenshots. Fixing the CAUSE fixes the panel, the
+  // grid, the ticks and the axis labels together, because all four follow the
+  // same face pick.
+
+  function arm(gd) {
+    if (!gd || !gd._fullLayout) return;
+    Object.keys(gd._fullLayout).forEach(function (key) {
+      if (key.indexOf("scene") !== 0) return;
+      var sc = gd._fullLayout[key]._scene, gl = sc && sc.glplot;
+      if (!gl) return;
+      // ⚠ THE MARK GOES ON THE FUNCTION, NOT ON THE SCENE. Written as a flag
+      // on the object it says "armed" for ever -- so if the library ever
+      // assigns `onrender` again, this one is gone and is never put back, and
+      // the only symptom is the hatching quietly returning.
+      if (gl.onrender && gl.onrender.__cqDepth) return;
+      // ⚠ CHAINED ON `onrender`, AND IT DOES NOT REDRAW. The library reads
+      // both planes on every projection update, so assigning is enough;
+      // calling redraw from inside a render is how you get a loop.
+      var was = gl.onrender;
+      var mine = function () {
+        fit(gl);
+        if (typeof was === "function") return was.apply(this, arguments);
+      };
+      mine.__cqDepth = true;
+      gl.onrender = mine;
+      fit(gl);
+    });
+  }
+  function watch(gd) {
+    // ⚠ ONE FUNCTION PER DIV, BECAUSE `var` IS NOT PER-ITERATION. Written
+    // inline in the loop below, every handler closed over the SAME `gd` and
+    // saw whatever it held after the loop -- the LAST div. On a page with two
+    // rooms, a redraw of the left one re-armed the right one and the left was
+    // never armed again.
+    if (gd.__cqDepthWatched || typeof gd.on !== "function") return;
+    gd.__cqDepthWatched = true;
+    try {
+      gd.on("plotly_afterplot", function () { arm(gd); });
+    } catch (e) { gd.__cqDepthWatched = false; }
+  }
+  function sweep() {
+    var all = document.querySelectorAll(".js-plotly-plot"), n, gd;
+    for (n = 0; n < all.length; n++) {
+      gd = all[n];
+      arm(gd);
+      // ⚠ AND ARM WHATEVER IS DRAWN NEXT, FOR AS LONG AS THE PAGE LIVES. A
+      // scene is rebuilt whenever the reader opens another file, changes the
+      // colour space, or adds a comparison, and the new one is a NEW glplot.
+      // A bounded sweep -- this ran forty times over ten seconds -- leaves
+      // every scene made after that unarmed, silently.
+      watch(gd);
+    }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", sweep);
+  }
+  sweep();
+  // ⚠ IT SWEEPS FOR TWO MINUTES AND DOES NOT STOP EARLY.
+  //
+  // Stopping "once something is armed" abandons whatever appears NEXT: a page
+  // with two rooms draws the second one later, and 1.25 s after the first
+  // room drew there was no longer anything looking. Driven under node with
+  // the second room arriving at sweep 5, 40 and 200, it was never armed.
+  //
+  // Asking "is every scene armed" instead does not help either -- at sweep 5
+  // the only scene there IS armed, so it still stops. The honest answer is to
+  // keep looking for a while and let `plotly_afterplot` carry it after that.
+  // `fit` costs 0.038 microseconds, so 480 ticks of a 250 ms timer is nothing
+  // to weigh against a page that silently keeps the hatching.
+  var tries = 0;
+  var again = setInterval(function () {
+    sweep();
+    tries += 1;
+    if (tries > 480) clearInterval(again);
+  }, 250);
+})();
+</script><script>
+window.cqOrder = (function () {
+  var plots = [], raf = null, still = 0, watch = null, fast = true;
+  var listening = false;
+  //: Pooling can be turned off from outside. Not a setting anybody sees --
+  //: it is how the tests compare the two ways of drawing the same page
+  //: without editing the page, which is the only comparison that is fair.
+  var pooling = true;
+  //: THE FAR WALL IS DRAWN WHOLLY BEFORE THE NEAR WALL (see
+  //: docs/THE-SEE-THROUGH-TRIANGLES.md). A depth sort of triangle middles is
+  //: right about which TRIANGLE is farther and still wrong about pixels
+  //: where the rim's foreshortened far-wall facets and the near wall overlap
+  //: in depth -- the kite-shaped wedges. Splitting the order by which way a
+  //: face points settles those pixels for every triangle at once: at any
+  //: pixel of a closed shell the near wall is nearer than the far wall, so
+  //: far-wall-first is right PER PIXEL, which no depth ordering can promise.
+  //: Within each wall the depth sort stays. The switch below exists so a
+  //: test can throw it and measure both ways on one page; wallSign -1
+  //: inverts the two walls, which is the mutation that proves the switch
+  //: reaches the drawn picture.
+  var wall = true, wallSign = 1;
+  var BUCKETS = 4096, tally = new Int32Array(2 * BUCKETS + 1);
+
+  function graphs() {
+    var out = [], all = document.querySelectorAll('.js-plotly-plot');
+    for (var n = 0; n < all.length; n++)
+      if (all[n]._fullLayout && all[n]._fullData) out.push(all[n]);
+    return out;
+  }
+
+  // IS ANY ONE COLOUR OF THIS SURFACE FADED? Stops at the first one it finds,
+  // so the usual answer -- a shape whose colours are all solid -- costs one
+  // look rather than a walk through every vertex.
+  function someColourFades(colours) {
+    if (!colours || !colours.length) return false;
+    for (var n = 0; n < colours.length; n++) {
+      var c = colours[n];
+      if (typeof c === 'string') {
+        if (c.charCodeAt(3) === 97 /* the a of rgba */) return true;
+      } else if (c && c.length > 3 && c[3] < 1) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // EVERY SEE-THROUGH SURFACE, and the triangle midpoints that will be sorted.
+  // Worked out once per shape rather than per frame: the midpoints are fixed
+  // in the measurements' own numbers and only the direction they are measured
+  // along changes.
+  function collect() {
+    plots = [];
+    var gs = graphs();
+    for (var q = 0; q < gs.length; q++) {
+      var gd = gs[q], keep = [], full = gd._fullData;
+      for (var n = 0; n < full.length; n++) {
+        var t = full[n];
+        if (!t || t.type !== 'mesh3d' || !t.i || !t.j || !t.k) continue;
+        // NOT DRAWN IS NOT THE SAME AS NOT THERE, and "false" is not the only
+        // way a trace is not drawn. Clicking a shape's name in the key sets
+        // its visibility to the string "legendonly", which is neither true nor
+        // false -- so a test for `=== false` let a hidden shape through, the
+        // drawn object for it could not be found, and everything else on the
+        // page went through the slow front door for as long as it stayed
+        // hidden. Measured, two papers with one of them hidden: a pass cost
+        // 4.50 ms where it now costs 1.70 -- and the engine went on putting
+        // 1,956 triangles in order for a picture showing 978, with the
+        // pooling below switched off the whole time. Hiding a shape is
+        // supposed to make the picture cheaper, and it made it dearer.
+        if (t.i.length < 2 || t.visible !== true) continue;
+        // A SOLID SURFACE ALREADY HIDES ITSELF and must be left exactly as it
+        // is -- there is nothing to fix and reordering it would be work for
+        // no picture. The opacity is read again every time this runs, because
+        // the strength controls change it.
+        //
+        // AND A STRENGTH OF 1 DOES NOT MEAN SOLID. A surface can be made
+        // see-through a second way, one colour at a time, which is how the
+        // fade over the part two shapes agree on is drawn -- and the library
+        // treats that exactly the same:
+        //
+        //     colour.length === 3 ? push(r, g, b, this.opacity)
+        //                         : (push(r, g, b, a * this.opacity),
+        //                            a < 1 && (this.hasAlpha = true))
+        //
+        // So a shape at full strength with a faded middle is a see-through
+        // shape and tears in precisely the same way. Missing this would have
+        // left the newest feature in the application showing the very fault
+        // this is here to remove.
+        if (!(t.opacity < 1) && !someColourFades(t.vertexcolor)) continue;
+        var m = t.i.length, mid = new Float64Array(m * 3), f;
+        // ONLY A CLOSED SURFACE HAS A WALL BEHIND IT. Without this the wall
+        // order was applied to every see-through mesh alike, including the
+        // agreeing and differing HALVES of a shape -- open sheets, where the
+        // rule it rests on is not true and the two groups can swap as the
+        // shape turns. The page says which are closed; see `_is_a_shell`.
+        var shut = !!(t.meta && t.meta.cqShell);
+        var nrm = shut ? new Float64Array(m * 3) : null, vol = 0;
+        for (f = 0; f < m; f++) {
+          var a = t.i[f], b = t.j[f], c = t.k[f];
+          mid[f * 3]     = (t.x[a] + t.x[b] + t.x[c]) / 3;
+          mid[f * 3 + 1] = (t.y[a] + t.y[b] + t.y[c]) / 3;
+          mid[f * 3 + 2] = (t.z[a] + t.z[b] + t.z[c]) / 3;
+          if (!nrm) continue;
+          // The triangle's own cross product, fixed in the measurements'
+          // numbers: which way it points against the line of sight is the
+          // only view-dependent part, and that is one dot product a frame.
+          var ux = t.x[b] - t.x[a], uy = t.y[b] - t.y[a], uz = t.z[b] - t.z[a];
+          var wx = t.x[c] - t.x[a], wy = t.y[c] - t.y[a], wz = t.z[c] - t.z[a];
+          nrm[f * 3]     = uy * wz - uz * wy;
+          nrm[f * 3 + 1] = uz * wx - ux * wz;
+          nrm[f * 3 + 2] = ux * wy - uy * wx;
+          vol += t.x[a] * nrm[f * 3] + t.y[a] * nrm[f * 3 + 1]
+               + t.z[a] * nrm[f * 3 + 2];
+        }
+        // MADE TO POINT INTO THE SHAPE WHICHEVER WAY THE FACES ARE WOUND.
+        // The shells this application builds are wound inward (measured:
+        // signed volume -818,514 for a shape of volume 818,514) and their
+        // cross products already point in; a surface wound the other way
+        // has positive signed volume, and flipping the stored normals once
+        // here means the far-wall test below never needs to know. An OPEN
+        // surface has no far wall and a near-zero signed volume; either
+        // sign leaves its picture the depth sort it always had.
+        if (vol > 0) for (f = 0; f < m * 3; f++) nrm[f] = -nrm[f];
+        keep.push({uid: t.uid, index: n, m: m, mid: mid, nrm: nrm,
+                   i: Int32Array.from(t.i), j: Int32Array.from(t.j),
+                   k: Int32Array.from(t.k),
+                   key: new Float64Array(m), slot: new Int32Array(m),
+                   bin: new Int32Array(m),
+                   // THE TRIANGLE LIST IN THE SHAPE THE LIBRARY USES: one
+                   // little array of three per triangle, not one long one.
+                   // Asked rather than assumed -- a flat list was tried and
+                   // the shape disappeared entirely, because the rebuild
+                   // reads cells[f][0] and a number has no [0].
+                   //
+                   // Made ONCE and written into ever after, so a frame
+                   // allocates nothing at all: eighteen thousand small
+                   // arrays a frame would be handed straight to the rubbish
+                   // collector sixty times a second.
+                   tri: (function () {
+                     var t = new Array(m);
+                     for (var f = 0; f < m; f++) t[f] = [0, 0, 0];
+                     return t;
+                   })()});
+      }
+      if (keep.length)
+        plots.push({gd: gd, meshes: keep, was: null,
+                    pool: null, blanked: null});
+    }
+    return plots.length;
+  }
+
+  // WHICH WAY THE EYE IS, IN THE SAME NUMBERS THE TRIANGLES ARE IN. The
+  // library squashes each axis by aspectratio / range when it builds its
+  // model, so undoing that on the camera's own eye vector gives the line of
+  // sight in the measurements' units. Drawn in "data" proportions all three
+  // come out equal and this is simply the eye vector; reading them anyway
+  // keeps it right if a picture is ever drawn squared off instead.
+  function lineOfSight(gd) {
+    var sc = gd._fullLayout.scene;
+    if (!sc) return null;
+    var live = null;
+    // DURING A DRAG THE REAL CAMERA IS INTERNAL -- the same thing cqSpin's
+    // liveCam exists for. Reading the settled one would order the shape for
+    // where it used to be and leave it torn for the whole gesture.
+    try { if (sc._scene && sc._scene.getCamera) live = sc._scene.getCamera(); }
+    catch (e) {}
+    var e = (live && live.eye) || (sc.camera && sc.camera.eye);
+    if (!e) return null;
+    var ar = sc.aspectratio, ax = ['xaxis', 'yaxis', 'zaxis'];
+    var kk = ['x', 'y', 'z'], out = [], len = 0;
+    // THE AXIS RANGES CANNOT BE TRUSTED AFTER A RELAYOUT. On this page they
+    // read the data's own spans when it opens, and junk the moment any
+    // camera relayout has run -- measured: the same probe returned
+    // [-88..92, -80..130, 1.7..103] before and [-1..6, -1..4, -1..6] after,
+    // which bent the line of sight from (.577,.577,.577) to (.47,.29,.84)
+    // and quietly missorted every frame after the first drag. The scene's
+    // own dataScale is what the library ACTUALLY multiplied each axis by,
+    // and it does not move; the ranges stay only as the fallback for a
+    // scene not yet built.
+    var ds = null;
+    try { ds = sc._scene && sc._scene.dataScale; } catch (err) {}
+    for (var d = 0; d < 3; d++) {
+      var a = (ar && ar[kk[d]]) || 1, span;
+      if (ds && ds[d]) {
+        span = 1 / ds[d];
+      } else {
+        var r = (sc[ax[d]] && sc[ax[d]].range) || [0, 1];
+        span = (r[1] - r[0]) || 1;
+      }
+      out.push(e[kk[d]] * span / a);
+      len += out[d] * out[d];
+    }
+    len = Math.sqrt(len);
+    if (!(len > 0)) return null;
+    return [out[0] / len, out[1] / len, out[2] / len];
+  }
+
+  // FARTHEST FIRST, WITHOUT COMPARING ANYTHING. Every triangle's reach along
+  // the line of sight is a number in a known range, so they are dropped into
+  // buckets in one pass and read back out in order. Two triangles in the same
+  // bucket can come out the wrong way round, and that is deliberate: one
+  // bucket is a four-thousandth of the shape's depth, far thinner than the
+  // surface itself, and it buys an ordering that costs a tenth of a
+  // millisecond instead of five.
+  function order(A, look) {
+    var key = A.key, mid = A.mid, m = A.m, f;
+    var lo = Infinity, hi = -Infinity;
+    for (f = 0; f < m; f++) {
+      var v = mid[f * 3] * look[0] + mid[f * 3 + 1] * look[1]
+            + mid[f * 3 + 2] * look[2];
+      key[f] = v;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    var s = (hi > lo) ? BUCKETS / (hi - lo) : 0;
+    var banks = (wall && A.nrm) ? 2 : 1;
+    tally.fill(0);
+    for (f = 0; f < m; f++) {
+      var b = (key[f] - lo) * s | 0;
+      if (b < 0) b = 0; else if (b >= BUCKETS) b = BUCKETS - 1;
+      if (banks === 2) {
+        // The faces are wound inward (measured: the shell's signed volume is
+        // the negative of its volume), so the cross product points INTO the
+        // shape and a face whose cross product runs WITH the line of sight
+        // is the far wall. Bank 0 is drawn first.
+        var toward = (A.nrm[f * 3] * look[0] + A.nrm[f * 3 + 1] * look[1]
+                    + A.nrm[f * 3 + 2] * look[2]) * wallSign < 0;
+        if (toward) b += BUCKETS;
+      }
+      A.bin[f] = b;
+      tally[b + 1]++;
+    }
+    for (f = 0; f < banks * BUCKETS; f++) tally[f + 1] += tally[f];
+    for (f = 0; f < m; f++) A.slot[tally[A.bin[f]]++] = f;
+    for (f = 0; f < m; f++) {
+      var g = A.slot[f], t = A.tri[f];
+      t[0] = A.i[g]; t[1] = A.j[g]; t[2] = A.k[g];
+    }
+  }
+
+  // THE THING THAT WAS ACTUALLY DRAWN for a trace, found by the trace's own
+  // identifier rather than by its size. Matching on triangle count seems
+  // easier and is wrong the moment two shapes have the same number of them --
+  // which two prints of the same chart do, measured: 978 and 978.
+  function drawn(gd, uid) {
+    try {
+      var s = gd._fullLayout.scene._scene;
+      var t = s && s.traces && s.traces[uid];
+      if (t && t.mesh && typeof t.mesh.update === 'function') return t.mesh;
+    } catch (e) {}
+    return null;
+  }
+
+  // LISTEN TO WHAT THE LIBRARY TELLS THE SURFACE, and keep the last of it.
+  //
+  // The quick door cannot be opened by handing over a triangle list on its
+  // own, and finding that out the hard way is the most useful thing that
+  // happened here. The surface's own update reads, in the library's source:
+  //
+  //     this.hasAlpha = false;
+  //     "opacity" in given && (this.opacity = given.opacity,
+  //                            this.opacity < 1 && (this.hasAlpha = true));
+  //
+  // -- and whether the surface is see-through AT ALL is `hasAlpha`. So an
+  // update that does not mention the strength declares the shape solid, and
+  // it is then drawn in the solid pass. The picture that came back matched
+  // the solid one perfectly, which read as a flawless fix and was the shape
+  // being genuinely opaque: the wall behind it stopped showing through, 99.9%
+  // of it to 0.4%. Nothing but asking what was BEHIND the shape could tell
+  // those two apart.
+  //
+  // Rebuilding the whole set of parameters here would mean copying what the
+  // library does to turn a trace into a surface, and getting one of them
+  // wrong would fail exactly as quietly. So it is not rebuilt: the surface's
+  // update is wrapped, the library's own parameters are kept as they go past,
+  // and the quick door re-sends those with only the triangle list changed.
+  function remember(obj) {
+    if (obj.__cqWrapped) return;
+    obj.__cqWrapped = true;
+    var was = obj.update;
+    obj.update = function (given) {
+      if (given && given.cells && given.positions && !given.__cq)
+        obj.__cqGiven = given;
+      return was.call(obj, given);
+    };
+  }
+
+  // THE SURFACE'S NORMALS, WORKED OUT ONCE INSTEAD OF SIXTY TIMES A SECOND.
+  //
+  // Reordering triangles cannot change a vertex normal: same vertex, same
+  // neighbours, same answer. But the library recomputes every one of them on
+  // every handover --
+  //
+  //     !cellNormals && !vertexNormals && (vertexNormals = f(cells, positions))
+  //
+  // -- and at 19,230 triangles that is most of the time spent: 35.9 ms a
+  // handover becomes 15.4 ms when they are supplied, a saving of 57%.
+  //
+  // WRITTEN TO MATCH THE LIBRARY'S OWN, STEP FOR STEP, and that is the whole
+  // point. An area-weighted normal is the obvious way to do it, takes four
+  // lines, and moved the picture by 1.17% -- a small change to the shading
+  // that nobody asked for, in exchange for speed, which is not a trade worth
+  // making. The library weights each face by the SINE OF THE ANGLE at the
+  // vertex instead (its cross product divided by the two edge lengths), so
+  // that is what happens here, in the same order, giving the same numbers.
+  //
+  // Skipped entirely when the surface is drawn with flat facets, because then
+  // the normals are per FACE and reordering the faces does reorder them.
+  function normalsOnce(A, given) {
+    if (A.normals !== undefined) return A.normals;
+    A.normals = null;
+    if (given.useFacetNormals || given.cellNormals || given.vertexNormals)
+      return A.normals;
+    var pos = given.positions, cells = given.cells;
+    if (!pos || !cells) return A.normals;
+    var eps = given.vertexNormalsEpsilon === undefined
+      ? 1e-6 : given.vertexNormalsEpsilon;
+    var out = new Array(pos.length), v, E;
+    for (v = 0; v < pos.length; v++) out[v] = [0, 0, 0];
+    for (v = 0; v < cells.length; v++) {
+      var m = cells[v], b = 0, p = m[m.length - 1], k = m[0];
+      for (var M = 0; M < m.length; M++) {
+        b = p; p = k; k = m[(M + 1) % m.length];
+        var T = pos[b], L = pos[p], x = pos[k];
+        var C = [0, 0, 0], S = 0, g = [0, 0, 0], Q = 0;
+        for (E = 0; E < 3; E++) {
+          C[E] = T[E] - L[E]; S += C[E] * C[E];
+          g[E] = x[E] - L[E]; Q += g[E] * g[E];
+        }
+        if (S * Q > eps) {
+          var z = out[p], q = 1 / Math.sqrt(S * Q);
+          for (E = 0; E < 3; E++) {
+            var V = (E + 1) % 3, G = (E + 2) % 3;
+            z[E] += q * (g[V] * C[G] - g[G] * C[V]);
+          }
+        }
+      }
+    }
+    for (v = 0; v < pos.length; v++) {
+      var w = out[v], Z = 0;
+      for (E = 0; E < 3; E++) Z += w[E] * w[E];
+      if (Z > eps) {
+        var r = 1 / Math.sqrt(Z);
+        for (E = 0; E < 3; E++) w[E] *= r;
+      } else {
+        for (E = 0; E < 3; E++) w[E] = 0;
+      }
+    }
+    A.normals = out;
+    return A.normals;
+  }
+
+  // ------------------------------------------------------------------------
+  // TWO SEE-THROUGH SHAPES HAVE NO RIGHT ORDER, SO THEY ARE MADE ONE SHAPE.
+  //
+  // Sorting each shape's own triangles fixes each shape. It cannot fix two of
+  // them against each other, because the library draws one whole surface and
+  // then the next whole surface, and two gamuts of the same printer are not
+  // one in front of the other -- they pass through each other. Whichever goes
+  // down first is wrong over half the picture.
+  //
+  // Putting the SHAPES in depth order was tried and measured and is not the
+  // answer: it rescues the angles where one really is in front and ruins the
+  // ones where they cross, and it came out worse on average than leaving them
+  // alone. There is no order of two surfaces that is right, which is the
+  // whole point.
+  //
+  // MEASURED AGAINST WHAT RIGHT LOOKS LIKE. Weld the two shapes into a single
+  // surface and the question disappears: one surface has one pool of
+  // triangles, they are all sorted together, and every one of them is drawn
+  // farthest-first. That weld is the reference, and it was checked before it
+  // was believed -- welding the other way round moves the picture by 0.00%,
+  // and at a thousandth of transparency it agrees with the solid shape to
+  // 1.0%. Against it, at eight camera angles:
+  //
+  //     two shapes, both at 0.55        no ordering 76.2%   per shape 68.5%
+  //     two shapes, 0.55 and 0.30                   73.4%             62.6%
+  //     three shapes at 0.55                        81.5%             76.3%
+  //
+  // So this does the weld itself, every frame, on the drawn objects rather
+  // than on the traces: all the see-through surfaces' vertices are laid end
+  // to end ONCE, their triangles are sorted as one pool, and the whole lot is
+  // handed to the first object while the others are given nothing to draw.
+  // The page still holds two traces -- the key, the hover, the visibility
+  // switches and the saved file are all untouched -- but the graphics card is
+  // given one correctly ordered surface.
+  //
+  // THREE THINGS HAD TO SURVIVE THE WELD, and each is why a piece of the code
+  // below exists:
+  //
+  // 1. A STRENGTH PER SHAPE. One surface has one opacity, and two shapes may
+  //    be set to two different ones. The library multiplies each vertex's own
+  //    alpha by the surface's opacity, so folding one into the other loses
+  //    nothing: the pooled surface is set to full strength and every vertex
+  //    carries alpha * its own shape's strength. Identical arithmetic, done
+  //    once instead of twice.
+  //
+  // 2. THE SHADING. One surface has one light and one roughness. Shapes may
+  //    each be given their own amount of shape definition, which is a
+  //    different lighting, and there is no honest way to give one surface
+  //    two. So shapes that are lit differently are NOT pooled: they keep
+  //    exactly the behaviour they had before this, which is the second best
+  //    picture rather than a wrong one.
+  //
+  // 3. THE HOVER. Pooled, every triangle belongs to the first surface, so
+  //    asking the picture what is under the pointer would name the first
+  //    shape everywhere. The vertices of each shape occupy a known stretch of
+  //    the pooled surface, so each trace is taught to answer for its own
+  //    stretch and to decline the rest -- which is how the right name comes
+  //    back for the right shape.
+  var EMPTY = [];
+  var LIT = ['ambient', 'diffuse', 'specular', 'roughness', 'fresnel',
+             'contourEnable', 'contourWidth', 'vertexNormalsEpsilon',
+             'faceNormalsEpsilon'];
+
+  function sameNumbers(a, b) {
+    if (a === b) return true;
+    if (!a || !b || a.length !== b.length) return false;
+    for (var n = 0; n < a.length; n++) if (a[n] !== b[n]) return false;
+    return true;
+  }
+
+  // MAY THESE SURFACES BECOME ONE? Everything that would change the picture if
+  // it were pooled is a reason to decline, and declining costs nothing: the
+  // per-shape ordering below carries on exactly as it did.
+  function poolable(objs) {
+    var first = objs[0].__cqGiven, n, q;
+    for (n = 0; n < objs.length; n++) {
+      var g = objs[n].__cqGiven;
+      if (!g || !g.positions || !g.cells || !g.positions.length) return false;
+      // COLOURED FROM A SCALE, LIT PER FACET, OR COLOURED PER TRIANGLE. None
+      // of these survive being poured together: a scale is a texture the whole
+      // surface shares, a facet normal belongs to a triangle and moves when
+      // the triangles are reordered, and a colour per triangle would have to
+      // be reordered alongside them. None is produced by this application
+      // today; all three are declined rather than assumed away.
+      if (g.colormap || g.texture || g.opacityscale || g.useFacetNormals
+          || g.cellNormals || g.cellColors || g.cellIntensity
+          || g.vertexIntensity || g.vertexUVs || g.cellUVs) return false;
+      if (!g.vertexColors && !g.meshColor) return false;
+      if (n && !sameNumbers(first.lightPosition, g.lightPosition)) return false;
+      if (n && !sameNumbers(first.contourColor, g.contourColor)) return false;
+      if (n) for (q = 0; q < LIT.length; q++)
+        if (first[LIT[q]] !== g[LIT[q]]) return false;
+      // Only triangles. A surface carrying stray points or edges would lose
+      // them, because the pool is sorted as triangles and nothing else.
+      for (q = 0; q < g.cells.length; q++)
+        if (!g.cells[q] || g.cells[q].length !== 3) return false;
+    }
+    return true;
+  }
+
+  // THE POOL ITSELF, BUILT ONCE PER SET OF SHAPES rather than once per frame.
+  // The vertices, their colours and their normals do not change while the
+  // picture is only being turned; the ONLY thing a frame changes is which
+  // order the triangles go in, and that is the one thing left to `order`.
+  function getPool(P, objs) {
+    var n, f, sig = [];
+    for (n = 0; n < objs.length; n++) {
+      var g0 = objs[n].__cqGiven;
+      sig.push(P.meshes[n].uid + ':' + g0.positions.length + ':'
+               + g0.cells.length + ':' + g0.opacity);
+    }
+    sig = sig.join('|');
+    if (P.pool && P.pool.sig === sig) return P.pool;
+    P.pool = null;
+    if (!poolable(objs)) return null;
+    var pos = [], col = [], nor = [], span = {}, faces = 0;
+    var shift = 0, haveNormals = true;
+    for (n = 0; n < objs.length; n++) {
+      var g = objs[n].__cqGiven, A = P.meshes[n];
+      var op = (typeof g.opacity === 'number') ? g.opacity : 1;
+      var vs = g.positions.length, cs = g.vertexColors;
+      for (f = 0; f < vs; f++) {
+        pos.push(g.positions[f]);
+        var c = cs ? cs[f] : g.meshColor;
+        var a = (c && c.length > 3) ? c[3] : 1;
+        col.push([c[0], c[1], c[2], a * op]);
+      }
+      // The normals are the ones already worked out for this surface on its
+      // own, and they stay right: no triangle in the pool joins one shape's
+      // vertices to another's, so a vertex has exactly the neighbours it had.
+      var norms = normalsOnce(A, g);
+      if (norms && norms.length === vs) {
+        for (f = 0; f < vs; f++) nor.push(norms[f]);
+      } else {
+        haveNormals = false;
+      }
+      span[A.uid] = {lo: shift, hi: shift + vs, mesh: objs[n]};
+      faces += g.cells.length;
+      shift += vs;
+    }
+    var m = faces;
+    var pool = {sig: sig, host: objs[0], span: span, m: m, count: objs.length,
+                positions: pos, vertexColors: col,
+                vertexNormals: haveNormals ? nor : null,
+                base: objs[0].__cqGiven,
+                i: new Int32Array(m), j: new Int32Array(m),
+                k: new Int32Array(m), mid: new Float64Array(m * 3),
+                nrm: new Float64Array(m * 3),
+                key: new Float64Array(m), slot: new Int32Array(m),
+                bin: new Int32Array(m), tri: new Array(m)};
+    var at = 0;
+    shift = 0;
+    for (n = 0; n < objs.length; n++) {
+      var cells = objs[n].__cqGiven.cells;
+      for (f = 0; f < cells.length; f++) {
+        var t = cells[f];
+        pool.i[at] = t[0] + shift;
+        pool.j[at] = t[1] + shift;
+        pool.k[at] = t[2] + shift;
+        at++;
+      }
+      shift += objs[n].__cqGiven.positions.length;
+    }
+    // THE MIDPOINTS COME FROM THE MEASUREMENTS, NOT FROM THE DRAWN VERTICES.
+    //
+    // Both are available and they are not in the same units: what the library
+    // was handed has each axis multiplied by that axis's own scale, while the
+    // direction the eye is in -- worked out by lineOfSight -- is deliberately
+    // put back into the measurements' units so it can be compared with the
+    // midpoints each surface already carries.
+    //
+    // Drawn in true proportions the three scales are equal, so the two agree
+    // up to one common factor and the ORDER is the same either way, which is
+    // why this went unnoticed. Squared off, they are not equal, and a depth
+    // worked out in one set of units against a direction in the other puts
+    // the triangles in the wrong order on exactly the setting somebody
+    // chooses when they want to see the shape rather than its scale.
+    //
+    // Each surface has already worked its own midpoints out, in the right
+    // units, and the pool's triangles are those surfaces' triangles in the
+    // same order -- so they are copied rather than computed again, which is
+    // both correct and cheaper.
+    var into = 0;
+    for (n = 0; n < objs.length; n++) {
+      var A2 = P.meshes[n], had2 = objs[n].__cqGiven;
+      if (A2.m !== had2.cells.length) return null;   // not the same surface
+      for (f = 0; f < A2.m * 3; f++) {
+        pool.mid[into + f] = A2.mid[f];
+        pool.nrm[into + f] = A2.nrm[f];
+      }
+      into += A2.m * 3;
+    }
+    for (f = 0; f < m; f++) pool.tri[f] = [0, 0, 0];
+    P.pool = pool;
+    return pool;
+  }
+
+  // EACH SHAPE ANSWERS FOR ITS OWN STRETCH OF THE POOL.
+  //
+  // The library asks every trace in turn "is this yours?", and a trace says
+  // yes when the thing that was picked is the surface it drew. Pooled, one
+  // surface was drawn for all of them, so all of them would say yes and the
+  // first would win -- one paper's name over both shapes.
+  //
+  // What comes back from a pick is the number of a VERTEX, and each shape owns
+  // a known stretch of the pooled vertices. So each trace is wrapped: outside
+  // its stretch it declines, inside it the number is shifted back into the
+  // shape's own numbering and its own answer is used unchanged. Nothing about
+  // what hover SAYS is written here -- only which shape is asked.
+  function ownHover(P) {
+    var sc;
+    try { sc = P.gd._fullLayout.scene._scene; } catch (e) { return; }
+    if (!sc || !sc.traces) return;
+    for (var n = 0; n < P.meshes.length; n++) {
+      var tr = sc.traces[P.meshes[n].uid];
+      if (!tr || tr.__cqPick || typeof tr.handlePick !== 'function') continue;
+      tr.__cqPick = true;
+      (function (trace, uid) {
+        var was = trace.handlePick;
+        trace.handlePick = function (e) {
+          var pool = P.pool;
+          if (pool && e && e.object === pool.host && e.data
+              && typeof e.data.index === 'number') {
+            var mine = pool.span[uid];
+            if (!mine) return false;
+            var at = e.data.index;
+            if (at < mine.lo || at >= mine.hi) return false;
+            var heldObject = e.object, heldIndex = at;
+            e.object = mine.mesh;
+            e.data.index = at - mine.lo;
+            var answer = false;
+            try { answer = was.call(this, e); }
+            finally { e.object = heldObject; e.data.index = heldIndex; }
+            return answer;
+          }
+          return was.call(this, e);
+        };
+      })(tr, P.meshes[n].uid);
+    }
+  }
+
+  // GIVE A SURFACE ITS TRIANGLES BACK. Anything that was emptied into the pool
+  // has to be drawable again the moment it leaves it -- a shape whose strength
+  // is turned up to solid stops being pooled, and a surface still holding no
+  // triangles would simply vanish. Surfaces that are about to be handed their
+  // own order anyway are skipped: they are already being repaired.
+  function restore(P, objs) {
+    if (!P.blanked || !P.blanked.length) return;
+    for (var n = 0; n < P.blanked.length; n++) {
+      var o = P.blanked[n];
+      if ((objs && objs.indexOf(o) >= 0) || !o.__cqGiven) continue;
+      var back = {}, key;
+      for (key in o.__cqGiven)
+        if (o.__cqGiven.hasOwnProperty(key)) back[key] = o.__cqGiven[key];
+      back.__cq = true;
+      try { o.update(back); } catch (e) {}
+    }
+    P.blanked = null;
+  }
+
+  function hand(P, look) {
+    var n, objs = [], every = true;
+    for (n = 0; n < P.meshes.length; n++) {
+      var o = drawn(P.gd, P.meshes[n].uid);
+      if (!o) { every = false; break; }
+      remember(o);
+      objs.push(o);
+      if (!o.__cqGiven) every = false;
+    }
+    if (fast && every) {
+      try {
+        var pool = (pooling && objs.length > 1) ? getPool(P, objs)
+                                                : (P.pool = null);
+        if (pool) {
+          restore(P, objs);
+          order(pool, look);
+          var one = {}, k0;
+          for (k0 in pool.base)
+            if (pool.base.hasOwnProperty(k0)) one[k0] = pool.base[k0];
+          one.positions = pool.positions;
+          one.vertexColors = pool.vertexColors;
+          if (pool.vertexNormals) one.vertexNormals = pool.vertexNormals;
+          else delete one.vertexNormals;
+          one.cells = pool.tri;
+          // FULL STRENGTH, because every vertex is already carrying its own
+          // shape's strength in its alpha. Left at the first shape's opacity
+          // the second shape would be faded twice.
+          one.opacity = 1;
+          one.__cq = true;
+          pool.host.update(one);
+          for (n = 1; n < objs.length; n++) {
+            var blank = {}, held = objs[n].__cqGiven, k1;
+            for (k1 in held) if (held.hasOwnProperty(k1)) blank[k1] = held[k1];
+            blank.cells = EMPTY;
+            blank.__cq = true;
+            objs[n].update(blank);
+          }
+          P.blanked = objs.slice(1);
+          // AND CHECK THE POOL ACTUALLY LANDED. A handover that quietly drew
+          // the old triangles would look like a fix and be nothing; the count
+          // the surface reports back is the only thing that says otherwise.
+          if (pool.host.triangleCount !== pool.m
+              || (typeof pool.host.isTransparent === 'function'
+                  && !pool.host.isTransparent())) {
+            fast = false;
+            P.pool = null;
+          } else {
+            ownHover(P);
+            var sp = P.gd._fullLayout.scene._scene;
+            if (sp && sp.glplot && sp.glplot.redraw) sp.glplot.redraw();
+            return true;
+          }
+        }
+        // EACH SHAPE ON ITS OWN, which is right for a single surface and the
+        // best available for shapes that may not be pooled.
+        restore(P, objs);
+        for (n = 0; n < objs.length; n++) order(P.meshes[n], look);
+        for (n = 0; n < objs.length; n++) {
+          var send = {}, had = objs[n].__cqGiven, key;
+          for (key in had) if (had.hasOwnProperty(key)) send[key] = had[key];
+          send.cells = P.meshes[n].tri;
+          var norms = normalsOnce(P.meshes[n], had);
+          if (norms) send.vertexNormals = norms;
+          send.__cq = true;
+          objs[n].update(send);
+        }
+        // AND CHECK THAT IT IS STILL SEE-THROUGH. This is the guard that the
+        // fault above would have tripped immediately, and it stays because
+        // the next version of the library may reset something else in the
+        // same way. If the shape has stopped being see-through, the quick
+        // door is abandoned for good and the front door repairs the picture.
+        for (n = 0; n < objs.length; n++) {
+          if (typeof objs[n].isTransparent === 'function'
+              && !objs[n].isTransparent()) { fast = false; break; }
+        }
+        if (fast) {
+          var s = P.gd._fullLayout.scene._scene;
+          if (s && s.glplot && s.glplot.redraw) s.glplot.redraw();
+          return true;
+        }
+      } catch (e) { fast = false; }
+    }
+    // THE FRONT DOOR. Slower, always available, and the only thing used until
+    // the library has been overheard building each surface at least once --
+    // which the very first pass through here makes it do. It cannot pool,
+    // because it works on the traces the page is written from and pooling is
+    // deliberately confined to what is drawn.
+    P.pool = null;
+    restore(P, null);
+    for (n = 0; n < P.meshes.length; n++) order(P.meshes[n], look);
+    if (!window.Plotly || !Plotly.restyle) return false;
+    var ii = [], jj = [], kk = [], which = [];
+    for (var q = 0; q < P.meshes.length; q++) {
+      var A = P.meshes[q], ni = new Array(A.m), nj = new Array(A.m),
+          nk = new Array(A.m);
+      for (var f = 0; f < A.m; f++) {
+        ni[f] = A.tri[f][0]; nj[f] = A.tri[f][1]; nk[f] = A.tri[f][2];
+      }
+      ii.push(ni); jj.push(nj); kk.push(nk); which.push(A.index);
+    }
+    try { Plotly.restyle(P.gd, {i: ii, j: jj, k: kk}, which); }
+    catch (e) { return false; }
+    return true;
+  }
+
+  // NEVER MORE THAN A QUARTER OF THE TIME. How long this takes depends on how
+  // many triangles there are, and that runs from 978 for one measured chart
+  // to 19,230 when the Detail slider is at 40 -- measured at 2.3 ms and
+  // 19.4 ms, and the second of those is longer than a frame. Rather than
+  // guess a triangle count at which to give up, the last one is timed and the
+  // next is made to wait three times as long as it took. A small shape is
+  // re-ordered on every frame; a large one four or five times a second, which
+  // is far more often than an eye can catch the difference while it turns.
+  var cost = 0, ready = 0;
+
+  function pass(force) {
+    var did = false;
+    var now = (window.performance || Date).now();
+    if (!force && now < ready) return false;
+    for (var q = 0; q < plots.length; q++) {
+      var P = plots[q], look = lineOfSight(P.gd);
+      if (!look) continue;
+      if (!force && P.was) {
+        // ONLY WHEN IT MATTERS. Both are one unit long, so the gap between
+        // them is the angle turned through: 0.008 is about half a degree,
+        // which cannot change which triangle is in front of which.
+        var d = 0;
+        for (var t = 0; t < 3; t++)
+          d += (look[t] - P.was[t]) * (look[t] - P.was[t]);
+        if (d < 0.000064) continue;
+      }
+      P.was = look;
+      if (hand(P, look)) did = true;
+    }
+    if (did) {
+      // Smoothed, so one slow frame -- a browser busy with something else --
+      // does not stand the shape down for half a second afterwards.
+      var took = (window.performance || Date).now() - now;
+      cost = cost ? (cost * 3 + took) / 4 : took;
+      ready = (window.performance || Date).now() + cost * 3;
+    }
+    return did;
+  }
+
+  // A LOOP THAT PUTS ITSELF BACK TO SLEEP. Watching every frame for ever
+  // would keep a page awake that nobody is turning; stopping the moment the
+  // picture settles means a still page costs nothing, and the backstop below
+  // catches the one thing that moves the camera without saying so.
+  function tick() {
+    raf = window.requestAnimationFrame(tick);
+    if (document.hidden) return;
+    still = pass(false) ? 0 : still + 1;
+    if (still > 45) { window.cancelAnimationFrame(raf); raf = null; }
+  }
+  function wake() {
+    still = 0;
+    if (raf === null) raf = window.requestAnimationFrame(tick);
+  }
+
+  // ONCE, AND ONLY ONCE. Opening a page runs the start below again and again
+  // until the picture exists, and an earlier version hung its listeners on
+  // every one of those attempts: eleven copies of each, and the library said
+  // so out loud. Every one of them would have done the same work on the same
+  // frame.
+  function listen() {
+    if (listening) return;
+    var gs = graphs();
+    if (!gs.length) return;
+    listening = true;
+    for (var q = 0; q < gs.length; q++) {
+      var gd = gs[q];
+      ['mousedown', 'wheel', 'touchstart', 'touchmove', 'keydown']
+        .forEach(function (kind) {
+          gd.addEventListener(kind, wake, {passive: true});
+        });
+      if (gd.on) {
+        gd.on('plotly_relayout', wake);
+        gd.on('plotly_relayouting', wake);
+        // THE SHAPES THEMSELVES CHANGED, not the angle: a strength control
+        // can make a solid surface see-through or the other way round, so
+        // which surfaces need ordering has to be worked out again.
+        gd.on('plotly_restyle', function () { collect(); wake(); });
+        gd.on('plotly_afterplot', wake);
+      }
+    }
+    // THE TURNING MOVES THE CAMERA WITHOUT TELLING ANYBODY. cqSpin sets it
+    // straight on the scene -- "cheap: no relayout" -- so no event arrives
+    // and a spinning page would never be put in order. This looks now and
+    // then, does nothing but compare three numbers when nothing has moved,
+    // and hands over to the frame loop when something has.
+    if (watch === null) watch = window.setInterval(function () {
+      if (raf !== null || document.hidden) return;
+      for (var q = 0; q < plots.length; q++) {
+        var look = lineOfSight(plots[q].gd), was = plots[q].was;
+        if (!look) continue;
+        if (!was) { wake(); return; }
+        var d = 0;
+        for (var t = 0; t < 3; t++)
+          d += (look[t] - was[t]) * (look[t] - was[t]);
+        if (d >= 0.000064) { wake(); return; }
+      }
+    }, 250);
+  }
+
+  // DONE ONCE THE PICTURE EXISTS, whether or not anything in it is
+  // see-through. A page of solid shapes has nothing to order today and may
+  // have something the moment a strength control is touched, so it still
+  // needs its listeners -- and the retrying below has to stop, which is what
+  // the answer here means.
+  function start() {
+    if (!graphs().length) return 0;
+    listen();
+    collect();
+    pass(true);
+    if (plots.length) wake();
+    return 1;
+  }
+
+  return {start: start, collect: collect, wake: wake,
+          now: function () { return pass(true); },
+          pool: function (on) { pooling = !!on; return pass(true); },
+          wallOrder: function (on, sign) {
+            wall = !!on; wallSign = (sign === -1) ? -1 : 1;
+            return pass(true);
+          },
+          // For the tests: which door was used, and how much there is to do.
+          how: function () {
+            var n = 0, pooled = 0, surfaces = 0;
+            for (var q = 0; q < plots.length; q++) {
+              for (var m = 0; m < plots[q].meshes.length; m++)
+                n += plots[q].meshes[m].m;
+              surfaces += plots[q].meshes.length;
+              if (plots[q].pool) pooled += plots[q].pool.count;
+            }
+            // WHETHER THE PAGE ARRIVED WITH THE WALL ORDER ON, which is a
+            // different claim from whether it works. A check that throws the
+            // switch itself proves the mechanism and nothing about the
+            // default -- measured: switching the default off left the wall
+            // audit reporting "Clean", because it turns it on before it
+            // looks. So the default is reported, and asked for separately.
+            return {fast: fast, plots: plots.length, faces: n,
+                    surfaces: surfaces, pooled: pooled, wall: wall};
+          }};
+})();
+window.addEventListener('load', function () {
+  // AFTER THE PICTURE EXISTS. The scene is built asynchronously, so asking on
+  // load alone finds nothing to order on a slower machine; this keeps asking
+  // until there is something, and then stops.
+  var tries = 0;
+  (function again() {
+    if (window.cqOrder.start() || ++tries > 40) return;
+    window.setTimeout(again, 120);
+  })();
+});
+</script><script>
 window.cqCaption = (function () {
   var oneLine = {}, asOneLine = {}, timer = null;
   var JOIN = "  ·  ";
