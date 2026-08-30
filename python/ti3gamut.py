@@ -8847,7 +8847,16 @@ window.cqSpinControls = function (settings) {
       if (firstScene) {
         var ax0 = gd0._fullLayout[firstScene].xaxis || {};
         // A page counts as "grid on" only if it really carries one.
-        picture.grid = !!(ax0.showbackground || ax0.showgrid);
+        //
+        // ⚠ AND AN INVISIBLE AXIS HAS NO BOX, WHATEVER ITS OTHER FIELDS SAY.
+        // `build_figure(grid=False)` writes `visible: false` on all three
+        // axes and leaves `showbackground` unset -- which plotly then coerces
+        // to its default of TRUE. Reading those two fields alone therefore
+        // called a deliberately boxless page "grid on", and the walls-and-grid
+        // button opened looking pressed while there was no box to show. The
+        // walls stayed correctly hidden; only the button lied.
+        picture.grid = ax0.visible !== false
+                       && !!(ax0.showbackground || ax0.showgrid);
       } else if (gd0._fullLayout.xaxis) {
         picture.grid = gd0._fullLayout.xaxis.showgrid !== false;
       }
