@@ -936,3 +936,67 @@ def test_one_verdict_serves_both_boxes(app):
         "boxes came to disagree")
     assert src.count("_drift_verdict(") == 3, (
         "one definition and two callers, no more and no less")
+
+
+# --------------------------------------------------------------------------
+# What the coverage number MEANS for the work
+#
+# ⚠ A WHOLE FEATURE WAS PLANNED ON TOP OF A NUMBER THIS PANEL ALREADY PRINTS.
+# "Practical vs total gamut" was to be a new table answering "how much of your
+# printer survives working in sRGB" — and the window has answered it all
+# along: "90.6% of the colour knut can print also fits inside sRGB",
+# photographed in the running application before a line was written.
+#
+# What was missing was never the arithmetic. It was that 90.6% reads as a
+# fault in the printer when it is a limit of the space the reader chose, and
+# that is the half they can act on.
+# --------------------------------------------------------------------------
+
+
+def coverage_text(ab, ba, kind, a_name="knut", b_name="sRGB", picture=False):
+    import gamut_app
+    said = {}
+    stub = SimpleNamespace(
+        _reference=(b_name, object()),
+        _slots=[(SimpleNamespace(stem=a_name), object(), None)],
+        _shared_lbl=SimpleNamespace(setText=lambda t: None),
+        _reach=SimpleNamespace(setText=lambda t: None),
+        _how_much_fits=lambda a, b: (ab, ba),
+        _coverage=SimpleNamespace(setText=lambda t: said.setdefault("t", t)),
+        _picture_loss=SimpleNamespace(setText=lambda t: None),
+        _pair_box=SimpleNamespace(setVisible=lambda v: None),
+        _compare=SimpleNamespace(currentData=lambda: kind),
+        _is_picture=lambda name: picture,
+        _update_picture_loss=lambda *a: None,
+        _update_pair=lambda *a: None)
+    gamut_app.GamutApp._update_coverage(stub)
+    return said.get("t", "")
+
+
+def test_the_share_that_does_not_fit_is_named_as_the_spaces_limit(app):
+    said = coverage_text(0.906, 0.400, ("space", "sRGB"))
+    assert "90.6% of the colour knut can print also fits inside sRGB" in said
+    assert "The other 9.4%" in said
+    assert "not a fault in knut" in said, (
+        "the number reads as a fault in the printer unless it says otherwise")
+    assert "limit of the working space you chose" in said
+
+
+def test_against_another_paper_no_such_claim_is_made(app):
+    """A paper is not a working space, and telling somebody their choice of
+    space cost them 9% when they are comparing two papers would be nonsense."""
+    said = coverage_text(0.906, 0.400, ("icc", None), b_name="Matte-paper")
+    assert "The other" not in said
+    assert "working space" not in said
+
+
+def test_a_photograph_is_not_told_it_chose_a_working_space(app):
+    said = coverage_text(0.906, 0.400, ("space", "sRGB"), picture=True)
+    assert "The other" not in said
+
+
+def test_a_space_that_holds_everything_claims_no_loss(app):
+    """At 100% there is nothing to explain, and inventing 0.0% to explain
+    would be noise."""
+    said = coverage_text(0.9995, 0.30, ("space", "ProPhoto"))
+    assert "The other" not in said

@@ -326,6 +326,11 @@ def _run_stoppably(command, *, patience: float, stop=None, poll: float = 0.05):
                                                 output=out, stderr=err)
 
 
+#: What `iccgamut -i` calls each intent, in the words a reader would use.
+_INTENT_WORDS = {"r": "relative colorimetric", "p": "perceptual",
+                 "s": "saturation", "a": "absolute colorimetric"}
+
+
 def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
               space: str = "lab", stop=None, **_ignored):
     """The gamut of any ICC profile, computed by ArgyllCMS itself.
@@ -354,6 +359,29 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
     path = pathlib.Path(path)
     if not path.is_file():
         raise ValueError(f"no such profile: {path}")
+
+    # ⚠ AN ARGUMENT THAT IS ACCEPTED AND THEN IGNORED IS WORSE THAN ONE THAT
+    # IS REFUSED. `intent` reaches ArgyllCMS below as `iccgamut -i`, but every
+    # fallback in this function calls `profile_gamut`, which has no intent at
+    # all and always answers relative colorimetric. So on a machine without
+    # ArgyllCMS, or on a v4 profile Argyll declines to open -- Display P3,
+    # Rec. 2020 and a good many paper makers' output profiles -- a caller
+    # asking for perceptual or saturation was quietly handed the colorimetric
+    # surface and no word about it. Found by a challenge of a feature that was
+    # going to be built on top of this.
+    #
+    # Refusing is right rather than cautious: a plausible wrong surface is
+    # this project's worst failure mode, and the default path ("r") is
+    # untouched, so nothing that works today changes.
+    def _cannot_honour(intent_asked: str, why: str) -> "ValueError":
+        return ValueError(
+            f"{path.name} can be read, but not for the "
+            f"{_INTENT_WORDS.get(intent_asked, intent_asked)} intent.\n\n"
+            f"{why}, and the reader used instead always answers relative "
+            f"colorimetric — so the shape you would get back would not be "
+            f"the one you asked for.\n\nInstalling ArgyllCMS gives this "
+            f"profile its other intents; without it, relative colorimetric "
+            f"is the one that can be shown.")
 
     tool = _find_iccgamut()
     if tool is None:
@@ -388,6 +416,8 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
         # exercises this line locally is a test that hands it a good profile.
         # The happy path of a new fallback is the half that gets written.
         from icc_read import profile_gamut
+        if intent != "r":
+            raise _cannot_honour(intent, "ArgyllCMS is not installed")
         try:
             return profile_gamut(path, white_point=white_point, space=space)
         except Exception as mine:                        # noqa: BLE001
@@ -419,6 +449,9 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
             # ArgyllCMS installed. Refusing a file we can read, because a
             # helper we did not need got stuck, is the wrong way round.
             from icc_read import profile_gamut
+            if intent != "r":
+                raise _cannot_honour(
+                    intent, "ArgyllCMS gave up on this profile") from exc
             try:
                 return profile_gamut(path, white_point=white_point, space=space)
             except Exception as mine:                    # noqa: BLE001
@@ -437,7 +470,12 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
             # it is checked against Argyll on every profile both can open.
             try:
                 from icc_read import profile_gamut
+                if intent != "r":
+                    raise _cannot_honour(
+                        intent, "ArgyllCMS could not open this profile")
                 return profile_gamut(path, white_point=white_point, space=space)
+            except ValueError:
+                raise
             except Exception as mine:                    # noqa: BLE001
                 second = f"\n\nReading it directly did not work either: {mine}"
             detail = (done.stderr or done.stdout or "").strip().splitlines()

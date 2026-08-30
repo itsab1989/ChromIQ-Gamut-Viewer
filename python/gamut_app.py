@@ -17395,9 +17395,28 @@ class GamutApp(QMainWindow):
         # holds colours -- and getting that backwards is the sort of sentence
         # that makes somebody distrust the number beside it.
         holds = "holds" if self._is_picture(a_name) else "can print"
+        # AND WHAT THE FIRST NUMBER MEANS FOR THE WORK, when the thing being
+        # compared against is a working space rather than another paper.
+        #
+        # ⚠ THIS SENTENCE IS THE FEATURE. A whole "practical vs total gamut"
+        # table was planned before anyone looked at this panel, which has
+        # printed the number all along: "90.6% of the colour knut can print
+        # also fits inside sRGB." What was missing was never the arithmetic —
+        # it was that 90.6% reads as a fault in the printer, when it is a
+        # limit of the space the reader chose, and that is the half they can
+        # act on. Found by a challenge that drove the window instead of
+        # trusting the plan.
+        loss = ""
+        kind = self._compare.currentData()
+        if (isinstance(kind, tuple) and kind and kind[0] == "space"
+                and not self._is_picture(a_name) and ab < 0.999):
+            loss = (f"\nThe other {100 * (1 - ab):.1f}% is colour {a_name} "
+                    f"can lay down that {b_name} has no name for — a limit "
+                    f"of the working space you chose, not a fault in "
+                    f"{a_name}.")
         self._coverage.setText(
             f"{100 * ab:.1f}% of the colour {a_name} {holds} also fits inside "
-            f"{b_name}.\n"
+            f"{b_name}.{loss}\n"
             f"{100 * ba:.1f}% of {b_name} fits inside {a_name}.\n"
             "The two numbers differ because fitting inside is not the same "
             "question in both directions.")

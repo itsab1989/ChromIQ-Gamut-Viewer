@@ -659,3 +659,42 @@ def test_the_reader_raises_that_very_class(tmp_path):
         references._run_stoppably(
             [sys.executable, "-c", "import time; time.sleep(5)"],
             patience=30, stop=stop)
+
+
+# --------------------------------------------------------------------------
+# An intent that cannot be honoured is refused, not quietly swapped
+# --------------------------------------------------------------------------
+
+
+def test_an_intent_that_cannot_be_honoured_is_refused_in_words(monkeypatch):
+    """⚠ AN ARGUMENT ACCEPTED AND THEN IGNORED IS WORSE THAN ONE REFUSED.
+
+    `icc_gamut(intent=)` hands its intent to `iccgamut -i`. Every fallback in
+    it calls `profile_gamut`, which has no intent at all and always answers
+    relative colorimetric — so without ArgyllCMS, or on a v4 profile Argyll
+    declines to open (Display P3, Rec. 2020, and many paper makers' output
+    profiles), a caller asking for perceptual was handed the colorimetric
+    surface and told nothing.
+
+    Found by a challenge of a feature that was going to be built on this.
+    """
+    import pathlib
+    import pytest
+    import references
+    monkeypatch.setattr(references, "_find_iccgamut", lambda: None)
+    demo = pathlib.Path(__file__).resolve().parent.parent / "demo"
+    profile = demo / "Glossy-paper.icc"
+
+    # The default still works, because the fallback really does answer it.
+    got = references.icc_gamut(profile)
+    assert got.volume > 0
+
+    for intent, word in (("p", "perceptual"), ("s", "saturation")):
+        with pytest.raises(ValueError) as caught:
+            references.icc_gamut(profile, intent=intent)
+        said = str(caught.value)
+        assert word in said, said
+        assert "ArgyllCMS is not installed" in said
+        assert "relative colorimetric" in said, (
+            "it must say what it WOULD have given back, or the refusal "
+            "teaches nothing")
