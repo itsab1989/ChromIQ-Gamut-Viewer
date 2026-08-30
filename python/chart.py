@@ -523,7 +523,7 @@ class Outside:
 
     @property
     def n_edge(self) -> int:
-        """Outside, but by less than anybody could see."""
+        """Outside, but by less than most people would notice."""
         return self.n_outside - self.n_beyond
 
     @property

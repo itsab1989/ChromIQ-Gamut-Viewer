@@ -326,6 +326,17 @@ def _run_stoppably(command, *, patience: float, stop=None, poll: float = 0.05):
                                                 output=out, stderr=err)
 
 
+class IntentNotAvailable(ValueError):
+    """Asked for an intent this profile cannot be read for.
+
+    ⚠ ITS OWN CLASS, because catching plain ValueError to let this one out
+    also let `build_gamut`'s out -- so a greyscale or device-link profile
+    stopped saying "device-link and abstract profiles do not describe a
+    gamut" and said "the gamut encloses no volume" instead, which tells the
+    reader nothing about what they opened.
+    """
+
+
 #: What `iccgamut -i` calls each intent, in the words a reader would use.
 _INTENT_WORDS = {"r": "relative colorimetric", "p": "perceptual",
                  "s": "saturation", "a": "absolute colorimetric"}
@@ -373,8 +384,8 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
     # Refusing is right rather than cautious: a plausible wrong surface is
     # this project's worst failure mode, and the default path ("r") is
     # untouched, so nothing that works today changes.
-    def _cannot_honour(intent_asked: str, why: str) -> "ValueError":
-        return ValueError(
+    def _cannot_honour(intent_asked: str, why: str) -> "IntentNotAvailable":
+        return IntentNotAvailable(
             f"{path.name} can be read, but not for the "
             f"{_INTENT_WORDS.get(intent_asked, intent_asked)} intent.\n\n"
             f"{why}, and the reader used instead always answers relative "
@@ -474,7 +485,7 @@ def icc_gamut(path, *, white_point: str = "D50", intent: str = "r",
                     raise _cannot_honour(
                         intent, "ArgyllCMS could not open this profile")
                 return profile_gamut(path, white_point=white_point, space=space)
-            except ValueError:
+            except IntentNotAvailable:
                 raise
             except Exception as mine:                    # noqa: BLE001
                 second = f"\n\nReading it directly did not work either: {mine}"

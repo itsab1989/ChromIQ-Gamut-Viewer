@@ -755,19 +755,18 @@ def test_an_ordinary_message_keeps_the_measure_it_always_had(styled):
 # --------------------------------------------------------------------------
 
 
-def both_ways(measured_beyond, own_beyond, white_l, ticked):
-    """The sentence, with the two counts and the paper it came from."""
+def both_ways(measured_beyond, own_beyond, white_l, ticked=False):
+    """The sentence, with the two counts and the paper they came from.
+
+    ⚠ `ticked` IS ACCEPTED AND IGNORED, deliberately: the sentence must not
+    depend on it. It used to, and printed "the same answer: 255 outside" when
+    the two answers were 255 and 178."""
     import gamut_app
-    report = SimpleNamespace(n_beyond=own_beyond if ticked else measured_beyond)
-    other = SimpleNamespace(n_beyond=measured_beyond if ticked else own_beyond)
-    twin = SimpleNamespace(white_lab=(white_l, -0.4, -3.3))
-    held = SimpleNamespace(white_lab=(white_l, -0.4, -3.3))
-    stub = SimpleNamespace(
-        _relative=SimpleNamespace(isChecked=lambda: ticked),
-        _slots=[("a-paper.ti3", None, held)],
-        _measurement_at=lambda path: held)
     return gamut_app.GamutApp._counted_both_ways(
-        stub, "a-paper.ti3", report, other, twin)
+        None,
+        SimpleNamespace(n_beyond=measured_beyond),
+        SimpleNamespace(n_beyond=own_beyond),
+        SimpleNamespace(white_lab=(white_l, -0.4, -3.3)))
 
 
 def test_both_counts_are_printed_whichever_mode_the_reader_is_in(app):
@@ -839,21 +838,35 @@ def test_when_the_file_cannot_be_read_both_ways_the_old_warning_still_fires(
 
 
 def test_no_wording_anywhere_claims_a_difference_is_invisible_to_everyone(app):
-    """⚠ SCANNED FROM THE STRING LITERALS, not from the file's text. A sweep
-    over raw source flags this module's own comment recording what was
-    corrected, and it flags "anybody can make the window bigger" — neither of
-    which a reader ever sees. Only what can reach a panel or a page counts."""
+    """⚠ THIS SWEEP FAILED ONCE, AND THE WAY IT FAILED IS THE LESSON.
+
+    Its first version matched six EXACT PHRASES. Two live sentences were
+    spelled differently — "Nothing has moved that anybody could see" and
+    "below the point at which a difference becomes visible at all" — so it
+    reported success while both were still on screen, one of them written
+    into the pages this application exports. A list of strings can only find
+    the strings somebody already thought of.
+
+    So it matches the CLAIM now, as a pattern, and it reads string literals
+    through `ast` rather than raw source: a grep over the text flags this
+    repository's own record of what was corrected, and flags "anybody can
+    make the window bigger", neither of which a reader ever meets.
+    """
     import ast
     import pathlib
+    import re
     root = pathlib.Path(__file__).resolve().parent
-    forbidden = ("nobody can see the difference", "nobody can see it",
-                 "nobody can see this", "Nothing anybody could see",
-                 "ΔE 3 anybody can", "above 3 anybody can")
+    # (nobody|anybody|no one|nothing) ... (can|could) see  — any wording.
+    claims = (
+        re.compile(r"\b(nobody|no one|anybody|anyone|everybody|everyone)\b"
+                   r"[^.]{0,40}?\b(can|could)\s+see", re.I),
+        re.compile(r"becomes visible at all", re.I),
+        re.compile(r"\binvisible to (anyone|everybody|the eye)\b", re.I),
+    )
     seen = 0
-    for name in ("gamut_app.py", "drift_series.py", "chart.py"):
+    for name in ("gamut_app.py", "drift_series.py", "chart.py",
+                 "ti3gamut.py"):
         tree = ast.parse((root / name).read_text())
-        # A DOCSTRING IS NOT A SENTENCE A READER MEETS, and the ones here
-        # quote the old wording deliberately, to record what was corrected.
         docs = set()
         for holder in ast.walk(tree):
             if isinstance(holder, (ast.Module, ast.ClassDef, ast.FunctionDef,
@@ -869,24 +882,58 @@ def test_no_wording_anywhere_claims_a_difference_is_invisible_to_everyone(app):
             if id(node) in docs:
                 continue
             seen += 1
-            for phrase in forbidden:
-                assert phrase not in node.value, (
-                    f"{name}:{node.lineno} still tells a reader {phrase!r} — "
-                    "the thresholds may stay, the claim about eyes may not")
+            for claim in claims:
+                for found in claim.finditer(node.value):
+                    # ⚠ THE TOPIC MUST BE IN THE CLAIM'S OWN SENTENCE, not
+                    # merely somewhere in the same constant. "everybody can
+                    # see it without clicking" is about a PNG opening in an
+                    # email, and "a key nobody can see" sits inside a
+                    # thousand-line block of JavaScript that happens to say
+                    # "difference" elsewhere. Flagging either would teach the
+                    # next person to delete the sweep rather than fix a
+                    # sentence.
+                    near = node.value[max(0, found.start() - 140):
+                                      found.end() + 140]
+                    if not re.search(r"ΔE|\bdE\b|difference|moved", near, re.I):
+                        continue
+                    raise AssertionError(
+                        f"{name}:{node.lineno} still tells a reader "
+                        f"{found.group(0)!r} — the thresholds may stay, the "
+                        "claim about eyes may not")
     assert seen > 500, (
         f"only {seen} strings were scanned; this sweep is not looking at the "
         "application")
 
 
-def test_the_sweep_can_actually_fail(app):
+def test_the_sweep_catches_the_two_it_once_missed(app):
     """A measurement that cannot see the thing looks exactly like one that
-    found nothing wrong. So: the same scan, over a string that does say it."""
-    import ast
-    tree = ast.parse('x = "below 1 nobody can see the difference"\n')
-    hits = [n.value for n in ast.walk(tree)
-            if isinstance(n, ast.Constant) and isinstance(n.value, str)
-            and "nobody can see the difference" in n.value]
-    assert hits, "the scan cannot see the phrase it is looking for"
+    found nothing wrong. These are the exact sentences that were live in the
+    application while the first version of the sweep reported success."""
+    import re
+    claims = (
+        re.compile(r"\b(nobody|no one|anybody|anyone|everybody|everyone)\b"
+                   r"[^.]{0,40}?\b(can|could)\s+see", re.I),
+        re.compile(r"becomes visible at all", re.I),
+    )
+    missed = (
+        "Nothing has moved that anybody could see. From 2019 to 2024 the "
+        "biggest difference is ΔE 0.42, which is below the point at which a "
+        "difference becomes visible at all.",
+        "Two profiles: nothing here that anybody could see. The biggest "
+        "difference anywhere in the cube is ΔE 0.31, below the point at "
+        "which a difference becomes visible at all.",
+        "below 1 nobody can see the difference; above 3 anybody can",
+        "Nothing anybody could see.",
+    )
+    for sentence in missed:
+        assert any(c.search(sentence) for c in claims), (
+            f"the sweep still cannot see {sentence[:60]!r}")
+    # And it must NOT fire on prose that merely shares the words.
+    innocent = ("A picture goes straight into a forum post, an email or a "
+                "document, and everybody can see it without clicking.")
+    assert not any(c.search(innocent) for c in claims) or not re.search(
+        r"ΔE|\bdE\b|difference|moved", innocent, re.I), (
+        "the sweep flags a sentence about email attachments")
 
 
 def test_the_hedge_is_one_sentence_used_everywhere_not_eight_copies(app):
@@ -1000,3 +1047,62 @@ def test_a_space_that_holds_everything_claims_no_loss(app):
     would be noise."""
     said = coverage_text(0.9995, 0.30, ("space", "ProPhoto"))
     assert "The other" not in said
+
+
+def test_the_both_ways_line_cannot_consult_the_tick_at_all(app):
+    """⚠ THE FALSE NUMBER, PINNED AT ITS CAUSE.
+
+    The first version asked for "the other reading" and trusted that the drawn
+    shape was the one the tick named. For a paper in a slot that holds; for a
+    paper opened as the COMPARISON it does not, because that shape is built
+    through a reader that takes no paper-white setting. With the tick on, both
+    halves were the absolute reading and the panel announced:
+
+        "Counted both ways it is the same answer: 255 outside"
+
+    when the two answers were 255 and 178. v2.53.2 printed nothing there, so
+    silence was replaced by a confident falsehood, in the mode a careful
+    reader deliberately turns on.
+
+    The cure is structural: the sentence is handed two finished counts and
+    cannot reach the tick, the slots, or the drawn shape.
+    """
+    import inspect
+    import gamut_app
+    src = inspect.getsource(gamut_app.GamutApp._counted_both_ways)
+    for reachable in ("_relative", "_slots", "_compare", "self."):
+        assert reachable not in src, (
+            f"the sentence can still reach {reachable!r}, which is how it "
+            "came to be wrong about which count was which")
+    # And the two counts keep their names whatever order anything else is in.
+    said = both_ways(255, 178, 92.1)
+    assert "255 outside as your instrument measured the paper" in said
+    assert "178 once the paper is judged against its own white" in said
+    assert "the same answer" not in said
+
+
+def test_the_paper_white_is_carried_into_whatever_space_is_drawn(app):
+    """Limiting it to CIELAB undid the whole fix the moment somebody chose
+    CIELUV: the same file read "L* 94 and cool" in CIELAB and "L* 96 and very
+    warm (a* +61.1, b* +87.1)" in CIELUV, because the fallback went back to
+    taking the lightest vertex — the yellow."""
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    def carried(space):
+        stub = NS(_space=NS(currentData=lambda: space),
+                  _white=NS(currentData=lambda: "D50"))
+        return gamut_app.GamutApp._white_in_this_space(stub, (93.8, -0.4, -3.3))
+
+    lab = carried("lab")
+    assert lab == pytest.approx((93.8, -0.4, -3.3), abs=1e-9)
+    luv = carried("luv")
+    assert luv is not None, "CIELUV threw the paper's white away"
+    assert luv[0] == pytest.approx(93.8, abs=0.01), (
+        "lightness is the same number in both spaces; only u* and v* differ")
+    assert luv[1:] != lab[1:], "it was not converted, merely passed through"
+    assert carried("xyz") is not None
+    # Nothing to carry is not a failure.
+    stub = NS(_space=NS(currentData=lambda: "luv"),
+              _white=NS(currentData=lambda: "D50"))
+    assert gamut_app.GamutApp._white_in_this_space(stub, None) is None

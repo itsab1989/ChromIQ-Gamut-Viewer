@@ -1055,9 +1055,13 @@ def main() -> int:
           "drifted steadily" in body or "Nothing has moved" in body)
     check("15", "and so is the caveat that stops it being over-read",
           "not how far the device drifted" in body)
+    # ⚠ WHITESPACE-BLIND, because the page wraps where it likes. This looked
+    # for "most people would not notice" and the exported HTML holds it with a
+    # newline inside, so the builder exited non-zero on a page that was
+    # perfectly correct.
+    flat = " ".join(body.split())
     check("15", "the key explains what the numbers mean",
-          "most people would not notice" in body
-          and "hard to miss" in body)
+          "most people would not notice" in flat and "hard to miss" in flat)
     # WHICH COLOURS MOVED, IN THE SAVED FILE. The page is what gets sent to a
     # colleague or a paper supplier, and the sentences are what they will
     # quote. Asked for by a paper manufacturer; the objection raised with it

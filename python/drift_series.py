@@ -590,11 +590,13 @@ def verdict(run: Run) -> str:
                 f"the first and last profile on their own would have misled "
                 f"you.")
     if total < INVISIBLE:
-        return (f"Nothing has moved that anybody could see. From {span} the "
-                f"biggest difference is ΔE {total:.2f}, which is below the "
-                f"point at which a difference becomes visible at all.")
-    scale = ("visible on a careful look" if total < OBVIOUS
-             else "plainly visible")
+        return (f"Nothing has moved that most people would notice. From "
+                f"{span} the biggest difference is ΔE {total:.2f}, which is "
+                f"below the usual rule of thumb for a difference worth "
+                f"chasing — and no larger than two identical instruments can "
+                f"disagree by on one patch.")
+    scale = ("findable by a careful eye" if total < OBVIOUS
+             else "hard to miss")
     if run.steady:
         return (f"It has drifted steadily. From {span} the biggest difference "
                 f"has reached ΔE {total:.2f}, which is {scale}, and each step "

@@ -260,7 +260,7 @@ def test_a_device_that_has_not_moved_says_so_plainly(tmp_path):
     assert run.total < drift_series.INVISIBLE
     said = drift_series.verdict(run)
     assert "Nothing has moved" in said
-    assert "below the point at which" in said
+    assert "below the usual rule of thumb" in said
 
 
 def test_the_thresholds_are_the_ones_the_rest_of_the_application_uses():
@@ -871,7 +871,7 @@ def test_a_step_nobody_could_see_says_so_and_counts_nothing(app, five_years):
     dialog._picture_of.setCurrentIndex(1)
     dialog._draw()
     said = dialog._verdict.text()
-    assert "nothing here that anybody could see" in said, said
+    assert "nothing here that most people would notice" in said, said
     assert "more than 1" not in said, said
     dialog.close()
 

@@ -59,7 +59,7 @@ CHART = ROOT / "demo" / "verification-chart-480.ti1"
 
 #: The batch runs, written at build time. The steady one is BELOW the
 #: visibility threshold on purpose -- its page is the good-news page, and its
-#: verdict must be "Nothing has moved that anybody could see". That is why
+#: verdict must be "Nothing has moved that most people would notice". That is why
 #: `make_demo_profiles.main()` is not used here: its self-check demands
 #: visible movement, which is the OTHER run's story.
 STEADY = [("batch 2024-01", (2024, 1, 8, 9, 0, 0), 0.0000),
@@ -512,8 +512,9 @@ def main() -> int:
     save_timeline(p)
     made.append(("07", p))
     body = p.read_text(encoding="utf-8")
-    check("07", "the page says nothing has moved that anybody could see",
-          "Nothing has moved" in body)
+    check("07", "the page says nothing has moved that most would notice",
+          "Nothing has moved that most people would notice" in
+          " ".join(body.split()))
     check("07", "and still carries the caveat against over-reading",
           "not how far the device drifted" in body)
     figures["07"] = {"total_de": f"{timeline._run.total:.2f}"}
