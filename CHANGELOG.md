@@ -1,5 +1,42 @@
 # Changelog
 
+## v2.53.1
+
+### 🖱️ Three buttons that looked alive and did nothing
+
+Reported by a colour-management practitioner: *"Under frame One device over
+time, the buttons 'Add profiles' and 'Remove them all' and also the last
+button, do not work. None of them can be clicked."*
+
+He was right about two of them, and the mechanism was worse than nothing
+happening. **Pressing "Add profiles…" could abort the whole application** — the
+drawing toolkit treats an unhandled error in a button's handler as fatal. The
+app survives only because it installs a handler that writes the crash to its
+log instead, so the button looks alive, answers a click with silence, and
+leaves a record nobody reads. *If you hit this, your own log already holds a
+timestamped copy of it.*
+
+The cause: that panel is built as its own window and then moved inside the
+control column, at which point "ask my parent" quietly stopped meaning "ask the
+main window". Two buttons died on the spot, two more would have died in states
+you cannot currently reach. All four now ask the window they were given at the
+start, and a rule in the tests stops the next one being written the old way.
+
+The third button, "Remove them all", was correctly grey — an empty run has
+nothing to remove — but **said nothing about why**, which is exactly why all
+three read as broken. Greyed buttons in this panel now tell you what they need.
+
+### 🔘 And the same thing, found by pressing everything
+
+A new sweep pressed **837 controls** across five states of the window — every
+button, tick, radio, dropdown, slider and spinbox, with every folded section
+opened. It found two more buttons of the same kind: with nothing open,
+**"Save this view as a picture…"** and **"Save the numbers as a table…"** stayed
+lit and did nothing when pressed. They go grey with their neighbour now, and
+each says what it needs.
+
+Nothing else in those 837 presses raised an error.
+
 ## v2.53.0
 
 ### 🧱 The walls stand behind the shape again — and the cause was ours

@@ -12874,9 +12874,19 @@ class GamutApp(QMainWindow):
             # that saves or exports the view has something to work with. In
             # ink amounts that is true with no profile at all, which is the
             # whole point of the view.
-            self._save.setEnabled(True)
-            self._export_btn.setEnabled(True)
-            self._picture.setEnabled(True)
+            # THE BUTTON'S OWN WORDS COME BACK WITH IT. While grey each
+            # carries its reason instead; putting the working text back here
+            # is the other half of that swap.
+            for name in ("_save", "_export_btn", "_picture"):
+                button = getattr(self, name, None)
+                if button is None:
+                    continue
+                button.setEnabled(True)
+                if not hasattr(button, "property"):
+                    continue
+                kept = button.property("cq_words")
+                if kept:
+                    button.setToolTip(kept)
         if self._slots or self._reference is not None or self._chart_drawable():
             self._redraw()
         else:
@@ -13531,7 +13541,52 @@ class GamutApp(QMainWindow):
             if label is not None:
                 label.setText("")
         self._clear_btn.setVisible(False)
-        self._save.setEnabled(False)
+        # ⚠ ALL THREE OF THE "TAKE IT AWAY WITH YOU" BUTTONS, NOT JUST ONE.
+        #
+        # They are enabled together when something opens, and only `_save` was
+        # turned off again when everything closed -- so with an empty window
+        # "Save this view as a picture…" and "Save the numbers as a table…"
+        # stayed lit and answered a press by returning silently. Found by a
+        # click-smoke pass over 837 controls, and it is the SAME SYMPTOM Knut
+        # reported for the run's own buttons: a control that looks alive and
+        # does nothing wastes somebody's afternoon before they think to doubt
+        # the application.
+        #
+        # And each says WHY it is grey while it is grey, because this project's
+        # own rule is that a control offered where it cannot act must say what
+        # it needs. The whole tooltip is swapped, not appended to: the
+        # hover-shortening pass keeps only the first sentence, so a reason
+        # added to the end would never be read.
+        # ⚠ NAMED, NOT REACHED FOR, because this runs against stand-ins too.
+        # `_on_clear` is driven in tests by a SimpleNamespace carrying only the
+        # widgets a case needs, so touching `self._picture` directly raised
+        # AttributeError in five of them. The loop above over READOUTS already
+        # uses exactly this idiom for the same reason.
+        for name, reason in (
+                ("_save", "Grey because nothing is open. Open a "
+                             "measurement, a profile or a chart above, and "
+                             "this will write it out as a web page you can "
+                             "keep or send to somebody."),
+                ("_picture", "Grey because nothing is open. Open something "
+                                "above and this will save the picture you can "
+                                "see as an image file."),
+                ("_export_btn", "Grey because nothing is open. Open "
+                                   "something above and this will write its "
+                                   "numbers out as a table you can open in a "
+                                   "spreadsheet.")):
+            button = getattr(self, name, None)
+            if button is None:
+                continue
+            button.setEnabled(False)
+            # ⚠ AND THE WORDS ONLY IF IT IS A REAL WIDGET. The stand-ins these
+            # tests drive have `setEnabled` and nothing else, so asking one for
+            # `property` raised where the disabling itself was fine. Greying is
+            # the behaviour under test; the tooltip is dressing on top of it.
+            if not hasattr(button, "property"):
+                continue
+            if not button.property("cq_words"):
+                button.setProperty("cq_words", button.toolTip())
+            button.setToolTip(reason)
 
     def _on_save(self) -> None:
         """Write the scene as a standalone page the user can keep or send.
