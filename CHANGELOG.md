@@ -1,5 +1,42 @@
 # Changelog
 
+## v2.53.2
+
+### 🫥 The window is never left empty again
+
+Reported: *"I could not see anything other than the ti1/ti2 3d grid, so I
+closed it. But the remaining ti3 was not shown. All empty screen."*
+
+Choosing **Ink amounts — a chart on its own** shows a chart in the printer's
+own ink values, and a measurement has no ink values to show — so with only a
+measurement open there was genuinely nothing that view could draw. That part is
+correct. What was wrong is that it drew **nothing at all**: a blank window, no
+words, with the file still loaded and listed. The explanation existed, but in
+the files panel rather than in the picture, which is not where anybody is
+looking when the picture goes blank.
+
+The view now says what is open, why this drawing cannot show it, and both ways
+back. And it is reachable **without closing anything** — pick Ink amounts with
+only a measurement open and the old build went blank there too.
+
+### 🧹 Four more ways the picture and the truth came apart
+
+Found while hunting the first one, each photographed:
+
+* Closing one file beside a drawn **run** put the empty-window text over the
+  run's graph and quietly reset your comparison.
+* Closing the last file while a chart was open — but **not yet placed** through
+  a profile — threw the chart away with it. The check asked "is a chart
+  placed?" where it meant "is anything open?".
+* A **closed chart stayed drawn**, and setting **Compare with → Nothing** left
+  the comparison's shell and its volume figure on screen.
+* Switching between light and dark could blank a picture made of a comparison
+  or a chart alone.
+
+Seven new tests hold the rule that ties all five together: **whatever the
+window cannot draw, it must say so — it must never simply go quiet.** Six of
+them fail on v2.53.1.
+
 ## v2.53.1
 
 ### 🖱️ Three buttons that looked alive and did nothing

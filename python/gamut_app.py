@@ -32,6 +32,7 @@ from imagegamut import readable_extensions
 IMAGE_EXTENSIONS = tuple(readable_extensions())
 
 import csv
+import html
 import json
 import os
 import sys
@@ -11015,7 +11016,11 @@ class GamutApp(QMainWindow):
         panel = getattr(self, "_timeline", None)
         if panel is not None:
             panel.look(which)
-        if self._slots:
+        # A comparison alone and a placed chart alone are pictures too, and
+        # both were left in the old theme's colours (the same blind spot as
+        # _apply_mode's placeholder guard, fixed together).
+        if (self._slots or self._reference is not None
+                or self._chart_drawable()):
             self._redraw()          # the scene is repainted to match
         # AND THE COLUMN IS ASKED ITS SIZE AGAIN, ONCE THE POLISH HAS LANDED.
         # Re-polishing every widget is when Qt applies stylesheet padding, so
@@ -11951,7 +11956,8 @@ class GamutApp(QMainWindow):
         self._sync_slider_labels()
         self._on_manual_light()
         self._apply_mode()
-        if self._slots:
+        if (self._slots or self._reference is not None
+                or self._chart_drawable()):
             self._redraw()
 
     #: Settings the picture on screen can be restyled into without being
@@ -12011,7 +12017,10 @@ class GamutApp(QMainWindow):
         self._paint = which
         self._store.setValue("paint", which)
         self._remember_shape_setting("paint")
-        if self._slots:
+        # The comparison's shell answers the paint setting too, so a
+        # comparison (or placed chart) alone must repaint as well.
+        if (self._slots or self._reference is not None
+                or self._chart_drawable()):
             self._redraw()
 
     def _recolour_hints(self) -> None:
@@ -12083,7 +12092,15 @@ class GamutApp(QMainWindow):
         self._frame.setStyleSheet(
             f"border: 1px solid {PALETTES[self._appearance]['line']};"
             f"border-radius: 8px; background: {colour};")
-        if not self._slots:
+        # ONLY WHEN THE VIEW REALLY IS EMPTY. This asked "are the slots
+        # empty?", and three pictures live in the view without a slot: a
+        # comparison on its own, a placed chart on its own, and a run — so
+        # switching the theme painted the empty-window text over any of
+        # them. The run had already been bitten by exactly this once (see
+        # _set_appearance); the other two were still exposed.
+        if (not self._slots and self._reference is None
+                and not self._chart_drawable()
+                and not getattr(self, "_run_drawn", False)):
             self._show_placeholder()
 
     def _on_export(self) -> None:
@@ -12893,11 +12910,23 @@ class GamutApp(QMainWindow):
             self._update_chart_numbers()
 
     def _close_chart(self) -> None:
+        """Take the chart out of the picture, whatever else is open.
+
+        UNCONDITIONALLY REDRAWN. This used to redraw only when a slot or a
+        comparison remained, and the gap showed on screen both ways round:
+        with nothing else open the closed chart's dot cloud stayed in the
+        view, its name still in the title and "— to be printed" still in the
+        legend, over a panel that said nothing was open at all; and in ink
+        amounts with a .ti3 open the redraw happened but drew an empty scene
+        — Knut's "all empty screen". `_redraw` now owns both endings: the
+        empty-window text when nothing is left, and the
+        open-but-not-drawn-here explanation when the mode cannot show what
+        remains.
+        """
         self._chart = None
         self._chart_placed = None
         self._refresh_chart_panel()
-        if self._slots or self._reference is not None:
-            self._redraw()
+        self._redraw()
 
     def _refresh_chart_panel(self) -> None:
         """The chart's name, and what is still needed before it can be shown."""
@@ -13478,12 +13507,29 @@ class GamutApp(QMainWindow):
                 "patches ask for.")
 
     def _close_one(self, which: int) -> None:
-        """Close just this chart and leave the other one where it is."""
+        """Close just this chart and leave the other one where it is.
+
+        "THE OTHER ONE" IS EVERYTHING ELSE THAT IS OPEN, not just the other
+        slot. This used to fall through to `_on_clear` — the start-again
+        gesture — whenever the slots were empty and no chart was *placed*,
+        and three things a person still had open failed that test: a chart
+        that is open but unplaced (no profile yet, or the ink-amounts view
+        where placing is optional), the comparison under Compare with, and a
+        run. Driven on screen: with a chart and a .ti3 open in ink amounts,
+        the ti3's own × — tooltip "Close this one" — emptied the whole
+        window; with a run drawn, it put the empty-window text over the run's
+        graph and silently reset the comparison the person was working
+        against. So the question here is the honest one: is ANYTHING still
+        open? Only when nothing is does closing the last file mean starting
+        again.
+        """
         if 0 <= which < len(self._slots):
             del self._slots[which]
         self._refresh_slot_labels()
         self._fill_chart_profiles()
-        if self._slots or self._chart_placed is not None:
+        if (self._slots or self._reference is not None
+                or self._chart is not None
+                or getattr(self, "_run_drawn", False)):
             self._redraw()
         else:
             self._on_clear()
@@ -13530,7 +13576,17 @@ class GamutApp(QMainWindow):
         self._refresh_slot_labels()
         self._refresh_chart_panel()
         self._fill_chart_profiles()
-        self._show_placeholder()
+        # UNLESS A RUN STILL OWNS THE PICTURE. This button's own tooltip names
+        # what it closes — both shapes, the chart, the comparison — and the
+        # run is none of them; it has a Remove-them-all of its own. Measured
+        # before this guard: pressing it with a run drawn put the empty-window
+        # text over the run's graph while the run's own analysis stayed filled
+        # in beside it, and `_run_drawn` stayed True, so every later redraw
+        # stood aside for a picture that was no longer there.
+        if getattr(self, "_run_drawn", False):
+            self._redraw()
+        else:
+            self._show_placeholder()
         self._volume.setText("—")
         self._volume_hint.setText(self._volume_units())
         # THE FIGURES GO WITH THE FILES THEY DESCRIBED. Every one of these is
@@ -13587,6 +13643,21 @@ class GamutApp(QMainWindow):
             if not button.property("cq_words"):
                 button.setProperty("cq_words", button.toolTip())
             button.setToolTip(reason)
+        # BUT THE TWO PICTURE-SAVERS COME STRAIGHT BACK WHEN A RUN IS DRAWN:
+        # its graph is still on screen and both of them save exactly that, so
+        # leaving them grey here would be the lit-but-dead symptom's mirror —
+        # dead-looking controls over a live picture. Their working words come
+        # back with them, the same swap as everywhere else. The table stays
+        # grey with its reason: it writes this window's readouts, and those
+        # really are empty now.
+        if getattr(self, "_run_drawn", False):
+            for name in ("_save", "_picture"):
+                button = getattr(self, name, None)
+                if button is None:
+                    continue
+                button.setEnabled(True)
+                if hasattr(button, "property") and button.property("cq_words"):
+                    button.setToolTip(button.property("cq_words"))
 
     def _on_save(self) -> None:
         """Write the scene as a standalone page the user can keep or send.
@@ -15242,6 +15313,60 @@ class GamutApp(QMainWindow):
             "and counts how many fall outside what your printer can reach.</p>"
             "</div></body></html>")
 
+    def _show_open_but_not_drawn(self) -> None:
+        """The big view's own words for files that are open and not drawable.
+
+        The side panel already says this (see `_refresh_not_drawn_note`), and
+        Knut's report is the measure of how far that carried: "I could not
+        see anything … All empty screen." He looked at the picture, so the
+        picture answers — naming what is open, why it is not drawn, and the
+        two things that bring it back. Same frame and palette as the
+        empty-window text, because it is the same kind of sentence: the view
+        explaining itself while it has nothing to show.
+        """
+        names = [p.stem for p, _g, _m in self._slots]
+        if self._reference is not None:
+            names.append(self._reference[0])
+        listed = (names[0] if len(names) == 1
+                  else " and ".join([", ".join(names[:-1]), names[-1]]))
+        if not names or not self._drawing_in_ink():
+            # Nothing to name, or a state no current mode produces: the
+            # ordinary empty-window text is truer than an explanation that
+            # names the wrong cause.
+            self._show_placeholder()
+            return
+        thing = "is" if len(names) == 1 else "are"
+        # An open chart that cannot go on three ink axes (a CMYK chart, say)
+        # is a different sentence from no chart at all — saying "no chart is
+        # open" over a chart the person can see in the panel would be the
+        # small lie this window is careful about. The panel's note carries
+        # the particular reason; this names the state truthfully.
+        heading = ("Ink amounts show a chart on its own — and no chart is "
+                   "open" if self._chart is None else
+                   "Ink amounts show a chart on its own — and this chart "
+                   "cannot go on three ink axes")
+        c = PALETTES[self._appearance]
+        self._view.setHtml(
+            "<html><body style='background:" + c["bg"] + ";color:" + c["faint"]
+            + ";font:14px -apple-system,Segoe UI,sans-serif;display:flex;"
+            "align-items:center;justify-content:center;height:100%;margin:0'>"
+            "<div style='text-align:center;max-width:32em;line-height:1.55'>"
+            "<div style='font-size:52px;margin-bottom:12px'>◱</div>"
+            "<p style='color:" + c["text"] + ";font-size:17px;margin:0 0 14px'>"
+            + heading + "</p>"
+            "<p style='margin:0 0 14px'>" + html.escape(listed) + " " + thing
+            + " still open and still counted; nothing has been closed. Ink "
+            "amounts cannot draw " + ("it" if len(names) == 1 else "them")
+            + ", because every RGB printer fills the same full cube of them "
+            "— a shape drawn here would be true and would tell you "
+            "nothing.</p>"
+            "<p style='margin:0'>To see "
+            + ("it" if len(names) == 1 else "them") + " again, choose "
+            "<b>CIELAB</b> under <b>Draw it in</b> — or open a chart under "
+            "<b>A chart to be printed</b> to use this view for what it "
+            "shows.</p>"
+            "</div></body></html>")
+
     def _on_manual_light(self) -> None:
         """Show or hide the five individual lighting controls.
 
@@ -16346,8 +16471,28 @@ class GamutApp(QMainWindow):
         # A PLACED CHART IS A PICTURE IN ITS OWN RIGHT. Returning early when
         # only a chart is open would leave somebody who opened a chart and a
         # profile looking at the empty-window text with no idea why.
+        #
+        # AND WHEN NOTHING AT ALL CAN BE PICTURED, THE VIEW IS TOLD SO rather
+        # than left holding whatever it showed last. The bare `return` that
+        # used to live here is how a closed comparison stayed on screen as an
+        # sRGB shell with "Nothing — this one on its own" chosen beside it,
+        # its volume still printed below — a wrong sentence about a shape the
+        # person had just closed, the exact fault `_on_clear`'s own history
+        # records. The figures are re-asked too; each of the updaters already
+        # writes the honest blank for what is (not) open.
         if (not self._slots and self._reference is None
                 and not self._chart_drawable()):
+            # STILL BEING BUILT: redraws arrive from control handlers while
+            # the column is constructed, before the view exists. The old bare
+            # `return` covered that by accident; now it is said out loud. The
+            # constructor sets the placeholder itself once the view is there.
+            if getattr(self, "_view", None) is None:
+                return
+            self._show_placeholder()
+            self._update_volume()
+            self._update_coverage()
+            self._update_drift()
+            self._let_the_exports_follow_the_picture()
             return
         # The comparison can change without any chart changing, so the style
         # controls are refreshed here rather than only when charts are opened.
@@ -16356,6 +16501,22 @@ class GamutApp(QMainWindow):
         self._apply_closing_availability()
         self._apply_detail_availability()
         gamuts, clouds, styles, lost = self._scene_contents()
+        # OPEN FILES THE MODE CANNOT DRAW MUST SAY SO IN THE PICTURE, not
+        # only in a side-panel note. Ink amounts draw a chart and nothing
+        # else — that is the design, see _scene_contents — so with files
+        # open and no drawable chart this used to write a scene containing
+        # NOTHING and show it: Knut's "all empty screen", reached both by
+        # closing the chart while a .ti3 stayed open and by choosing Ink
+        # amounts with only a .ti3 open. The big view is where he looked for
+        # an answer, so the big view is where the answer goes.
+        if (not gamuts and not any(c is not None for c in clouds)
+                and self._chart_cloud() is None):
+            self._show_open_but_not_drawn()
+            self._update_volume()
+            self._update_coverage()
+            self._update_drift()
+            self._let_the_exports_follow_the_picture()
+            return
         # A NEW FILE EVERY TIME. Writing to one name and loading the same URL
         # let the web view serve its cached copy, so switching to light left
         # the scene dark -- the page had been rewritten and never re-read.
