@@ -8715,6 +8715,25 @@ window.cqSpinControls = function (settings) {
   function handler(ev) {
     var what = ev.target.getAttribute("data-cq");
     if (!what) return;
+    // ⚠ AND WHATEVER THIS PRESS DOES, THE MARK MUST COME OFF AGAIN.
+    //
+    // `busy()` below writes "an attempt is in progress"; only `push()` ->
+    // `settled()` takes it off. But several presses below RETURN before ever
+    // reaching `push()` -- opening or closing the panel, home, zoom in and
+    // out, the arrows, full screen, and the picture button. If one of those
+    // is the LAST thing a reader presses before reloading, the next load
+    // finds the mark still set, reads it as "the last attempt never
+    // finished", and THROWS THE WHOLE REMEMBERED STORE AWAY. Walls pressed
+    // off come back on, and every other choice goes with them.
+    //
+    // Reproduced twice: turn the walls off, press zoom in, reload -- the
+    // walls are back and the store has been rewritten. The guard is right and
+    // stays; what was wrong is that it was armed by presses it was never
+    // meant to judge. Settling once the press has been handled costs nothing
+    // (it clears on a later frame, which is the proof the page is alive) and
+    // `push()` settling too is harmless -- removing a key twice is removing
+    // a key.
+    window.setTimeout(settled, 0);
     // MARKED BEFORE THE WORK, NOT AFTER IT. If this press is the one that
     // never finishes, the mark is still set when the page is next opened,
     // and the choices that led here are thrown away rather than replayed.
