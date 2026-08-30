@@ -593,8 +593,9 @@ def verdict(run: Run) -> str:
         return (f"Nothing has moved that most people would notice. From "
                 f"{span} the biggest difference is ΔE {total:.2f}, which is "
                 f"below the usual rule of thumb for a difference worth "
-                f"chasing — and no larger than the 1 ΔEab two identical "
-                f"instruments can disagree by on one patch.")
+                f"chasing, and no larger than the 1 ΔEab two identical "
+                f"instruments can disagree by on one patch — worth roughly "
+                f"0.5 to 1.1 ΔE2000 depending on the colour.")
     scale = ("findable by a careful eye" if total < OBVIOUS
              else "hard to miss")
     if run.steady:

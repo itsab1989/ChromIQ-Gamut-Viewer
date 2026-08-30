@@ -218,11 +218,31 @@ LIGHT_CONTROLS = (
 #: and no number a returning reader has seen moves; only the claim about what
 #: an eye can do is corrected. Decided by the owner on 2026-08-30, with the
 #: alternatives and their costs in front of him.
+#: ⚠ NO PLACE IS ATTACHED TO THIS, and the first version attached one. It
+#: said 1 ΔEab was "about the same size as 1 ΔE2000 near a paper white", and
+#: defended that with "which is where this sentence is printed". It is not:
+#: the sentence prints in the drift-graph key, under the which-colours-moved
+#: cloud, in the drift box and on eight published pages, and every one of
+#: those is about a WHOLE cube. Measured over the 729-colour cloud one of
+#: those captions actually sits on, 1.01 ΔEab is a median 0.63 ΔE2000 and
+#: exactly ONE colour in 729 is near a paper white.
+#:
+#: The error ran towards reassurance, which is the worst direction for a
+#: sentence whose job is to say "this may be the instrument": at a saturated
+#: colour the instrument's bound is worth about 0.55 ΔE2000, so a reader
+#: taking the old equivalence at face value would have dismissed a 0.9
+#: ΔE2000 movement there as noise.
+#:
+#: Measured across 4,000 directions at 1.01 ΔEab: 1.04 ΔE2000 at a
+#: paper-white neutral, 1.13 at a mid neutral, 0.64 at a saturated red, 0.53
+#: at a saturated yellow. So: a range, everywhere, and no location.
+_DEAB_IN_DE2000 = "worth roughly 0.5 to 1.1 ΔE2000 depending on the colour"
+
 DE_RULES_OF_THUMB = (
     "Those are rules of thumb rather than cut-offs: published thresholds for "
     "the smallest visible difference run from about 0.8 to 3, and on the same "
-    "patch two identical instruments can disagree by as much as 1 ΔEab — "
-    "about the same size as 1 ΔE2000 near a paper white.")
+    "patch two identical instruments can disagree by as much as 1 ΔEab, "
+    f"{_DEAB_IN_DE2000}.")
 
 TICK_ROW = 20
 
@@ -4490,7 +4510,7 @@ class TimelineDialog(QDialog):
             "the same whether all of them moved 1.7, or nearly all of them "
             "sat still and a handful moved a great deal — and those are very "
             "different problems. Drag this up to 2 and only the colours "
-            "anybody could actually see are left.\n\n"
+            "most people would notice are left.\n\n"
             "WHERE IT STOPS: at the biggest difference in THIS pair, because "
             "beyond that there would be nothing left to hide and the rest of "
             "the slider would do nothing. If the two files are identical the "
@@ -5214,9 +5234,9 @@ class TimelineDialog(QDialog):
             return (f"{spans}: nothing here that most people would notice. "
                     f"The biggest difference anywhere in the cube is ΔE "
                     f"{d.worst:.2f}, below the usual rule of thumb for a "
-                    f"difference worth chasing — and no larger than the "
+                    f"difference worth chasing, and no larger than the "
                     f"1 ΔEab two identical instruments can disagree by on "
-                    f"one patch.")
+                    f"one patch ({_DEAB_IN_DE2000}).")
         scale = ("findable by a careful eye" if d.worst < drift_series.OBVIOUS
                  else "hard to miss")
         share = 100.0 * d.over_one / max(d.matched, 1)
@@ -14023,6 +14043,11 @@ class GamutApp(QMainWindow):
         # Emptying it here costs one rebuild and cannot be wrong.
         self._lab_gamuts.clear()
         self._other_whites.clear()
+        # ⚠ AND THE COMPARISON'S, which is keyed by path in the same way. It
+        # was left out, so a comparison could flip back to a shape that is no
+        # longer on disk when an unrelated control moved — the very fault the
+        # cache sits next to a fix for.
+        self._reference_cache.clear()
         # A rebuilt shape is a different object, and everything worked out
         # about the old pair describes shapes that are gone.
         self._forget_the_pair()
@@ -14050,6 +14075,10 @@ class GamutApp(QMainWindow):
                 self, "This profile could not be used",
                 f"{path.name}\n\n{exc}")
             return
+        # Its measurement too, or judging falls back to reading a .ti3 as an
+        # ICC profile. No caller today; wired up, it would have carried a
+        # stale one from a previous comparison.
+        self._reference_m = None
         self._reference = (_profile_label(path), g)
         self._reference_path = path
         self._compare.blockSignals(True)
@@ -14650,15 +14679,33 @@ class GamutApp(QMainWindow):
                 # white-point, detail or space change. The key holds
                 # everything that changes the shape, so a reader toggling a
                 # setting back and forth pays once.
-                key = (str(self._reference_path),
-                       self._white.currentData(), self._build_space(),
-                       self._detail.value(), self._relative.isChecked(),
-                       self._mode.currentData())
+                # ⚠ ONLY WHAT `_build_one` ACTUALLY READS. The first key
+                # held "everything that changes the shape" in the abstract —
+                # including Detail, which `_build_one` never consults for any
+                # file this branch builds. So every Detail nudge was a
+                # guaranteed MISS returning a bit-identical answer: six
+                # nudges measured at 3.67 s each, six identical volumes, and
+                # seven cache entries holding one gamut. The cache written to
+                # kill that cost did not touch it.
+                suffix = self._reference_path.suffix.lower()
+                key = [str(self._reference_path),
+                       self._white.currentData(), self._build_space()]
+                if suffix not in (".icc", ".icm", ".gam") \
+                        and suffix not in IMAGE_EXTENSIONS:
+                    # A measurement, and only a measurement, is read through
+                    # the paper-white tick and the shape mode.
+                    key += [self._relative.isChecked(),
+                            self._mode.currentData()]
+                key = tuple(key)
                 hit = self._reference_cache.get(key)
                 if hit is None:
                     hit = self._build_one(self._reference_path)
-                    if len(self._reference_cache) > 8:
-                        self._reference_cache.clear()
+                    # Oldest out, rather than all out: emptying the whole
+                    # cache on overflow throws away the entry the reader is
+                    # most likely to come back to.
+                    while len(self._reference_cache) >= 8:
+                        self._reference_cache.pop(
+                            next(iter(self._reference_cache)))
                     self._reference_cache[key] = hit
                 built, _m = hit
                 self._reference_m = _m
@@ -17689,14 +17736,14 @@ class GamutApp(QMainWindow):
         if worst >= 1.0:
             return said
         return said + (
-            "\nEach profile is built from measurements, and two identical "
-            "instruments can disagree by as much as 1 ΔEab on the same patch "
-            "— about the same size as 1 ΔE2000 near a paper white — so a "
-            "difference this small need not mean the device moved."
+            f"\nEach profile is built from measurements, and two identical "
+            f"instruments can disagree by as much as 1 ΔEab on the same "
+            f"patch — {_DEAB_IN_DE2000} — so a difference this small need "
+            f"not mean the device moved."
             if profiles else
-            "\nOn the same patch two identical instruments can disagree by "
-            "as much as 1 ΔE, so a difference this small may be the "
-            "instrument rather than the print.")
+            f"\nOn the same patch two identical instruments can disagree by "
+            f"as much as 1 ΔEab — {_DEAB_IN_DE2000} — so a difference this "
+            f"small may be the instrument rather than the print.")
 
     def _update_drift(self) -> None:
         """Has anything changed — asked of two readings, or of two profiles.

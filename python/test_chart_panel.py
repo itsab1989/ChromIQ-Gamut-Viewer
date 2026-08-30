@@ -17,6 +17,7 @@ because a profile and its measurement share a stem, and a warning without
 which 624 patches were reported outside a paper that reaches every one of them.
 """
 import os
+import re
 from types import SimpleNamespace
 
 import numpy as np
@@ -837,6 +838,33 @@ def test_when_the_file_cannot_be_read_both_ways_the_old_warning_still_fires(
 # --------------------------------------------------------------------------
 
 
+#: ⚠ THE SHAPE OF THE CLAIM, NOT A LIST OF ITS SPELLINGS. This check has now
+#: failed FIVE times, each time because it was widened to cover the last
+#: escape rather than the thing being claimed: exact phrases, then a missing
+#: word boundary, then a hyphen, then a line break, then an ELIDED VERB
+#: ("above 3 anybody can", with the "see" left off). Each patch caught the
+#: previous escape and none caught the next.
+#:
+#: So: a person-word, then optionally some words, then can/could, then
+#: optionally some words, then see — or the verb left off entirely at the end
+#: of a clause. Plus the two idioms that say it without a person at all.
+_CLAIMS = (
+    # nobody can see / nobody could ever see / nobody with a good eye can see
+    re.compile(r"\b(nobody|no[- ]one|anybody|anyone|everybody|everyone)\b"
+               r"[-\s\w]{0,30}?\b(can|could)\b[-\s\w]{0,20}?\bsee\b", re.I),
+    # "above 3 anybody can." — the verb elided at the end of the clause
+    re.compile(r"\b(nobody|no[- ]one|anybody|anyone|everybody|everyone)\b"
+               r"[-\s]{1,3}(can|could)\b\s*[.,;)]", re.I),
+    re.compile(r"becomes visible at all", re.I),
+    re.compile(r"\binvisible to (anyone|everybody|the eye|the naked eye)\b",
+               re.I),
+)
+
+#: What makes a sentence a claim about a COLOUR difference rather than about
+#: an email attachment or a legend key.
+_TOPIC = re.compile(r"ΔE|\bdE\b|Delta ?E|difference|moved|band", re.I)
+
+
 def test_no_wording_anywhere_claims_a_difference_is_invisible_to_everyone(app):
     """⚠ THIS SWEEP FAILED ONCE, AND THE WAY IT FAILED IS THE LESSON.
 
@@ -861,19 +889,16 @@ def test_no_wording_anywhere_claims_a_difference_is_invisible_to_everyone(app):
     # a space, a hyphen ("nobody-can-see-this band", in an alt attribute), and
     # a line break inside the sentence. Spelled-out "Delta E" counts as the
     # topic too, because a page wrote it that way.
-    claims = (
-        re.compile(r"\b(nobody|no[- ]one|anybody|anyone|everybody|everyone)\b"
-                   r"[-\s]{1,3}(can|could)[-\s]{1,3}see", re.I),
-        re.compile(r"becomes visible at all", re.I),
-        re.compile(r"\binvisible to (anyone|everybody|the eye)\b", re.I),
-    )
+    claims = _CLAIMS
     seen = 0
     # ⚠ references.py WAS NOT SCANNED, and a live sentence sat in it. A
     # sweep that names its own files will always name too few, so this takes
     # every module in the package.
-    for name in sorted(f.name for f in root.glob("*.py")
-                       if not f.name.startswith("test_")):
-        tree = ast.parse((root / name).read_text())
+    sources = [f for f in root.glob("*.py") if not f.name.startswith("test_")]
+    sources += sorted((root.parent / "scripts").glob("*.py"))
+    for source in sorted(sources):
+        name = source.name
+        tree = ast.parse(source.read_text())
         docs = set()
         for holder in ast.walk(tree):
             if isinstance(holder, (ast.Module, ast.ClassDef, ast.FunctionDef,
@@ -915,8 +940,7 @@ def test_no_wording_anywhere_claims_a_difference_is_invisible_to_everyone(app):
                     # sentence.
                     near = node.value[max(0, found.start() - 140):
                                       found.end() + 140]
-                    if not re.search(r"ΔE|\bdE\b|Delta ?E|difference|moved",
-                                     near, re.I):
+                    if not _TOPIC.search(near):
                         continue
                     raise AssertionError(
                         f"{name}:{node.lineno} still tells a reader "
@@ -1128,3 +1152,63 @@ def test_the_paper_white_is_carried_into_whatever_space_is_drawn(app):
     stub = NS(_space=NS(currentData=lambda: "luv"),
               _white=NS(currentData=lambda: "D50"))
     assert gamut_app.GamutApp._white_in_this_space(stub, None) is None
+
+
+def test_no_document_or_script_publishes_the_claim_either(app):
+    """⚠ F1 AND F2 SHIPPED PAST THIS CHECK TWICE, because it read Python and
+    nothing else. The claim lives in the settings reference, the README, the
+    front page, the showcase index and the page builders — and those are the
+    copies a reader is most likely to meet, because they are the published
+    ones."""
+    import html
+    import pathlib
+    import re
+    root = pathlib.Path(__file__).resolve().parent.parent
+    looked = 0
+    # ⚠ NOT THE CHANGELOG. It records what the application SAID at each
+    # release, quoting the old verdicts to explain what was fixed; rewriting
+    # those would falsify the history rather than correct a claim. Python
+    # under scripts/ goes through the source sweep above, which reads string
+    # literals and so does not trip over a comment quoting the old wording.
+    for f in sorted(list(root.glob("*.md")) + list(root.glob("docs/*.md"))
+                    + list(root.glob("docs/*.html"))
+                    + list(root.glob("docs/showcase/*.html"))):
+        if f.name == "CHANGELOG.md":
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        if f.suffix == ".html":
+            text = re.sub(r"<script\b.*?</script>", " ", text, flags=re.S | re.I)
+            text = re.sub(r"<style\b.*?</style>", " ", text, flags=re.S | re.I)
+            text = re.sub(r"<(?!/?(img|a)\b)[^>]+>", " ", text)
+            text = html.unescape(text)
+        flat = " ".join(text.split())      # a line break must not hide it
+        looked += 1
+        for claim in _CLAIMS:
+            for found in claim.finditer(flat):
+                near = flat[max(0, found.start() - 140): found.end() + 140]
+                if _TOPIC.search(near):
+                    raise AssertionError(
+                        f"{f.relative_to(root)} publishes "
+                        f"{found.group(0)!r} — …{near[:150]}…")
+    assert looked > 10, f"only {looked} documents were read"
+
+
+def test_the_document_sweep_catches_every_form_that_escaped_it(app):
+    """Each of these was live in this repository while a check reported
+    success. They are the test, not examples of it."""
+    import re
+    escapes = (
+        "below ΔE 1 most people would not notice the difference, above 3 "
+        "anybody can, and red means the same amount",
+        "every step inside the band nobody-can-see-this",
+        "a difference nobody could ever see, ΔE 0.4",
+        "a difference nobody with a good eye can see, ΔE 0.4",
+        "a difference invisible to the naked eye, ΔE 0.4",
+        "Nothing has moved that anybody could see. The biggest difference "
+        "is ΔE 0.42",
+    )
+    for sentence in escapes:
+        flat = " ".join(sentence.split())
+        hit = any(c.search(flat) for c in _CLAIMS)
+        assert hit and _TOPIC.search(flat), (
+            f"the sweep still cannot see {sentence[:60]!r}")

@@ -667,7 +667,7 @@ look exactly like a device that had moved.
 
 **The colour scale is fixed**, not stretched to whatever is in front of it, so
 two of these pictures can be held against each other: below ΔE 1 most people would not notice
-the difference, above 3 anybody can, and red means the same amount in every one
+the difference, above 3 it is hard to miss, and red means the same amount in every one
 of them.
 
 **from / to: any two, not only neighbours.** The steps in the chooser are
