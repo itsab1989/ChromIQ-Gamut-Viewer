@@ -2286,7 +2286,7 @@ def lightness_range(gamut) -> tuple[float, float]:
     return float(v[:, 0].min()), float(v[:, 0].max())
 
 
-def paper_white(gamut) -> tuple[float, float, float]:
+def paper_white(gamut, measured=None) -> tuple[float, float, float]:
     """The colour of the lightest thing the gamut reaches, as (L*, a*, b*).
 
     WHY THIS IS NOT ANSWERED BY THE LIGHTNESS RANGE, AND WHY IT MATTERS MORE
@@ -2304,12 +2304,26 @@ def paper_white(gamut) -> tuple[float, float, float]:
     because its white is not neutral, so the number here is the one that says
     whether that distinction applies to this paper.
 
-    The lightest VERTEX is the honest answer to "what is the paper", because
-    the paper is the substrate showing through with no ink on it, which is by
-    construction the lightest thing the printer can make. Ties on L* are
-    broken towards the least coloured, so a paper is never described as more
-    tinted than it is by a stray sample a hundredth of a lightness apart.
+    ⚠ THE LIGHTEST VERTEX IS ONLY THE PAPER WHEN NOTHING BRIGHTER WAS
+    MEASURED, and this used to argue otherwise -- "the paper is the substrate
+    showing through with no ink on it, which is by construction the lightest
+    thing the printer can make". True of a printer; not true of a FILE. Held
+    against a measurement whose brightest patch is a yellow, this function
+    reported that yellow as the paper: L* 102, "very warm", a* +13.6,
+    b* +138.9. Caught by a review, on screen, in the live window.
+
+    So `measured` -- the (L*, a*, b*) of the patch the reader knows to be the
+    paper, from `Measurement.white_lab` -- wins whenever it is given. The
+    lightest vertex remains the answer for a profile or a colour space, which
+    have no patches and no paper, and it is what a caller that does not know
+    still gets.
+
+    Ties on L* are broken towards the least coloured, so a paper is never
+    described as more tinted than it is by a stray sample a hundredth of a
+    lightness apart.
     """
+    if measured is not None:
+        return (float(measured[0]), float(measured[1]), float(measured[2]))
     v = np.asarray(gamut.vertices if hasattr(gamut, "vertices") else gamut,
                    float)
     if len(v) < 1:

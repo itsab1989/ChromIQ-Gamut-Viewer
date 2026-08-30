@@ -51,12 +51,33 @@ import math
 import re
 import sys
 import webbrowser
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 
 from gamutview import build_gamut, xyz_to_lab
+
+#: How the paper's white was arrived at, said in a way a reader could be
+#: shown, and named per kind of device: a screen has no ink and a scanner
+#: prints nothing, so "the patch printed with no ink" is wrong for both.
+#:
+#: ⚠ THE FALLBACK SENTENCES MUST NOT ACCUSE THE FILE. A chart that simply
+#: never printed a blank patch is an ordinary chart, not a malformed one, and
+#: telling somebody their file "does not say what was printed" sends them
+#: looking for a fault in a file that has none.
+_WHITE_WORDS = {
+    "OUTPUT": "the patch printed with no ink",
+    "DISPLAY": "the patch driven to full white",
+    "INPUT": "the patch at full scale on every channel",
+}
+_WHITE_DEFAULT = "the patch at full scale on every channel"
+_NO_FULL_SCALE = ("the lightest patch, because no patch here is at full "
+                  "scale on every channel")
+_NO_DEVICE = ("the lightest patch, because this file does not record what "
+              "was sent to the device")
+_DEAD_WHITE = ("the lightest patch, because the one at full scale reads as "
+               "no light at all")
 
 # .ti3 device and measurement columns, in the order we want them.
 _DEVICE_SETS = (("RGB_R", "RGB_G", "RGB_B"), ("CMYK_C", "CMYK_M", "CMYK_Y", "CMYK_K"))
@@ -74,12 +95,23 @@ class Measurement:
     n_patches: int
     #: Which patch was taken as the paper's white when `relative=True`, in
     #: plain words -- "the patch printed with no ink", or "the brightest
-    #: patch, because this file does not say what was printed". Empty when
-    #: the measurement was read absolutely and no white was chosen.
+    #: patch, or one of the sentences in `_WHITE_WORDS` saying why another
+    #: patch had to stand in for it. Empty only when the file carries no
+    #: usable measurement at all.
     #:
     #: ⚠ IT IS RECORDED BECAUSE CHOOSING IT WRONG IS CATASTROPHIC AND SILENT.
     #: See the note in `read_ti3`.
     white_from: str = ""
+    #: That patch's own (L*, a*, b*), so nothing downstream has to GUESS which
+    #: patch is the paper by taking the lightest one it can see.
+    #:
+    #: ⚠ THE LIGHTEST PATCH IS NOT ALWAYS THE PAPER, and whatever assumes it
+    #: is will describe a yellow as the white of the sheet. `paper_white()`
+    #: made exactly that mistake, in as many words, and only this field can
+    #: tell it otherwise. It is the measured white when the file was read
+    #: absolutely, and (100, 0, 0) by construction when it was read against
+    #: the paper's own white.
+    white_lab: tuple[float, float, float] | None = None
 
 
 #: Measurement files that are not .ti3, and the ArgyllCMS tool that turns each
@@ -142,6 +174,60 @@ def convert_to_ti3(path: Path) -> Path:
     return produced
 
 
+def which_patch_is_the_paper(device, xyz, device_class: str = ""):
+    """Which row is the paper's own white, and the words for why.
+
+    ⚠⚠ THE PAPER'S WHITE IS THE PATCH PRINTED WITH NO INK, NOT WHICHEVER
+    PATCH CAME BACK BRIGHTEST. The reader used to take the greatest Y and
+    never look at what was printed to get it.
+
+    On every genuine measurement those are the same patch. Of the 263 .ti3
+    files IN THIS REPOSITORY that carry both device values and XYZ, every one
+    holds a patch at full scale and 244 have it as the brightest; the 19 that
+    differ are all under scratch/ and NOT ONE OF THEM IS TRACKED BY GIT.
+    Reflective paper cannot be printed brighter than it is, so this is not
+    curing a fault anybody has hit -- it refuses a silent catastrophe on a
+    file that lies. On such a file, whose brightest patch is device
+    100/100/0 -- YELLOW -- the old rule did this the moment somebody ticked
+    "Judge each paper against its own white":
+
+        every patch moved   mean 53.33 dE2000, max 87.20
+        b* of the real white           -998.31
+        gamut volume        5,111,329 -> 26,494,611   (+418%)
+
+    and the panel went on calling that paper white "neutral".
+
+    FULL SCALE, NOT "THE GREATEST VALUE PRESENT". A chart that never printed
+    a blank would otherwise have its most saturated patch handed the white's
+    name, with full confidence, which is the very failure this refuses.
+
+    AND THE CHOSEN PATCH MUST ACTUALLY HAVE READ SOMETHING. Dividing by it is
+    the next thing that happens, so a full-scale patch that reads no light at
+    all -- Y of zero -- would turn every patch in the file to NaN, where the
+    old rule could not: it divided by the greatest Y. Found by a review of
+    this very change. Returns ``None`` when nothing in the file is usable,
+    and the caller decides whether that is fatal.
+    """
+    xyz = np.asarray(xyz, float)
+    usable = np.isfinite(xyz).all(axis=1) & (xyz[:, 1] > 0)
+    if not usable.any():
+        return None, ""
+    dead_blank = False
+    if device is not None and len(device) == len(xyz):
+        at_full = np.isclose(np.asarray(device, float), 1.0, atol=1e-6)
+        blank = np.nonzero(at_full.all(axis=1) & usable)[0]
+        if len(blank):
+            # A chart usually holds the white patch more than once; the
+            # brightest of those readings is the least noisy.
+            return (int(blank[np.argmax(xyz[blank, 1])]),
+                    _WHITE_WORDS.get(device_class, _WHITE_DEFAULT))
+        dead_blank = bool(at_full.all(axis=1).any())
+    lit = np.nonzero(usable)[0]
+    why = (_DEAD_WHITE if dead_blank else
+           _NO_FULL_SCALE if device is not None else _NO_DEVICE)
+    return int(lit[np.argmax(xyz[lit, 1])]), why
+
+
 def read_measurement(path, white_point: str = "D50",
                      relative: bool = False) -> "Measurement":
     """Read any measurement file this understands, converting when it must."""
@@ -150,9 +236,11 @@ def read_measurement(path, white_point: str = "D50",
         converted = convert_to_ti3(path)
         measured = read_ti3(converted, white_point, relative)
         # Keep the name the user knows it by, not the temporary copy's.
-        return Measurement(name=path.stem, device=measured.device,
-                           lab=measured.lab, instrument=measured.instrument,
-                           n_patches=measured.n_patches)
+        # ⚠ EVERY FIELD, NOT MOST OF THEM. This dropped `white_from` the
+        # day it was added, so every .cxf, .txt and .mxf reported that no
+        # white had been chosen when one had. Found by a review of that
+        # change: a field copied by hand is a field that will be forgotten.
+        return replace(measured, name=path.stem)
     return read_ti3(path, white_point, relative)
 
 
@@ -223,54 +311,32 @@ def read_ti3(path: Path, white_point: str = "D50",
             break
 
     white_from = ""
+    white_lab = None
+    device_class = ""
+    for line in text.splitlines():
+        if line.startswith("DEVICE_CLASS"):
+            parts = line.split('"')
+            device_class = parts[1].strip().upper() if len(parts) > 1 else ""
+            break
     if set(_XYZ) <= have:
         xyz = np.column_stack([column(c) for c in _XYZ]) / 100.0
+        pick, white_from = which_patch_is_the_paper(device, xyz, device_class)
         if relative:
-            # ⚠⚠ THE PAPER'S WHITE IS THE PATCH PRINTED WITH NO INK, NOT
-            # WHICHEVER PATCH CAME BACK BRIGHTEST. This used to take the
-            # greatest Y and never look at what was printed to get it.
-            #
-            # On every genuine measurement those are the same patch: 258 of
-            # the .ti3 files on this machine carry both device values and
-            # XYZ, and on 243 of them the brightest patch IS the blank one.
-            # Reflective paper cannot be printed brighter than it is, so this
-            # guard is not curing an observed field fault -- it refuses a
-            # silent catastrophe on a file that lies.
-            #
-            # The fifteen that differ are one synthetic fixture and its
-            # copies, whose brightest patch is device 100/100/0 -- YELLOW.
-            # Taken for the paper white it did this, the moment somebody
-            # ticked "Judge each paper against its own white":
-            #
-            #     every patch moved   mean 53.33 dE2000, max 87.20
-            #     b* of the real white           -998.31
-            #     gamut volume        5,111,329 -> 26,494,611   (+418%)
-            #
-            # and the panel went on calling that paper white "neutral".
-            #
-            # So: the patch printed at FULL SCALE on every channel is the
-            # white. Not merely the greatest value present -- a chart that
-            # never printed a blank would then hand its most saturated patch
-            # the white's name, with full confidence, which is the very
-            # failure this guard exists to refuse. A file with no full-scale
-            # patch falls back to the brightest one and SAYS that it did.
-            pick = None
-            if device is not None and len(device) == len(xyz):
-                blank = np.nonzero(np.isclose(device, 1.0, atol=1e-6)
-                                   .all(axis=1))[0]
-                if len(blank):
-                    # A chart usually holds the white patch more than once;
-                    # the brightest of those readings is the least noisy.
-                    pick = int(blank[np.argmax(xyz[blank, 1])])
-                    white_from = "the patch printed with no ink"
+            # ⚠⚠ The paper's white is the patch printed with no ink, and
+            # `which_patch_is_the_paper` carries the whole argument for it.
+            # Dividing by the wrong patch turns a measurement inside out in
+            # silence, which is the worst failure this application can have.
             if pick is None:
-                pick = int(np.argmax(xyz[:, 1]))
-                white_from = ("the brightest patch, because this file does "
-                              "not say what was printed")
+                raise ValueError(
+                    f"{path.name} has no patch that reflected any light, so "
+                    "there is nothing to judge the others against — it "
+                    "cannot be read against its own white")
             xyz = xyz / xyz[pick][1] * 1.0
             wp_xyz = xyz[pick]
             xyz = xyz * (np.array([0.96422, 1.0, 0.82521]) / wp_xyz)
         lab = xyz_to_lab(xyz, white_point)
+        if pick is not None:
+            white_lab = tuple(float(v) for v in lab[pick])
     elif set(_LAB) <= have:
         lab = np.column_stack([column(c) for c in _LAB])
         if relative:
@@ -290,7 +356,7 @@ def read_ti3(path: Path, white_point: str = "D50",
 
     return Measurement(name=path.stem, device=device, lab=lab,
                        instrument=instrument, n_patches=len(rows),
-                       white_from=white_from)
+                       white_from=white_from, white_lab=white_lab)
 
 
 def neutral_axis(measurement, tolerance: float = 0.02):

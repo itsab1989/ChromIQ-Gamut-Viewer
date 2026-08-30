@@ -17608,7 +17608,7 @@ class GamutApp(QMainWindow):
         try:
             lines = []
             lost = []
-            for path, g, _m in self._slots:
+            for path, g, measurement in self._slots:
                 dark, light = lightness_range(g)
                 # AND WHAT COLOUR THAT WHITE IS. Every other number in this
                 # window is blind to it -- volume barely moves when a white
@@ -17616,12 +17616,42 @@ class GamutApp(QMainWindow):
                 # papers can read as near-identical here while one is a cool
                 # brightened white and the other a warm cream, which is
                 # visible on every print at a glance. See paper_white().
-                lab = paper_white(g)
+                # ⚠ THE PAPER IS THE PATCH THAT WAS LEFT UNPRINTED, NOT THE
+                # LIGHTEST THING IN THE FILE, and this window learned the
+                # difference the hard way: held against a measurement whose
+                # brightest patch is a yellow, it called that yellow the paper
+                # -- "paper white L* 102 and very warm (a* +13.6, b* +138.9)".
+                # The reader knows which patch it is; `white_lab` carries it.
+                # Only in CIELAB, because the number beside it is a* and b*
+                # and a shape drawn in CIELUV has neither.
+                # `getattr`, because the tests drive this with stand-ins for
+                # a measurement and a readout must not depend on which.
+                known = (getattr(measurement, "white_lab", None)
+                         if self._space.currentData() == "lab" else None)
+                lab = paper_white(g, known)
                 how = describe_white(lab)
                 tint = (" and neutral" if how == "neutral"
                         else f" and {how} (a* {lab[1]:+.1f}, b* {lab[2]:+.1f})")
                 lines.append(f"{path.stem}: blacks reach L* {dark:.0f}, "
-                             f"paper white L* {light:.0f}{tint}")
+                             f"paper white L* {lab[0]:.0f}{tint}")
+                # AND IF ANYTHING CAME BACK LIGHTER THAN THE PAPER, SAY SO.
+                # A print cannot be lighter than the sheet it is on, so a
+                # shape that rises above its own white is telling the reader
+                # something about the FILE. Until this was written the view
+                # simply drew it, and a review found that nothing on screen
+                # said a word about why a patch sat above white.
+                if known is not None and light > known[0] + 0.5:
+                    seen = np.asarray(getattr(measurement, "lab", []), float)
+                    above = int((seen[:, 0] > known[0] + 0.5).sum()) if len(seen) else 0
+                    lines.append(
+                        f"{path.stem}: {above} of its patches came back "
+                        f"lighter than the one taken as its white — the shape "
+                        f"reaches L* {light:.0f} against a white at "
+                        f"L* {known[0]:.0f}. Nothing printed on a sheet can "
+                        f"be lighter than the sheet, so either these patches "
+                        f"were not measured off paper, or the patch this file "
+                        f"marks as unprinted is not the one that was left "
+                        f"blank.")
                 # AND WHETHER THAT END CAN ACTUALLY BE SEEN. The numbers above
                 # are printed whether or not the shape they describe is
                 # visible, and at one end of the picture it may not be: a
