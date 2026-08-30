@@ -4084,7 +4084,53 @@ _DEPTH_JS = """
       // is 27 with the floor at 0.01. It is one token, it is reached by one
       // and a half clicks of the page's own wheel zoom, and it guarantees the
       // fitted planes can never be worse than leaving them alone.
-      var near = Math.max(0.01, lo - pad), far = hi + pad;
+      // ⚠⚠ THE NEAR PLANE IS NOT FREE: IT DECIDES WHICH WALL THE LIBRARY
+      // PAINTS. This is the whole reason the walls were being drawn in front
+      // of the shape, and it was THIS FUNCTION doing it.
+      //
+      // gl-plot3d's cube.js chooses which of each axis's two faces to paint by
+      // orienting against the NDC origin. The pre-image of that origin sits
+      // exactly `2*near*far/(near+far)` in front of the eye — so it MOVES WITH
+      // THE PLANES. Fitted symmetrically about the box, as this did before,
+      // that point lands `r^2/D` from the box CENTRE: inside the box, which is
+      // the most ambiguous place it could possibly be. The orientation test
+      // then goes undecided over wide arcs and falls through to cube.js's
+      // projected-AREA tie-break, which paints the bigger-looking face — and
+      // the nearer face always looks bigger.
+      //
+      // MEASURED, on a real page in the app's own viewer: 86.2% of frames
+      // picked the wrong face in the worst regime, 29.2% on the published
+      // page 22, against 1.2% with no fit at all. The shape has nothing to do
+      // with it: a ball in that same box and camera reaches 85.4%.
+      //
+      // SO THE CURE IS TO PUT THAT POINT WHERE IT CANNOT BE AMBIGUOUS —
+      // comfortably IN FRONT of the box, at a fraction of the distance to the
+      // nearest corner. Solving `2*n*f/(n+f) = H` for the near plane gives
+      // `n = H*f / (2*f - H)`, which is the line below.
+      //
+      // ⚠ AND IT COSTS THE DEPTH BUFFER ALMOST NOTHING, which is the only
+      // reason this is the right cure rather than a trade. The planes exist
+      // because gl-plot3d sets none and a 16-bit buffer over its 0.01/1000
+      // fallback makes one depth step bigger than a Lab unit. Measured worst
+      // step: 0.07 L* here, against 3.5 L* with no fit. The hatching stays
+      // cured, settled by looking at pictures at opacity 1.0 rather than by a
+      // speckle count — that counter was itself caught miscounting, twice.
+      //
+      // ⚠ AND IT WORKS AGAINST THE STOCK LIBRARY, which is what makes it the
+      // ROOT fix. Patching the bundled viewer would have cured only the pages
+      // that carry it: a page exported WITHOUT the viewer fetches an
+      // unmodified plotly from the CDN when its reader opens it, and that is
+      // the file that travels furthest from here. Verified on a real network
+      // fetch in headed Chromium and WebKit: 76.9% / 76.2% wrong before,
+      // 1.9% / 1.9% after.
+      var far = hi + pad;
+      //: How far in front of the nearest corner the reference point sits, as
+      //: a share of the distance to it. Anywhere in 0.4..0.75 gives EXACT
+      //: agreement with the unfitted library's own choice, in every scenario
+      //: tried -- spins, drags, four box shapes, tilted orbits, zooms, two
+      //: rooms and the real window -- so this is a plateau, not a knife edge.
+      var H = 0.4 * Math.max(lo, 0);
+      var near = Math.max(0.01, H * far / (2 * far - H));
       if (!(far > near)) return;
       if (Math.abs(gl.zNear - near) > 1e-9 || Math.abs(gl.zFar - far) > 1e-9) {
         gl.zNear = near;
@@ -4092,76 +4138,28 @@ _DEPTH_JS = """
       }
     } catch (e) { /* a page that cannot do this draws what it drew before */ }
   }
-  // ⚠ AND THE LIBRARY SOMETIMES PAINTS A WALL ON THE CAMERA'S OWN SIDE.
+  // ⚠ THE WALL RULE THAT USED TO LIVE HERE IS GONE, AND ON PURPOSE.
   //
-  // Reported: "they are in the box only the walls move in front of it
-  // sometimes", and "so far i did not see it in your stills but only in the
-  // moving ones". Both halves are right. gl-plot3d paints one of each axis's
-  // two faces and records which in `axes.lastCubeProps.axis`; painted on the
-  // face the camera is on, the wall is in front of everything and takes a
-  // bite out of the shape. That is exactly
+  // It watched for the library painting a wall on the camera's own side and
+  // relayouted that wall away. It was treating a symptom THIS FILE CAUSED:
+  // the near plane decides which face cube.js picks (see `fit`), and with the
+  // planes chosen properly the library picks correctly by itself. Measured
+  // after the fit change: exact agreement with the unfitted library's own
+  // choice in every scenario tried -- spins, drags, four box shapes, tilted
+  // orbits, zooms, two rooms, and the real window.
   //
-  //     axis[i] * eye[i] > 0
+  // AND IT WAS NOT HARMLESS. It re-added walls a reader had deliberately
+  // turned off (119 frames of 120) and could blank whole rooms in the window,
+  // breaking this project's own promise that a page saved without walls never
+  // gains them. A cure that must be guarded against itself is the wrong cure.
   //
-  // Swept through the band with the spin stopped and the camera read back,
-  // eleven cameras, the rule against the pixels covered:
-  //
-  //     eye y      axis        rule       covered
-  //     -0.150   [ 1, 1,-1]    clean            1
-  //     -0.040   [-1, 1,-1]    COVERED      2,377
-  //      0.000   [-1, 1,-1]    COVERED      2,388
-  //      0.040   [-1, 1,-1]    COVERED      2,420
-  //      0.080   [ 1,-1,-1]    clean            2
-  //
-  // Eleven of eleven. The camera's x never moves -- it is fixed at -2.0166 --
-  // and the library still flips the X face as Y crosses zero, which is why
-  // the band is under a degree wide and why only a moving page shows it.
-  //
-  // ⚠ THIS FIX DID NOT MAKE IT, IT STOPPED HIDING IT. With 0.01/1000 over 16
-  // bits one depth step is bigger than the whole scene, so nothing was
-  // ordered by depth and the shape won by draw order alone.
-  //
-  // ⚠ AND SETTING `axes.backgroundEnable` DOES NOTHING: the library rebuilds
-  // that array from the layout on every frame. Measured -- 2,386 pixels
-  // covered before and 2,386 after. Relayout is the only lever, so it is
-  // used ONLY when the verdict changes, which on a turning page is about
-  // eight times a revolution and not once a frame.
-  var SIDES = ["xaxis", "yaxis", "zaxis"];
-  function wrongWall(gl) {
-    try {
-      var ax = gl.axes, cp = ax && ax.lastCubeProps, e = gl.camera && gl.camera.eye;
-      if (!cp || !cp.axis || !e || e.length !== 3) return null;
-      var bad = [false, false, false], i;
-      for (i = 0; i < 3; i++) bad[i] = cp.axis[i] * e[i] > 0;
-      return bad;
-    } catch (x) { return null; }
-  }
-  function walls(gd, key, gl) {
-    var bad = wrongWall(gl);
-    if (!bad) return;
-    var want = (bad[0] ? "1" : "0") + (bad[1] ? "1" : "0") + (bad[2] ? "1" : "0");
-    if (gl.__cqWallSaid === want || gl.__cqWallBusy) return;
-    gl.__cqWallSaid = want;
-    // ⚠ NEVER GIVE A PAGE WALLS IT DID NOT HAVE. Saved with the backgrounds
-    // off -- the see-through colouring does exactly that -- turning them
-    // "back" on would be this script inventing furniture.
-    var had = gl.__cqWallWas, i, change = {}, any = false;
-    if (!had) return;
-    for (i = 0; i < 3; i++) {
-      var on = had[i] && !bad[i];
-      change[key + "." + SIDES[i] + ".showbackground"] = on;
-      if (on !== had[i]) any = true;
-    }
-    gl.__cqWallBusy = true;
-    // ⚠ OUT OF THE RENDER, ALWAYS. Calling relayout from inside onrender is
-    // how a page redraws itself for ever.
-    setTimeout(function () {
-      try { if (typeof Plotly !== "undefined") Plotly.relayout(gd, change); }
-      catch (x) { /* a page that cannot do this keeps its walls */ }
-      gl.__cqWallBusy = false;
-    }, 0);
-    return any;
-  }
+  // ⚠ AND THE GRID HALF WAS NEVER CURABLE THIS WAY IN ANY CASE. `showgrid[i]`
+  // does not rule lines on plane i; it removes the i-FAMILY from the OTHER
+  // TWO planes, and gl-plot3d's own `gridEnable` is per-family too. Toggling
+  // it left one family ruled across everything -- "four or five sheets of
+  // glass" in Basti's own screenshots. Fixing the CAUSE fixes the panel, the
+  // grid, the ticks and the axis labels together, because all four follow the
+  // same face pick.
 
   function arm(gd) {
     if (!gd || !gd._fullLayout) return;
@@ -4180,21 +4178,13 @@ _DEPTH_JS = """
       var was = gl.onrender;
       var mine = function () {
         fit(gl);
-        walls(gd, key, gl);
         if (typeof was === "function") return was.apply(this, arguments);
       };
       mine.__cqDepth = true;
       gl.onrender = mine;
       // What this page asked for, kept once, so the wall rule can only ever
-      // take a wall away and never add one.
-      if (!gl.__cqWallWas) {
-        try {
-          var sc2 = gd._fullLayout[key];
-          gl.__cqWallWas = [!!sc2.xaxis.showbackground,
-                            !!sc2.yaxis.showbackground,
-                            !!sc2.zaxis.showbackground];
-        } catch (x) { gl.__cqWallWas = null; }
-      }
+      // take furniture away and never add any.
+      //
       fit(gl);
     });
   }
@@ -5223,6 +5213,24 @@ window.cqSpin = (function () {
     return gd.layout && gd.layout.scene && gd.layout.scene.camera;
   }
   function setCam(gd, cam) {
+    // ⚠ KEEP THE PROJECTION THE PAGE WAS SAVED WITH.
+    //
+    // `cam` comes from `liveCam()`, which reports the eye, the centre and the
+    // up vector -- and NOT `projection`. Handing that to `setCamera` replaces
+    // the whole camera, so a page saved in ORTHOGRAPHIC silently reopened in
+    // perspective: `fitToPane` pushes a projection-less camera through here at
+    // load, before the reader has touched anything. Measured in both engines.
+    //
+    // So the projection is carried over from whatever the scene currently has
+    // unless the caller names one. A camera missing a field must not be read
+    // as a camera asking for that field's default.
+    try {
+      if (cam && !cam.projection) {
+        var now = gd._fullLayout && gd._fullLayout.scene
+                  && gd._fullLayout.scene.camera;
+        if (now && now.projection) cam.projection = now.projection;
+      }
+    } catch (e) { /* no layout to read: send the camera as it came */ }
     var s = null;
     try { s = gd._fullLayout.scene._scene; } catch (e) {}
     if (s && s.setCamera) s.setCamera(cam);          // cheap: no relayout
@@ -8802,6 +8810,35 @@ window.cqSpinControls = function (settings) {
       window.setTimeout(fit, 60);
     });
   });
+  // ⚠ READ WHAT THE PAGE WAS SAVED WITH BEFORE APPLYING ANYTHING.
+  //
+  // `picture` starts {grid: true, ...} — a HARDCODED default — and
+  // `applyPicture()` then relayouts that default over the figure at load. On a
+  // page deliberately saved with the walls and grid OFF, that put them back
+  // within three seconds of opening, from the page's own control strip.
+  //
+  // It was invisible until now only because the wall rule used to write
+  // `showbackground: false` over the top of it; deleting that rule (see
+  // `_DEPTH_JS`) UNMASKED it. A symptom-cover hiding a second fault is exactly
+  // why the cover had to go.
+  //
+  // So the control is initialised FROM THE FIGURE rather than from a guess,
+  // and a reader who saved a page without walls opens it without walls.
+  try {
+    var firstScene = null, gd0 = document.querySelector(".js-plotly-plot");
+    if (gd0 && gd0._fullLayout) {
+      Object.keys(gd0._fullLayout).forEach(function (k) {
+        if (firstScene === null && k.indexOf("scene") === 0) firstScene = k;
+      });
+      if (firstScene) {
+        var ax0 = gd0._fullLayout[firstScene].xaxis || {};
+        // A page counts as "grid on" only if it really carries one.
+        picture.grid = !!(ax0.showbackground || ax0.showgrid);
+      } else if (gd0._fullLayout.xaxis) {
+        picture.grid = gd0._fullLayout.xaxis.showgrid !== false;
+      }
+    }
+  } catch (e) { /* unreadable layout: keep the default and carry on */ }
   applyPicture();
   dressAll();
   tellShapes();

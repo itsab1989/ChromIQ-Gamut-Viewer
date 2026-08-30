@@ -51,6 +51,33 @@ def _ball(n: int = 1600, seed: int = 1) -> np.ndarray:
     return u / np.linalg.norm(u, axis=1)[:, None]
 
 
+def _cube_surface(per_side: int = 26) -> np.ndarray:
+    """Points all over the surface of a cube, as unit offsets in -1..1.
+
+    ⚠ A CUBE IS THE INSTRUMENT FOR ANYTHING ABOUT THE WALLS, and that is why
+    it is here. Basti asked for "a cube like shape that in turn fills most of
+    the room so you can easily spot the wall when it is in a place where it
+    does not belong". A ball is the worst possible shape for that question:
+    it is round, so it never lines up with anything, it leaves most of the box
+    empty, and a wall in the wrong place merely looks like more background.
+
+    A cube's faces are FLAT and PARALLEL TO THE WALLS. Fill the room with one
+    and the answer needs no pixel counting: a wall that belongs behind the
+    shape is hidden completely, and a wall painted on the camera's own side is
+    a grey panel lying across a flat sheet of colour, which anybody can see at
+    a glance and in one still frame.
+    """
+    t = np.linspace(-1.0, 1.0, per_side)
+    x, y = np.meshgrid(t, t)
+    x, y = x.ravel(), y.ravel()
+    one = np.ones_like(x)
+    faces = [np.column_stack(f) for f in (
+        (x, y, one), (x, y, -one),          # top and bottom
+        (x, one, y), (x, -one, y),          # two sides
+        (one, x, y), (-one, x, y))]         # two ends
+    return np.unique(np.vstack(faces), axis=0)
+
+
 def write(folder: pathlib.Path, name: str, lab) -> int:
     """One measurement file, in the smallest form the reader accepts."""
     lab = np.asarray(lab, float)
@@ -108,6 +135,17 @@ def make(folder) -> dict:
         MIDDLE + np.array([0, 18, 0]) + u * np.array([40, 45, 45]))
     made["pancake"] = write(folder, "pancake", MIDDLE + u * np.array([10, 46, 46]))
     made["column"] = write(folder, "column", MIDDLE + u * np.array([46, 12, 12]))
+    # ⚠ THE WALL TEST. Nearly the whole L* range and a wide, square a*/b*
+    # spread, so the shape fills the room it is drawn in and its flat faces
+    # sit parallel to the box's own walls. Anything grey lying ACROSS a face
+    # is a wall on the wrong side of the box, and it needs no instrument to
+    # see -- which is the point, because every pixel-counting instrument
+    # aimed at this fault so far has measured the symptom (a wall COVERING
+    # the shape) rather than the fault (a wall on the camera's own side,
+    # which at a grazing angle covers nothing and is still wrong).
+    made["cube-fills-the-room"] = write(
+        folder, "cube-fills-the-room",
+        MIDDLE + _cube_surface() * np.array([45.0, 60.0, 60.0]))
     return made
 
 

@@ -95,8 +95,11 @@ def test_the_fit_is_still_findable_in_the_script():
     """IF IT IS NOT, EVERY OTHER CHECK HERE WOULD SKIP OR LIE. Renaming or
     restructuring the script must break this loudly, not silently."""
     body = _the_shipped_fit()
-    assert 400 < len(body) < 9000, f"fit() is {len(body)} characters, which is "\
-        f"not the shape of the function these tests were written against"
+    # ⚠ THE BOUND IS WIDE BECAUSE THE FUNCTION CARRIES ITS OWN REASONS. It
+    # grew when the near plane turned out to decide WHICH WALL the library
+    # paints; that finding is written where the next person will meet it.
+    assert 400 < len(body) < 14000, f"fit() is {len(body)} characters, which "\
+        f"is not the shape of the function these tests were written against"
     # ⚠ THIS IS A CHECK ON THE TEXT, AND IT IS HERE BECAUSE NOTHING ELSE CAN
     # SEE THE FAULT. The failure is that `gl.bounds` is the data's box BEFORE
     # the model matrix while the camera sits after it — and only the real
@@ -218,7 +221,7 @@ console.log(JSON.stringify(cases.map(function (c) {
     corners = np.array([[x, y, z] for x in (lo_box[0], hi_box[0])
                         for y in (lo_box[1], hi_box[1])
                         for z in (lo_box[2], hi_box[2])], float)
-    clamped = 0
+    inside_the_box = clear_of_the_box = 0
     for eye, (near, far) in zip(_EYES, planes):
         e = np.asarray(eye, float)
         view = -e / np.linalg.norm(e)
@@ -230,23 +233,68 @@ console.log(JSON.stringify(cases.map(function (c) {
             f"furthest corner, and the axis furniture is drawn out there — "
             f"a fifth of the box erased 13,413 pixels of it")
 
+        # ⚠⚠ THE NEAR PLANE IS NOT FREE — IT DECIDES WHICH WALL IS PAINTED.
+        # gl-plot3d's cube.js orients its face pick against the NDC origin,
+        # whose pre-image sits exactly 2*n*f/(n+f) in front of the eye. Fitted
+        # symmetrically about the box, as this once was, that point lands
+        # INSIDE the box, the pick goes ambiguous over wide arcs, and the
+        # library falls through to a projected-area tie-break that paints the
+        # NEARER face — a wall across the shape. Measured before the cure:
+        # 86.2% of frames picked wrong in the worst regime, 29.2% on the
+        # published page 22, against 1.2% with no fit at all.
+        #
+        # So the property that matters is not "how far in front of the corner
+        # is the near plane" but "is the reference point clear of the box".
+        reference = 2.0 * near * far / (near + far)
+        # ⚠ ONLY WHERE "IN FRONT OF THE BOX" MEANS ANYTHING. With the eye
+        # INSIDE the box the nearest corner is behind it (lo < 0) and there is
+        # no outside to keep the reference point in; the near plane clamps to
+        # the library's floor and cube.js is in the regime it always was.
+        if lo <= 0:
+            inside_the_box += 1
+            assert near >= 0.01 - 1e-12, (
+                f"from {eye}, inside the box, the near plane is {near!r} — "
+                f"inside gl-plot3d's own floor")
+            continue
+        clear_of_the_box += 1
+        assert reference < lo, (
+            f"from {eye} the NDC origin's pre-image sits {reference:.4f} from "
+            f"the eye and the nearest corner is at {lo:.4f} — it is INSIDE the "
+            f"box, which is what makes the library paint the near wall")
+        assert reference <= 0.9 * lo, (
+            f"from {eye} the reference point is {reference:.4f} against a "
+            f"nearest corner at {lo:.4f} — too close to the box to be safe; "
+            f"the measured plateau puts it at 0.4..0.75 of that distance")
+
         if lo - want < 0.01:
-            # The clamp is the only thing acting here, and it is the point.
-            clamped += 1
-            assert near == pytest.approx(0.01, abs=1e-12), (
-                f"from {eye} the near plane clamped to {near!r} instead of "
-                f"gl-plot3d's own 0.01 — closer than the library's floor is "
-                f"strictly worse than not fitting at all")
+            assert near >= 0.01 - 1e-12, (
+                f"from {eye} the near plane is {near!r}, inside gl-plot3d's "
+                f"own 0.01 floor — depth resolution is proportional to it")
         else:
-            assert lo - near >= want * 0.999, (
-                f"from {eye} the near plane is only {lo - near:.4f} in front "
-                f"of the nearest corner")
+            # The near plane is now placed to control the face pick, not to
+            # sit a fixed pad in front of the corner — but it must still never
+            # cut the box, which the clip test above already asserts.
+            assert near < lo, (
+                f"from {eye} the near plane at {near:.4f} is past the nearest "
+                f"corner at {lo:.4f} — the picture would be cut")
         assert near >= 0.01, (
             f"from {eye} the near plane is {near!r}, inside the library's own "
             f"floor — depth resolution is proportional to it")
-    assert clamped >= 2, (
-        f"only {clamped} of the cameras put the near plane against the floor, "
-        f"so the clamp is barely exercised and a change to it could pass")
+    # ⚠ REFUSE AN EMPTY POPULATION. If no camera were ever clear of the box the
+    # root-fix invariant above would be asserted zero times and this whole test
+    # would pass by never asking anything.
+    assert clear_of_the_box >= 6, (
+        f"only {clear_of_the_box} cameras sat clear of the box, so the "
+        f"reference-point invariant was barely exercised")
+    assert inside_the_box >= 1, (
+        f"no camera was inside the box, so the clamp path is untested")
+    # ⚠ `clamped` USED TO COUNT THIS and is now dead: under the old design the
+    # floor bit wherever the near plane would have gone negative, which is
+    # exactly the eye-inside-the-box case now counted above. Counting it twice
+    # would look like two checks and be one.
+    assert inside_the_box >= 2, (
+        f"only {inside_the_box} cameras sat inside the box, so the floor that "
+        f"stops the near plane going negative is barely exercised")
 
 @pytest.mark.skipif(_NODE is None, reason="no node on the path to run it with")
 def test_it_is_a_large_improvement_and_not_a_small_one():
