@@ -13331,6 +13331,34 @@ class GamutApp(QMainWindow):
                 f"edge, {report.n_beyond} outside.")
         if same_profile:
             if report.all_inside:
+                # ⚠ "EVERY PATCH SITS INSIDE" WAS A CONTRADICTION OF THE LINE
+                # ABOVE IT, and it is what sent a colour-management
+                # practitioner hunting a fault that was not there. Knut, on his
+                # own printer profile and chart: "showed patches outside the
+                # gamut, and not all of them red highlighted." He was right —
+                # 184 of his 1,168 patches DO sit outside the surface — and the
+                # page then told him every patch was inside. `all_inside` means
+                # "none far enough out to mark", which is not the same claim.
+                #
+                # The patches on the edge are named and explained now, in the
+                # place the reader is already looking, because a dot drawn
+                # outside a shape and not marked needs a sentence or it reads
+                # as a broken check.
+                if report.n_edge:
+                    return (head + f"\n{report.n_edge} of them sit a hair "
+                            f"outside the surface — the furthest by "
+                            f"{report.worst:.2f} ΔE2000, and a difference "
+                            f"under 1 ΔE2000 is one nobody can see. That is "
+                            f"the thickness of the boundary itself rather than "
+                            f"a fault: a gamut surface is drawn through a grid "
+                            f"of samples, and the real edge bulges very "
+                            f"slightly between them. They are left unmarked "
+                            f"deliberately, because marking a difference no "
+                            f"eye can detect would send you looking for a "
+                            f"problem that is not there. Nothing here needs "
+                            f"looking into — and this is a check of the chart "
+                            f"rather than of your printer, because the same "
+                            f"profile answered both halves of the question.")
                 return (head + "\nEvery patch sits inside the profile it was "
                         "placed through — which is what should happen, and is "
                         "a check of the chart rather than of your printer.")

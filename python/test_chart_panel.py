@@ -92,9 +92,40 @@ def test_a_whisker_outside_the_placing_profile_is_not_called_a_fault(app):
 
 
 def test_a_patch_too_close_to_see_is_on_the_edge_and_nothing_is_outside(app):
+    """⚠ THIS TEST USED TO PIN A CONTRADICTION, and a colour-management
+    practitioner walked straight into it.
+
+    It asserted that a verdict saying "1 on the edge" ALSO said "Every patch
+    sits inside the profile it was placed through". Both sentences were
+    printed, one under the other, and they cannot both be true. Knut, on his
+    own printer profile and 1,168-patch chart: "showed patches outside the
+    gamut, and not all of them red highlighted." He was right — 184 of his
+    patches really do sit outside the surface, by at most 0.68 ΔE2000 — and
+    the page told him every patch was inside.
+
+    `Outside.all_inside` means "none far enough out to MARK", which is a
+    different claim from "none outside". The words now say which is which.
+    """
     said = verdict("P", [0.0, 0.0, -0.05], same_profile=True)
     assert "1 on the edge, 0 outside" in said, said
-    assert "Every patch sits inside" in said
+    assert "Every patch sits inside" not in said, (
+        "the verdict claims every patch is inside while its own first line "
+        f"says one is on the edge: {said!r}")
+    # It must NAME them, say how far, and say why they are not marked —
+    # otherwise a dot drawn outside a shape with no mark reads as a broken
+    # check, which is exactly how this was reported.
+    assert "hair outside" in said, said
+    assert "ΔE2000" in said, said
+    assert "nobody can see" in said, said
+
+
+def test_when_nothing_is_even_on_the_edge_it_still_says_so_plainly(app):
+    """THE OTHER HALF, so the fix above cannot swallow the clean case. A chart
+    genuinely wholly inside must still get the short, reassuring sentence."""
+    said = verdict("P", [0.0, 0.0, 0.0], same_profile=True)
+    assert "0 on the edge, 0 outside" in said, said
+    assert "Every patch sits inside" in said, said
+    assert "hair outside" not in said, said
 
 
 def test_a_long_way_outside_the_placing_profile_names_the_real_causes(app):
