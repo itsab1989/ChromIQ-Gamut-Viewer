@@ -276,6 +276,10 @@ def window_with(paths):
     for name in ("_fit_drift_cut", "_drift_hiding", "_drift_cut_reads",
                  "_drift_cut_changed", "_one_thing_over_time",
                  "_the_ones_that", "_profile_drift_rows",
+                 # What a ΔE that size is allowed to claim about an eye. One
+                 # function answers for both drift boxes; see
+                 # gamut_app.DE_RULES_OF_THUMB.
+                 "_drift_verdict",
                  # What the cloud's colours stand for. No chooser is set on
                  # the stand-in, so this gives its no-chooser answer -- how
                  # far it moved -- which is what these tests describe.

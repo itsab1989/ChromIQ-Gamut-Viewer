@@ -116,7 +116,7 @@ def test_a_patch_too_close_to_see_is_on_the_edge_and_nothing_is_outside(app):
     # check, which is exactly how this was reported.
     assert "hair outside" in said, said
     assert "ΔE2000" in said, said
-    assert "nobody can see" in said, said
+    assert "most people would not notice" in said, said
 
 
 def test_when_nothing_is_even_on_the_edge_it_still_says_so_plainly(app):
@@ -157,7 +157,7 @@ def test_against_a_measurement_the_edge_patches_are_named_too(app):
         f"the verdict claims everything is within reach while its own first "
         f"line says one patch is on the edge: {said!r}")
     assert "hair outside" in said, said
-    assert "nobody can see" in said, said
+    assert "most people would not notice" in said, said
 
 
 def test_against_a_measurement_a_clean_chart_still_reads_cleanly(app):
@@ -814,3 +814,125 @@ def test_when_the_file_cannot_be_read_both_ways_the_old_warning_still_fires(
     said = caution(measured=True, judging_relative=False)
     assert "measured against different whites" in said
     assert "Judge each paper against its own white" in said
+
+
+# --------------------------------------------------------------------------
+# What a ΔE number is allowed to claim about an eye
+#
+# ⚠ THE APPLICATION ASSERTED SOMETHING THE LITERATURE DOES NOT SUPPORT, in
+# five places, in a three-tier verdict, and in the pages it exports: "below 1
+# nobody can see the difference; above 3 anybody can".
+#
+# Paravina et al. 2015 (J Esthet Restor Dent 27(S1):S1-S9) put 50:50
+# perceptibility at 0.8 ΔE00 and acceptability at 1.8 — psychometric MIDPOINTS,
+# not cut-offs — so at the threshold this called invisible, half the observers
+# see it. Published just-noticeable values across four studies span 1.0, 2.15,
+# 2.3 and 3.0 (Thomas, Colantoni & Trémeau, CCIW 2013).
+#
+# And where two MEASUREMENTS are compared the instrument outweighs the eye:
+# ICC White Paper 22 found two identical handheld instruments disagreeing on
+# the same patch by 0.47 ΔEab on average and 1.01 at worst, as BIAS rather
+# than noise.
+#
+# The thresholds are unchanged. Only the claim is.
+# --------------------------------------------------------------------------
+
+
+def test_no_wording_anywhere_claims_a_difference_is_invisible_to_everyone(app):
+    """⚠ SCANNED FROM THE STRING LITERALS, not from the file's text. A sweep
+    over raw source flags this module's own comment recording what was
+    corrected, and it flags "anybody can make the window bigger" — neither of
+    which a reader ever sees. Only what can reach a panel or a page counts."""
+    import ast
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent
+    forbidden = ("nobody can see the difference", "nobody can see it",
+                 "nobody can see this", "Nothing anybody could see",
+                 "ΔE 3 anybody can", "above 3 anybody can")
+    seen = 0
+    for name in ("gamut_app.py", "drift_series.py", "chart.py"):
+        tree = ast.parse((root / name).read_text())
+        # A DOCSTRING IS NOT A SENTENCE A READER MEETS, and the ones here
+        # quote the old wording deliberately, to record what was corrected.
+        docs = set()
+        for holder in ast.walk(tree):
+            if isinstance(holder, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                   ast.AsyncFunctionDef)):
+                body = getattr(holder, "body", None)
+                if (body and isinstance(body[0], ast.Expr)
+                        and isinstance(body[0].value, ast.Constant)
+                        and isinstance(body[0].value.value, str)):
+                    docs.add(id(body[0].value))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            if id(node) in docs:
+                continue
+            seen += 1
+            for phrase in forbidden:
+                assert phrase not in node.value, (
+                    f"{name}:{node.lineno} still tells a reader {phrase!r} — "
+                    "the thresholds may stay, the claim about eyes may not")
+    assert seen > 500, (
+        f"only {seen} strings were scanned; this sweep is not looking at the "
+        "application")
+
+
+def test_the_sweep_can_actually_fail(app):
+    """A measurement that cannot see the thing looks exactly like one that
+    found nothing wrong. So: the same scan, over a string that does say it."""
+    import ast
+    tree = ast.parse('x = "below 1 nobody can see the difference"\n')
+    hits = [n.value for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and "nobody can see the difference" in n.value]
+    assert hits, "the scan cannot see the phrase it is looking for"
+
+
+def test_the_hedge_is_one_sentence_used_everywhere_not_eight_copies(app):
+    """A number set in eight places drifts, and then one panel disagrees with
+    another about what an eye can do."""
+    import gamut_app
+    said = gamut_app.DE_RULES_OF_THUMB
+    assert "rules of thumb rather than cut-offs" in said
+    assert "0.8 to 3" in said, "the published range is the whole point"
+    assert "two identical instruments can disagree" in said
+
+
+def test_the_drift_verdict_names_the_instrument_when_the_drift_is_tiny(app):
+    """A drift smaller than the instrument's own disagreement may BE the
+    instrument. Saying so is the difference between a reader chasing it and a
+    reader letting it go."""
+    import gamut_app
+    say = gamut_app.GamutApp._drift_verdict
+
+    small = say(None, 0.62)
+    assert "Most people would not notice this" in small
+    assert "two identical instruments can disagree" in small, (
+        "a drift under the instrument's own bias must say so")
+
+    big = say(None, 2.56)
+    assert "A careful eye would find this" in big
+    assert "instruments can disagree" not in big, (
+        "at 2.56 the instrument is not the explanation, and offering it "
+        "would be an excuse rather than a fact")
+    assert "Hard to miss." in say(None, 4.0)
+
+    # And the profile wording differs, because a profile is not a reading.
+    both = say(None, 0.62, profiles=True)
+    assert "Each profile is built from measurements" in both
+    assert "need not mean the device moved" in both
+
+
+def test_one_verdict_serves_both_boxes(app):
+    """⚠ IT WAS WRITTEN OUT TWICE, and when the measurement one was corrected
+    the profile one kept saying "Nothing anybody could see." A sweep found it,
+    review did not. One function now answers for both."""
+    import inspect
+    import gamut_app
+    src = inspect.getsource(gamut_app.GamutApp)
+    assert src.count("Most people would not notice this") == 1, (
+        "the sentence is written more than once again, which is how the two "
+        "boxes came to disagree")
+    assert src.count("_drift_verdict(") == 3, (
+        "one definition and two callers, no more and no less")

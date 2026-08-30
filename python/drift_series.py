@@ -34,10 +34,14 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
-#: Below this, in ΔE2000, nobody can see the difference at all.
+#: Below this, in ΔE2000, most people would not notice the difference side by
+#: side. ⚠ NOT "nobody can see it", which is what this said: Paravina et al.
+#: 2015 put 50:50 perceptibility at 0.8 ΔE00 as a psychometric MIDPOINT, so at
+#: 1.0 a good half of observers do see it. The threshold is a sound trade
+#: convention and is unchanged; only the claim about eyes is corrected.
 INVISIBLE = 1.0
 
-#: Above this, anybody can. Between the two, a careful eye on a smooth
+#: Above this it is hard to miss. Between the two, a careful eye on a smooth
 #: gradient. The same two numbers the pair comparison uses, deliberately --
 #: one vocabulary across the application, not two.
 OBVIOUS = 3.0
@@ -358,8 +362,9 @@ def figure(run: Run, *, mode: str = "dark", title: str = ""):
     the whole point -- that flat steps can add up to a long way -- is lost in
     the gap between them.
 
-    The two bands are drawn behind the lines, not over them: below ΔE 1 nobody
-    can see a difference at all, and above ΔE 3 anybody can. Those are the
+    The two bands are drawn behind the lines, not over them: below ΔE 1 most
+    people would not notice a difference side by side, and above ΔE 3 it is
+    hard to miss. Those are the
     same two numbers the pair comparison uses, so a reader who has learned
     them once does not meet a second vocabulary here.
     """
@@ -451,8 +456,9 @@ def figure(run: Run, *, mode: str = "dark", title: str = ""):
 
     # THE BANDS FIRST, so the lines are read over them rather than through.
     for low, high, colour, words in (
-            (0.0, INVISIBLE, "rgba(120,200,140,0.10)", "nobody can see this"),
-            (OBVIOUS, top, "rgba(255,69,115,0.10)", "anybody can see this")):
+            (0.0, INVISIBLE, "rgba(120,200,140,0.10)",
+             "most would not notice this"),
+            (OBVIOUS, top, "rgba(255,69,115,0.10)", "hard to miss")):
         if high > low:
             fig.add_hrect(y0=low, y1=high, line_width=0, fillcolor=colour,
                           layer="below", annotation_text=words,

@@ -369,8 +369,8 @@ def test_the_bands_say_what_the_numbers_mean_in_words(five_years):
     import drift_series
     fig = drift_series.figure(drift_series.build(five_years))
     said = " ".join(str(a.text or "") for a in fig.layout.annotations)
-    assert "nobody can see this" in said
-    assert "anybody can see this" in said
+    assert "most would not notice this" in said
+    assert "hard to miss" in said
 
 
 def test_a_run_too_short_to_draw_gives_an_empty_picture_not_a_crash(tmp_path):

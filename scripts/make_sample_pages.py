@@ -1056,7 +1056,8 @@ def main() -> int:
     check("15", "and so is the caveat that stops it being over-read",
           "not how far the device drifted" in body)
     check("15", "the key explains what the numbers mean",
-          "nobody can see" in body and "anybody can see" in body)
+          "most people would not notice" in body
+          and "hard to miss" in body)
     # WHICH COLOURS MOVED, IN THE SAVED FILE. The page is what gets sent to a
     # colleague or a paper supplier, and the sentences are what they will
     # quote. Asked for by a paper manufacturer; the objection raised with it

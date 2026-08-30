@@ -461,7 +461,7 @@ def main() -> int:
           timeline._run is not None and len(timeline._run.usable) == 5
           and not timeline._run.complaints,
           "; ".join(timeline._run.complaints) if timeline._run else "no run")
-    check("07", "and the whole run stays below what anybody can see",
+    check("07", "and the whole run stays below what most people would notice",
           timeline._run.total < 1.0, f"dE {timeline._run.total:.2f} altogether")
 
     def save_timeline(target: pathlib.Path) -> None:

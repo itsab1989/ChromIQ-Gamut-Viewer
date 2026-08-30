@@ -195,6 +195,32 @@ LIGHT_CONTROLS = (
 #: number in both -- a stylesheet is applied at polish, long after a grid has
 #: decided how tall its rows are, so the stylesheet alone stretches the widget
 #: inside a row that was never made big enough for it.
+#: ⚠ WHAT A ΔE NUMBER IS ALLOWED TO CLAIM ABOUT AN EYE.
+#:
+#: This application used to say "below 1 nobody can see the difference; above
+#: 3 anybody can" -- in five places, in a three-tier verdict, and in the pages
+#: it exports. The first half is not supported. Paravina et al. 2015
+#: (J Esthet Restor Dent 27(S1):S1-S9) put 50:50 perceptibility at 0.8 ΔE00
+#: and acceptability at 1.8, and those are psychometric MIDPOINTS rather than
+#: cut-offs -- so at the threshold this called invisible, half the observers
+#: see it. The published just-noticeable values across four studies span 1.0,
+#: 2.15, 2.3 and 3.0 (collected in Thomas, Colantoni & Trémeau, CCIW 2013).
+#:
+#: And wherever two MEASUREMENTS are compared, the instrument matters more
+#: than the eye: ICC White Paper 22 measured two identical handheld
+#: instruments over twenty printed proofs disagreeing on the same patch by
+#: 0.47 ΔEab on average and 1.01 at worst, and across instrument pairs by 0.8
+#: to 1.9. That is bias rather than noise, so averaging does not remove it.
+#:
+#: THE THRESHOLDS THEMSELVES ARE UNCHANGED. They are a sound trade convention
+#: and no number a returning reader has seen moves; only the claim about what
+#: an eye can do is corrected. Decided by the owner on 2026-08-30, with the
+#: alternatives and their costs in front of him.
+DE_RULES_OF_THUMB = (
+    "Those are rules of thumb rather than cut-offs: published thresholds for "
+    "the smallest visible difference run from about 0.8 to 3, and on the same "
+    "patch two identical instruments can disagree by as much as 1.")
+
 TICK_ROW = 20
 
 PAINTS = (
@@ -3883,7 +3909,7 @@ class TimelineDialog(QDialog):
             "since the first profile. The other shows how far it moved SINCE "
             "THE ONE BEFORE. They answer different questions and they often "
             "disagree: five steps of half a ΔE each look like nothing "
-            "happening, and add up to a difference anybody can see.\n\n"
+            "happening, and add up to a difference that is hard to miss.\n\n"
             "WHAT IT CANNOT TELL YOU, and it matters here more than anywhere "
             "else in this application. Each profile records ONE day's "
             "measurements of ONE chart. If your charts faded between the "
@@ -4155,8 +4181,9 @@ class TimelineDialog(QDialog):
             "THE WHOLE RUN, first to last, is offered as well. It answers a "
             "different question — not what happened in any one year, but "
             "where the device has ended up compared with where it began.\n\n"
-            "The numbers are ΔE2000. Below 1 nobody can see the difference; "
-            "above 3 anybody can. The colours are fixed to that scale rather "
+            "The numbers are ΔE2000. Below about 1 most people would not "
+            "notice a difference side by side; above 3 it is hard to miss. "
+            + DE_RULES_OF_THUMB + " The colours are fixed to that scale rather "
             "than stretched to fit, so two of these pictures can be held "
             "against each other.",
             self, title="Why only two profiles at a time")
@@ -4384,7 +4411,7 @@ class TimelineDialog(QDialog):
             "apart in one real example — so by VOLUME, which is how most "
             "tools judge a printer, nothing has happened. Inside those two "
             "nearly identical shells the colours had moved by up to ΔE 3.03, "
-            "which anybody can see on a print. The shells and the cloud "
+            "which is hard to miss on a print. The shells and the cloud "
             "together say that in one picture.\n\n"
             "WHAT YOU NEED FIRST: a pair chosen in Show me above, so that "
             "there is a cloud to put them around. With the graph showing "
@@ -6057,8 +6084,9 @@ class TimelineDialog(QDialog):
         words = (f"Where {spans} disagree.\n\n"
                  f"Every colour is drawn where the earlier profile puts it, "
                  f"painted by how far the later one sends it instead, in "
-                 f"ΔE2000. Below 1 nobody can see the difference; above 3 "
-                 f"anybody can. The scale is fixed rather than stretched to "
+                 f"ΔE2000. Below about 1 most people would not notice a "
+                 f"difference side by side; above 3 it is hard to miss. "
+                 f"{DE_RULES_OF_THUMB} The scale is fixed rather than stretched to "
                  f"fit, so this can be held against another one of these.\n\n"
                  f"What it does not tell you: this is how far apart the two "
                  f"PROFILES are, not how far the device drifted. Each profile "
@@ -6220,8 +6248,9 @@ records one day's measurements of one chart, so if the charts faded between
 them, or they were built differently, that is inside these numbers too. A line
 that climbs steadily is just as consistent with charts ageing as with a device
 drifting, and no arithmetic can separate the two.</p>
-<p class="caveat">The numbers are ΔE2000. Below 1 nobody can see the
-difference; above 3 anybody can.</p>
+<p class="caveat">The numbers are ΔE2000. Below about 1 most people would
+not notice a difference side by side; above 3 it is hard to miss.
+{DE_RULES_OF_THUMB}</p>
 {self._families_html() if words else ''}</div>
 <script>{_DEPTH_JS}</script><script>{_ORDER_JS}</script><script>{_CAPTION_JS}</script></body></html>
 """
@@ -9296,10 +9325,11 @@ class GamutApp(QMainWindow):
             "inside this number as well, and no arithmetic here can separate "
             "it out. To measure the device alone you need a chart you trust "
             "not to have changed.\n\n"
-            "The numbers are ΔE2000. Below 1 nobody can see it. Around 2 a "
-            "careful eye finds it on a smooth gradient. Above 3 it is plain, "
-            "and worth investigating before you print anything that matters."
-            "\n\n" + drift_families_help,
+            "The numbers are ΔE2000. Below about 1 most people would not "
+            "notice it. Around 2 a careful eye finds it on a smooth gradient. "
+            "Above 3 it is hard to miss, and worth investigating before you "
+            "print anything that matters.\n\n" + DE_RULES_OF_THUMB
+            + "\n\n" + drift_families_help,
             self._drift_box)
         drift_hint.setObjectName("hint_drift_hint")
         _r = QHBoxLayout(); _r.setContentsMargins(0, 0, 0, 0)
@@ -9617,8 +9647,9 @@ class GamutApp(QMainWindow):
             "distance they were outside by fell from 0.58 to 0.05. They were "
             "on the surface the whole time.\n\n"
             "So a patch within 1.0 ΔE of the surface is called ON THE EDGE. "
-            "One ΔE is the standard threshold for a difference nobody can see "
-            "with the two colours side by side, and it is more than ten times "
+            "One ΔE is the usual rule of thumb for a difference most people "
+            "would not notice with the two colours side by side — published "
+            "thresholds run from about 0.8 to 3 — and it is more than ten times "
             "the error measured above. A patch further out than that is "
             "outside for a reason worth finding.\n\n"
             "WHICH SURFACE. The test is against the same surface this window "
@@ -13558,7 +13589,8 @@ class GamutApp(QMainWindow):
                     return (head + f"\n{report.n_edge} of them sit a hair "
                             f"outside the surface — the furthest by "
                             f"{report.worst:.2f} ΔE2000, and a difference "
-                            f"under 1 ΔE2000 is one nobody can see. That is "
+                            f"under 1 ΔE2000 is one most people would not "
+                            f"notice. That is "
                             f"the thickness of the boundary itself rather than "
                             f"a fault: a gamut surface is drawn through a grid "
                             f"of samples, and the real edge bulges very "
@@ -13610,7 +13642,8 @@ class GamutApp(QMainWindow):
                 return (head + f"\n{report.n_edge} of them sit a hair outside "
                         f"the measured surface — the furthest by "
                         f"{report.worst:.2f} ΔE2000, and a difference under "
-                        f"1 ΔE2000 is one nobody can see. They are left "
+                        f"1 ΔE2000 is one most people would not notice. "
+                        f"They are left "
                         f"unmarked deliberately: at that distance the patch is "
                         f"on the boundary rather than beyond it, and marking "
                         f"it would send you looking for a problem that is not "
@@ -17534,6 +17567,35 @@ class GamutApp(QMainWindow):
         self._drift_families.setText("" if said is None else said[0])
         self._drift_families_note.setText("" if said is None else said[1])
 
+    def _drift_verdict(self, worst: float, *, profiles: bool = False) -> str:
+        """What a ΔE that size means, said without over-claiming.
+
+        ⚠ ONE PLACE, BECAUSE IT WAS TWO. The measurement verdict and the
+        profile verdict were written out separately, and when the first was
+        corrected the second kept telling readers "Nothing anybody could
+        see." It was caught by a sweep over string literals, not by review.
+
+        The thresholds are unchanged -- they are a sound trade convention and
+        no number a returning reader has seen moves. What changed is the
+        claim: see DE_RULES_OF_THUMB for why "nobody can see it" is not
+        supported, and why, below about 1 ΔE, the instrument is a likelier
+        explanation than the printer.
+        """
+        said = ("Most people would not notice this, even side by side."
+                if worst < 1.0
+                else "A careful eye would find this side by side."
+                if worst < 3.0 else "Hard to miss.")
+        if worst >= 1.0:
+            return said
+        return said + (
+            "\nEach profile is built from measurements, and two identical "
+            "instruments can disagree by as much as 1 ΔE on the same patch, "
+            "so a difference this small need not mean the device moved."
+            if profiles else
+            "\nOn the same patch two identical instruments can disagree by "
+            "as much as 1 ΔE, so a difference this small may be the "
+            "instrument rather than the print.")
+
     def _update_drift(self) -> None:
         """Has anything changed — asked of two readings, or of two profiles.
 
@@ -17568,9 +17630,7 @@ class GamutApp(QMainWindow):
             self._say_drift_families()
             return
         matched = ("1 patch" if d.matched == 1 else f"{d.matched} patches")
-        verdict = ("Nothing anybody could see." if d.worst < 1.0
-                   else "Visible on a careful look." if d.worst < 3.0
-                   else "Plainly visible — worth looking into.")
+        verdict = self._drift_verdict(d.worst)
         self._drift.setText(
             f"{matched} appear in both readings.\n"
             f"Biggest difference ΔE {d.worst:.2f}, average {d.average:.2f}.\n"
@@ -17638,9 +17698,7 @@ class GamutApp(QMainWindow):
             self._say_drift_families()
             return
 
-        verdict = ("Nothing anybody could see." if d.worst < 1.0
-                   else "Visible on a careful look." if d.worst < 3.0
-                   else "Plainly visible — worth looking into.")
+        verdict = self._drift_verdict(d.worst, profiles=True)
         self._drift.setText(
             f"{d.matched} colours asked of both profiles.\n"
             f"Biggest difference ΔE {d.worst:.2f}, average {d.average:.2f}.\n"

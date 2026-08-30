@@ -490,8 +490,10 @@ def through_profile(chart: Chart, profile_path, *, label: str = "") -> Placement
 #: reporting "262 patches outside" would send somebody hunting a fault that is
 #: the sampling of the surface they are being measured against.
 #:
-#: One ΔE2000 is the classic threshold for a difference nobody can see side by
-#: side, and it is an order of magnitude above the error measured here. A patch
+#: One ΔE2000 is the classic rule of thumb for a difference most people would
+#: not notice side by side -- published thresholds run from about 0.8 to 3, so
+#: it is a convention and not a cut-off -- and it is an order of magnitude
+#: above the error measured here. A patch
 #: further out than this is outside for a reason.
 EDGE_TOLERANCE = 1.0
 

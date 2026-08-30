@@ -3096,10 +3096,11 @@ def _patch_cloud(lab, name: str, space: str = "lab"):
         name=f"{name} — patches", showlegend=True, hoverinfo="name")
 
 
-#: Where the eye is told to stop caring, in ΔE2000. Below 1 nobody can see a
-#: difference at all, so painting those as though they were something is a
-#: picture that cries wolf; above 5 the scale would spend most of its range on
-#: a handful of outliers and flatten everything a reader could act on.
+#: Where the eye is told to stop caring, in ΔE2000. Below 1 most people would
+#: not notice a difference side by side, so painting those as though they were
+#: something is a picture that cries wolf; above 5 the scale would spend most
+#: of its range on a handful of outliers and flatten everything a reader
+#: could act on.
 DRIFT_FLOOR = 1.0
 DRIFT_CEILING = 5.0
 
