@@ -139,6 +139,37 @@ def test_a_long_way_outside_the_placing_profile_names_the_real_causes(app):
         assert cause in said, cause
 
 
+def test_against_a_measurement_the_edge_patches_are_named_too(app):
+    """THE OTHER JUDGING MODE, AND IT WAS MISSED THE FIRST TIME.
+
+    When the same-profile branch stopped claiming "every patch sits inside"
+    over its own "N on the edge", this branch went on doing it: it printed
+    "193 on the edge" and then "Everything this chart asks for is within
+    reach", with the dots visibly outside the shape and unmarked. That is
+    Knut's complaint exactly, in the mode that judges a chart against a
+    MEASUREMENT rather than against the profile that placed it.
+
+    Fixing one branch and not its twin is how a fault survives being fixed.
+    """
+    said = verdict("Matte", [0.0, 0.0, -0.05], same_profile=False)
+    assert "1 on the edge" in said, said
+    assert "Everything this chart asks for is within reach" not in said, (
+        f"the verdict claims everything is within reach while its own first "
+        f"line says one patch is on the edge: {said!r}")
+    assert "hair outside" in said, said
+    assert "nobody can see" in said, said
+
+
+def test_against_a_measurement_a_clean_chart_still_reads_cleanly(app):
+    """And the reassuring sentence must survive for a chart that really is
+    wholly inside, or the fix above has simply traded one wrong answer for
+    another."""
+    said = verdict("Matte", [0.0, 0.0, 0.0], same_profile=False)
+    assert "0 on the edge" in said, said
+    assert "within reach" in said, said
+    assert "hair outside" not in said, said
+
+
 def test_a_measurement_that_cannot_reach_them_says_exactly_that(app):
     said = verdict("Matte", [[50.0, 90, 90]] * 40, same_profile=False)
     assert "cannot reach what those patches ask for" in said

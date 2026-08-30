@@ -13389,6 +13389,23 @@ class GamutApp(QMainWindow):
                     "100, patches clipped to a box around the gamut instead "
                     "of to its surface, or simply a different profile.")
         if report.all_inside:
+            # ⚠ THE SAME CONTRADICTION AS THE SAME-PROFILE BRANCH, AND IT WAS
+            # MISSED WHEN THAT ONE WAS FIXED. This printed "193 on the edge"
+            # and then "Everything this chart asks for is within reach", one
+            # under the other, with the dots visibly outside the shape and
+            # unmarked — Knut's complaint exactly, in the other judging mode.
+            # `all_inside` means "none far enough out to MARK"; it never meant
+            # "none outside".
+            if report.n_edge:
+                return (head + f"\n{report.n_edge} of them sit a hair outside "
+                        f"the measured surface — the furthest by "
+                        f"{report.worst:.2f} ΔE2000, and a difference under "
+                        f"1 ΔE2000 is one nobody can see. They are left "
+                        f"unmarked deliberately: at that distance the patch is "
+                        f"on the boundary rather than beyond it, and marking "
+                        f"it would send you looking for a problem that is not "
+                        f"there. Everything else this chart asks for is well "
+                        f"within reach of {name}.")
             return (head + f"\nEverything this chart asks for is within reach "
                     f"of {name}.")
         return (head + f"\nWorst {report.worst:.1f} ΔE, average of those "

@@ -4182,9 +4182,6 @@ _DEPTH_JS = """
       };
       mine.__cqDepth = true;
       gl.onrender = mine;
-      // What this page asked for, kept once, so the wall rule can only ever
-      // take furniture away and never add any.
-      //
       fit(gl);
     });
   }
@@ -6491,6 +6488,12 @@ window.cqSpinControls = function (settings) {
   var palettes = settings.palettes || null;
   var mode = settings.mode || "dark";
   var picture = {grid: true, labels: true, key: true, notes: true};
+  //: Did the reader already choose, on a previous visit? The walls and
+  //: grid are read off the FIGURE at load so a page saved without them
+  //: opens without them -- but a REMEMBERED choice outranks the file,
+  //: and reading the figure over the top of it threw the choice away on
+  //: every reload and then wrote the clobbered value back to the store.
+  var gridRemembered = false;
 
   // ------------------------------------------------------------------ shapes
   //
@@ -7238,7 +7241,12 @@ window.cqSpinControls = function (settings) {
       if (was.speeds) speeds = Object.assign({}, speeds, was.speeds);
       if (was.ranges) ranges = Object.assign({}, ranges, was.ranges);
       if (was.chosen) chosen = Object.assign({}, chosen, was.chosen);
-      if (was.picture) picture = Object.assign({}, picture, was.picture);
+      if (was.picture) {
+        if (Object.prototype.hasOwnProperty.call(was.picture, "grid")) {
+          gridRemembered = true;
+        }
+        picture = Object.assign({}, picture, was.picture);
+      }
       // ONLY SHAPES THIS PAGE ACTUALLY HAS. What was stored may have been
       // written by an earlier page at the same address, or by a version of
       // this one drawn from a different measurement. Reading it back name by
@@ -8824,8 +8832,14 @@ window.cqSpinControls = function (settings) {
   //
   // So the control is initialised FROM THE FIGURE rather than from a guess,
   // and a reader who saved a page without walls opens it without walls.
+  // ⚠ AND ONLY WHEN THE READER HAS NOT ALREADY CHOSEN. Reading the figure
+  // unconditionally overwrote a remembered choice on every reload — press
+  // the walls off, reload, and they were back, with the store rewritten to
+  // match. The file speaks for a page nobody has touched; after that the
+  // reader does.
   try {
-    var firstScene = null, gd0 = document.querySelector(".js-plotly-plot");
+    var firstScene = null,
+        gd0 = gridRemembered ? null : document.querySelector(".js-plotly-plot");
     if (gd0 && gd0._fullLayout) {
       Object.keys(gd0._fullLayout).forEach(function (k) {
         if (firstScene === null && k.indexOf("scene") === 0) firstScene = k;

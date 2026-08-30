@@ -399,8 +399,7 @@ def test_an_orthographic_scene_is_left_to_the_library():
 
         chromium / SwiftShader   an EMPTY AXIS BOX, no gamut at all
         webkit   / Apple GPU     the shape drawn, but the gridlines drawn
-                                 ACROSS the front of it, and the wall rule
-                                 suppressing all three walls
+                                 ACROSS the front of it
 
     ⚠ SO A CURE MEASURED ONLY IN HEADLESS CHROMIUM WOULD HAVE BEEN JUDGED
     AGAINST A PICTURE NOBODY ON THIS HARDWARE SEES. Headless chromium falls
