@@ -1,5 +1,95 @@
 # Changelog
 
+## v2.53.0
+
+### 🧱 The walls stand behind the shape again — and the cause was ours
+
+Reported from the window, over several days: *"they are in the box only the
+walls move in front of it sometimes"*, and later, more precisely, *"sometimes
+the wall does not cover the shape but is placed in the front — for example
+where it should be behind the shape. it just happens to be positioned in an
+angle where you look over it."*
+
+Both halves were right, and the cause was **this application's own near plane**.
+
+The drawing library decides which of each wall's two faces to paint by
+orienting against a reference point that sits `2·near·far/(near+far)` in front
+of the eye — so it **moves with the planes we set**. Fitting them symmetrically
+about the picture put that point *inside* the box, where the test cannot
+decide, and the library then fell back to painting whichever face looked
+bigger. The nearer face always looks bigger.
+
+Choosing the near plane so that point stays clear of the box fixes it at the
+cause. On a published page, turning frames with a wall on the camera's own
+side:
+
+> **33.8% → 2.1%**, against **1.7%** for the drawing library left completely
+> alone.
+
+The rule that used to chase this — noticing a wrong wall and taking it away
+again — is **deleted**, about ninety lines of it. It was treating a symptom we
+were creating, and it was not harmless: it put walls back that a reader had
+deliberately turned off, on 119 frames out of 120.
+
+**It works with the unmodified drawing library, which is the whole point.** A
+page saved *without* the viewer downloads a stock copy when its reader opens
+it, so nothing patched into our own bundle could ever have protected the file
+that travels furthest from here. All four cases are confirmed by screenshots:
+with the viewer and without it, in Chromium and in WebKit, the no-viewer pages
+verified to have really fetched the library from the internet.
+
+### 📄 Four published pages had no depth fix at all
+
+The four pages showing one printer over time carried **neither** the depth
+script **nor** the far-to-near ordering, while every other page carried both.
+They are not flat pictures — each holds a real 3D scene — so they kept the
+drawing library's own hundred-thousand-to-one depth range on a 16-bit buffer:
+the hatching this project spent a week curing.
+
+The cause was that their page is written by hand rather than through the shared
+writer, and its own comment already recorded that this is *"how four published
+pages came to have no such script at all"*. The caption script had been added
+by hand after that lesson; the other two never were. **All 25 pages carry
+everything now.**
+
+### 🎯 Patches on the edge are named instead of contradicted
+
+Reported by a colour-management practitioner, on his own printer profile and a
+1,168-patch chart: *"showed patches outside the gamut, and not all of them red
+highlighted."*
+
+He was right. **184 of his patches do sit outside** the profile's own surface —
+and the page told him, one line below the count, that *"every patch sits inside
+the profile it was placed through."* Two sentences that cannot both be true.
+
+Why they are not marked is sound: the furthest is **0.68 ΔE2000** outside, and
+a difference under 1 ΔE2000 is one nobody can see. The root cause is the way a
+gamut surface is drawn through a grid of samples — the real boundary bulges
+very slightly between them — and it is **not a fault in the profile or the
+chart**: predicted 0.069 median against 0.0696 observed.
+
+Both judging modes now say so plainly: how many sit on the edge, how far out
+the furthest is, and why marking a difference no eye can detect would send you
+hunting a problem that is not there.
+
+### 🔧 Smaller things, each of which cost somebody something
+
+* A page saved **without walls** no longer gains them when it is opened — and a
+  choice you made on a previous visit now outranks what the file says, instead
+  of being overwritten and written back.
+* A page saved in **orthographic** opens in orthographic. The camera it was
+  given at load carried no projection, so the setting was silently replaced
+  before anyone touched anything.
+* The walls-and-grid button no longer opens *pressed* over a page that has no
+  box to show.
+
+* A press that did nothing risky was being marked as a crash. A page guards
+  itself against a press that hangs the browser by leaving a mark and throwing
+  the remembered choices away next time — but the mark was written on **every**
+  press and taken off by only some of them. So turning the walls off, pressing
+  zoom, and reloading lost the walls *and every other remembered choice*.
+  Present since August; found by driving the pages rather than reading them.
+
 ## v2.52.1
 
 ### 🔍 The cut and the out-of-reach marking, checked against arithmetic
