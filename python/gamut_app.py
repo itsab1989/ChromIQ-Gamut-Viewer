@@ -3809,6 +3809,16 @@ class TimelineDialog(QDialog):
         super().__init__(parent)
         self._hosted = bool(hosted)
         self._host = parent if self._hosted else None
+        #: THE WINDOW, REMEMBERED, BECAUSE parent() STOPS MEANING IT.
+        #: Hosted, this panel is handed the window here and then reparented
+        #: the moment the column lays it out -- addWidget() takes ownership,
+        #: and from then on parent() names a plain QWidget container that
+        #: owns no _file_dialog, no _tmp and no _last_folder. Every button
+        #: that asked parent() for one of those died with an AttributeError
+        #: the reader never saw: "the buttons 'Add profiles' ... do not
+        #: work. None of them can be clicked." Ask THIS for anything the
+        #: window owns, never the Qt parent of the moment.
+        self._app_window = parent
         if self._hosted:
             # A QDialOG IS A WIDGET FIRST. Told it is a plain one, it draws
             # inline in whatever layout it is put into, with no title bar and
@@ -3976,6 +3986,14 @@ class TimelineDialog(QDialog):
             "NO FILE IS DELETED. This forgets them; it does not touch your "
             "disk.")
         self._clear_btn.clicked.connect(self._on_clear)
+        #: The tooltip each of these carries WHILE IT CAN ACT, stashed
+        #: because _refresh swaps it for the reason whenever the button is
+        #: grey -- this file's rule, "a control offered where it cannot act
+        #: must say what it needs", applied to its own buttons. The hover
+        #: form is asked for at swap time (_for_a_hover), the same cut the
+        #: window's shortening pass makes, so the swap never brings a wall
+        #: of text back.
+        self._clear_words = self._clear_btn.toolTip()
         for b in (add, self._clear_btn):
             buttons.addWidget(b)
         buttons.addStretch(1)
@@ -3996,6 +4014,7 @@ class TimelineDialog(QDialog):
             "One file that opens in any browser, with the graph in it. "
             "Nothing needs installing to read it.")
         self._save_btn.clicked.connect(self._on_save)
+        self._save_words = self._save_btn.toolTip()
         self._table_btn = QPushButton(
             "Save the run's numbers as a table…" if hosted
             else "Save the numbers as a table…", self)
@@ -4004,6 +4023,7 @@ class TimelineDialog(QDialog):
             "Every step as a row, for a spreadsheet — with what the numbers "
             "do and do not mean written beside them.")
         self._table_btn.clicked.connect(self._on_table)
+        self._table_words = self._table_btn.toolTip()
         buttons.addWidget(self._table_btn)
         # ONE SAVE-AS-A-WEB-PAGE BUTTON IN THE WINDOW, NOT TWO. Hosted, the
         # window's own "Save this view as a web page…" saves whatever is on
@@ -4779,7 +4799,7 @@ class TimelineDialog(QDialog):
                 setattr(self, name, _for_a_hover(words))
 
     def _on_add(self) -> None:
-        parent = self.parent()
+        parent = self._app_window
         chooser = parent._file_dialog(
             "Choose profiles of one device", QFileDialog.FileMode.ExistingFiles,
             "ICC profiles (*.icc *.icm)", profiles=True)
@@ -4932,6 +4952,25 @@ class TimelineDialog(QDialog):
         drawable = bool(self._run and self._run.since_first)
         self._save_btn.setEnabled(drawable)
         self._table_btn.setEnabled(drawable)
+        # A GREY BUTTON SAYS WHAT IT NEEDS. All three of these were read as
+        # broken by somebody who had a profile open in the main window and
+        # nothing in this run: "the buttons 'Add profiles' and 'Remove them
+        # all' and also the last button, do not work". Two of the three were
+        # grey for a good reason -- and said nothing about it, which from
+        # the outside is what broken looks like. While a button cannot act,
+        # its hover carries the reason; the moment it can, its own words
+        # come back.
+        self._clear_btn.setToolTip(
+            _for_a_hover(self._clear_words) if has > 0 else
+            "Grey because the run is empty — nothing has been added above, "
+            "so there is nothing to remove yet.")
+        needs = ("Grey until there is a run: add two or more profiles of "
+                 "one device above. One profile on its own has no steps to "
+                 "measure.")
+        self._save_btn.setToolTip(
+            _for_a_hover(self._save_words) if drawable else needs)
+        self._table_btn.setToolTip(
+            _for_a_hover(self._table_words) if drawable else needs)
 
         if self._run is None:
             self._verdict.setText("")
@@ -5424,7 +5463,7 @@ class TimelineDialog(QDialog):
         if figure is None:
             self._blank()
             return
-        parent = self.parent()
+        parent = self._app_window
         folder = getattr(parent, "_tmp", None) or Path(tempfile.gettempdir())
         target = Path(folder) / "timeline.html"
         try:
@@ -5947,7 +5986,7 @@ class TimelineDialog(QDialog):
         """
         import drift_series
 
-        parent = self.parent()
+        parent = self._app_window
         first = self._run.usable[0].name if self._run.usable else "device"
         pair = self._chosen_pair()
         stem = (f"{first}-over-time" if pair is None
@@ -6036,7 +6075,7 @@ class TimelineDialog(QDialog):
         return words
 
     def _on_table(self) -> None:
-        parent = self.parent()
+        parent = self._app_window
         first = self._run.usable[0].name if self._run.usable else "device"
         chooser = parent._file_dialog(
             "Where should the table go?", QFileDialog.FileMode.AnyFile,

@@ -1362,3 +1362,67 @@ def test_nothing_is_drawn_around_nothing_before_a_run_is_added(fresh):
     assert panel._list.count() == 2, "the run did not take the two paths"
     assert panel._list.isVisibleTo(inner), "the list did not come back"
     assert panel._picture_of.isVisibleTo(inner), "the chooser did not come back"
+
+
+def test_the_panel_never_asks_its_qt_parent_for_the_window():
+    """The hosted panel's Qt parent is not the window, and never will be.
+
+    `TimelineDialog` is handed the window at construction and then, hosted,
+    reparented into a plain QWidget the moment the column lays it out --
+    `addWidget()` takes ownership. From that moment `self.parent()` names a
+    container that owns no `_file_dialog`, no `_tmp` and no `_last_folder`,
+    and every handler that asked it for one died with an AttributeError the
+    reader never saw. Reported from the window in exactly those terms: "the
+    buttons 'Add profiles' and 'Remove them all' and also the last button,
+    do not work. None of them can be clicked."
+
+    THIS IS WRITTEN AS A RULE ABOUT THE CLASS, not about the two buttons
+    that were found, for the same reason `_on_compare_changed` has one: a
+    fault like this comes back through the next handler somebody writes.
+    The window the panel serves is `self._app_window`; the Qt parent of the
+    moment is nobody's business here.
+    """
+    import inspect
+
+    import gamut_app
+
+    text = inspect.getsource(gamut_app.TimelineDialog)
+    assert "self.parent()" not in text, (
+        "TimelineDialog reached for self.parent(), which hosted is a plain "
+        "container, not the window. Use self._app_window.")
+
+
+def test_the_hosted_buttons_reach_the_window(fresh):
+    """Press the panel's own dialog-opening handlers inside the REAL window.
+
+    The rule test above stops one spelling of the fault; this one stops the
+    fault itself, whatever it is spelled like tomorrow. Both dialog-opening
+    handlers are called on the hosted panel with the window's `_file_dialog`
+    standing in -- before the fix, each of these raised AttributeError
+    because the panel asked its container instead of the window, and Qt
+    logged the crash where no reader looks.
+    """
+    import types
+
+    app, win, area, panel = fresh
+    asked = []
+
+    class _NoDialog:
+        def exec(self):
+            return 0
+
+        def __getattr__(self, _name):
+            return lambda *a, **k: None
+
+    win._file_dialog = lambda title, *a, **k: (
+        asked.append(title), _NoDialog())[1]
+    was_run = panel._run
+    try:
+        panel._on_add()
+        panel._run = types.SimpleNamespace(usable=[])
+        panel._on_table()
+    finally:
+        panel._run = was_run
+        del win._file_dialog
+    assert asked == ["Choose profiles of one device",
+                     "Where should the table go?"]
