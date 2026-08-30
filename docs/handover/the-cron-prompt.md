@@ -11,48 +11,44 @@ reported from his own first hands-on session on 2026-08-20, each with a named
 place to look and the traps already known — plus what is proved DONE and must
 not be rebuilt. Work what is left in them; do not re-derive their diagnoses.
 
-WHAT IS LEFT, in order. Do not idle:
-  1. F13 -- A VIEWER ARRIVING LATE BY THE FALLBACK CDN OR THE RETRY BUTTON IS
-     NEVER ARMED. Measured on a real page: armed at 20 s, armed:false with
-     0.01/1000 at 128 s. Dynamic scripts do not delay DOMContentLoaded, so the
-     DCL re-sweep never fires for them and the interval's 120 s life is a
-     cliff. NO LONGER TIMER FIXES THIS -- arm from `cqViewerCame()`, which the
-     page already funnels every arrival through, or from the script's load
-     event. This is the exact fault class e1d2650 claimed to close.
-  2. THE `DOMContentLoaded` RE-SWEEP IS LOAD-BEARING AND PINNED BY NOTHING.
-     Proven by mutation on an honest rig (all hosts held back): with the
-     listener the page arms at 129.6 s, past a provably dead interval; without
-     it, armed:false. Every harness sets readyState "complete" and never fires
-     DCL, so deleting that one line passes the whole suite.
-  3. THE WALL RULE (b987731) IS ENTIRELY UNTESTED, and has two faults of its
-     own. Three behaviour-changing mutations -- verdict inverted, `walls()`
-     deleted, `__cqWallWas` capture disabled -- ALL pass 21/21 with a green
-     control, because every harness builds `gl` without `axes` so `walls()`
-     exits on its first line. The faults: `__cqWallWas` recaptured across a
-     glplot rebuild turns the script's OWN suppression into "what the page
-     asked for", so the wall is permanently lost (observed live, not only in a
-     harness); and `any` is computed and never read, firing a no-op relayout
-     on every page's first rendered frame.
-  4. REBUILD docs/pages. All 21 published 3D pages carry the depth fix WITHOUT
-     the wall cure -- they were rebuilt at 55dddd2, which predates b987731 --
-     including 22-a-run-with-its-shapes.html, the exact page the 2,386-pixel
-     wall-over-shape was measured on. The bug is live for anyone reading them.
-  5. CORRECT THE STORY IN test_the_depth_fix_does_not_stop_after_the_first_frame.
-     Its `life >= 100 s` bound is justified by a 4.8 MB CDN race that the
-     page's own `defer` attribute forecloses on the primary path. The numbers
-     survive as regression pins; the REASON written beside them does not.
-  6. gamut_app.py:5431 -- an unreachable `figure.write_html` branch. The
-     "timeline gets neither script" item is STALE: the app's only timeline
-     path goes through `_write_dark_html`. Delete or route the dead branch.
-  7. `Plotly.toImage` -- the PNG button -- still does not get the depth fix.
-  8. THEN, and only then: a hostile subagent on the FINISHED seam, which is
-     this job's own release criterion and has never been met. Then the release.
-  9. THE AUDIT TOOL BASTI SPECIFIED DOES NOT EXIST. `scripts/audit.py` (every
-     control, discovered dynamically from `_persisted()`) and
-     `drive_all_combinations.py` (6,912 combinations) are strong pieces of it,
-     but NOTHING writes a report file, there is no single entry point, and
-     there is no Desktop report with room for his notes. DESIGN IT FIRST, with
-     numbered open questions -- do not bolt it together.
+WHAT IS LEFT, in order. Do not idle. THIS LIST IS SHORT AND IT ENDS IN A
+RELEASE -- when it is done, delete this job and say plainly that it is done.
+
+  1. CHECK docs/screenshots FOR STALENESS. 26 files changed in f23af11 and the
+     screenshots have not been looked at since. Rebuild only if something that
+     reaches them changed: they regenerate byte-identical otherwise, so
+     `git status` after a rebuild is a reliable answer. ⚠ AND A REBUILT
+     SCREENSHOT ALWAYS DIFFERS BY A FEW PIXELS -- threshold the difference and
+     rebuild a second time as the control, or churn gets committed as an update.
+  2. ONE REGRESSION PASS OVER THE REBUILT PAGES. The last check ran BEFORE any
+     of them existed. Drive a sample on screen in both engines and look.
+  3. THE RELEASE. Bump python/version.py, prepend CHANGELOG.md, both gates
+     green, commit, tag vX.Y.Z, push the branch AND the tag, then CONFIRM 11
+     ASSETS on the release with `gh run list` / `gh release view`. Anything
+     fewer means it is still uploading.
+  4. THEN STOP. Delete this cron job and say it is done.
+
+WHAT WAS FIXED THIS CYCLE, so none of it is re-derived:
+  * THE WALLS, at the root. gl-plot3d picks which wall face to paint by
+    orienting against the NDC origin, whose pre-image sits 2nf/(n+f) in front
+    of the eye -- so OUR OWN `fit()` moved it. Fitted symmetrically it landed
+    inside the box, the pick went ambiguous, and the library painted the nearer
+    face. `fit()` now keeps that point at 0.4 of the distance to the nearest
+    corner. Page 22: 33.8% of turning frames wrong -> 2.1%, against a stock
+    library control of 1.7%. THE WHOLE WALL RULE IS DELETED (~90 lines) -- it
+    treated a symptom this file caused and re-added walls readers turned off.
+  * IT WORKS AGAINST STOCK PLOTLY, which is why patching the bundle was
+    refused: a page saved WITHOUT the viewer fetches an unmodified plotly from
+    the CDN, and nothing patched could reach it. All four exports proved with
+    screenshots (with/without the viewer x chromium/webkit).
+  * KNUT'S REPORT. "184 on the edge" printed above "every patch sits inside",
+    in BOTH judging branches. Root cause is Argyll's tessellation chord error
+    (predicted 0.069 vs observed 0.0696), not a fault here. Both branches now
+    name the edge patches and say why they are unmarked.
+  * FOUR PUBLISHED PAGES had no depth or order script -- the timeline pages,
+    written by hand in `TimelineDialog.page_html`. All 25 carry it now.
+  * A regression of my own: the walls-and-grid control read the figure AFTER
+    `recall()` and clobbered the reader's remembered choice.
 
 STILL HIS DECISION, not work to be done unasked: the 30-second black window on
 a slow download (`_say_if_the_viewer_never_arrives`).
