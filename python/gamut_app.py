@@ -17675,11 +17675,35 @@ class GamutApp(QMainWindow):
         the swap, so both are shown and each is named.
         """
         pair = None
+        # ⚠ AND EACH SIDE IN CIELAB TOO. `_update_picture_loss` measures a
+        # photograph's own colours, which are always CIELAB, against the
+        # other shape — and it was handed the DRAWN shape. Only Draw it in
+        # changed, nothing else, and the same photograph against the same
+        # profile read 0% then 1% then 100% out of reach, worst 2.1 then 10.1
+        # then 99.0 ΔE, with the panel saying "99.9% fits inside" and "100%
+        # is out of reach" three lines apart over a picture that plainly
+        # showed the photograph INSIDE the shape.
+        #
+        # This shipped in v2.53.2 and is not new, but it is the fourth
+        # sibling of the artefact this release is named after, and the
+        # standard applied to the other three applies here.
+        lab_pair = None
+        # `getattr`, because the tests drive this with stand-ins for a window
+        # and a readout must not depend on which.
+        in_lab = getattr(self, "_in_lab", None)
+        reference_in_lab = getattr(self, "_reference_in_lab", None)
         if self._reference is not None and self._slots:
             pair = ((self._slots[0][0].stem, self._slots[0][1]), self._reference)
+            if in_lab is not None and reference_in_lab is not None:
+                lab_pair = (in_lab(self._slots[0][1], self._slots[0][0],
+                                   self._slots[0][2]),
+                            reference_in_lab())
         elif len(self._slots) == 2:
             pair = ((self._slots[0][0].stem, self._slots[0][1]),
                     (self._slots[1][0].stem, self._slots[1][1]))
+            if in_lab is not None:
+                lab_pair = tuple(in_lab(slot[1], slot[0], slot[2])
+                                 for slot in self._slots[:2])
         if pair is None:
             self._coverage.setText("")
             self._picture_loss.setText("")
@@ -17725,7 +17749,10 @@ class GamutApp(QMainWindow):
             f"{100 * ba:.1f}% of {b_name} fits inside {a_name}.\n"
             "The two numbers differ because fitting inside is not the same "
             "question in both directions.")
-        self._update_picture_loss(a_name, a, b_name, b)
+        # In CIELAB, always: a picture's facts are CIELAB and nothing else.
+        a_lab, b_lab = (lab_pair if lab_pair else (a, b))
+        self._update_picture_loss(a_name, a_lab if a_lab is not None else a,
+                                  b_name, b_lab if b_lab is not None else b)
         self._update_pair(a_name, a, b_name, b)
 
     def _update_picture_loss(self, a_name, a, b_name, b) -> None:
@@ -17761,6 +17788,12 @@ class GamutApp(QMainWindow):
                     break
             if facts is None:
                 continue
+            # ⚠ NO CIELAB SHAPE, NO FIGURE — the rule the marking and the
+            # chart sentence already obey. A picture's colours are CIELAB;
+            # measuring them against a shape built elsewhere answers a
+            # different question with confidence.
+            if getattr(against, "space", "lab") != "lab":
+                return
             try:
                 lost = out_of_reach(facts, against)
             except Exception:      # noqa: BLE001 — a readout must never crash

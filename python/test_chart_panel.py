@@ -1586,10 +1586,118 @@ def test_a_photograph_is_called_a_picture_and_not_a_measurement(app):
 
 def test_the_white_point_caution_does_not_fire_for_a_picture(app):
     """`measured` decides whether the two-white caution is offered, and a
-    photograph is not a measurement of a paper."""
+    photograph is not a measurement of a paper.
+
+    ⚠ BEHAVIOUR, NOT SOURCE TEXT. The first version asserted that a word
+    appeared in the function, and a mutant — `and (True or suffix not in
+    IMAGE_EXTENSIONS)` — kept the word, SURVIVED THE WHOLE SUITE, and put
+    "tick Judge each paper against its own white" back on screen under a
+    photograph that has no paper and no white. This drives the real method
+    and reads the flag it produces.
+    """
+    import pathlib
     import gamut_app
-    import inspect
-    src = inspect.getsource(gamut_app.GamutApp._judging_shapes)
-    assert "IMAGE_EXTENSIONS" in src, (
-        "a picture still counts as a measurement, so it is offered advice "
-        "about a paper white it does not have")
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    root = pathlib.Path(__file__).resolve().parent.parent
+    lab = reference_gamut("sRGB", white_point="D50", steps=9, space="lab")
+
+    def measured_flag(path):
+        stub = NS(_slots=[], _reference=("thing", lab),
+                  _reference_path=path, _reference_m=None,
+                  _compare=NS(currentData=lambda: ("icc", None)),
+                  _white=NS(currentData=lambda: "D50"),
+                  _detail=NS(value=lambda: 9), _lab_gamuts={},
+                  _in_lab=lambda g, p=None, m=None: g)
+        stub._reference_in_lab = lambda: gamut_app.GamutApp._reference_in_lab(
+            stub)
+        rows = gamut_app.GamutApp._judging_shapes(stub)
+        return rows[-1][3]
+
+    assert measured_flag(root / "demo" / "Glossy-paper.ti3") is True, (
+        "a measurement is measured")
+    assert measured_flag(pathlib.Path("holiday.png")) is False, (
+        "a photograph was counted as a measurement, so the window offered "
+        "it advice about a paper white it does not have")
+    assert measured_flag(pathlib.Path("printer.icc")) is False
+
+
+# --------------------------------------------------------------------------
+# What a photograph loses, measured in the right space
+#
+# ⚠ THE FOURTH SIBLING. `_update_picture_loss` measures a photograph's own
+# colours — always CIELAB — against the other shape, and it was handed the
+# DRAWN shape. With only "Draw it in" changed and nothing else, the same
+# photograph against the same profile read 0%, then 1%, then 100% out of
+# reach, worst 2.1 then 10.1 then 99.0 ΔE, with the panel saying "99.9% fits
+# inside" and "100% is out of reach" three lines apart over a picture that
+# plainly showed the photograph inside the shape. It shipped in v2.53.2.
+# --------------------------------------------------------------------------
+
+
+def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    # ⚠ WATCH THE CALL, NOT THE TEXT. With dummy facts the measurement
+    # raises and the text is empty whether the refusal fired or not — so an
+    # empty panel proved nothing and a mutant that deleted the refusal
+    # passed. What must be true is that the measurement is never ATTEMPTED
+    # against a shape in the wrong space.
+    import imagegamut
+    asked = []
+    real = imagegamut.out_of_reach
+    imagegamut.out_of_reach = lambda facts, against: (
+        asked.append(against) or {"of_the_picture": 0.5, "worst": 9.0})
+    try:
+        stub = NS(_picture_loss=NS(setText=lambda t: None),
+                  _is_picture=lambda name: name == "holiday",
+                  _image_facts={"/tmp/holiday.png": {"anything": True}})
+        wrong = reference_gamut("sRGB", white_point="D50", steps=9,
+                                space="luv")
+        gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,
+                                                "a-profile", wrong)
+        assert not asked, (
+            "it measured a photograph's CIELAB colours against a CIELUV "
+            "shape")
+        right = reference_gamut("sRGB", white_point="D50", steps=9,
+                                space="lab")
+        gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,
+                                                "a-profile", right)
+        assert asked and asked[0] is right, (
+            "and it must still answer when the shape IS in CIELAB")
+    finally:
+        imagegamut.out_of_reach = real
+
+
+def test_the_coverage_readout_hands_the_picture_loss_a_cielab_shape(app):
+    """Driven through `_update_coverage`, which is where the pair is
+    assembled and where the CIELAB twin has to come from."""
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    import pathlib
+    lab = reference_gamut("sRGB", white_point="D50", steps=9, space="lab")
+    luv = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
+    got = {}
+    stub = NS(
+        _reference=("a-profile", luv), _reference_path=pathlib.Path("p.icc"),
+        _slots=[(pathlib.Path("holiday.png"), luv, None)],
+        _how_much_fits=lambda a, b: (0.9, 0.4),
+        _coverage=NS(setText=lambda t: None),
+        _picture_loss=NS(setText=lambda t: None),
+        _shared_lbl=NS(setText=lambda t: None),
+        _reach=NS(setText=lambda t: None),
+        _pair_box=NS(setVisible=lambda v: None),
+        _compare=NS(currentData=lambda: ("icc", None)),
+        _is_picture=lambda name: True,
+        _in_lab=lambda g, p=None, m=None: lab,
+        _reference_in_lab=lambda: lab,
+        _update_pair=lambda *a: None,
+        _update_picture_loss=lambda *a: got.setdefault("args", a))
+    gamut_app.GamutApp._update_coverage(stub)
+    args = got.get("args")
+    assert args is not None, "the picture loss was never asked for"
+    assert args[1].space == "lab" and args[3].space == "lab", (
+        "it was handed the drawn shapes, so a change of Draw it in moves a "
+        "number that has nothing to do with the drawing")
