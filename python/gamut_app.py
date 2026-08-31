@@ -13559,7 +13559,6 @@ class GamutApp(QMainWindow):
         """
         if not measured or path is None:
             return None
-        white = self._white.currentData()
         # No `relative`: this entry holds BOTH readings, so the tick cannot
         # change what it should return.
         key = self._shape_key(path, "lab")
@@ -13568,12 +13567,16 @@ class GamutApp(QMainWindow):
             return hit
         made = []
         try:
-            for relative in (False, True):
-                m = read_measurement(Path(path), white, relative)
-                drive = (None if self._mode.currentData() == "hull"
-                         else m.device)
-                made.append((build_gamut(m.lab, drive, input_space="lab",
-                                         space="lab", white_point=white), m))
+            # ⚠ THE SAME SNAPSHOT, WITH ONE FIELD MOVED. Two readings of one
+            # paper, differing in exactly the thing under discussion and in
+            # nothing else — which is the whole claim the sentence beside
+            # them makes. Written out by hand, the two readings could drift
+            # apart in some other setting without anything noticing.
+            settings = self._settings().drawn_in("lab")
+            thing = shapes.thing_for(path, IMAGE_EXTENSIONS)
+            for tick in (False, True):
+                built, m = shapes.shape_for(thing, settings.with_tick(tick))
+                made.append((built, m))
         except Exception:          # noqa: BLE001 — a readout never crashes
             return None
         self._other_whites[key] = tuple(made)
