@@ -6833,6 +6833,13 @@ def _profile_label(path: Path) -> str:
         kind = "gamut file"
     elif suffix in (".icc", ".icm"):
         kind = "profile"
+    elif suffix in IMAGE_EXTENSIONS:
+        # ⚠ AND A PHOTOGRAPH IS NEITHER. Everything that was not a profile
+        # was called "measured", so a picture held as the comparison read
+        # "from-above (measured)" in every line about it — the exact
+        # confusion this function exists to prevent, one branch further on.
+        # A picture holds colours; nobody measured a paper to make it.
+        kind = "picture"
     else:
         # A measurement may be the comparison too, and calling it a profile
         # would be exactly the confusion this function exists to prevent.
@@ -13311,9 +13318,17 @@ class GamutApp(QMainWindow):
             # A comparison built from a file is a measurement when it is one;
             # a standard colour space or the visible solid is not, and neither
             # has a paper white to be judged against.
-            measured = (self._reference_path is not None
-                        and self._reference_path.suffix.lower()
-                        not in (".icc", ".icm", ".gam"))
+            # ⚠ A PHOTOGRAPH IS NOT A MEASUREMENT. This asked only whether
+            # the file was NOT a profile, so a picture counted as measured —
+            # it was labelled "(measured)" in every readout, and it fired the
+            # white-point caution, which told the reader to tick "Judge each
+            # paper against its own white" about a photograph that has no
+            # paper and no white. A cause that is not the cause is worse than
+            # no explanation.
+            suffix = (self._reference_path.suffix.lower()
+                      if self._reference_path is not None else "")
+            measured = (suffix != "" and suffix not in (".icc", ".icm", ".gam")
+                        and suffix not in IMAGE_EXTENSIONS)
             out.append((self._reference[0],
                         # ⚠ THROUGH `_reference_in_lab`, WHICH ANSWERS FOR
                         # EVERY KIND OF COMPARISON. Carrying the measurement
@@ -13465,9 +13480,23 @@ class GamutApp(QMainWindow):
                 built = build_gamut(measurement.lab, drive, input_space="lab",
                                     space="lab", white_point=white)
             elif path is not None:
-                reader = (gam_gamut if Path(path).suffix.lower() == ".gam"
-                          else icc_gamut)
-                built = reader(Path(path), white_point=white, space="lab")
+                # ⚠ A PICTURE IS A FILE TOO. This read every path that was
+                # not a .gam as an ICC profile, so a photograph held as the
+                # comparison -- which the chooser explicitly offers -- raised
+                # inside `icc_gamut`, fell to the drawn shape, and a chart
+                # was then counted against a gamut in the wrong space:
+                # "0 inside, 0 on the edge, 480 outside, worst 99.0 ΔE",
+                # against a truth of 390. `_build_one` has known about
+                # images all along; this did not.
+                suffix = Path(path).suffix.lower()
+                if suffix in IMAGE_EXTENSIONS:
+                    from imagegamut import image_gamut
+                    built, _facts = image_gamut(Path(path),
+                                                white_point=white,
+                                                space="lab")
+                else:
+                    reader = gam_gamut if suffix == ".gam" else icc_gamut
+                    built = reader(Path(path), white_point=white, space="lab")
             else:
                 return gamut
         except Exception:          # noqa: BLE001 — never take the view down
@@ -13566,6 +13595,20 @@ class GamutApp(QMainWindow):
 
         lines = []
         for name, gamut, path, measured in self._judging_shapes():
+            # ⚠ NO CIELAB SHAPE, NO NUMBER — the same rule the marking
+            # already obeys. A chart's patches are CIELAB; counting them
+            # against a shape built in another space is not a worse answer,
+            # it is a different question answered confidently. The picture
+            # was taught to mark nothing in that case and this was left
+            # printing "480 outside, worst 99.0 ΔE" beside it, so the two
+            # disagreed again with the halves swapped.
+            if getattr(gamut, "space", "lab") != "lab":
+                lines.append(
+                    f"{name}: not counted here. Its shape could not be "
+                    f"rebuilt in CIELAB, and ΔE is defined on CIELAB and on "
+                    f"nothing else — so any number counted against it would "
+                    f"be answering a different question.")
+                continue
             try:
                 report = chart_mod.outside_report(lab, gamut,
                                                   against=name)

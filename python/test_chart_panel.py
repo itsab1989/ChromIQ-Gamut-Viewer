@@ -1194,7 +1194,7 @@ def test_no_document_or_script_publishes_the_claim_either(app):
             # They are lifted out BEFORE the tags go.
             spoken = " ".join(
                 m.group(1) for m in re.finditer(
-                    r'\b(?:alt|title|aria-label)\s*=\s*"([^"]*)"',
+                    r"""\b(?:alt|title|aria-label)\s*=\s*["']([^"']*)["']""",
                     text, re.I))
             text = re.sub(r"<(?!/?(img|a)\b)[^>]+>", " ", text)
             text = html.unescape(text) + " " + html.unescape(spoken)
@@ -1491,3 +1491,105 @@ def test_the_comparison_is_rebuilt_before_the_papers(app):
             calls.index("self._rebuild()"), (
             f"{name} rebuilds the papers before the comparison, so a redraw "
             "meets a half-converted scene")
+
+
+# --------------------------------------------------------------------------
+# A photograph held as the comparison
+#
+# ⚠ THE THIRD MEMBER OF A FAMILY CLOSED TWICE. A .ti3 comparison was fixed by
+# carrying its measurement; a colour space and the visible solid by a
+# synthetic rebuild. A PICTURE is a file, so it took the branch neither
+# repair touched: `_in_lab` read every non-.gam path as an ICC profile, the
+# read raised, the drawn shape came back, and a chart was counted against a
+# gamut in the wrong space — "0 inside, 0 on the edge, 480 outside, worst
+# 99.0 ΔE" against a truth of 390.
+#
+# And because the picture had just been taught to mark nothing in that case
+# while the sentence still printed a number, the two disagreed AGAIN, with
+# the halves swapped.
+# --------------------------------------------------------------------------
+
+
+def test_a_picture_is_rebuilt_in_cielab_like_everything_else(app):
+    """⚠ BEHAVIOUR, NOT SOURCE TEXT. The first version of this asserted that
+    "IMAGE_EXTENSIONS" appeared in the function, and a mutant that wrapped
+    the branch in `if False and ...` kept the words and passed. A test that
+    reads the source is a test of the source."""
+    import pathlib
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    root = pathlib.Path(__file__).resolve().parent.parent
+    picture = next(iter(sorted((root / "docs").rglob("*.png"))), None)
+    assert picture is not None, "no picture in the tree to try"
+    drawn = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
+    stub = NS(_white=NS(currentData=lambda: "D50"),
+              _mode=NS(currentData=lambda: "device"),
+              _relative=NS(isChecked=lambda: False),
+              _lab_gamuts={})
+    stub._shape_key = lambda path, space, relative=None: (
+        gamut_app.GamutApp._shape_key(stub, path, space, relative=relative))
+    built = gamut_app.GamutApp._in_lab(stub, drawn, picture, None)
+    assert built is not drawn, (
+        "the photograph was read as an ICC profile, raised, and the drawn "
+        "shape came back — which is how a chart came to be counted against "
+        "a gamut in CIE XYZ")
+    assert built.space == "lab"
+
+
+def test_a_chart_is_not_counted_against_a_shape_in_another_space(app):
+    """The same rule the marking obeys: ΔE is defined on CIELAB and on
+    nothing else, so a shape that could not be rebuilt there gets no number
+    — it gets a sentence saying why. Driven through the real method."""
+    import numpy as np
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    said = {}
+    wrong = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
+    stub = NS(
+        _chart=("chart.ti1", NS(n_patches=3)),
+        _chart_placed=NS(profile="a-profile"),
+        _chart_profile=None,
+        _drawing_in_ink=lambda: False,
+        _chart_box=NS(setVisible=lambda v: None),
+        _refresh_chart_look_box=lambda: None,
+        _chart_headline=NS(setText=lambda t: None),
+        _chart_rows=NS(setText=lambda t: said.setdefault("rows", t)),
+        _chart_lab=lambda: np.array([[50.0, 0.0, 0.0], [80.0, 5.0, -5.0]]),
+        _judging_shapes=lambda: [("sRGB", wrong, None, False)],
+        _show_chart_spread=lambda in_ink: None,
+        _both_whites=lambda path, measured: None,
+        _white_mismatch_caution=lambda measured: "",
+        _chart_verdict=lambda *a: "SHOULD NOT BE REACHED")
+    gamut_app.GamutApp._update_chart_numbers(stub)
+    rows = said.get("rows", "")
+    assert "not counted here" in rows, rows
+    assert "SHOULD NOT BE REACHED" not in rows, (
+        "it counted the patches against a shape built in CIELUV")
+    assert "CIELAB" in rows, "it must say why, not merely decline"
+
+
+def test_a_photograph_is_called_a_picture_and_not_a_measurement(app):
+    """It was labelled "(measured)" in every line about it, and it fired the
+    white-point caution — telling the reader to tick "Judge each paper
+    against its own white" about a photograph that has no paper and no
+    white. A cause that is not the cause is worse than no explanation."""
+    import gamut_app
+    from pathlib import Path
+    assert gamut_app._profile_label(Path("holiday.png")).endswith("(picture)")
+    assert gamut_app._profile_label(Path("holiday.jpg")).endswith("(picture)")
+    assert gamut_app._profile_label(Path("paper.ti3")).endswith("(measured)")
+    assert gamut_app._profile_label(Path("printer.icc")).endswith("(profile)")
+    assert gamut_app._profile_label(Path("shape.gam")).endswith("(gamut file)")
+
+
+def test_the_white_point_caution_does_not_fire_for_a_picture(app):
+    """`measured` decides whether the two-white caution is offered, and a
+    photograph is not a measurement of a paper."""
+    import gamut_app
+    import inspect
+    src = inspect.getsource(gamut_app.GamutApp._judging_shapes)
+    assert "IMAGE_EXTENSIONS" in src, (
+        "a picture still counts as a measurement, so it is offered advice "
+        "about a paper white it does not have")
