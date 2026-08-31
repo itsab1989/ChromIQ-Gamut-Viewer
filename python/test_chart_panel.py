@@ -1170,10 +1170,17 @@ def test_no_document_or_script_publishes_the_claim_either(app):
     # those would falsify the history rather than correct a claim. Python
     # under scripts/ goes through the source sweep above, which reads string
     # literals and so does not trip over a comment quoting the old wording.
-    for f in sorted(list(root.glob("*.md")) + list(root.glob("docs/*.md"))
-                    + list(root.glob("docs/*.html"))
-                    + list(root.glob("docs/showcase/*.html"))):
+    # ⚠ rglob, NOT glob. The first version used four flat patterns and so
+    # read 13 files and missed 50 — INCLUDING ALL EIGHT PUBLISHED PAGES THE
+    # SAME COMMIT HAD TO CORRECT. It was titled "the check that should have
+    # caught six of them" and could not have caught them. The matching was
+    # generalised and the SCOPE was left behind: the identical mistake one
+    # level up, in the change that was meant to end it.
+    for f in sorted(list(root.rglob("*.md")) + list(root.rglob("docs/**/*.html"))
+                    + list(root.glob("docs/*.html"))):
         if f.name == "CHANGELOG.md":
+            continue
+        if "/scratch/" in str(f) or "/.git/" in str(f):
             continue
         text = f.read_text(encoding="utf-8", errors="replace")
         if f.suffix == ".html":
@@ -1190,7 +1197,12 @@ def test_no_document_or_script_publishes_the_claim_either(app):
                     raise AssertionError(
                         f"{f.relative_to(root)} publishes "
                         f"{found.group(0)!r} — …{near[:150]}…")
-    assert looked > 10, f"only {looked} documents were read"
+    # ⚠ A FLOOR THAT THE OLD SCOPE PASSED AT 13 while missing 50 files is not
+    # a floor. It is pinned to the published pages, which are the copies a
+    # reader is most likely to meet.
+    assert looked > 45, (
+        f"only {looked} documents were read; the published pages are the "
+        "ones this exists for")
 
 
 def test_the_document_sweep_catches_every_form_that_escaped_it(app):
@@ -1293,3 +1305,94 @@ def test_the_white_point_and_the_space_are_always_in_the_key(app):
     ti3 = "demo/Glossy-paper.ti3"
     assert shape_key(ti3, white="D50") != shape_key(ti3, white="D65")
     assert shape_key(ti3, space="lab") != shape_key(ti3, space="luv")
+
+
+# --------------------------------------------------------------------------
+# A comparison that is not a file
+#
+# ⚠ TWO FAULTS, ONE CAUSE, AND FIXING EITHER ALONE MAKES THINGS WORSE.
+#
+# A comparison set to a colour space or to the visible solid has no file. The
+# consolidated cache key called `Path(None)` on it and crashed the window on
+# an ordinary "Draw it in" change — two unhandled TypeErrors, and the scene
+# left showing CIELUV under a control reading CIE XYZ.
+#
+# And underneath that crash sat an older wrong answer: with no file and no
+# measurement nothing could be rebuilt in CIELAB, so a chart was counted
+# against a gamut drawn in another space — "sRGB: 0 inside, 0 on the edge,
+# 480 outside, worst 99.0 ΔE". Guarding the None alone would have traded the
+# crash back for that sentence, which is the worse of the two.
+# --------------------------------------------------------------------------
+
+
+def test_a_shape_with_no_file_is_refused_by_the_file_key(app):
+    """`_shape_key` is for files, and says so instead of raising TypeError
+    from `Path(None)` — which the OSError guard beside it cannot catch."""
+    import gamut_app
+    import pytest as _pytest
+    from types import SimpleNamespace as NS
+    stub = NS(_white=NS(currentData=lambda: "D50"),
+              _mode=NS(currentData=lambda: "device"))
+    with _pytest.raises(ValueError) as caught:
+        gamut_app.GamutApp._shape_key(stub, None, "luv", relative=False)
+    assert "_synthetic_key" in str(caught.value), (
+        "it must point at the key that DOES answer for a shape with no file")
+
+
+def test_judging_a_chart_by_a_colour_space_rebuilds_it_in_cielab(app):
+    """The half that was left open. A colour space has no file, but it has a
+    name, and this window can build it in whatever space it likes."""
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    drawn = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
+    assert drawn.space == "luv"
+    stub = NS(_reference=("sRGB", drawn), _reference_path=None,
+              _compare=NS(currentData=lambda: ("space", "sRGB")),
+              _white=NS(currentData=lambda: "D50"),
+              _detail=NS(value=lambda: 9),
+              _lab_gamuts={})
+    # bound to the real one, so a change to how it is keyed reaches this test
+    stub._synthetic_key = lambda choice: gamut_app.GamutApp._synthetic_key(
+        stub, choice)
+    built = gamut_app.GamutApp._reference_in_lab(stub)
+    assert built is not None
+    assert built.space == "lab", (
+        "a chart's patches are CIELAB; judging them against a shape drawn in "
+        "CIELUV is what printed 480 of 480 outside at ΔE 99")
+    assert built is not drawn
+    # And it is cached, so the second ask costs nothing.
+    assert gamut_app.GamutApp._reference_in_lab(stub) is built
+
+
+def test_a_comparison_already_in_cielab_is_handed_back_untouched(app):
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    lab = reference_gamut("sRGB", white_point="D50", steps=9, space="lab")
+    stub = NS(_reference=("sRGB", lab), _reference_path=None,
+              _compare=NS(currentData=lambda: ("space", "sRGB")),
+              _white=NS(currentData=lambda: "D50"),
+              _detail=NS(value=lambda: 9), _lab_gamuts={})
+    stub._synthetic_key = lambda choice: gamut_app.GamutApp._synthetic_key(
+        stub, choice)
+    assert gamut_app.GamutApp._reference_in_lab(stub) is lab
+
+
+def test_no_comparison_at_all_is_not_an_error(app):
+    import gamut_app
+    from types import SimpleNamespace as NS
+    assert gamut_app.GamutApp._reference_in_lab(NS(_reference=None)) is None
+
+
+def test_detail_belongs_in_the_key_of_a_shape_that_has_no_file(app):
+    """The mirror of the file rule: `_detail` reaches `reference_gamut(steps=)`
+    and `optimal_colour_solid()` and nothing else, so it belongs HERE and
+    nowhere else."""
+    import gamut_app
+    from types import SimpleNamespace as NS
+    stub = NS(_white=NS(currentData=lambda: "D50"), _detail=NS(value=lambda: 9))
+    nine = gamut_app.GamutApp._synthetic_key(stub, ("space", "sRGB"))
+    stub._detail = NS(value=lambda: 17)
+    seventeen = gamut_app.GamutApp._synthetic_key(stub, ("space", "sRGB"))
+    assert nine != seventeen, "Detail really does change a synthetic shape"

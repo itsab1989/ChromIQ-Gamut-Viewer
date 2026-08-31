@@ -13235,6 +13235,65 @@ class GamutApp(QMainWindow):
                 marked = None
         return (path.stem, lab, marked, device)
 
+    def _synthetic_key(self, choice):
+        """The key for a shape with no file: a colour space, or the visible
+        solid. It is the ONE kind Detail changes, because it is built with
+        `steps=` rather than read off disk."""
+        return ("synthetic", choice, self._white.currentData(), "lab",
+                self._detail.value())
+
+    def _reference_in_lab(self):
+        """The comparison, rebuilt in CIELAB so a chart can be judged by it.
+
+        ⚠ THE HALF THAT WAS LEFT OPEN. Handing `_in_lab` no measurement sent
+        it to `icc_gamut` with a .ti3 and counted CIELAB patches against an
+        unconverted hull — "480 of 480 outside, worst 99.2 ΔE" in CIE XYZ.
+        That was closed for a comparison that is a FILE, by carrying its
+        measurement. For a comparison that is a colour SPACE or the visible
+        solid there is no file and no measurement, so nothing could be
+        rebuilt and the same artefact printed one `elif` away:
+
+            sRGB: 0 inside, 0 on the edge, 480 outside. Worst 99.0 ΔE.
+
+        A colour space has no file, but it does have a name, and this window
+        can build it in any space it likes. So it is rebuilt rather than
+        given up on — guarding the None alone would have traded a crash back
+        for that sentence, and a confident wrong number is the worse of the
+        two.
+        """
+        if self._reference is None:
+            return None
+        gamut = self._reference[1]
+        if getattr(gamut, "space", "lab") == "lab":
+            return gamut
+        if self._reference_path is not None:
+            return self._in_lab(gamut, self._reference_path,
+                                getattr(self, "_reference_m", None))
+        choice = self._compare.currentData()
+        key = self._synthetic_key(choice)
+        hit = self._lab_gamuts.get(key)
+        if hit is not None:
+            return hit
+        white = self._white.currentData()
+        try:
+            if choice and choice[0] == "space":
+                built = reference_gamut(choice[1], white_point=white,
+                                        steps=self._detail.value(),
+                                        space="lab")
+            elif choice and choice[0] == "visible":
+                verts, _f = optimal_colour_solid(
+                    "D50" if white == "D50" else "D65",
+                    max(24, self._detail.value() * 3))
+                built = build_gamut(xyz_to_lab(verts, white),
+                                    input_space="lab", space="lab",
+                                    white_point=white)
+            else:
+                return gamut
+        except Exception:          # noqa: BLE001 — a readout never crashes
+            return gamut
+        self._lab_gamuts[key] = built
+        return built
+
     def _judging_shapes(self) -> list:
         """Every shape a chart can be counted against: (name, gamut, path).
 
@@ -13256,15 +13315,11 @@ class GamutApp(QMainWindow):
                         and self._reference_path.suffix.lower()
                         not in (".icc", ".icm", ".gam"))
             out.append((self._reference[0],
-                        # ⚠ ITS MEASUREMENT, NOT None. Handing None here
-                        # sent `_in_lab` to `icc_gamut` with a .ti3, which
-                        # cannot read one -- so in any space but CIELAB the
-                        # chart was counted against the UNCONVERTED hull:
-                        # "480 of 480 outside, worst ΔE 99.2" in CIE XYZ,
-                        # three lines above the correct "255 ... and 178".
-                        self._in_lab(self._reference[1],
-                                     self._reference_path,
-                                     getattr(self, "_reference_m", None)),
+                        # ⚠ THROUGH `_reference_in_lab`, WHICH ANSWERS FOR
+                        # EVERY KIND OF COMPARISON. Carrying the measurement
+                        # here fixed the file case and left the colour-space
+                        # case printing the same artefact one branch away.
+                        self._reference_in_lab(),
                         self._reference_path, measured))
         return out
 
@@ -13317,6 +13372,19 @@ class GamutApp(QMainWindow):
         nor the shape mode reaches a profile or a photograph, so neither goes
         in their key: putting them there costs misses and buys nothing.
         """
+        # ⚠ A FILE. `Path(None)` raises TypeError, which the OSError guard
+        # below does not catch, and four callers pass None by design — a
+        # comparison set to a colour space or to the visible solid has no
+        # file at all. That crashed the window on an ordinary "Draw it in"
+        # change, through two unguarded routes, and the scene was left
+        # showing CIELUV under a control reading CIE XYZ.
+        #
+        # A shape with no file is a SYNTHETIC reference, and it is the one
+        # shape Detail really does change (`reference_gamut(steps=)`,
+        # `optimal_colour_solid()`), so it is keyed by `_synthetic_key` and
+        # never comes here.
+        if path is None:
+            raise ValueError("_shape_key is for files; see _synthetic_key")
         path = Path(path)
         try:
             stamp = path.stat().st_mtime_ns
@@ -13359,9 +13427,12 @@ class GamutApp(QMainWindow):
         if gamut.space == "lab":
             return gamut
         white = self._white.currentData()
-        key = self._shape_key(path, "lab",
-                              relative=self._relative.isChecked())
-        hit = self._lab_gamuts.get(key)
+        # No file means nothing to rebuild FROM here; the comparison's own
+        # synthetic rebuild is `_reference_in_lab`.
+        key = (self._shape_key(path, "lab",
+                               relative=self._relative.isChecked())
+               if path is not None else None)
+        hit = self._lab_gamuts.get(key) if key is not None else None
         if hit is not None:
             return hit
         try:
@@ -13378,7 +13449,8 @@ class GamutApp(QMainWindow):
                 return gamut
         except Exception:          # noqa: BLE001 — never take the view down
             return gamut
-        self._lab_gamuts[key] = built
+        if key is not None:
+            self._lab_gamuts[key] = built
         return built
 
     def _both_whites(self, path, measured: bool):
