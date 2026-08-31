@@ -80,18 +80,44 @@ OTHER = {"white": ("D50", "D65"), "space": ("lab", "luv"),
          "detail": (9, 17)}
 
 
-def things():
+def a_gamut_file(tmp_path):
+    """A real .gam, made the way ChromIQ makes one. ⚠ WITHOUT THIS, THE
+    `gamutfile` ROW OF THE TABLE IS DECIDED BY NOTHING — a review found that
+    `depends=()` for it survived the whole suite, which would have served
+    every .gam from cache in whatever space it was first built in."""
+    import shutil
+    import subprocess
+    tool = shutil.which("iccgamut") or "/Applications/Argyll/bin/iccgamut"
+    if not pathlib.Path(tool).exists():
+        return None
+    work = tmp_path / "Glossy-paper.icc"
+    shutil.copyfile(DEMO / "Glossy-paper.icc", work)
+    try:
+        subprocess.run([tool, "-i", "r", "-d", "6", str(work)],
+                       capture_output=True, timeout=120, check=True)
+    except Exception:            # noqa: BLE001 — no Argyll, no fixture
+        return None
+    made = work.with_suffix(".gam")
+    return made if made.is_file() else None
+
+
+def things(tmp_path=None):
     out = [(shapes.Thing("measurement", DEMO / "Glossy-paper.ti3"), "a paper"),
            (shapes.Thing("profile", DEMO / "Glossy-paper.icc"), "a profile"),
-           (shapes.a_space("sRGB"), "a colour space")]
+           (shapes.a_space("sRGB"), "a colour space"),
+           (shapes.the_visible_solid(), "the visible solid")]
     picture = a_picture()
     if picture is not None:
         out.append((shapes.Thing("picture", picture), "a photograph"))
+    if tmp_path is not None:
+        gam = a_gamut_file(tmp_path)
+        if gam is not None:
+            out.append((shapes.Thing("gamutfile", gam), "a gamut file"))
     return out
 
 
 @pytest.mark.slow
-def test_nothing_the_table_denies_can_move_the_shape():
+def test_nothing_the_table_denies_can_move_the_shape(tmp_path):
     """⚠ THE SAFETY DIRECTION, AND IT IS THE ONLY HARD ONE.
 
     The two directions are not symmetric. A setting the table DENIES that
@@ -106,26 +132,40 @@ def test_nothing_the_table_denies_can_move_the_shape():
     reported. Guessing wrong in the safe direction must not fail a test;
     guessing wrong in the dangerous one must.
     """
+    from dataclasses import replace as _replace
     checked = 0
-    for thing, said in things():
+    reached = set()
+    for thing, said in things(tmp_path):
+        reached.add(thing.kind)
         declared = set(shapes.depends_on(thing))
         for setting, (first, second) in OTHER.items():
             if setting in declared:
                 continue
-            base = shapes.Settings(detail=9)
-            from dataclasses import replace as _replace
-            a = _replace(base, **{setting: first})
-            b = _replace(base, **{setting: second})
-            checked += 1
-            assert not moved(thing, a, b), (
-                f"{said}: the table says {setting!r} does not reach it, and "
-                "changing it MOVED THE SHAPE — every cache keyed by this "
-                "rule would hand back a stale answer")
-    assert checked >= 6, f"only {checked} denials were tried"
+            # ⚠ IN EVERY SPACE, NOT JUST CIELAB. The first version of this
+            # built its base as `Settings(detail=9)`, whose space defaults to
+            # "lab", and never varied it — so the DANGEROUS direction was
+            # only ever asserted in CIELAB while the safe one swept two
+            # spaces. The asymmetry was exactly backwards, and deleting
+            # `white` from a profile's dependencies passed all 1,195 tests:
+            # a profile's shape is identical under D50 and D65 in CIELAB and
+            # MOVES in both CIELUV and CIE XYZ.
+            for space in ("lab", "luv", "xyz"):
+                base = shapes.Settings(detail=9, space=space)
+                a = _replace(base, **{setting: first})
+                b = _replace(base, **{setting: second})
+                checked += 1
+                assert not moved(thing, a, b), (
+                    f"{said}: the table says {setting!r} does not reach it, "
+                    f"and in {space} changing it MOVED THE SHAPE — every "
+                    "cache keyed by this rule would hand back a stale answer")
+    # ⚠ A FLOOR ON CELLS CANNOT NOTICE A MISSING KIND: four kinds contributed
+    # nine denials on their own while two kinds were never built at all.
+    missing = set(shapes.KINDS) - reached - {"gamutfile"}
+    assert not missing, f"these kinds were never built, so their row of the table is decided by nothing: {missing}"
 
 
 @pytest.mark.slow
-def test_what_the_table_claims_is_measured_and_recorded():
+def test_what_the_table_claims_is_measured_and_recorded(tmp_path):
     """The other direction, measured rather than asserted — a claim that
     never moves anything is pure cost, and the record should say which.
 
@@ -138,7 +178,7 @@ def test_what_the_table_claims_is_measured_and_recorded():
     """
     from dataclasses import replace as _replace
     idle = []
-    for thing, said in things():
+    for thing, said in things(tmp_path):
         for setting, (first, second) in OTHER.items():
             if setting not in set(shapes.depends_on(thing)):
                 continue

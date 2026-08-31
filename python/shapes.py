@@ -123,12 +123,22 @@ def key_for(thing: Thing, settings: Settings) -> tuple:
     for the shape a file USED to have, and the guard against that was
     "remember to clear the caches when a file is opened" — a rule already
     half-forgotten once, across four caches with four different key rules.
+
+    ⚠ AND A FILE THAT CANNOT BE STATTED GETS A STABLE KEY, not an unrepeatable
+    one. An earlier version of this comment claimed the opposite — "never
+    answer from cache" — which was simply false, and a review showed it in one
+    line. What is TRUE is narrower and worth stating exactly: the key of a
+    missing file differs from the key that file had while it existed, so no
+    cache can hand back its old shape; but two lookups of the SAME missing
+    file agree, so if anything ever cached a result under it, that result
+    would be returned. Nothing does today, because a build of a missing file
+    raises before it can be stored.
     """
     parts: list = [thing.kind, str(thing.path) if thing.path else thing.name]
     if thing.path is not None:
         try:
             parts.append(thing.path.stat().st_mtime_ns)
-        except OSError:          # gone, or unreadable: never answer from cache
+        except OSError:          # gone, or unreadable — see the note above
             parts.append(None)
     for setting in depends_on(thing):
         parts.append(getattr(settings, setting))
