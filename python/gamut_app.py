@@ -13341,8 +13341,31 @@ class GamutApp(QMainWindow):
         path = slot[0] if slot else None
         measurement = slot[2] if slot else None
         try:
-            marked = chart_mod.outside_report(
-                lab, self._in_lab(gamut, path, measurement)).beyond
+            # ⚠ THE COMPARISON HAS NO SLOT, and this is where the picture and
+            # the sentence came apart. `_judging_shapes` was taught to rebuild
+            # a fileless comparison in CIELAB and this call was left on the
+            # old route, where `_in_lab` hands back the shape in the DRAWN
+            # space. With a chart, Compare with = sRGB and Draw it in = CIE
+            # XYZ, room two painted 480 of 480 patches unreachable while the
+            # numbers beside it said 143 — the same window disagreeing with
+            # itself by a factor of three.
+            # `getattr`, because the tests drive this with stand-ins for a
+            # window and a marking must not depend on which.
+            reference = getattr(self, "_reference", None)
+            if path is None and measurement is None \
+                    and reference is not None and gamut is reference[1]:
+                judge = self._reference_in_lab()
+            else:
+                judge = self._in_lab(gamut, path, measurement)
+            # ⚠ AND IF IT CANNOT BE HAD IN CIELAB, MARK NOTHING. A chart's
+            # patches are CIELAB; measuring them against a shape built in
+            # another space is not a worse answer, it is a different question
+            # answered confidently. Before this the failure was an exception
+            # swallowed here, which left the patches unmarked — accidentally
+            # the right behaviour, and now the deliberate one.
+            if judge is None or getattr(judge, "space", "lab") != "lab":
+                return (name, lab, None, device)
+            marked = chart_mod.outside_report(lab, judge).beyond
         except Exception:          # noqa: BLE001 — a view must never crash
             marked = None
         return (name, lab, marked, device)
@@ -14530,8 +14553,16 @@ class GamutApp(QMainWindow):
         left in the old one would be a different shape from the charts it is
         drawn beside.
         """
-        self._rebuild()
+        # ⚠ THE COMPARISON FIRST. `_rebuild()` redraws internally, so this
+        # order redrew with the papers in the new space and the comparison
+        # still in the old one; `build_figure` rightly refuses to label axes
+        # that do not match its shapes, the slot aborted, and the comparison
+        # was never rebuilt at all. Two rooms plus any comparison plus a
+        # change of space left CIELAB on screen under a control reading CIE
+        # XYZ — the fault this window was already carrying before any of
+        # tonight's work, found by a review of the claim that it was closed.
         self._rebuild_reference()
+        self._rebuild()
         self._redraw()
 
     def _on_space_changed(self) -> None:
@@ -14543,8 +14574,16 @@ class GamutApp(QMainWindow):
         different geometries.
         """
         self._apply_space_availability()
-        self._rebuild()
+        # ⚠ THE COMPARISON FIRST. `_rebuild()` redraws internally, so this
+        # order redrew with the papers in the new space and the comparison
+        # still in the old one; `build_figure` rightly refuses to label axes
+        # that do not match its shapes, the slot aborted, and the comparison
+        # was never rebuilt at all. Two rooms plus any comparison plus a
+        # change of space left CIELAB on screen under a control reading CIE
+        # XYZ — the fault this window was already carrying before any of
+        # tonight's work, found by a review of the claim that it was closed.
         self._rebuild_reference()
+        self._rebuild()
         self._redraw()
 
     def _space_dependent_controls(self) -> list:

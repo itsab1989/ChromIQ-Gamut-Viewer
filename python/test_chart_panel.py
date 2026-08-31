@@ -1186,8 +1186,18 @@ def test_no_document_or_script_publishes_the_claim_either(app):
         if f.suffix == ".html":
             text = re.sub(r"<script\b.*?</script>", " ", text, flags=re.S | re.I)
             text = re.sub(r"<style\b.*?</style>", " ", text, flags=re.S | re.I)
+            # ⚠ ATTRIBUTE TEXT IS TEXT A READER MEETS. `alt`, `title` and
+            # `aria-label` are read aloud by a screen reader and shown on
+            # hover, and stripping the tags threw all of them away — 27 of
+            # them ship in these pages today, and one of the claims escaped
+            # in an alt attribute once already ("nobody-can-see-this band").
+            # They are lifted out BEFORE the tags go.
+            spoken = " ".join(
+                m.group(1) for m in re.finditer(
+                    r'\b(?:alt|title|aria-label)\s*=\s*"([^"]*)"',
+                    text, re.I))
             text = re.sub(r"<(?!/?(img|a)\b)[^>]+>", " ", text)
-            text = html.unescape(text)
+            text = html.unescape(text) + " " + html.unescape(spoken)
         flat = " ".join(text.split())      # a line break must not hide it
         looked += 1
         for claim in _CLAIMS:
@@ -1396,3 +1406,88 @@ def test_detail_belongs_in_the_key_of_a_shape_that_has_no_file(app):
     stub._detail = NS(value=lambda: 17)
     seventeen = gamut_app.GamutApp._synthetic_key(stub, ("space", "sRGB"))
     assert nine != seventeen, "Detail really does change a synthetic shape"
+
+
+# --------------------------------------------------------------------------
+# Marking a chart against a comparison that has no slot
+#
+# ⚠ THE PICTURE AND THE SENTENCE CAME APART BY A FACTOR OF THREE. Teaching
+# `_judging_shapes` to rebuild a fileless comparison in CIELAB left
+# `_chart_marked_against` on the old route, where `_in_lab` hands back the
+# shape in the DRAWN space. With a chart, Compare with = sRGB and Draw it in
+# = CIE XYZ, room two painted 480 of 480 patches unreachable while the
+# numbers beside it said 143.
+#
+# ⚠ AND THE TEST THAT ALREADY DROVE THIS CALL COULD NOT SEE IT, because it
+# built both shapes in CIELAB — where `_in_lab` returns on its first line.
+# These build the comparison in another space, which is the whole point.
+# --------------------------------------------------------------------------
+
+
+def marked_against(drawn_space, chart_lab, reference_space="luv"):
+    """What `_chart_marked_against` marks, with no slot and no file."""
+    import gamut_app
+    import numpy as np
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    drawn = reference_gamut("sRGB", white_point="D50", steps=9,
+                            space=reference_space)
+    stub = NS(_reference=("sRGB", drawn), _reference_path=None,
+              _compare=NS(currentData=lambda: ("space", "sRGB")),
+              _white=NS(currentData=lambda: "D50"),
+              _detail=NS(value=lambda: 9), _lab_gamuts={},
+              _in_lab=lambda g, p=None, m=None: g)
+    stub._synthetic_key = lambda choice: gamut_app.GamutApp._synthetic_key(
+        stub, choice)
+    stub._reference_in_lab = lambda: gamut_app.GamutApp._reference_in_lab(stub)
+    chart = ("chart", np.asarray(chart_lab, float), None, None)
+    return gamut_app.GamutApp._chart_marked_against(stub, chart, drawn, None)
+
+
+def test_a_chart_is_marked_against_the_comparison_rebuilt_in_cielab(app):
+    import numpy as np
+    # Two patches sRGB reaches easily, one it cannot: a saturated cyan.
+    lab = [[50.0, 0.0, 0.0], [80.0, 5.0, -5.0], [55.0, -40.0, -55.0]]
+    got = marked_against("xyz", lab, reference_space="luv")
+    assert got[2] is not None, (
+        "the comparison has no file, but it has a name — it must still be "
+        "rebuilt in CIELAB rather than left unmarked")
+    assert int(np.asarray(got[2]).sum()) < len(lab), (
+        "marking every patch outside is what a wrong-space shape does")
+
+
+def test_nothing_is_marked_when_no_cielab_shape_can_be_had(app):
+    """A chart's patches are CIELAB. Measuring them against a shape built in
+    another space is not a worse answer — it is a different question answered
+    confidently, and the honest reply is to mark nothing."""
+    import gamut_app
+    import numpy as np
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    drawn = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
+    stub = NS(_reference=None, _in_lab=lambda g, p=None, m=None: g)
+    chart = ("chart", np.asarray([[50.0, 0.0, 0.0]], float), None, None)
+    got = gamut_app.GamutApp._chart_marked_against(stub, chart, drawn, None)
+    assert got[2] is None, "it marked patches against a shape in CIELUV"
+
+
+def test_the_comparison_is_rebuilt_before_the_papers(app):
+    """⚠ `_rebuild()` REDRAWS INTERNALLY. Rebuilding the papers first meant a
+    redraw met the papers in the new space beside a comparison still in the
+    old one; `build_figure` refuses to label axes that do not match its
+    shapes, the slot aborted, and the comparison was never rebuilt at all —
+    CIELAB left on screen under a control reading CIE XYZ."""
+    import ast
+    import inspect
+    import gamut_app
+    for name in ("_on_space_changed", "_on_white_changed", "_on_shape_setting"):
+        src = inspect.getsource(getattr(gamut_app.GamutApp, name))
+        calls = [n for n in
+                 (ast.unparse(x) for x in ast.walk(ast.parse(src.strip()))
+                  if isinstance(x, ast.Call))
+                 if n in ("self._rebuild()", "self._rebuild_reference()")]
+        assert "self._rebuild_reference()" in calls, f"{name} forgets it"
+        assert calls.index("self._rebuild_reference()") < \
+            calls.index("self._rebuild()"), (
+            f"{name} rebuilds the papers before the comparison, so a redraw "
+            "meets a half-converted scene")
