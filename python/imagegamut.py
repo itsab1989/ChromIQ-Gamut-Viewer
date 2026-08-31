@@ -287,6 +287,14 @@ def image_gamut(path, *, white_point: str = "D50", space: str = "lab",
 def out_of_reach(facts: dict, gamut, *, tolerance: float = 1.0) -> "dict | None":
     """How much of a picture a shape cannot print — by pixel, not by volume.
 
+    ⚠ RAISES `chart.NotInCIELAB` when *gamut* was not built in CIELAB. This
+    used to be impossible to notice: the arithmetic reads vertices raw, so a
+    shape in CIELUV or CIE XYZ produced a confident figure answering a
+    different question — a photograph read 0%, 1% and 100% out of reach with
+    nothing but the drawing changed. `chart.outside_report` refuses it now,
+    and this inherits the refusal. `None` is still returned for a picture
+    with nothing measurable in it.
+
     Returns the share of the picture (weighted by how many pixels hold each
     colour), the share of its distinct colours, and the worst distance outside
     in ΔE2000. None when the facts came from a version that did not keep the

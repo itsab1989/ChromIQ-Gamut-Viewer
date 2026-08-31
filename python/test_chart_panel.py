@@ -1649,18 +1649,38 @@ def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
     # asserting "it never asks" pinned the old mechanism, not the promise.
     # What must hold is that no figure reaches the reader.
     import numpy as np
-    said = {}
+    # ⚠ "weights", NOT "weight". The first version of this test spelled the
+    # key wrong, so `out_of_reach` returned None on its own `weights is None`
+    # line BEFORE the refusal was ever reached — and the empty label it then
+    # asserted had nothing to do with the thing under test. It passed with
+    # the refusal disabled: a false all-clear about the one caller whose
+    # hand-written guard this commit deleted. `imagegamut.py:283` is the
+    # spelling that matters.
     facts = {"lab": np.array([[50.0, 0.0, 0.0], [70.0, 20.0, -30.0]]),
-             "weight": np.array([0.5, 0.5])}
-    stub = NS(_picture_loss=NS(setText=lambda t: said.setdefault("t", t)),
+             "weights": np.array([0.5, 0.5])}
+    # ⚠ THE LAST value, not the first. `_update_picture_loss` CLEARS the
+    # label before it does anything, so a `setdefault` stand-in captures that
+    # empty string and ignores the real sentence that follows — making both
+    # halves of this test pass no matter what the code does. Third instrument
+    # of mine to lie today, all in the same way: it could not see the thing
+    # it was watching.
+    stub = NS(_picture_loss=NS(setText=lambda t: said.__setitem__("t", t)),
               _is_picture=lambda name: name == "holiday",
               _image_facts={"/tmp/holiday.png": facts})
+    said = {}
     wrong = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
     gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,
                                             "a-profile", wrong)
     assert said.get("t", "") == "", (
         "a figure was printed for a photograph measured against a CIELUV "
         f"shape: {said.get('t', '')!r}")
+    # ⚠ AND THE POSITIVE HALF, or a refusal that fires ALWAYS passes too.
+    said.clear()
+    right = reference_gamut("sRGB", white_point="D50", steps=9, space="lab")
+    gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,
+                                            "a-profile", right)
+    assert said.get("t", ""), (
+        "it must still answer when the shape IS in CIELAB")
 
 
 def test_two_papers_with_no_comparison_get_cielab_twins_too(app):
@@ -1762,6 +1782,14 @@ def test_the_single_room_picture_marks_nothing_against_a_wrong_space_shape(app):
     got = gamut_app.GamutApp._chart_cloud(stub)
     assert got is not None and got[2] is None, (
         "it marked patches against a shape built in CIELUV")
+    # ⚠ AND THE POSITIVE HALF: a refusal that fires always would pass the
+    # line above and break the application.
+    lab_shape = reference_gamut("sRGB", white_point="D50", steps=9,
+                                space="lab")
+    stub._judging_shapes = lambda: [("sRGB", lab_shape, None, False)]
+    ok = gamut_app.GamutApp._chart_cloud(stub)
+    assert ok is not None and ok[2] is not None, (
+        "a CIELAB shape must still be marked against")
 
 
 def test_the_exported_table_says_why_instead_of_dropping_the_row(app):
@@ -1786,3 +1814,12 @@ def test_the_exported_table_says_why_instead_of_dropping_the_row(app):
     assert "not counted" in text, (
         f"the row was dropped instead of explaining itself: {rows!r}")
     assert "CIELAB" in text, "and it must carry its reason into the file"
+    # ⚠ AND THE POSITIVE HALF.
+    lab_shape = reference_gamut("sRGB", white_point="D50", steps=9,
+                                space="lab")
+    stub._judging_shapes = lambda: [("sRGB", lab_shape, None, False)]
+    good = " ".join(str(cell) for row in
+                    gamut_app.GamutApp._chart_rows_for_export(stub)
+                    for cell in row)
+    assert "not counted" not in good, (
+        "a CIELAB shape must still be counted")
