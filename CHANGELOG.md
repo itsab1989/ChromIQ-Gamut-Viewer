@@ -1,5 +1,80 @@
 # Changelog
 
+## v2.54.0
+
+### ⚖️ The white point is counted both ways, so nobody has to know which mode they are in
+
+A chart is placed through a profile's relative colorimetric table, where the
+paper's white IS L\* 100 by definition. A measurement read absolutely keeps the
+white the instrument saw — L\* 93.8 on the demo glossy paper, L\* 91.2 on a real
+printer's. Held against each other, every light patch floats above the measured
+shape for no reason to do with the printer: **725 patches "outside" at 4.03 ΔE,
+which become 7 at 1.50** the moment each paper is judged against its own white.
+
+The tick box that fixes it was already here. So was a warning. So was a
+docstring recording the same measurement. **Three people looking for faults
+still read it as a printer fault**, so more words in the same place were not
+the answer. Both counts are printed now, from the file rather than from
+whichever shape happens to be drawn:
+
+> Counted both ways, because these are two questions and not one: 150 outside
+> as your instrument measured the paper, and 0 once the paper is judged
+> against its own white. The two are 6.2 L\* apart… Neither is wrong — the
+> second is the one that matches what you will actually print.
+
+### 👁 A ΔE number no longer claims what nobody can see
+
+The application said "below 1 nobody can see the difference; above 3 anybody
+can" — in six places and in the pages it exports. The first half is not
+supported: Paravina et al. 2015 put 50:50 perceptibility at **0.8 ΔE00** and
+acceptability at 1.8, as psychometric midpoints rather than cut-offs, and
+published just-noticeable values span 1.0 to 3.0.
+
+**The thresholds are unchanged** — they are a sound trade convention and no
+number a returning reader has seen moves. Only the claim is. And where two
+measurements are compared, the instrument now speaks for itself: two identical
+handhelds disagree on the same patch by up to **1 ΔEab** (ICC White Paper 22),
+worth roughly 0.5 to 1.1 ΔE2000 depending on the colour — so a difference that
+small may be the instrument rather than the print.
+
+### 🎯 What the coverage number MEANS
+
+"90.6% of the colour this printer can print also fits inside sRGB" was already
+on screen. What was missing is the half you can act on:
+
+> The other 9.4% is colour it can lay down that sRGB has no name for — a limit
+> of the working space you chose, not a fault in the printer.
+
+### 🔍 A paper, a picture or a space held as the comparison is judged honestly
+
+A comparison is rebuilt in CIELAB whatever the picture is drawn in, so the
+verdict no longer depends on the drawing. A `.ti3` held as the comparison used
+to be read as an ICC profile and silently dropped whenever a setting changed. A
+photograph was called "(measured)" and offered advice about a paper white it
+does not have. And what a photograph loses now reads the same in every space —
+it moved 0% → 1% → 100% with nothing but the drawing changed.
+
+⚠ **Where a shape cannot be rebuilt in CIELAB, no number is printed at all** —
+in the panel, in the picture and in the exported table, each saying why. ΔE is
+defined on CIELAB and on nothing else, and counting against a shape built
+elsewhere is not a worse answer but a different question answered confidently.
+
+### 🧪 Smaller things, each of which cost somebody something
+
+* The paper's white is **the patch printed with no ink**, not whichever patch
+  came back brightest. On every genuine measurement those are the same patch;
+  on one that lies they are not, and the old rule turned the whole file inside
+  out in silence.
+* Rendering intents that cannot be honoured are **refused in words** rather
+  than quietly answered with the colorimetric surface.
+* A setting that changes what a shape IS now changes every shape on screen —
+  including the comparison, which two controls used to leave behind.
+
+⚠ **Known cost:** rebuilding a 12-megapixel photograph in CIELAB takes about
+ten seconds the first time it is looked at, once per file and white point. The
+old path was cheap because it was wrong.
+
+
 ## v2.53.2
 
 ### 🫥 The window is never left empty again
