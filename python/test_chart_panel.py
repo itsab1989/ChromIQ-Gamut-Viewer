@@ -1212,3 +1212,84 @@ def test_the_document_sweep_catches_every_form_that_escaped_it(app):
         hit = any(c.search(flat) for c in _CLAIMS)
         assert hit and _TOPIC.search(flat), (
             f"the sweep still cannot see {sentence[:60]!r}")
+
+
+# --------------------------------------------------------------------------
+# One keying rule for every cache of a built shape
+#
+# ⚠ THREE CACHES, THREE DIFFERENT IDEAS OF WHAT CHANGES A SHAPE. Each keyed on
+# "everything that matters" as its author imagined it, and each imagined a
+# different set. The costliest held Detail — which nothing that builds a shape
+# from a FILE consults — so every Detail nudge was a guaranteed miss returning
+# a bit-identical answer, 3.67 s at a time on a photograph.
+# --------------------------------------------------------------------------
+
+
+def shape_key(name, space="lab", relative=None, white="D50", mode="device",
+              stamp=None):
+    import gamut_app
+    from types import SimpleNamespace as NS
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    stub = NS(_white=NS(currentData=lambda: white),
+              _mode=NS(currentData=lambda: mode))
+    return gamut_app.GamutApp._shape_key(stub, root / name, space,
+                                         relative=relative)
+
+
+def test_detail_is_not_in_the_key_of_any_file_built_shape(app):
+    """`_detail` reaches `reference_gamut(steps=)` and
+    `optimal_colour_solid()` and nothing else — the two SYNTHETIC references.
+    A file's shape does not depend on it, so nor may its key."""
+    import ast
+    import gamut_app
+    import inspect
+    # ⚠ THE CODE, NOT THE PROSE. The docstring explains why Detail is absent,
+    # and a check over raw source flags its own explanation — which is how
+    # the wording sweep failed twice.
+    fn = ast.parse(inspect.getsource(gamut_app.GamutApp._shape_key).strip()).body[0]
+    body = fn.body[1:] if (isinstance(fn.body[0], ast.Expr)
+                           and isinstance(fn.body[0].value, ast.Constant)) else fn.body
+    code = "\n".join(ast.unparse(stmt) for stmt in body)
+    assert "_detail" not in code, (
+        "Detail is back in the key, and every nudge of it is a miss")
+    for name in ("demo/Glossy-paper.ti3", "demo/Glossy-paper.icc"):
+        assert shape_key(name) == shape_key(name), "the key is not stable"
+
+
+def test_the_key_carries_the_file_s_own_timestamp(app):
+    """A cache keyed by path alone answers for the shape a file USED to have.
+    The guard against that was "remember to clear all three caches", which had
+    already been half-forgotten once; a timestamp cannot be forgotten."""
+    key = shape_key("demo/Glossy-paper.ti3")
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    stamp = (root / "demo/Glossy-paper.ti3").stat().st_mtime_ns
+    assert stamp in key, f"no timestamp in {key}"
+
+
+def test_the_tick_and_the_mode_reach_a_measurement_and_not_a_profile(app):
+    """Neither reaches a profile or a photograph, so putting them in their
+    key costs misses and buys nothing."""
+    ti3 = "demo/Glossy-paper.ti3"
+    icc = "demo/Glossy-paper.icc"
+    assert shape_key(ti3, relative=True) != shape_key(ti3, relative=False)
+    assert shape_key(ti3, mode="hull") != shape_key(ti3, mode="device")
+    assert shape_key(icc, relative=True) == shape_key(icc, relative=False), (
+        "the paper-white tick does not reach a profile")
+    assert shape_key(icc, mode="hull") == shape_key(icc, mode="device"), (
+        "the shape mode does not reach a profile")
+
+
+def test_an_entry_holding_both_readings_does_not_depend_on_the_tick(app):
+    """`_both_whites` holds the absolute AND the own-white reading together,
+    so the tick cannot change what it should hand back."""
+    ti3 = "demo/Glossy-paper.ti3"
+    assert shape_key(ti3, relative=None) == shape_key(ti3, relative=None)
+    assert shape_key(ti3, relative=None) != shape_key(ti3, relative=True)
+
+
+def test_the_white_point_and_the_space_are_always_in_the_key(app):
+    ti3 = "demo/Glossy-paper.ti3"
+    assert shape_key(ti3, white="D50") != shape_key(ti3, white="D65")
+    assert shape_key(ti3, space="lab") != shape_key(ti3, space="luv")

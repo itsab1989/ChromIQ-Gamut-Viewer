@@ -34,6 +34,21 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
+#: ⚠ WHAT 1 ΔEab FROM AN INSTRUMENT IS WORTH IN THE UNIT THIS APPLICATION
+#: PRINTS. ICC White Paper 22 reports two identical handheld instruments
+#: disagreeing on the same patch by 0.47 ΔEab on average and 1.01 at worst,
+#: as bias rather than noise. Those are CIELAB ΔE*ab; every threshold here is
+#: ΔE2000, and the conversion depends on the colour: measured across 4,000
+#: directions, 1.01 ΔEab is 1.04 ΔE2000 at a paper-white neutral, 1.13 at a
+#: mid neutral, 0.64 at a saturated red, 0.53 at a saturated yellow.
+#:
+#: ONE DEFINITION, HERE, BECAUSE TWO COPIES ALREADY DRIFTED. The same clause
+#: was written out in this module and in gamut_app; a correction reached one
+#: of them and a review found the other still in the old unit. gamut_app
+#: imports this module and never the reverse, so this is the place it can
+#: live for both.
+DEAB_IN_DE2000 = "worth roughly 0.5 to 1.1 ΔE2000 depending on the colour"
+
 #: Below this, in ΔE2000, most people would not notice the difference side by
 #: side. ⚠ NOT "nobody can see it", which is what this said: Paravina et al.
 #: 2015 put 50:50 perceptibility at 0.8 ΔE00 as a psychometric MIDPOINT, so at
@@ -594,8 +609,8 @@ def verdict(run: Run) -> str:
                 f"{span} the biggest difference is ΔE {total:.2f}, which is "
                 f"below the usual rule of thumb for a difference worth "
                 f"chasing, and no larger than the 1 ΔEab two identical "
-                f"instruments can disagree by on one patch — worth roughly "
-                f"0.5 to 1.1 ΔE2000 depending on the colour.")
+                f"instruments can disagree by on one patch — "
+                f"{DEAB_IN_DE2000}.")
     scale = ("findable by a careful eye" if total < OBVIOUS
              else "hard to miss")
     if run.steady:

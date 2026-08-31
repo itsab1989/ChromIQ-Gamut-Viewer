@@ -225,18 +225,15 @@ LIGHT_CONTROLS = (
 #: cloud, in the drift box and on eight published pages, and every one of
 #: those is about a WHOLE cube. Measured over the 729-colour cloud one of
 #: those captions actually sits on, 1.01 ΔEab is a median 0.63 ΔE2000 and
-#: exactly ONE colour in 729 is near a paper white.
+#: exactly ONE colour in 729 is near a paper white. The error ran towards
+#: reassurance, which is the worst direction for a sentence whose job is to
+#: say "this may be the instrument".
 #:
-#: The error ran towards reassurance, which is the worst direction for a
-#: sentence whose job is to say "this may be the instrument": at a saturated
-#: colour the instrument's bound is worth about 0.55 ΔE2000, so a reader
-#: taking the old equivalence at face value would have dismissed a 0.9
-#: ΔE2000 movement there as noise.
-#:
-#: Measured across 4,000 directions at 1.01 ΔEab: 1.04 ΔE2000 at a
-#: paper-white neutral, 1.13 at a mid neutral, 0.64 at a saturated red, 0.53
-#: at a saturated yellow. So: a range, everywhere, and no location.
-_DEAB_IN_DE2000 = "worth roughly 0.5 to 1.1 ΔE2000 depending on the colour"
+#: The words themselves live in `drift_series`, which this module imports and
+#: which never imports this one, because two copies of this clause already
+#: drifted apart once.
+from drift_series import DEAB_IN_DE2000 as _DEAB_IN_DE2000
+
 
 DE_RULES_OF_THUMB = (
     "Those are rules of thumb rather than cut-offs: published thresholds for "
@@ -13295,6 +13292,45 @@ class GamutApp(QMainWindow):
             marked = None
         return (name, lab, marked, device)
 
+    def _shape_key(self, path, space, *, relative=None):
+        """What actually decides the shape built from *path*.
+
+        ⚠ ONE RULE FOR THREE CACHES, because they had three and disagreed.
+        Every cache of a built shape in this window keyed on "everything that
+        changes the shape" as its author imagined it, and each imagined a
+        different set. The costliest of them held Detail — which NOTHING that
+        builds a shape from a FILE consults: `_detail` reaches only
+        `reference_gamut(steps=)` and `optimal_colour_solid()`, the two
+        SYNTHETIC references. So every Detail nudge was a guaranteed miss
+        returning a bit-identical answer, measured at 3.67 s each on a
+        photograph held as the comparison.
+
+        ⚠ AND THE FILE'S OWN TIMESTAMP IS IN THE KEY, which is how this
+        window already solves the problem elsewhere (`:5737`). A cache keyed
+        by path alone answers for the shape a file USED to have, and the
+        guard against that was "remember to clear all three caches when a
+        file is opened" — a rule that had already been half-forgotten once.
+        A key that carries the timestamp cannot be forgotten.
+
+        *relative* pins the paper-white tick, or is None for an entry that
+        holds both readings and so does not depend on it. Neither the tick
+        nor the shape mode reaches a profile or a photograph, so neither goes
+        in their key: putting them there costs misses and buys nothing.
+        """
+        path = Path(path)
+        try:
+            stamp = path.stat().st_mtime_ns
+        except OSError:                      # gone, or not readable: rebuild
+            stamp = 0
+        key = [str(path), stamp, self._white.currentData(), space]
+        suffix = path.suffix.lower()
+        if suffix not in (".icc", ".icm", ".gam") \
+                and suffix not in IMAGE_EXTENSIONS:
+            key.append(self._mode.currentData())
+            if relative is not None:
+                key.append(relative)
+        return tuple(key)
+
     def _in_lab(self, gamut, path=None, measurement=None):
         """The same paper as a gamut BUILT in CIELAB, whatever is being drawn.
 
@@ -13323,8 +13359,8 @@ class GamutApp(QMainWindow):
         if gamut.space == "lab":
             return gamut
         white = self._white.currentData()
-        key = (str(path), white, self._relative.isChecked(),
-               self._mode.currentData(), self._detail.value())
+        key = self._shape_key(path, "lab",
+                              relative=self._relative.isChecked())
         hit = self._lab_gamuts.get(key)
         if hit is not None:
             return hit
@@ -13379,8 +13415,9 @@ class GamutApp(QMainWindow):
         if not measured or path is None:
             return None
         white = self._white.currentData()
-        key = (str(path), white, self._mode.currentData(),
-               self._detail.value())
+        # No `relative`: this entry holds BOTH readings, so the tick cannot
+        # change what it should return.
+        key = self._shape_key(path, "lab")
         hit = self._other_whites.get(key)
         if hit is not None:
             return hit
@@ -14679,24 +14716,9 @@ class GamutApp(QMainWindow):
                 # white-point, detail or space change. The key holds
                 # everything that changes the shape, so a reader toggling a
                 # setting back and forth pays once.
-                # ⚠ ONLY WHAT `_build_one` ACTUALLY READS. The first key
-                # held "everything that changes the shape" in the abstract —
-                # including Detail, which `_build_one` never consults for any
-                # file this branch builds. So every Detail nudge was a
-                # guaranteed MISS returning a bit-identical answer: six
-                # nudges measured at 3.67 s each, six identical volumes, and
-                # seven cache entries holding one gamut. The cache written to
-                # kill that cost did not touch it.
-                suffix = self._reference_path.suffix.lower()
-                key = [str(self._reference_path),
-                       self._white.currentData(), self._build_space()]
-                if suffix not in (".icc", ".icm", ".gam") \
-                        and suffix not in IMAGE_EXTENSIONS:
-                    # A measurement, and only a measurement, is read through
-                    # the paper-white tick and the shape mode.
-                    key += [self._relative.isChecked(),
-                            self._mode.currentData()]
-                key = tuple(key)
+                key = self._shape_key(
+                    self._reference_path, self._build_space(),
+                    relative=self._relative.isChecked())
                 hit = self._reference_cache.get(key)
                 if hit is None:
                     hit = self._build_one(self._reference_path)
