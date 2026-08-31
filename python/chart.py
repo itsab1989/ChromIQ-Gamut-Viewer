@@ -549,6 +549,31 @@ class Outside:
         return self.n_beyond == 0
 
 
+class NotInCIELAB(ValueError):
+    """A shape was offered for judging that was not built in CIELAB.
+
+    ⚠ THIS EXISTS BECAUSE THE ARITHMETIC BELOW CANNOT NOTICE. A chart's
+    patches are CIELAB and ΔE2000 is defined on CIELAB and on nothing else,
+    but `outside_report` reads `gamut.vertices` raw and never asks what space
+    they are in — so a shape built in CIELUV or CIE XYZ produces a confident
+    number that answers a different question.
+
+    Between 2026-08-30 and 08-31 that single omission produced, on screen:
+
+        "0 inside, 0 on the edge, 480 outside. Worst 99.0 ΔE"  (truth: 390)
+        a room marking 480 of 480 while the sentence beside it said 143
+        a photograph 0% / 1% / 100% out of reach with only the drawing changed
+        an exported table writing 13.51 ΔE to two decimal places
+
+    Each was fixed where it was found, and FIVE hand-written copies of the
+    same guard grew up in the callers. The sixth caller would have forgotten
+    it, as the third and fourth and fifth did. So the refusal belongs here,
+    once, where the assumption is: a caller that cannot honour it now has to
+    say so, and a caller that forgets gets an error instead of a plausible
+    wrong number.
+    """
+
+
 def outside_report(lab, gamut, *, against: str = "",
                    tolerance: float = EDGE_TOLERANCE) -> Outside:
     """Which patches fall outside *gamut*, and by how far.
@@ -574,6 +599,14 @@ def outside_report(lab, gamut, *, against: str = "",
     """
     from gamutview import delta_e_2000, outside_of
 
+    # ⚠ THE ONE PRECONDITION THIS ARITHMETIC CANNOT CHECK FOR ITSELF.
+    # See NotInCIELAB. Callers that may legitimately be handed another space
+    # catch this and say so; nobody gets a number for it.
+    if getattr(gamut, "space", "lab") != "lab":
+        raise NotInCIELAB(
+            f"{against or 'that shape'} was built in "
+            f"{getattr(gamut, 'space', '?')!r}, not CIELAB, and ΔE2000 is "
+            f"defined on CIELAB and on nothing else")
     lab = np.asarray(lab, dtype=float)
     good = np.isfinite(lab).all(axis=1)
     outside = np.zeros(len(lab), dtype=bool)

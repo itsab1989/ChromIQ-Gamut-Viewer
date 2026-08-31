@@ -12579,16 +12579,17 @@ class GamutApp(QMainWindow):
             # table that quietly loses a line is worse than one that
             # explains itself: whoever opens it later has no window to look
             # at, and a column that vanished between two exports reads as a
-            # fault in the export.
-            if getattr(gamut, "space", "lab") != "lab":
+            # fault in the export. The refusal itself lives in
+            # `chart.outside_report` now, so a caller cannot forget it.
+            try:
+                report = chart_mod.outside_report(lab, gamut,
+                                                  against=name)
+            except chart_mod.NotInCIELAB:
                 rows.append((f"chart inside {name}", "not counted",
                              "its shape could not be rebuilt in CIELAB, and "
                              "dE2000 is defined on CIELAB and on nothing "
                              "else"))
                 continue
-            try:
-                report = chart_mod.outside_report(lab, gamut,
-                                                  against=name)
             except Exception:      # noqa: BLE001 — a table must still be written
                 continue
             rows.append((f"chart inside {name}", report.n_inside,
@@ -13248,20 +13249,9 @@ class GamutApp(QMainWindow):
         # with no profile, and turn red only once one is chosen.
         if judged and lab is not None:
             try:
-                # ⚠ THE SAME REFUSAL THE PANEL AND THE TWO-ROOM PICTURE
-                # ALREADY MAKE. A chart's patches are CIELAB; marking them
-                # against a shape built elsewhere answers a different
-                # question with confidence. Latent today — across 65 real
-                # files, with ArgyllCMS and without, there is no input where
-                # the drawn build succeeds and the CIELAB one fails — but
-                # this family has now been found four times, each in a
-                # branch nobody was looking at, and a guard is cheaper than
-                # a fifth.
-                if getattr(judged[0][1], "space", "lab") != "lab":
-                    marked = None
-                else:
-                    marked = chart_mod.outside_report(lab,
-                                                      judged[0][1]).beyond
+                # The refusal lives in `chart.outside_report`; marking
+                # nothing is what this view does with it.
+                marked = chart_mod.outside_report(lab, judged[0][1]).beyond
             except Exception:      # noqa: BLE001 — a view must never crash
                 marked = None
         return (path.stem, lab, marked, device)
@@ -13399,10 +13389,10 @@ class GamutApp(QMainWindow):
             # ⚠ AND IF IT CANNOT BE HAD IN CIELAB, MARK NOTHING. A chart's
             # patches are CIELAB; measuring them against a shape built in
             # another space is not a worse answer, it is a different question
-            # answered confidently. Before this the failure was an exception
-            # swallowed here, which left the patches unmarked — accidentally
-            # the right behaviour, and now the deliberate one.
-            if judge is None or getattr(judge, "space", "lab") != "lab":
+            # answered confidently. The refusal is raised by
+            # `chart.outside_report` now; this is what the picture does with
+            # it.
+            if judge is None:
                 return (name, lab, None, device)
             marked = chart_mod.outside_report(lab, judge).beyond
         except Exception:          # noqa: BLE001 — a view must never crash
@@ -13619,23 +13609,18 @@ class GamutApp(QMainWindow):
 
         lines = []
         for name, gamut, path, measured in self._judging_shapes():
-            # ⚠ NO CIELAB SHAPE, NO NUMBER — the same rule the marking
-            # already obeys. A chart's patches are CIELAB; counting them
-            # against a shape built in another space is not a worse answer,
-            # it is a different question answered confidently. The picture
-            # was taught to mark nothing in that case and this was left
-            # printing "480 outside, worst 99.0 ΔE" beside it, so the two
-            # disagreed again with the halves swapped.
-            if getattr(gamut, "space", "lab") != "lab":
+            # ⚠ NO CIELAB SHAPE, NO NUMBER — raised by
+            # `chart.outside_report`, said here in the reader's words.
+            try:
+                report = chart_mod.outside_report(lab, gamut,
+                                                  against=name)
+            except chart_mod.NotInCIELAB:
                 lines.append(
                     f"{name}: not counted here. Its shape could not be "
                     f"rebuilt in CIELAB, and ΔE is defined on CIELAB and on "
                     f"nothing else — so any number counted against it would "
                     f"be answering a different question.")
                 continue
-            try:
-                report = chart_mod.outside_report(lab, gamut,
-                                                  against=name)
             except Exception as exc:      # noqa: BLE001 — never crash a readout
                 lines.append(f"{name}: could not be counted ({exc}).")
                 continue
@@ -17812,12 +17797,8 @@ class GamutApp(QMainWindow):
                     break
             if facts is None:
                 continue
-            # ⚠ NO CIELAB SHAPE, NO FIGURE — the rule the marking and the
-            # chart sentence already obey. A picture's colours are CIELAB;
-            # measuring them against a shape built elsewhere answers a
-            # different question with confidence.
-            if getattr(against, "space", "lab") != "lab":
-                return
+            # ⚠ NO CIELAB SHAPE, NO FIGURE. `out_of_reach` goes through
+            # `chart.outside_report`, so the refusal reaches here too.
             try:
                 lost = out_of_reach(facts, against)
             except Exception:      # noqa: BLE001 — a readout must never crash

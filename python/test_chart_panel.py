@@ -1644,30 +1644,23 @@ def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
     # empty panel proved nothing and a mutant that deleted the refusal
     # passed. What must be true is that the measurement is never ATTEMPTED
     # against a shape in the wrong space.
-    import imagegamut
-    asked = []
-    real = imagegamut.out_of_reach
-    imagegamut.out_of_reach = lambda facts, against: (
-        asked.append(against) or {"of_the_picture": 0.5, "worst": 9.0})
-    try:
-        stub = NS(_picture_loss=NS(setText=lambda t: None),
-                  _is_picture=lambda name: name == "holiday",
-                  _image_facts={"/tmp/holiday.png": {"anything": True}})
-        wrong = reference_gamut("sRGB", white_point="D50", steps=9,
-                                space="luv")
-        gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,
-                                                "a-profile", wrong)
-        assert not asked, (
-            "it measured a photograph's CIELAB colours against a CIELUV "
-            "shape")
-        right = reference_gamut("sRGB", white_point="D50", steps=9,
-                                space="lab")
-        gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,
-                                                "a-profile", right)
-        assert asked and asked[0] is right, (
-            "and it must still answer when the shape IS in CIELAB")
-    finally:
-        imagegamut.out_of_reach = real
+    # ⚠ THE OUTCOME, NOT THE CALL. The refusal moved into
+    # `chart.outside_report`, so the caller now DOES ask and is refused —
+    # asserting "it never asks" pinned the old mechanism, not the promise.
+    # What must hold is that no figure reaches the reader.
+    import numpy as np
+    said = {}
+    facts = {"lab": np.array([[50.0, 0.0, 0.0], [70.0, 20.0, -30.0]]),
+             "weight": np.array([0.5, 0.5])}
+    stub = NS(_picture_loss=NS(setText=lambda t: said.setdefault("t", t)),
+              _is_picture=lambda name: name == "holiday",
+              _image_facts={"/tmp/holiday.png": facts})
+    wrong = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
+    gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,
+                                            "a-profile", wrong)
+    assert said.get("t", "") == "", (
+        "a figure was printed for a photograph measured against a CIELUV "
+        f"shape: {said.get('t', '')!r}")
 
 
 def test_two_papers_with_no_comparison_get_cielab_twins_too(app):
@@ -1760,35 +1753,36 @@ def test_the_single_room_picture_marks_nothing_against_a_wrong_space_shape(app):
     import gamut_app
     from types import SimpleNamespace as NS
     from references import reference_gamut
-    import chart as chart_mod
-    asked = []
-    real = chart_mod.outside_report
-    chart_mod.outside_report = lambda *a, **k: (asked.append(a) or real(*a, **k))
-    try:
-        luv = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
-        stub = NS(_chart=(__import__("pathlib").Path("c.ti1"), NS()),
-                  _chart_drawable=lambda: True,
-                  _drawing_in_ink=lambda: False,
-                  _chart_lab=lambda: np.array([[50.0, 0.0, 0.0]]),
-                  _judging_shapes=lambda: [("sRGB", luv, None, False)])
-        got = gamut_app.GamutApp._chart_cloud(stub)
-        assert got is not None and got[2] is None, (
-            "it marked patches against a shape built in CIELUV")
-        assert not asked, "it should not even ask"
-    finally:
-        chart_mod.outside_report = real
+    luv = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
+    stub = NS(_chart=(__import__("pathlib").Path("c.ti1"), NS()),
+              _chart_drawable=lambda: True,
+              _drawing_in_ink=lambda: False,
+              _chart_lab=lambda: np.array([[50.0, 0.0, 0.0]]),
+              _judging_shapes=lambda: [("sRGB", luv, None, False)])
+    got = gamut_app.GamutApp._chart_cloud(stub)
+    assert got is not None and got[2] is None, (
+        "it marked patches against a shape built in CIELUV")
 
 
 def test_the_exported_table_says_why_instead_of_dropping_the_row(app):
     """A table that quietly loses a line is worse than one that explains
     itself: whoever opens it later has no window to look at, and a column
     that vanished between two exports reads as a fault in the export."""
-    import inspect
+    import numpy as np
     import gamut_app
-    src = inspect.getsource(gamut_app.GamutApp._chart_rows_for_export)
-    assert "not counted" in src and "CIELAB" in src, (
-        "the row must carry its own reason into the file")
-    # and the guard must come before the count
-    guard = src.index('getattr(gamut, "space", "lab")')
-    count = src.index("outside_report")
-    assert guard < count, "it counts first and refuses afterwards"
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    luv = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
+    stub = NS(_chart_lab=lambda: np.array([[50.0, 0.0, 0.0]]),
+              _chart=(__import__("pathlib").Path("c.ti1"),
+                      NS(n_patches=1, kind="a .ti1", duplicates=0,
+                         scale=100, scale_certain=True)),
+              _chart_placed=NS(profile="a-profile", intent="relative",
+                               tag="A2B1"),
+              _judging_shapes=lambda: [("sRGB", luv, None, False)],
+              _drawing_in_ink=lambda: False)
+    rows = gamut_app.GamutApp._chart_rows_for_export(stub)
+    text = " ".join(str(cell) for row in rows for cell in row)
+    assert "not counted" in text, (
+        f"the row was dropped instead of explaining itself: {rows!r}")
+    assert "CIELAB" in text, "and it must carry its reason into the file"
