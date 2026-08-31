@@ -23,6 +23,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+import shapes
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
@@ -1361,7 +1363,10 @@ def test_judging_a_chart_by_a_colour_space_rebuilds_it_in_cielab(app):
               _compare=NS(currentData=lambda: ("space", "sRGB")),
               _white=NS(currentData=lambda: "D50"),
               _detail=NS(value=lambda: 9),
-              _lab_gamuts={})
+              _lab_gamuts={},
+              # the one snapshot the rebuild reads, as the window makes it
+              _settings=lambda: shapes.Settings(white="D50", space="luv",
+                                                detail=9))
     # bound to the real one, so a change to how it is keyed reaches this test
     stub._synthetic_key = lambda choice: gamut_app.GamutApp._synthetic_key(
         stub, choice)
@@ -1383,7 +1388,9 @@ def test_a_comparison_already_in_cielab_is_handed_back_untouched(app):
     stub = NS(_reference=("sRGB", lab), _reference_path=None,
               _compare=NS(currentData=lambda: ("space", "sRGB")),
               _white=NS(currentData=lambda: "D50"),
-              _detail=NS(value=lambda: 9), _lab_gamuts={})
+              _detail=NS(value=lambda: 9), _lab_gamuts={},
+              _settings=lambda: shapes.Settings(white="D50", space="luv",
+                                                detail=9))
     stub._synthetic_key = lambda choice: gamut_app.GamutApp._synthetic_key(
         stub, choice)
     assert gamut_app.GamutApp._reference_in_lab(stub) is lab
@@ -1436,7 +1443,9 @@ def marked_against(drawn_space, chart_lab, reference_space="luv"):
               _compare=NS(currentData=lambda: ("space", "sRGB")),
               _white=NS(currentData=lambda: "D50"),
               _detail=NS(value=lambda: 9), _lab_gamuts={},
-              _in_lab=lambda g, p=None, m=None: g)
+              _in_lab=lambda g, p=None, m=None: g,
+              _settings=lambda: shapes.Settings(white="D50", space="luv",
+                                                detail=9))
     stub._synthetic_key = lambda choice: gamut_app.GamutApp._synthetic_key(
         stub, choice)
     stub._reference_in_lab = lambda: gamut_app.GamutApp._reference_in_lab(stub)
@@ -1526,7 +1535,8 @@ def test_a_picture_is_rebuilt_in_cielab_like_everything_else(app):
     stub = NS(_white=NS(currentData=lambda: "D50"),
               _mode=NS(currentData=lambda: "device"),
               _relative=NS(isChecked=lambda: False),
-              _lab_gamuts={})
+              _lab_gamuts={},
+              _settings=lambda: shapes.Settings(white="D50", space="luv"))
     stub._shape_key = lambda path, space, relative=None: (
         gamut_app.GamutApp._shape_key(stub, path, space, relative=relative))
     built = gamut_app.GamutApp._in_lab(stub, drawn, picture, None)

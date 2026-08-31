@@ -13297,21 +13297,15 @@ class GamutApp(QMainWindow):
         hit = self._lab_gamuts.get(key)
         if hit is not None:
             return hit
-        white = self._white.currentData()
         try:
             if choice and choice[0] == "space":
-                built = reference_gamut(choice[1], white_point=white,
-                                        steps=self._detail.value(),
-                                        space="lab")
+                thing = shapes.a_space(choice[1])
             elif choice and choice[0] == "visible":
-                verts, _f = optimal_colour_solid(
-                    "D50" if white == "D50" else "D65",
-                    max(24, self._detail.value() * 3))
-                built = build_gamut(xyz_to_lab(verts, white),
-                                    input_space="lab", space="lab",
-                                    white_point=white)
+                thing = shapes.the_visible_solid()
             else:
                 return gamut
+            built, _m = shapes.shape_for(thing,
+                                         self._settings().drawn_in("lab"))
         except Exception:          # noqa: BLE001 — a readout never crashes
             return gamut
         self._lab_gamuts[key] = built
@@ -13400,6 +13394,24 @@ class GamutApp(QMainWindow):
         except Exception:          # noqa: BLE001 — a view must never crash
             marked = None
         return (name, lab, marked, device)
+
+    def _settings(self) -> "shapes.Settings":
+        """The five controls that decide what a shape IS, read once, together.
+
+        ⚠ READ ONCE AND PASSED, rather than reached for inside a builder at a
+        moment of its own choosing. Every blocker of 30-31 August was two
+        shapes on one screen built under two different readings of these
+        five: the comparison honouring the paper-white tick while the papers
+        did not, a coverage figure moving 66.9% to 82.9% on a nudge of an
+        unrelated control, CIELUV on screen under a control reading CIE XYZ.
+        A snapshot can be compared for equality; eight methods each calling
+        `self._white.currentData()` cannot.
+        """
+        return shapes.Settings(white=self._white.currentData(),
+                               space=self._build_space(),
+                               mode=self._mode.currentData(),
+                               tick=self._relative.isChecked(),
+                               detail=self._detail.value())
 
     def _shape_key(self, path, space, *, relative=None):
         """What actually decides the shape built from *path*.
@@ -13496,23 +13508,16 @@ class GamutApp(QMainWindow):
                 built = build_gamut(measurement.lab, drive, input_space="lab",
                                     space="lab", white_point=white)
             elif path is not None:
-                # ⚠ A PICTURE IS A FILE TOO. This read every path that was
-                # not a .gam as an ICC profile, so a photograph held as the
-                # comparison -- which the chooser explicitly offers -- raised
-                # inside `icc_gamut`, fell to the drawn shape, and a chart
-                # was then counted against a gamut in the wrong space:
-                # "0 inside, 0 on the edge, 480 outside, worst 99.0 ΔE",
-                # against a truth of 390. `_build_one` has known about
-                # images all along; this did not.
-                suffix = Path(path).suffix.lower()
-                if suffix in IMAGE_EXTENSIONS:
-                    from imagegamut import image_gamut
-                    built, _facts = image_gamut(Path(path),
-                                                white_point=white,
-                                                space="lab")
-                else:
-                    reader = gam_gamut if suffix == ".gam" else icc_gamut
-                    built = reader(Path(path), white_point=white, space="lab")
+                # ⚠ THROUGH THE ONE BUILDER, which has no branch for a
+                # kind to be missing from. This method knew about profiles
+                # and gamut files and fell through to "read it as an ICC"
+                # for everything else, so a photograph raised, the DRAWN
+                # shape came back, and a chart was counted against a gamut
+                # in the wrong space: "0 inside, 0 on the edge, 480 outside,
+                # worst 99.0 ΔE" against a truth of 390.
+                built, _m = shapes.shape_for(
+                    shapes.thing_for(path, IMAGE_EXTENSIONS),
+                    self._settings().drawn_in("lab"))
             else:
                 return gamut
         except Exception:          # noqa: BLE001 — never take the view down
