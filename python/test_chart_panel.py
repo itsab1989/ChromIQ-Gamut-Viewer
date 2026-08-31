@@ -1670,6 +1670,42 @@ def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
         imagegamut.out_of_reach = real
 
 
+def test_two_papers_with_no_comparison_get_cielab_twins_too(app):
+    """⚠ THE MUTANT THAT SURVIVED ALL 1,186 TESTS. The new test drove only
+    the reference branch, so removing the twins from the TWO-SLOT branch
+    passed the whole suite. On screen it empties the line rather than
+    printing a false figure — the refusal inside `_update_picture_loss`
+    catches it — so it was a missing test rather than a shipped fault, and
+    it is a test now."""
+    import gamut_app
+    import pathlib as _pathlib
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    lab = reference_gamut("sRGB", white_point="D50", steps=9, space="lab")
+    luv = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
+    got = {}
+    stub = NS(
+        _reference=None, _reference_path=None,
+        _slots=[(_pathlib.Path("holiday.png"), luv, None),
+                (_pathlib.Path("paper.ti3"), luv, None)],
+        _how_much_fits=lambda a, b: (0.9, 0.4),
+        _coverage=NS(setText=lambda t: None),
+        _picture_loss=NS(setText=lambda t: None),
+        _shared_lbl=NS(setText=lambda t: None),
+        _reach=NS(setText=lambda t: None),
+        _pair_box=NS(setVisible=lambda v: None),
+        _compare=NS(currentData=lambda: None),
+        _is_picture=lambda name: name == "holiday",
+        _in_lab=lambda g, p=None, m=None: lab,
+        _update_pair=lambda *a: None,
+        _update_picture_loss=lambda *a: got.setdefault("args", a))
+    gamut_app.GamutApp._update_coverage(stub)
+    args = got.get("args")
+    assert args is not None, "the picture loss was never asked for"
+    assert args[1].space == "lab" and args[3].space == "lab", (
+        "two papers with no comparison were handed the drawn shapes")
+
+
 def test_the_coverage_readout_hands_the_picture_loss_a_cielab_shape(app):
     """Driven through `_update_coverage`, which is where the pair is
     assembled and where the CIELAB twin has to come from."""
@@ -1701,3 +1737,58 @@ def test_the_coverage_readout_hands_the_picture_loss_a_cielab_shape(app):
     assert args[1].space == "lab" and args[3].space == "lab", (
         "it was handed the drawn shapes, so a change of Draw it in moves a "
         "number that has nothing to do with the drawing")
+
+
+# --------------------------------------------------------------------------
+# The fifth sibling, closed by construction rather than by luck
+#
+# Four members of this family were found one at a time, each in a branch
+# nobody was looking at. A review then enumerated every place something
+# CIELAB meets a gamut in this window and found two more without the
+# refusal: the single-room picture and the exported table.
+#
+# ⚠ IT IS LATENT. Across 65 real files — ICC, .gam, photographs, a third
+# party's whole profile set — built in CIELUV and then in CIELAB, with
+# ArgyllCMS and again without it, there is NO input where the drawn build
+# succeeds and the CIELAB one fails. The guard is here because the family
+# has a habit, not because a reader can reach it today.
+# --------------------------------------------------------------------------
+
+
+def test_the_single_room_picture_marks_nothing_against_a_wrong_space_shape(app):
+    import numpy as np
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from references import reference_gamut
+    import chart as chart_mod
+    asked = []
+    real = chart_mod.outside_report
+    chart_mod.outside_report = lambda *a, **k: (asked.append(a) or real(*a, **k))
+    try:
+        luv = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
+        stub = NS(_chart=(__import__("pathlib").Path("c.ti1"), NS()),
+                  _chart_drawable=lambda: True,
+                  _drawing_in_ink=lambda: False,
+                  _chart_lab=lambda: np.array([[50.0, 0.0, 0.0]]),
+                  _judging_shapes=lambda: [("sRGB", luv, None, False)])
+        got = gamut_app.GamutApp._chart_cloud(stub)
+        assert got is not None and got[2] is None, (
+            "it marked patches against a shape built in CIELUV")
+        assert not asked, "it should not even ask"
+    finally:
+        chart_mod.outside_report = real
+
+
+def test_the_exported_table_says_why_instead_of_dropping_the_row(app):
+    """A table that quietly loses a line is worse than one that explains
+    itself: whoever opens it later has no window to look at, and a column
+    that vanished between two exports reads as a fault in the export."""
+    import inspect
+    import gamut_app
+    src = inspect.getsource(gamut_app.GamutApp._chart_rows_for_export)
+    assert "not counted" in src and "CIELAB" in src, (
+        "the row must carry its own reason into the file")
+    # and the guard must come before the count
+    guard = src.index('getattr(gamut, "space", "lab")')
+    count = src.index("outside_report")
+    assert guard < count, "it counts first and refuses afterwards"

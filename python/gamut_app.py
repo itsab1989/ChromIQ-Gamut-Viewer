@@ -12575,6 +12575,17 @@ class GamutApp(QMainWindow):
 
         detail = []
         for name, gamut, _p, _measured in self._judging_shapes():
+            # ⚠ AND IT SAYS SO IN THE FILE, rather than dropping the row. A
+            # table that quietly loses a line is worse than one that
+            # explains itself: whoever opens it later has no window to look
+            # at, and a column that vanished between two exports reads as a
+            # fault in the export.
+            if getattr(gamut, "space", "lab") != "lab":
+                rows.append((f"chart inside {name}", "not counted",
+                             "its shape could not be rebuilt in CIELAB, and "
+                             "dE2000 is defined on CIELAB and on nothing "
+                             "else"))
+                continue
             try:
                 report = chart_mod.outside_report(lab, gamut,
                                                   against=name)
@@ -13237,7 +13248,20 @@ class GamutApp(QMainWindow):
         # with no profile, and turn red only once one is chosen.
         if judged and lab is not None:
             try:
-                marked = chart_mod.outside_report(lab, judged[0][1]).beyond
+                # ⚠ THE SAME REFUSAL THE PANEL AND THE TWO-ROOM PICTURE
+                # ALREADY MAKE. A chart's patches are CIELAB; marking them
+                # against a shape built elsewhere answers a different
+                # question with confidence. Latent today — across 65 real
+                # files, with ArgyllCMS and without, there is no input where
+                # the drawn build succeeds and the CIELAB one fails — but
+                # this family has now been found four times, each in a
+                # branch nobody was looking at, and a guard is cheaper than
+                # a fifth.
+                if getattr(judged[0][1], "space", "lab") != "lab":
+                    marked = None
+                else:
+                    marked = chart_mod.outside_report(lab,
+                                                      judged[0][1]).beyond
             except Exception:      # noqa: BLE001 — a view must never crash
                 marked = None
         return (path.stem, lab, marked, device)
