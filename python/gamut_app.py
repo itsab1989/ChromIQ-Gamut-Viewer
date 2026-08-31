@@ -57,6 +57,8 @@ from pathlib import Path as pathlib_Path
 
 import numpy as np
 
+import shapes
+
 # QtWebEngine must be imported before the QApplication exists.
 from PyQt6.QtWebEngineWidgets import QWebEngineView  # noqa: F401  (import order)
 from PyQt6.QtCore import (QEvent, QRect, QSize, QStandardPaths, Qt,
@@ -14367,24 +14369,40 @@ class GamutApp(QMainWindow):
         a separate program and can be ended. The rest is arithmetic here and
         runs to completion whatever happens; see `_build_patiently`.
         """
-        suffix = path.suffix.lower()
-        if suffix in (".icc", ".icm", ".gam"):
-            reader = gam_gamut if suffix == ".gam" else icc_gamut
-            return reader(path, white_point=self._white.currentData(),
-                          space=space or self._build_space(), stop=stop), None
-        if suffix in IMAGE_EXTENSIONS:
+        # ⚠ THE SPACE ARGUMENT IS HONOURED IN EVERY BRANCH NOW. It was
+        # honoured only for a profile, and silently dropped for a measurement
+        # and a picture — a caller asking for CIELAB got CIELUV back and no
+        # error. Measured in the real window before this change:
+        #
+        #     Draw it in = luv
+        #        OK     _build_one(paper.icc, space='lab') -> 'lab'
+        #        WRONG  _build_one(paper.ti3, space='lab') -> 'luv'
+        #        WRONG  _build_one(pic.png,   space='lab') -> 'luv'
+        #
+        # `TimelineDialog._shells_for` is the one caller that depends on it,
+        # and its own comment says why — "ALWAYS IN LAB, WHATEVER THE WINDOW
+        # IS DRAWING IN". It was safe only because two `.icc/.icm` filters in
+        # a different class kept measurements and pictures away from it:
+        # closed because nothing reaches it, which is the guard style this
+        # work exists to replace.
+        wanted = space or self._build_space()
+        white = self._white.currentData()
+        # ⚠ AND WHAT A FILE IS IS DECIDED IN ONE PLACE. `_in_lab` had its own
+        # answer to the same question and disagreed about a photograph.
+        thing = shapes.thing_for(path, IMAGE_EXTENSIONS)
+        if thing.kind in ("profile", "gamutfile"):
+            reader = gam_gamut if thing.kind == "gamutfile" else icc_gamut
+            return reader(path, white_point=white, space=wanted,
+                          stop=stop), None
+        if thing.kind == "picture":
             from imagegamut import image_gamut
-            built, facts = image_gamut(
-                path, white_point=self._white.currentData(),
-                space=self._build_space())
+            built, facts = image_gamut(path, white_point=white, space=wanted)
             self._image_facts[str(path)] = facts
             return built, None
-        m = read_measurement(path, self._white.currentData(),
-                             self._relative.isChecked())
+        m = read_measurement(path, white, self._relative.isChecked())
         drive = None if self._mode.currentData() == "hull" else m.device
-        g = build_gamut(m.lab, drive, input_space="lab",
-                        space=self._build_space(),
-                        white_point=self._white.currentData())
+        g = build_gamut(m.lab, drive, input_space="lab", space=wanted,
+                        white_point=white)
         return g, m
 
     #: Below this many patches a measured chart cannot describe the edge of a

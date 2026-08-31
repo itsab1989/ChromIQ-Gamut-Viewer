@@ -1823,3 +1823,47 @@ def test_the_exported_table_says_why_instead_of_dropping_the_row(app):
                     for cell in row)
     assert "not counted" not in good, (
         "a CIELAB shape must still be counted")
+
+
+# --------------------------------------------------------------------------
+# `_build_one` honours its own space argument, for every kind of file
+#
+# ⚠ IT HONOURED IT FOR A PROFILE AND SILENTLY DROPPED IT FOR A MEASUREMENT
+# AND A PICTURE. A caller asking for CIELAB got CIELUV back and no error.
+# Measured in the real window before the fix, with Draw it in = luv:
+#
+#     OK     _build_one(paper.icc, space='lab') -> 'lab'
+#     WRONG  _build_one(paper.ti3, space='lab') -> 'luv'
+#     WRONG  _build_one(pic.png,   space='lab') -> 'luv'
+#
+# `TimelineDialog._shells_for` is the one caller that depends on it, and it
+# was safe only because two `.icc/.icm` filters in ANOTHER CLASS kept the
+# other two kinds away from it — closed because nothing reaches it.
+# --------------------------------------------------------------------------
+
+
+def test_build_one_honours_the_space_it_is_asked_for(app):
+    import pathlib
+    import gamut_app
+    from types import SimpleNamespace as NS
+    root = pathlib.Path(__file__).resolve().parent.parent
+    picture = next(iter(sorted((root / "docs").rglob("*.png"))), None)
+    stub = NS(_white=NS(currentData=lambda: "D50"),
+              _mode=NS(currentData=lambda: "device"),
+              _relative=NS(isChecked=lambda: False),
+              _build_space=lambda: "luv",          # the window is drawing LUV
+              _image_facts={})
+    asked = [(root / "demo" / "Glossy-paper.icc", "a profile"),
+             (root / "demo" / "Glossy-paper.ti3", "a measurement")]
+    if picture is not None:
+        asked.append((picture, "a photograph"))
+    assert len(asked) == 3, "the picture is missing, so a third of this is untested"
+    for path, said in asked:
+        got, _m = gamut_app.GamutApp._build_one(stub, path, space="lab")
+        assert got.space == "lab", (
+            f"{said}: asked for CIELAB while drawing in CIELUV and got "
+            f"{got.space!r} — silently, with no error")
+    # And with no space asked for, it draws in the window's space.
+    got, _m = gamut_app.GamutApp._build_one(stub, root / "demo" /
+                                            "Glossy-paper.ti3")
+    assert got.space == "luv", "it stopped following Draw it in"
