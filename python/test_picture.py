@@ -1,9 +1,12 @@
 """The rules a picture is saved by. No window, no files left behind."""
 import math
+import pathlib
 
 import pytest
 
 import picture
+
+HERE = pathlib.Path(__file__).resolve().parent.parent
 
 
 # --- what a format can and cannot do ----------------------------------------
@@ -318,9 +321,13 @@ def test_a_pictures_figure_comes_from_that_picture_and_not_its_namesake(
         shapes_by_path[p] = built
 
     said = []
+    # ⚠ THE REAL METHOD, not a stub that answers True. A stand-in that
+    # invents its own answer stops testing the window and starts testing
+    # itself — which is how three stand-ins in this suite came to be blind.
     hall = NS(_image_facts=facts,
               _picture_loss=NS(setText=said.append),
-              _is_picture=lambda name: True)
+              _lays_down_ink=gamut_app.GamutApp._lays_down_ink.__get__(
+                  NS(), gamut_app.GamutApp))
     gamut_app.GamutApp._update_picture_loss(
         hall, "holiday", shapes_by_path[wide],
         "holiday", shapes_by_path[narrow], (wide, narrow))
@@ -374,3 +381,89 @@ def test_a_pictures_facts_do_not_outlive_the_file_they_describe(tmp_path):
     assert cleared < built, (
         "the facts are emptied AFTER the build that writes them, which "
         "throws away the facts of the picture being opened")
+
+
+def test_a_photograph_is_never_given_a_paper_white_or_blacks(tmp_path):
+    """⚠ THE FIFTH SIBLING OF THE FAULT THIS RELEASE IS NAMED FOR.
+
+    `_update_range` walked the slots with no test of kind at all, so a
+    photograph in a slot was described as
+
+        "holiday: blacks reach L* 0, paper white L* 98 and very warm"
+
+    about a file that was never printed on anything and has no paper. The
+    coverage line an inch above it had already been fixed for exactly this —
+    its comment says getting it backwards "is the sort of sentence that makes
+    somebody distrust the number beside it" — and the fix was never carried
+    to the three readouts beside it.
+
+    ⚠ AND IT SURVIVED A WEEK OF BEING PHOTOGRAPHED. It is in a screenshot
+    taken while proving a different fix, two lines under the sentence being
+    checked, read past every time. That is why this is a test and not a
+    careful habit.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    hall = NS(_lays_down_ink=gamut_app.GamutApp._lays_down_ink.__get__(
+        NS(), gamut_app.GamutApp))
+    picture = _a_picture(tmp_path / "shot",
+                         lambda x, y: (x * 5 % 256, y * 5 % 256, 90))
+    paper = HERE / "demo" / "Matte-paper.ti3"
+    assert not gamut_app.GamutApp._lays_down_ink(hall, picture), (
+        "a photograph was taken for something that lays down ink")
+    assert gamut_app.GamutApp._lays_down_ink(hall, paper), (
+        "a measured paper stopped counting as something that prints")
+    assert gamut_app.GamutApp._lays_down_ink(hall, HERE / "demo" /
+                                             "Glossy-paper.icc"), (
+        "a printer profile stopped counting as something that prints")
+    # A comparison with no file — a colour space, the visible solid — prints
+    # nothing either, and must not raise on the way to saying so.
+    assert not gamut_app.GamutApp._lays_down_ink(hall, None)
+
+
+def test_the_verb_follows_the_other_sides_kind(tmp_path):
+    """"can print" was hard-coded in both picture-loss sentences, so with two
+    photographs open the panel said "Every colour in narrowshot is one
+    wideshot (picture) can print". A photograph prints nothing."""
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from imagegamut import image_gamut
+
+    wide = _a_picture(tmp_path / "w",
+                      lambda x, y: (x * 5 % 256, y * 5 % 256, (x + y) % 256))
+    narrow = _a_picture(tmp_path / "n",
+                        lambda x, y: (110 + x // 5, 110 + y // 5, 110))
+    facts, shapes_by = {}, {}
+    for one in (wide, narrow):
+        built, kept = image_gamut(one, white_point="D50", space="lab")
+        facts[str(one)] = kept
+        shapes_by[one] = built
+
+    said = []
+    hall = NS(_image_facts=facts,
+              _picture_loss=NS(setText=said.append),
+              _lays_down_ink=gamut_app.GamutApp._lays_down_ink.__get__(
+                  NS(), gamut_app.GamutApp))
+    gamut_app.GamutApp._update_picture_loss(
+        hall, "w-shot", shapes_by[wide], "n-shot", shapes_by[narrow],
+        (wide, narrow))
+    line = [t for t in said if t]
+    assert line, "no figure at all"
+    assert "can print" not in line[0], (
+        f"a photograph was said to print something: {line[0]!r}")
+    assert "holds" in line[0], line[0]
+
+    # AND THE POSITIVE HALF: against a real paper it must still say "print".
+    said.clear()
+    from ti3gamut import read_measurement
+    from gamutview import build_gamut
+    m = read_measurement(HERE / "demo" / "Matte-paper.ti3", "D50", False)
+    paper_shape = build_gamut(m.lab, m.device, input_space="lab",
+                              space="lab", white_point="D50")
+    gamut_app.GamutApp._update_picture_loss(
+        hall, "w-shot", shapes_by[wide], "Matte-paper", paper_shape,
+        (wide, HERE / "demo" / "Matte-paper.ti3"))
+    line = [t for t in said if t]
+    assert line and "can print" in line[0], (
+        f"a measured paper stopped printing: {line!r}")

@@ -1681,6 +1681,8 @@ def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
     # photograph's shape and called it "every colour fits".
     stub = NS(_picture_loss=NS(setText=lambda t: said.__setitem__("t", t)),
               _is_picture=lambda name: name == "holiday",
+              _lays_down_ink=gamut_app.GamutApp._lays_down_ink.__get__(
+                  NS(), gamut_app.GamutApp),
               _image_facts={"/tmp/holiday.png": facts})
     said = {}
     wrong = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")

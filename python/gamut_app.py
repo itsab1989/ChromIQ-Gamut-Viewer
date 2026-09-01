@@ -10334,6 +10334,27 @@ class GamutApp(QMainWindow):
 
 
     # ------------------------------------------------------------- pictures
+    def _lays_down_ink(self, path) -> bool:
+        """Whether this thing PRINTS — a paper or a profile, not a picture.
+
+        ⚠ FOUR READOUTS ASK THIS AND ONE OF THEM ANSWERED IT. `_update_coverage`
+        chose "holds" over "can print" for a photograph and said why, in a
+        comment about sentences that make somebody distrust the number beside
+        them. Three readouts beside it went on saying a photograph "can print"
+        and quoting its "paper white", because each asked the question its own
+        way or not at all — the same shape as the six builders this release
+        spent a week unifying.
+
+        A path with no file — a colour space, the visible solid — prints
+        nothing either, and answers False.
+        """
+        if path is None:
+            return False
+        try:
+            return shapes.thing_for(path, IMAGE_EXTENSIONS).kind != "picture"
+        except Exception:          # noqa: BLE001 — a readout never crashes
+            return True
+
     def _is_picture(self, name: str) -> bool:
         """Whether a shape on screen came from a picture rather than a printer."""
         for path, _g, _m in self._slots:
@@ -17826,7 +17847,7 @@ class GamutApp(QMainWindow):
         self._update_picture_loss(a_name, a_lab if a_lab is not None else a,
                                   b_name, b_lab if b_lab is not None else b,
                                   paths)
-        self._update_pair(a_name, a, b_name, b)
+        self._update_pair(a_name, a, b_name, b, paths)
 
     def _update_picture_loss(self, a_name, a, b_name, b, paths) -> None:
         """For a picture, how much of the PICTURE a shape cannot print.
@@ -17855,9 +17876,9 @@ class GamutApp(QMainWindow):
         # file on 1 September while 1195 tests stayed green. A caller that
         # does not know which files these are is a TypeError here, at once.
         self._picture_loss.setText("")
-        for name, shape, against, against_name, path in (
-                (a_name, a, b, b_name, paths[0]),
-                (b_name, b, a, a_name, paths[1])):
+        for name, shape, against, against_name, path, other in (
+                (a_name, a, b, b_name, paths[0], paths[1]),
+                (b_name, b, a, a_name, paths[1], paths[0])):
             # ⚠ BY PATH, BECAUSE A NAME IS A STEM AND TWO FOLDERS SHARE ONE.
             # This walked `_image_facts` for the first entry whose stem
             # matched the label, over a dict that is never emptied, so
@@ -17881,16 +17902,24 @@ class GamutApp(QMainWindow):
                 return
             if lost is None:
                 return
+            # ⚠ AND THE VERB FOLLOWS THE OTHER SIDE'S KIND. "can print" was
+            # hard-coded in both branches, so with two photographs open the
+            # panel said "Every colour in narrowshot is one wideshot
+            # (picture) can print" — a photograph printing nothing. The
+            # coverage line one inch above already decides this; it simply
+            # never told these two sentences.
+            verb = ("can print" if self._lays_down_ink(other)
+                    else "holds")
             if not lost["of_the_picture"]:
                 self._picture_loss.setText(
-                    f"Every colour in {name} is one {against_name} can print.")
+                    f"Every colour in {name} is one {against_name} {verb}.")
                 return
             self._picture_loss.setText(
                 f"{100 * lost['of_the_picture']:.0f}% of {name} itself is out "
                 f"of reach of {against_name} — counting how much of the "
                 f"picture each colour covers, not how much space its colours "
                 f"enclose. The worst is {lost['worst']:.1f} ΔE beyond what "
-                f"{against_name} can print.")
+                f"{against_name} {verb}.")
             return
 
     #: Below this much chroma apart, two hue families are called the same.
@@ -17900,7 +17929,7 @@ class GamutApp(QMainWindow):
     #: the other, which is sampling precision rather than a real advantage.
     REACH_MARGIN = 2.0
 
-    def _update_pair(self, a_name, a, b_name, b) -> None:
+    def _update_pair(self, a_name, a, b_name, b, paths) -> None:
         """What two shapes have in common, and where each one wins.
 
         Everything here needs the hue circle and the lightness axis, so in CIE
@@ -17928,8 +17957,13 @@ class GamutApp(QMainWindow):
         except Exception:      # noqa: BLE001 — a readout must never crash a view
             self._pair_box.setVisible(False)
             return
+        # ⚠ AND NOT "PRINT" WHEN ONE OF THEM IS A PHOTOGRAPH. Third readout
+        # asking the same question; the first answered it and the other two
+        # did not know it had been asked.
+        both = all(self._lays_down_ink(each) for each in paths)
         self._shared_lbl.setText(
-            f"Both can print {100 * share:.0f}% of everything either one can.")
+            f"Both {'can print' if both else 'reach'} {100 * share:.0f}% of "
+            f"everything either one can.")
         wins_a = [n for n in reach_a
                   if reach_a[n] - reach_b[n] > self.REACH_MARGIN]
         wins_b = [n for n in reach_b
@@ -18275,10 +18309,27 @@ class GamutApp(QMainWindow):
                     getattr(measurement, "white_lab", None))
                 lab = paper_white(g, known)
                 how = describe_white(lab)
-                tint = (" and neutral" if how == "neutral"
-                        else f" and {how} (a* {lab[1]:+.1f}, b* {lab[2]:+.1f})")
-                lines.append(f"{path.stem}: blacks reach L* {dark:.0f}, "
-                             f"paper white L* {lab[0]:.0f}{tint}")
+                # The colour itself, and the same words with the joining
+                # "and" in front — two sentences want it, punctuated
+                # differently, and pasting one into the other read "the
+                # lightest is and very warm".
+                how_words = ("neutral" if how == "neutral"
+                             else f"{how} (a* {lab[1]:+.1f}, b* {lab[2]:+.1f})")
+                tint = f" and {how_words}"
+                # ⚠ A PHOTOGRAPH HAS NO PAPER AND NO BLACKS. This loop had
+                # no test of kind at all, so a picture in a slot was described
+                # as "blacks reach L* 0, paper white L* 98 and very warm" —
+                # about a file that was never printed on anything. It is the
+                # same falsehood the coverage line above was fixed for, in the
+                # fault class this release is named after, and it survived a
+                # week of looking straight at it in screenshots.
+                if self._lays_down_ink(path):
+                    lines.append(f"{path.stem}: blacks reach L* {dark:.0f}, "
+                                 f"paper white L* {lab[0]:.0f}{tint}")
+                else:
+                    lines.append(f"{path.stem}: its colours run from "
+                                 f"L* {dark:.0f} to L* {light:.0f}, and the "
+                                 f"lightest is {how_words}")
                 # AND IF ANYTHING CAME BACK LIGHTER THAN THE PAPER, SAY SO.
                 # A print cannot be lighter than the sheet it is on, so a
                 # shape that rises above its own white is telling the reader
