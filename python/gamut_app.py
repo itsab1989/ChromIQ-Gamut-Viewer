@@ -6843,6 +6843,27 @@ def _log():
 LAB_GAMUTS_KEPT = 8
 
 
+def recall(cache: dict, key):
+    """Read an entry AND mark it as the most recently used.
+
+    ⚠ WITHOUT THIS THE CAP EVICTS WHAT IS ON SCREEN. A plain dict keeps
+    insertion order and a read does not disturb it, so `keep_newest` was
+    FIFO — and the entries for the papers on screen are inserted when the
+    files are opened, which makes them permanently the OLDEST. A Detail
+    sweep of fourteen steps evicted the two open papers four times over,
+    while the transient synthetic entries the cap was written to contain
+    survived, being newest. Exactly backwards.
+
+    Reading is what keeps a shape alive now, and the shapes on screen are
+    read on every redraw.
+    """
+    if key is None or key not in cache:
+        return None
+    value = cache.pop(key)
+    cache[key] = value
+    return value
+
+
 def keep_newest(cache: dict, kept: int = LAB_GAMUTS_KEPT) -> None:
     """Oldest out, rather than all out.
 
@@ -7157,10 +7178,22 @@ class GamutApp(QMainWindow):
         #: A photograph costs 3 seconds to turn into a gamut; a reader who
         #: nudges a setting and nudges it back should pay that once.
         self._reference_cache: dict = {}
-        #: The index "Draw it in" was last left on by a change that WORKED.
-        #: A refusal puts the control back to it; without that the combo
-        #: named a space the shapes were never built in.
-        self._space_settled: int = 0
+        #: The five settings the shapes ON SCREEN were built under, as a
+        #: `shapes.Settings`. A refusal puts every control back from this.
+        #:
+        #: ⚠ THIS REPLACES A REMEMBERED COMBO INDEX, WHICH WENT STALE THE
+        #: MOMENT IT WAS WRITTEN. `_space_settled` was set in `__init__` to 0
+        #: and updated only after a successful change — and
+        #: `_restore_everything` puts the controls back from the store with
+        #: SIGNALS BLOCKED, so a window reopened in CIE XYZ carried a settled
+        #: index of 0. The first refusal then moved the combo to CIELAB over
+        #: shapes built in XYZ and raised the very ValueError the refusal was
+        #: written to prevent.
+        #:
+        #: It is set once the controls are restored, and again after every
+        #: rebuild that SUCCEEDS — the only two moments the shapes and the
+        #: controls are known to agree.
+        self._settled = None
         #: The same papers read against the other white, for the two-sided
         #: count. See _both_whites.
         self._other_whites: dict = {}
@@ -7313,6 +7346,12 @@ class GamutApp(QMainWindow):
         self._refresh_ffmpeg()
         self._restore_look()
         self._restore_everything()
+        # ⚠ AFTER THE RESTORE, NOT IN `__init__`. The store puts the controls
+        # back with signals blocked, so nothing else notices; a snapshot
+        # taken before this describes a window that never existed, and the
+        # first refusal then "restores" settings the shapes were never built
+        # under.
+        self._remember_settled()
         self._apply_space_availability()
         self._follow_neutral(self._neutral.isChecked())
         # Settle the turning controls: fill in the value labels and hide the
@@ -12994,10 +13033,16 @@ class GamutApp(QMainWindow):
             # way: the chart panel went on reading "Placed through:
             # Glossy-paper — already open" under a Compare with of "Nothing",
             # naming a file that is not loaded; and a photograph's colours,
-            # about 9.6 MB, were never given back. Two arms of one method
-            # doing three of the same four things is how they drifted apart
-            # in the first place.
-            self._chart_profile_offer()
+            # about 9.6 MB, were never given back.
+            #
+            # ⚠ BUT NOT THROUGH `_chart_profile_offer`, WHICH CAN WARN.
+            # That method may adopt a profile and re-place the chart, and
+            # `_place_chart` opens its own modal "These patches could not be
+            # placed" — so one refused comparison put TWO blocking dialogs on
+            # screen, the second about a part of the window the reader never
+            # touched. A failure arm may report ITS failure and no other.
+            self._fill_chart_profiles()
+            self._refresh_chart_panel()
             self._forget_unused_facts()
             self._redraw()
             return
@@ -13533,7 +13578,7 @@ class GamutApp(QMainWindow):
                                 getattr(self, "_reference_m", None))
         choice = self._compare.currentData()
         key = self._synthetic_key(choice)
-        hit = self._lab_gamuts.get(key)
+        hit = recall(self._lab_gamuts, key)
         if hit is not None:
             return hit
         try:
@@ -13736,7 +13781,7 @@ class GamutApp(QMainWindow):
         key = (shapes.key_for(shapes.thing_for(path, IMAGE_EXTENSIONS),
                               self._settings().drawn_in("lab"))
                if path is not None else None)
-        hit = self._lab_gamuts.get(key) if key is not None else None
+        hit = recall(self._lab_gamuts, key)
         if hit is not None:
             return hit
         try:
@@ -14946,7 +14991,17 @@ class GamutApp(QMainWindow):
         # XYZ — the fault this window was already carrying before any of
         # tonight's work, found by a review of the claim that it was closed.
         self._rebuild_reference()
-        self._rebuild()
+        # ⚠ AND THE WHITE POINT REFUSES TOO. Dropping the answer here moved
+        # the COMPARISON to the new white while the papers stayed on the old
+        # one, and the coverage line then compared two shapes measured
+        # against different whites — a wrong number, printed confidently,
+        # from the fault class this release is named after.
+        if not self._rebuild():
+            self._put_settings_back()
+            self._rebuild_reference()
+            self._redraw()
+            return
+        self._remember_settled()
         self._redraw()
 
     def _on_space_changed(self) -> None:
@@ -14968,25 +15023,20 @@ class GamutApp(QMainWindow):
         # tonight's work, found by a review of the claim that it was closed.
         self._rebuild_reference()
         if not self._rebuild():
-            # ⚠ THE CONTROL GOES BACK, because the shapes did not move. The
-            # refusal already says "That setting cannot be used here"; what
-            # it did NOT do was undo the setting, so the combo read the new
-            # space over shapes still built in the old one and the redraw
-            # below raised out of a Qt slot:
+            # ⚠ EVERY CONTROL GOES BACK, because the shapes did not move.
+            # The refusal already says "That setting cannot be used here";
+            # what it did not do was UNDO the setting, so the combo read the
+            # new space over shapes still built in the old one and the
+            # redraw below raised out of a Qt slot, where PyQt kills the
+            # process without a traceback:
             #
             #   ValueError: asked to label the axes 'luv' while the shapes
             #               were built in 'lab'
-            #
-            # Blocked, so putting it back does not run this handler again.
-            was = self._space_settled
-            self._space.blockSignals(True)
-            self._space.setCurrentIndex(was)
-            self._space.blockSignals(False)
-            self._apply_space_availability()
+            self._put_settings_back()
             self._rebuild_reference()
             self._redraw()
             return
-        self._space_settled = self._space.currentIndex()
+        self._remember_settled()
         self._redraw()
 
     def _space_dependent_controls(self) -> list:
@@ -15311,10 +15361,55 @@ class GamutApp(QMainWindow):
         different rules.
         """
         self._rebuild_reference()
+        # ⚠ AND THIS ROUTE REFUSES TOO. It dropped the answer on the floor,
+        # so a refused mode or tick left the papers describing one state and
+        # the comparison — rebuilt just above — describing another, with no
+        # redraw at all to make either of them visible.
         if self._slots:
-            self._rebuild()
+            if not self._rebuild():
+                self._put_settings_back()
+                self._rebuild_reference()
+                self._redraw()
+                return
+            self._remember_settled()
         else:
+            self._remember_settled()
             self._redraw()
+
+    def _remember_settled(self) -> None:
+        """The controls and the shapes agree right now: write that down."""
+        self._settled = self._settings()
+
+    def _put_settings_back(self) -> None:
+        """Undo a setting the shapes refused — ALL of it, not the one control.
+
+        ⚠ A REFUSAL THAT UNDOES HALF OF ITSELF IS ITS OWN FAULT. The first
+        version put the "Draw it in" combo back and nothing else, so a tick
+        the reader had just set was silently kept while the shapes went on
+        describing the state before it. Every control that can reach a
+        rebuild is restored here, from the one snapshot taken when the
+        shapes and the controls last agreed.
+
+        Signals are blocked throughout: a control correcting itself must not
+        run the handler that is doing the correcting.
+        """
+        was = self._settled
+        if was is None:
+            return
+        for widget, value, find in (
+                (self._space, was.space, self._space.findData),
+                (self._white, was.white, self._white.findData),
+                (self._mode, was.mode, self._mode.findData)):
+            index = find(value)
+            if index >= 0 and widget.currentIndex() != index:
+                widget.blockSignals(True)
+                widget.setCurrentIndex(index)
+                widget.blockSignals(False)
+        if self._relative.isChecked() != was.tick:
+            self._relative.blockSignals(True)
+            self._relative.setChecked(was.tick)
+            self._relative.blockSignals(False)
+        self._apply_space_availability()
 
     def _rebuild(self) -> bool:
         """A setting that changes the shape — rebuild every loaded measurement.

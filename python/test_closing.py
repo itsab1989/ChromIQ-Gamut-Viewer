@@ -364,7 +364,14 @@ def test_a_comparison_that_cannot_be_used_leaves_nothing_describing_it(window):
         raise ValueError("this file could not be used")
     window._build_one = cannot
     offered, freed = [], []
-    window._chart_profile_offer = lambda: offered.append(1)
+    # ⚠ THE PANEL IS REFRESHED WITHOUT RE-PLACING THE CHART. Going through
+    # `_chart_profile_offer` here put a SECOND modal dialog on screen —
+    # "These patches could not be placed" — about a part of the window the
+    # reader never touched. A failure arm reports its own failure and no
+    # other.
+    window._fill_chart_profiles = lambda: offered.append("filled")
+    window._refresh_chart_panel = lambda: offered.append("refreshed")
+    window._chart_profile_offer = lambda: offered.append("PLACED AGAIN")
     window._forget_unused_facts = lambda: freed.append(1)
     # The real one wants a QWidget parent; this window is a stand-in.
     gamut_app.Notice.warn = staticmethod(lambda *a, **k: None)
@@ -382,9 +389,12 @@ def test_a_comparison_that_cannot_be_used_leaves_nothing_describing_it(window):
     # level with Cancel and stopped three-quarters of the way: the chart
     # panel went on naming a "Placed through" profile under a Compare with
     # of "Nothing", and a photograph's colours were never given back.
-    assert offered, (
+    assert "filled" in offered and "refreshed" in offered, (
         "the chart panel was left naming a profile for a comparison that "
         "is not loaded")
+    assert "PLACED AGAIN" not in offered, (
+        "the failure arm re-placed the chart, which opens a second modal "
+        "dialog about something the reader did not touch")
     assert freed, (
         "a photograph's colours were not given back when the comparison "
         "failed to load")
@@ -432,24 +442,173 @@ def test_a_setting_that_cannot_be_used_is_put_back():
             return "luv"
 
     redrawn = []
-    w = NS(_space=Combo(), _space_settled=0,
+    put_back = []
+    w = NS(_space=Combo(),
            _apply_space_availability=lambda: None,
            _rebuild_reference=lambda: None,
            _rebuild=lambda: False,          # the rebuild refuses
+           _put_settings_back=lambda: put_back.append(1),
+           _remember_settled=lambda: None,
            _redraw=lambda: redrawn.append(1))
     gamut_app.GamutApp._on_space_changed(w)
-    assert w._space.index == 0, (
+    assert put_back, (
         "the refused setting was left on the control, so the axes name a "
         "space the shapes were never built in — and the redraw kills the app")
     assert redrawn, "the window was left un-redrawn after the refusal"
 
     # AND A SETTING THAT WORKS IS REMEMBERED, so the next refusal has
     # somewhere to go back to.
-    w2 = NS(_space=Combo(), _space_settled=0,
+    remembered = []
+    w2 = NS(_space=Combo(),
             _apply_space_availability=lambda: None,
             _rebuild_reference=lambda: None,
             _rebuild=lambda: True,
+            _put_settings_back=lambda: None,
+            _remember_settled=lambda: remembered.append(1),
             _redraw=lambda: None)
-    w2._space.index = 5
     gamut_app.GamutApp._on_space_changed(w2)
-    assert w2._space_settled == 5
+    assert remembered, (
+        "a setting that WORKED was not written down, so the next refusal "
+        "has nothing correct to go back to")
+
+
+def test_a_refusal_puts_back_every_control_it_refused():
+    """⚠ THE REFUSAL UNDID ONE CONTROL AND KEPT THE REST.
+
+    The first version restored the "Draw it in" combo and nothing else, so a
+    paper-white tick or a shape mode the reader had just set was silently
+    kept while the shapes went on describing the state before it. And the
+    thing it restored FROM was a remembered combo index, set in `__init__`
+    and updated only after a successful change — while `_restore_everything`
+    puts the controls back from the store with signals BLOCKED. A window
+    reopened in CIE XYZ therefore carried a settled index of 0, and the
+    first refusal moved the combo to CIELAB over shapes built in XYZ,
+    raising the very ValueError the refusal exists to prevent.
+
+    So the snapshot is the five settings the shapes were built under, taken
+    at the two moments the controls and the shapes are known to agree, and
+    every control comes back from it.
+    """
+    import gamut_app
+    import shapes
+    from types import SimpleNamespace as NS
+
+    class Combo:
+        def __init__(self, data):
+            self._data, self.index, self.blocked = data, 0, False
+
+        def findData(self, value):      # noqa: N802  (Qt's name)
+            return self._data.index(value) if value in self._data else -1
+
+        def currentIndex(self):         # noqa: N802
+            return self.index
+
+        def setCurrentIndex(self, i):   # noqa: N802
+            assert self.blocked, "a control was corrected without blocking"
+            self.index = i
+
+        def blockSignals(self, on):     # noqa: N802
+            self.blocked = on
+
+    class Tick:
+        def __init__(self):
+            self.on, self.blocked = False, False
+
+        def isChecked(self):            # noqa: N802
+            return self.on
+
+        def setChecked(self, v):        # noqa: N802
+            assert self.blocked, "the tick was corrected without blocking"
+            self.on = v
+
+        def blockSignals(self, on):     # noqa: N802
+            self.blocked = on
+
+    w = NS(_space=Combo(["lab", "luv", "xyz"]),
+           _white=Combo(["D50", "D65"]),
+           _mode=Combo(["device", "hull"]),
+           _relative=Tick(),
+           _apply_space_availability=lambda: None,
+           _settled=shapes.Settings(white="D65", space="xyz", mode="hull",
+                                    tick=True))
+    # the reader has just moved all four away from what the shapes hold
+    w._space.index, w._white.index, w._mode.index = 0, 0, 0
+    w._relative.on = False
+
+    gamut_app.GamutApp._put_settings_back(w)
+
+    assert w._space.index == 2, "the space was not put back"
+    assert w._white.index == 1, "the white point was not put back"
+    assert w._mode.index == 1, "the shape mode was not put back"
+    assert w._relative.on is True, (
+        "the paper-white tick was kept while everything else went back, so "
+        "the shapes describe one state and the controls another")
+
+
+def _refusing_window():
+    """A window whose rebuild refuses, watching what the handler does."""
+    from types import SimpleNamespace as NS
+    seen = {"put_back": 0, "remembered": 0, "redrawn": 0}
+    w = NS(_slots=[("a-paper", object(), None)],
+           _rebuild=lambda: False,
+           _rebuild_reference=lambda: None,
+           _apply_space_availability=lambda: None,
+           _put_settings_back=lambda: seen.__setitem__(
+               "put_back", seen["put_back"] + 1),
+           _remember_settled=lambda: seen.__setitem__(
+               "remembered", seen["remembered"] + 1),
+           _redraw=lambda: seen.__setitem__("redrawn", seen["redrawn"] + 1),
+           _space=None)
+    return w, seen
+
+
+def test_the_white_point_refuses_like_the_space_does():
+    """⚠ THIS ROUTE DROPPED THE ANSWER ENTIRELY.
+
+    `_on_white_changed` rebuilds the COMPARISON first and then the papers.
+    Ignoring the refusal moved the comparison to the new white while the
+    papers stayed on the old one — and the coverage line then compared two
+    shapes measured against different whites. A wrong number, printed
+    confidently, from the fault class this release is named after.
+    """
+    import gamut_app
+    w, seen = _refusing_window()
+    gamut_app.GamutApp._on_white_changed(w)
+    assert seen["put_back"] == 1, (
+        "the white point stayed on the refused value, so the comparison and "
+        "the papers are measured against different whites")
+    assert seen["remembered"] == 0, "a refused setting was written down as good"
+    assert seen["redrawn"] >= 1, "the window was left showing the old state"
+
+
+def test_the_shape_settings_refuse_like_the_space_does():
+    """⚠ AND THIS ONE DID NOT EVEN REDRAW.
+
+    `_on_shape_setting` carries the shape mode and the paper-white tick.
+    Ignoring the refusal left the papers describing one state, the
+    comparison — rebuilt just above — describing another, and nothing on
+    screen redrawn to show either.
+    """
+    import gamut_app
+    w, seen = _refusing_window()
+    gamut_app.GamutApp._on_shape_setting(w)
+    assert seen["put_back"] == 1, (
+        "the shape mode or the tick stayed on the refused value")
+    assert seen["remembered"] == 0
+    assert seen["redrawn"] >= 1, (
+        "the panel was left matching neither the old state nor the new one")
+
+
+def test_a_setting_that_works_is_written_down_on_every_route():
+    """The snapshot a refusal restores from is only correct if EVERY route
+    that succeeds updates it. Two of the three used not to."""
+    import gamut_app
+    for handler in (gamut_app.GamutApp._on_white_changed,
+                    gamut_app.GamutApp._on_shape_setting):
+        w, seen = _refusing_window()
+        w._rebuild = lambda: True
+        handler(w)
+        assert seen["remembered"] == 1, (
+            f"{handler.__name__} did not write down a setting that worked, "
+            f"so the next refusal has nothing correct to go back to")
+        assert seen["put_back"] == 0
