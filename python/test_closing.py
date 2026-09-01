@@ -363,6 +363,9 @@ def test_a_comparison_that_cannot_be_used_leaves_nothing_describing_it(window):
     def cannot(_path):
         raise ValueError("this file could not be used")
     window._build_one = cannot
+    offered, freed = [], []
+    window._chart_profile_offer = lambda: offered.append(1)
+    window._forget_unused_facts = lambda: freed.append(1)
     # The real one wants a QWidget parent; this window is a stand-in.
     gamut_app.Notice.warn = staticmethod(lambda *a, **k: None)
     window._compare_settled = 3
@@ -375,6 +378,16 @@ def test_a_comparison_that_cannot_be_used_leaves_nothing_describing_it(window):
     assert window._compare_note.text() == "", (
         "a sentence about a comparison that is not loaded")
     assert window._compare.index == 0
+    # ⚠ AND THE OTHER TWO THINGS THE CANCEL ARM DOES. This arm was brought
+    # level with Cancel and stopped three-quarters of the way: the chart
+    # panel went on naming a "Placed through" profile under a Compare with
+    # of "Nothing", and a photograph's colours were never given back.
+    assert offered, (
+        "the chart panel was left naming a profile for a comparison that "
+        "is not loaded")
+    assert freed, (
+        "a photograph's colours were not given back when the comparison "
+        "failed to load")
 
 
 def test_a_setting_that_cannot_be_used_is_put_back():

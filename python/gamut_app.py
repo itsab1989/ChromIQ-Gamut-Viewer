@@ -12989,6 +12989,16 @@ class GamutApp(QMainWindow):
             self._compare_note.setText("")
             self._compare.setCurrentIndex(0)
             self._compare_settled = 0
+            # ⚠ AND THE OTHER TWO THINGS THE CANCEL ARM DOES. This arm was
+            # brought level with Cancel and stopped three-quarters of the
+            # way: the chart panel went on reading "Placed through:
+            # Glossy-paper — already open" under a Compare with of "Nothing",
+            # naming a file that is not loaded; and a photograph's colours,
+            # about 9.6 MB, were never given back. Two arms of one method
+            # doing three of the same four things is how they drifted apart
+            # in the first place.
+            self._chart_profile_offer()
+            self._forget_unused_facts()
             self._redraw()
             return
         # WHAT THE BOX SHOULD GO BACK TO if the next chooser is cancelled.
