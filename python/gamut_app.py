@@ -5760,12 +5760,21 @@ class TimelineDialog(QDialog):
                     # control sweep, which changed the space with a run open.
                     gamut, _measured = builder(path, space="lab")
                 except Exception as exc:   # noqa: BLE001 — a view must not fall
+                    # ⚠ THIS ONE, NOT BOTH. `return []` here threw away the
+                    # OTHER profile's shell as well, and two profiles are
+                    # compared in this view: one unreadable file took the
+                    # readable one with it. cb70e70 claimed to have fixed
+                    # that by dropping a `stat` — it removed one of two
+                    # routes to this same return, and the claim was false.
+                    # Driven: two good profiles gave two shells, good plus
+                    # missing gave none.
                     _log().warning("could not build the shape of %s: %s",
                                    path, exc)
                     self._trouble(
-                        "The shapes could not be worked out for this pair, so "
-                        "only the colours are drawn.")
-                    return []
+                        f"The shape could not be worked out for "
+                        f"{self._name_in_run(path)}, so only its colours are "
+                        f"drawn.")
+                    continue
                 # ONE PAIR AT A TIME IS ALL THAT IS EVER WANTED, and a gamut
                 # is a few megabytes of triangles; a cache that grows with the
                 # run would hold a printer's whole history in memory.
@@ -6825,6 +6834,33 @@ def _log():
     not create a log file for a process that never shows a window."""
     from logger import get_logger
     return get_logger("app")
+
+
+#: How many rebuilt-in-CIELAB shapes to keep. A shape is a few megabytes of
+#: triangles, and the entries no FILE gesture can ever name — a colour space,
+#: the visible solid — are exactly the ones a Detail sweep makes one of per
+#: step.
+LAB_GAMUTS_KEPT = 8
+
+
+def keep_newest(cache: dict, kept: int = LAB_GAMUTS_KEPT) -> None:
+    """Oldest out, rather than all out.
+
+    ⚠ `_lab_gamuts` WAS THE ONE CACHE WITH NO CAP AT ALL. It relied on a
+    whole-cache clear, and that went when gestures started owning one file
+    each — after which the synthetic entries, which no file gesture can
+    name, had nothing left to remove them. Driven: one Detail sweep took it
+    from 1 entry to 6, and every gesture but reopening a file left them.
+
+    ⚠ AND IT IS A FUNCTION ON THE DICT, NOT A METHOD ON THE WINDOW. Written
+    as a method it broke three tests at once, because every hand-built
+    stand-in in the suite would have needed it — and the tempting repair,
+    `_cap_lab_gamuts=lambda: None`, is a stub that answers for the very
+    thing the cap does. Seven stand-ins went stale that way today. A cache
+    bound needs the cache and a number, so that is all it asks for.
+    """
+    while len(cache) > kept:
+        cache.pop(next(iter(cache)))
 
 
 def _profile_label(path: Path) -> str:
@@ -10381,8 +10417,14 @@ class GamutApp(QMainWindow):
         0 once the paper is judged against its own white" three lines below —
         the new file above, the old file underneath, and a nonsense zero.
 
-        Every key here begins (kind, str(path), …) or is (str(path),), which
-        is what makes one file's entries findable at all.
+        ⚠ AND NOT EVERY KEY LOOKS LIKE THAT. An earlier version of this
+        said "every key here begins (kind, str(path), …)", which is false:
+        `_synthetic_key` puts a TUPLE at index 1 for a colour space or the
+        visible solid, because they have no file. Those entries are
+        unreachable to this method by design — a gesture about a file has
+        nothing to say about them — but nothing else evicted them either
+        once the whole-cache clear went, so they grew without bound. The cap
+        below is what holds them now.
         """
         name = str(path)
         for cache in (self._lab_gamuts, self._other_whites):
@@ -13511,6 +13553,7 @@ class GamutApp(QMainWindow):
         except Exception:          # noqa: BLE001 — a readout never crashes
             return gamut
         self._lab_gamuts[key] = built
+        keep_newest(self._lab_gamuts)
         return built
 
     def _judging_shapes(self) -> list:
@@ -13724,6 +13767,7 @@ class GamutApp(QMainWindow):
             return gamut
         if key is not None:
             self._lab_gamuts[key] = built
+            keep_newest(self._lab_gamuts)
         return built
 
     def _both_whites(self, path, measured: bool):
@@ -15158,6 +15202,23 @@ class GamutApp(QMainWindow):
                     self._settings())
                 hit = self._reference_cache.get(key)
                 if hit is None:
+                    # ⚠ A MISS HERE IS A RE-READ, SO IT FORGETS FIRST. This
+                    # is the fourth place that re-reads a file and the last
+                    # to be told: `_load` forgets, the chooser forgets,
+                    # `_rebuild` forgets every slot — and the comparison,
+                    # re-read by the very same gesture, did not. `_rebuild`
+                    # walks `_slots`, and the comparison is not in them.
+                    #
+                    # `_other_whites` pins space and tick in its key and
+                    # `_lab_gamuts` pins space, so a Draw it in nudge cannot
+                    # move either: the shape was rebuilt from the new bytes
+                    # while the sentence beside it still described the old
+                    # ones. One paragraph read "202 inside, 23 on the edge,
+                    # 255 outside" over "151 outside as your instrument
+                    # measured the paper, and 0 once the paper is judged
+                    # against its own white" — the exact paragraph 5cb4b08
+                    # says it fixed, printed again one route over.
+                    self._forget_shapes_of(self._reference_path)
                     hit = self._build_one(self._reference_path)
                     # Oldest out, rather than all out: emptying the whole
                     # cache on overflow throws away the entry the reader is

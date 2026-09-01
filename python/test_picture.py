@@ -893,3 +893,42 @@ def test_a_papers_white_does_not_depend_on_the_space_it_is_drawn_in():
     # AND IT IS THE MEASURED WHITE, not whatever the drawn hull's top vertex
     # happens to be.
     assert f"{m.white_lab[1]:+.1f}" in said["lab"], said["lab"]
+
+
+def test_the_cielab_shapes_cache_cannot_grow_without_end():
+    """⚠ IT WAS THE ONE CACHE WITH NO CAP, and the clear it relied on went.
+
+    `_lab_gamuts` used to be emptied wholesale whenever a file was opened.
+    When gestures started owning ONE file each that clear went — and the
+    entries no file gesture can name, a colour space and the visible solid
+    (`_synthetic_key` puts a tuple where a path would be), had nothing left
+    to remove them. Driven before the cap: one Detail sweep took it from 1
+    to 6 entries, and every gesture but reopening a file left them there.
+    A shape is a few megabytes of triangles.
+
+    ⚠ AND THE CAP IS A FUNCTION ON THE DICT. Written as a method it broke
+    three tests at once — every hand-built stand-in would have needed it —
+    and the tempting repair was `_cap_lab_gamuts=lambda: None`, a stub that
+    answers for the very thing the cap does.
+    """
+    import gamut_app
+
+    cache = {}
+    for step in range(gamut_app.LAB_GAMUTS_KEPT * 3):
+        # exactly the shape `_synthetic_key` makes: a tuple where a path
+        # would be, which is why no file gesture can reach these.
+        cache[("space", ("space", "sRGB"), step)] = "a shape"
+        gamut_app.keep_newest(cache)
+        assert len(cache) <= gamut_app.LAB_GAMUTS_KEPT, (
+            f"the cache grew past its cap at step {step}")
+    # OLDEST OUT, NOT ALL OUT: the newest is still there to be found.
+    assert ("space", ("space", "sRGB"),
+            gamut_app.LAB_GAMUTS_KEPT * 3 - 1) in cache
+    # AND IT IS WIRED IN WHERE THE CACHE GROWS, not only where it is pruned.
+    import inspect
+    for method in (gamut_app.GamutApp._in_lab,
+                   gamut_app.GamutApp._reference_in_lab):
+        src = inspect.getsource(method)
+        if "_lab_gamuts[key] = built" in src:
+            assert "keep_newest(self._lab_gamuts)" in src, (
+                f"{method.__name__} writes to the cache and never bounds it")
