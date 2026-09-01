@@ -10338,8 +10338,8 @@ class GamutApp(QMainWindow):
         """What identifies a picture's facts: the file AND its timestamp.
 
         ⚠ THE PATH ALONE ANSWERS FOR THE PICTURE A FILE USED TO BE. That is
-        the rule `_shape_key` already follows and `shapes.key_for` already
-        writes down, and it is the guarantee 5ecf5a3 CLAIMED to make and did
+        the rule `shapes.key_for` writes down and every cache in this
+        window now reads, and it is the guarantee 5ecf5a3 CLAIMED to make and did
         not: that commit popped the entry in `_load`, which a driver later
         proved earns nothing, because `_build_one` overwrites the entry
         unconditionally anyway. The claim was false and the line was
@@ -13496,57 +13496,24 @@ class GamutApp(QMainWindow):
                                tick=self._relative.isChecked(),
                                detail=self._detail.value())
 
-    def _shape_key(self, path, space, *, relative=None):
-        """What actually decides the shape built from *path*.
-
-        ⚠ ONE RULE FOR THREE CACHES, because they had three and disagreed.
-        Every cache of a built shape in this window keyed on "everything that
-        changes the shape" as its author imagined it, and each imagined a
-        different set. The costliest of them held Detail — which NOTHING that
-        builds a shape from a FILE consults: `_detail` reaches only
-        `reference_gamut(steps=)` and `optimal_colour_solid()`, the two
-        SYNTHETIC references. So every Detail nudge was a guaranteed miss
-        returning a bit-identical answer, measured at 3.67 s each on a
-        photograph held as the comparison.
-
-        ⚠ AND THE FILE'S OWN TIMESTAMP IS IN THE KEY, which is how this
-        window already solves the problem elsewhere (`:5737`). A cache keyed
-        by path alone answers for the shape a file USED to have, and the
-        guard against that was "remember to clear all three caches when a
-        file is opened" — a rule that had already been half-forgotten once.
-        A key that carries the timestamp cannot be forgotten.
-
-        *relative* pins the paper-white tick, or is None for an entry that
-        holds both readings and so does not depend on it. Neither the tick
-        nor the shape mode reaches a profile or a photograph, so neither goes
-        in their key: putting them there costs misses and buys nothing.
-        """
-        # ⚠ A FILE. `Path(None)` raises TypeError, which the OSError guard
-        # below does not catch, and four callers pass None by design — a
-        # comparison set to a colour space or to the visible solid has no
-        # file at all. That crashed the window on an ordinary "Draw it in"
-        # change, through two unguarded routes, and the scene was left
-        # showing CIELUV under a control reading CIE XYZ.
-        #
-        # A shape with no file is a SYNTHETIC reference, and it is the one
-        # shape Detail really does change (`reference_gamut(steps=)`,
-        # `optimal_colour_solid()`), so it is keyed by `_synthetic_key` and
-        # never comes here.
-        if path is None:
-            raise ValueError("_shape_key is for files; see _synthetic_key")
-        path = Path(path)
-        try:
-            stamp = path.stat().st_mtime_ns
-        except OSError:                      # gone, or not readable: rebuild
-            stamp = 0
-        key = [str(path), stamp, self._white.currentData(), space]
-        suffix = path.suffix.lower()
-        if suffix not in (".icc", ".icm", ".gam") \
-                and suffix not in IMAGE_EXTENSIONS:
-            key.append(self._mode.currentData())
-            if relative is not None:
-                key.append(relative)
-        return tuple(key)
+    # ⚠ `_shape_key` STOOD HERE AND WAS THE THIRD COPY OF ONE RULE.
+    # It re-derived a file's kind from its suffix — ".icc/.icm/.gam or an
+    # image, else a measurement" — and decided from that which of the five
+    # settings could change the shape. `shapes.KINDS` says the same thing in
+    # a table the BUILDER reads, so the two could disagree, and copies of
+    # this rule already had: one held Detail for every kind, making every
+    # nudge of it a guaranteed miss that returned a bit-identical answer at
+    # 3.67 s a time.
+    #
+    # Its `relative=None` argument meant "this entry holds both readings, so
+    # the tick must not vary the key" — understood by one caller and this
+    # method alone. `_both_whites` pins the tick instead, which says the same
+    # thing in the table every other key already reads.
+    #
+    # And its ValueError for a fileless shape is gone with it: a colour space
+    # and the visible solid are KINDS, the kind is in the key, and nothing on
+    # that path touches `Path(None)`. The crash is removed by construction
+    # rather than guarded against.
 
     def _in_lab(self, gamut, path=None, measurement=None):
         """The same paper as a gamut BUILT in CIELAB, whatever is being drawn.
@@ -13578,8 +13545,14 @@ class GamutApp(QMainWindow):
         white = self._white.currentData()
         # No file means nothing to rebuild FROM here; the comparison's own
         # synthetic rebuild is `_reference_in_lab`.
-        key = (self._shape_key(path, "lab",
-                               relative=self._relative.isChecked())
+        # ⚠ THE ONE TABLE DECIDES, not a suffix test written out here again.
+        # `_shape_key` re-derived the kind from the suffix — ".icc/.icm/.gam
+        # or an image, else a measurement" — which was the THIRD copy of
+        # `shapes.KINDS`, and the copies disagreed. `key_for` reads the same
+        # table the builder does, so a key cannot describe a different set of
+        # dependencies than the shape it stands for.
+        key = (shapes.key_for(shapes.thing_for(path, IMAGE_EXTENSIONS),
+                              self._settings().drawn_in("lab"))
                if path is not None else None)
         hit = self._lab_gamuts.get(key) if key is not None else None
         if hit is not None:
@@ -13661,9 +13634,13 @@ class GamutApp(QMainWindow):
         """
         if not measured or path is None:
             return None
-        # No `relative`: this entry holds BOTH readings, so the tick cannot
-        # change what it should return.
-        key = self._shape_key(path, "lab")
+        # ⚠ THE TICK IS PINNED, NOT ABSENT. This entry holds BOTH readings,
+        # so what it should return cannot depend on the tick — and pinning it
+        # to one value says that in the same table every other key reads,
+        # rather than through a `relative=None` argument that only this
+        # caller passed and only `_shape_key` understood.
+        key = shapes.key_for(shapes.thing_for(path, IMAGE_EXTENSIONS),
+                             self._settings().drawn_in("lab").with_tick(False))
         hit = self._other_whites.get(key)
         if hit is not None:
             return hit
@@ -15045,9 +15022,9 @@ class GamutApp(QMainWindow):
                 # white-point, detail or space change. The key holds
                 # everything that changes the shape, so a reader toggling a
                 # setting back and forth pays once.
-                key = self._shape_key(
-                    self._reference_path, self._build_space(),
-                    relative=self._relative.isChecked())
+                key = shapes.key_for(
+                    shapes.thing_for(self._reference_path, IMAGE_EXTENSIONS),
+                    self._settings())
                 hit = self._reference_cache.get(key)
                 if hit is None:
                     hit = self._build_one(self._reference_path)

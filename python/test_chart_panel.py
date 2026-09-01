@@ -1252,34 +1252,57 @@ def test_the_document_sweep_catches_every_form_that_escaped_it(app):
 
 def shape_key(name, space="lab", relative=None, white="D50", mode="device",
               stamp=None):
-    import gamut_app
-    from types import SimpleNamespace as NS
+    """A cache key for a file, from the ONE table.
+
+    ⚠ THIS USED TO CALL `GamutApp._shape_key`, WHICH WAS A THIRD COPY OF THE
+    RULE. That method re-derived a file's kind from its suffix — ".icc/.icm/
+    .gam or an image, else a measurement" — while `shapes.KINDS` said the
+    same thing in a table the BUILDER reads. Three copies of one rule, which
+    is how one of them came to hold Detail for every kind and make every
+    nudge of it a guaranteed miss returning a bit-identical answer.
+
+    `relative=None` meant "an entry that holds both readings, so the tick
+    must not vary the key". Pinning the tick says that in the same table,
+    rather than through an argument only one caller passed.
+    """
     import pathlib
+    import shapes
     root = pathlib.Path(__file__).resolve().parent.parent
-    stub = NS(_white=NS(currentData=lambda: white),
-              _mode=NS(currentData=lambda: mode))
-    return gamut_app.GamutApp._shape_key(stub, root / name, space,
-                                         relative=relative)
+    import gamut_app
+    thing = shapes.thing_for(root / name, gamut_app.IMAGE_EXTENSIONS)
+    return shapes.key_for(thing, shapes.Settings(
+        white=white, space=space, mode=mode,
+        tick=False if relative is None else relative))
 
 
 def test_detail_is_not_in_the_key_of_any_file_built_shape(app):
     """`_detail` reaches `reference_gamut(steps=)` and
     `optimal_colour_solid()` and nothing else — the two SYNTHETIC references.
     A file's shape does not depend on it, so nor may its key."""
-    import ast
+    import pathlib
+    import shapes
     import gamut_app
-    import inspect
-    # ⚠ THE CODE, NOT THE PROSE. The docstring explains why Detail is absent,
-    # and a check over raw source flags its own explanation — which is how
-    # the wording sweep failed twice.
-    fn = ast.parse(inspect.getsource(gamut_app.GamutApp._shape_key).strip()).body[0]
-    body = fn.body[1:] if (isinstance(fn.body[0], ast.Expr)
-                           and isinstance(fn.body[0].value, ast.Constant)) else fn.body
-    code = "\n".join(ast.unparse(stmt) for stmt in body)
-    assert "_detail" not in code, (
-        "Detail is back in the key, and every nudge of it is a miss")
+    # ⚠ BY BUILDING KEYS, NOT BY READING THE SOURCE. This parsed the old
+    # `_shape_key` and asserted the text "_detail" was absent from it. That
+    # method is gone — the rule lives in `shapes.KINDS` now — and a test
+    # that reads one function's source could not have followed it there.
+    # Detail moving a file's key is the thing to catch, so catch that.
+    root = pathlib.Path(__file__).resolve().parent.parent
     for name in ("demo/Glossy-paper.ti3", "demo/Glossy-paper.icc"):
+        thing = shapes.thing_for(root / name, gamut_app.IMAGE_EXTENSIONS)
+        nine = shapes.key_for(thing, shapes.Settings(detail=9))
+        thirty = shapes.key_for(thing, shapes.Settings(detail=30))
+        assert nine == thirty, (
+            f"Detail is back in the key for {name}, and every nudge of it is "
+            f"a guaranteed miss returning a bit-identical answer")
         assert shape_key(name) == shape_key(name), "the key is not stable"
+    # AND IT REALLY DOES REACH THE SYNTHETIC ONES, or the line above is
+    # asserting something true of everything and worth nothing.
+    space = shapes.a_space("sRGB")
+    assert (shapes.key_for(space, shapes.Settings(detail=9))
+            != shapes.key_for(space, shapes.Settings(detail=30))), (
+        "Detail no longer reaches a colour space, so this test is comparing "
+        "two things that were never different")
 
 
 def test_the_key_carries_the_file_s_own_timestamp(app):
@@ -1338,18 +1361,27 @@ def test_the_white_point_and_the_space_are_always_in_the_key(app):
 # --------------------------------------------------------------------------
 
 
-def test_a_shape_with_no_file_is_refused_by_the_file_key(app):
-    """`_shape_key` is for files, and says so instead of raising TypeError
-    from `Path(None)` — which the OSError guard beside it cannot catch."""
-    import gamut_app
-    import pytest as _pytest
-    from types import SimpleNamespace as NS
-    stub = NS(_white=NS(currentData=lambda: "D50"),
-              _mode=NS(currentData=lambda: "device"))
-    with _pytest.raises(ValueError) as caught:
-        gamut_app.GamutApp._shape_key(stub, None, "luv", relative=False)
-    assert "_synthetic_key" in str(caught.value), (
-        "it must point at the key that DOES answer for a shape with no file")
+def test_a_shape_with_no_file_never_reaches_a_file_key_at_all(app):
+    """⚠ THE CRASH IS GONE BY CONSTRUCTION NOW, NOT BY A GUARD.
+
+    `Path(None)` raises TypeError, which the OSError guard beside it cannot
+    catch, and four callers passed None by design — a comparison set to a
+    colour space or the visible solid has no file. That took the window down
+    on an ordinary "Draw it in" change and left the scene showing CIELUV
+    under a control reading CIE XYZ. The old `_shape_key` answered it with a
+    ValueError pointing at the other key-maker: a guard, and one a caller
+    could forget to respect.
+
+    A fileless shape is a different KIND now, the kind is in the key, and
+    nothing in that path touches `Path`. So this asserts the key is simply
+    made, and that it is not confusable with a file's.
+    """
+    import shapes
+    for thing in (shapes.a_space("sRGB"), shapes.the_visible_solid()):
+        key = shapes.key_for(thing, shapes.Settings(space="luv"))
+        assert thing.kind in key, "the kind is what keeps these apart"
+        assert key == shapes.key_for(thing, shapes.Settings(space="luv"))
+        assert key != shapes.key_for(thing, shapes.Settings(space="lab"))
 
 
 def test_judging_a_chart_by_a_colour_space_rebuilds_it_in_cielab(app):
@@ -1538,8 +1570,7 @@ def test_a_picture_is_rebuilt_in_cielab_like_everything_else(app):
               _relative=NS(isChecked=lambda: False),
               _lab_gamuts={},
               _settings=lambda: shapes.Settings(white="D50", space="luv"))
-    stub._shape_key = lambda path, space, relative=None: (
-        gamut_app.GamutApp._shape_key(stub, path, space, relative=relative))
+    # (the key-maker is `shapes.key_for` now; nothing here stubs it)
     built = gamut_app.GamutApp._in_lab(stub, drawn, picture, None)
     assert built is not drawn, (
         "the photograph was read as an ICC profile, raised, and the drawn "
@@ -1922,7 +1953,7 @@ def test_both_readings_are_actually_supplied_for_a_measurement(app):
     hall = NS(_other_whites={},
               _settings=lambda: shapes.Settings(white="D50", space="lab",
                                                 mode="device", tick=False),
-              _shape_key=lambda path, space, **kw: (str(path), space))
+              )
     pair = gamut_app.GamutApp._both_whites(hall, DEMO / "Matte-paper.ti3",
                                            True)
     assert pair is not None, (
@@ -1961,7 +1992,7 @@ def test_only_a_measured_paper_is_offered_two_readings(app):
                   _settings=lambda: shapes.Settings(white="D50", space="lab",
                                                     mode="device",
                                                     tick=False),
-                  _shape_key=lambda p, space, **kw: (str(p), space))
+                  )
         # `measured=True` on purpose: the flag is the guard being replaced.
         return gamut_app.GamutApp._both_whites(hall, path, True)
 
