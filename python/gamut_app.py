@@ -5735,12 +5735,19 @@ class TimelineDialog(QDialog):
             return []
         made = []
         for path in (Path(path_a), Path(path_b)):
-            try:
-                key = (str(path), path.stat().st_mtime_ns,
-                       host._white.currentData(), "lab",
-                       host._mode.currentData())
-            except OSError:
-                return []
+            # ⚠ THE LAST PLACE STILL RUNNING THE OLD POLICY. This keyed on
+            # the file's timestamp, which is what the rest of the window
+            # stopped doing: a key built from disk NOW, for a shape built
+            # when the file was opened, means the numbers can describe
+            # content that is not being shown. One rule, everywhere — the
+            # window answers for the file you opened, and the gesture that
+            # asks for it again is what rebuilds.
+            #
+            # It also returned [] for a file that could not be statted,
+            # which threw away the OTHER profile's shell as well: two
+            # profiles are compared here and one unreadable path took both.
+            key = (str(path), host._white.currentData(), "lab",
+                   host._mode.currentData())
             if key not in self._shell_cache:
                 try:
                     # ALWAYS IN LAB, WHATEVER THE WINDOW IS DRAWING IN. The
@@ -12833,7 +12840,13 @@ class GamutApp(QMainWindow):
         # restoring that on cancel left the box reading "A profile, paper or
         # picture…" over a comparison that was still sRGB.
         was = (getattr(self, "_compare_settled", 0), self._reference,
-               self._reference_m, getattr(self, "_reference_path", None))
+               self._reference_m, getattr(self, "_reference_path", None),
+               # ⚠ AND THE SENTENCE BESIDE THE BOX. Cancel put back the
+               # comparison, the index and the path, and left the note
+               # cleared — so the describing line vanished while the box and
+               # every number stayed. Half a restoration reads as a fault in
+               # the file, which is what the whole arm exists to avoid.
+               self._compare_note.text())
         self._reference = None
         self._reference_m = None
         if not (choice and choice[0] == "icc"):
@@ -12868,9 +12881,10 @@ class GamutApp(QMainWindow):
                 if not dlg.exec():
                     # PUT BACK WHAT WAS THERE, and let the refresh below run
                     # so nothing on screen is left describing it either way.
-                    index, ref, ref_m, ref_path = was
+                    index, ref, ref_m, ref_path, note = was
                     self._reference, self._reference_m = ref, ref_m
                     self._reference_path = ref_path
+                    self._compare_note.setText(note)
                     self._compare.setCurrentIndex(
                         index if ref is not None else 0)
                     self._chart_profile_offer()
@@ -12914,11 +12928,22 @@ class GamutApp(QMainWindow):
                     "Every colour a printed surface could possibly show under "
                     "this light. No printer comes close, and that is normal.")
         except Exception as exc:      # noqa: BLE001 — always explain, never crash
+            # ⚠ AND IT MUST NOT LEAVE THE OLD COMPARISON'S NUMBERS BEHIND.
+            # This arm did what Cancel used to: the box went to "Nothing"
+            # while "77.4% ... fits inside Matte-paper (measured)" stayed on
+            # screen, and `_reference_path` kept pointing at the file that
+            # had just failed to load — so the next setting change tried it
+            # again. A comparison that could not be prepared is not loaded,
+            # and nothing may still describe one.
             Notice.warn(
                 self, "That comparison could not be prepared", str(exc))
             self._reference = None
             self._reference_m = None
+            self._reference_path = None
+            self._compare_note.setText("")
             self._compare.setCurrentIndex(0)
+            self._compare_settled = 0
+            self._redraw()
             return
         # WHAT THE BOX SHOULD GO BACK TO if the next chooser is cancelled.
         self._compare_settled = self._compare.currentIndex()

@@ -112,12 +112,17 @@ def window():
         _show_placeholder=lambda: None,
         _volume_units=lambda: "cubic Lab units",
         _image_facts={},
+        _lab_gamuts={},
+        _other_whites={},
+        _reference_cache={},
+        _compare_note=_Text(),
         **figures)
     # ⚠ THE REAL HELPERS, BOUND. "Close them all" now also gives back the
     # colours of every photograph it closes — about 9.6 MB each — and this
     # fixture is what proves the gesture still does everything else. A stub
     # that shrugged would let the freeing quietly stop happening.
-    for helper in ("_facts_key", "_forget_unused_facts"):
+    for helper in ("_facts_key", "_forget_unused_facts", "_forget_shapes_of",
+                   "_lays_down_ink"):
         setattr(w, helper,
                 getattr(_app.GamutApp, helper).__get__(w, _app.GamutApp))
 
@@ -293,3 +298,80 @@ def test_cancelling_the_chooser_puts_back_what_was_there(window):
     assert window._compare.index == 3, (
         f"the box was left showing something other than the comparison that "
         f"is actually loaded: index {window._compare.index}")
+
+
+def _chooser(window, returns):
+    """Point the comparison chooser at a result, cancelled or not."""
+    class Dialog:
+        def exec(self):
+            return 0 if returns is None else 1
+
+        def selectedFiles(self):
+            return [] if returns is None else [str(returns)]
+    window._file_dialog = lambda *a, **k: Dialog()
+    window._compare.data = ("icc", None)
+    window._compare.index = 7
+    window._chart_profile_offer = lambda: None
+    window._redraw = lambda: None
+    window._last_folder = ""
+
+
+def test_cancelling_puts_back_the_sentence_beside_the_box_too(window):
+    """⚠ HALF A RESTORATION READS AS A FAULT IN THE FILE.
+
+    Cancel put back the comparison, the index and the path, and left
+    `_compare_note` cleared — so the line describing the comparison vanished
+    while the box and every number stayed. The comment on that arm claimed
+    the screen never says a comparison is there when it is not; it said
+    nothing about the reverse.
+    """
+    import gamut_app
+    window._compare_note = _Text()
+    window._compare_note.setText("What most images and most screens assume.")
+    window._compare_settled = 3
+    window._reference = ("sRGB", object())
+    window._reference_m = None
+    window._reference_path = None
+    _chooser(window, None)
+    gamut_app.GamutApp._on_compare_changed(window)
+
+    assert window._reference is not None
+    assert window._compare.index == 3
+    assert window._compare_note.text() == (
+        "What most images and most screens assume."), (
+        "the sentence describing the comparison vanished while the "
+        "comparison, the box and every number stayed")
+
+
+def test_a_comparison_that_cannot_be_used_leaves_nothing_describing_it(window):
+    """⚠ THE ERROR ARM DID WHAT CANCEL USED TO DO.
+
+    The box went to "Nothing — this one on its own" while
+    "77.4% … fits inside Matte-paper (measured)" stayed on screen, and
+    `_reference_path` kept pointing at the file that had just failed — so
+    the next setting change tried it again. A comparison that could not be
+    prepared is not loaded, and nothing may still describe one.
+    """
+    import gamut_app
+    window._compare_note = _Text()
+    window._compare_note.setText("a sentence about the old comparison")
+    window._reference = ("sRGB", object())
+    window._reference_m = None
+    window._reference_path = None
+    _chooser(window, "/nowhere/broken.ti3")
+
+    def cannot(_path):
+        raise ValueError("this file could not be used")
+    window._build_one = cannot
+    # The real one wants a QWidget parent; this window is a stand-in.
+    gamut_app.Notice.warn = staticmethod(lambda *a, **k: None)
+    window._compare_settled = 3
+    gamut_app.GamutApp._on_compare_changed(window)
+
+    assert window._reference is None
+    assert window._reference_path is None, (
+        "the failed file is still the comparison path, so the next setting "
+        "change will try it again")
+    assert window._compare_note.text() == "", (
+        "a sentence about a comparison that is not loaded")
+    assert window._compare.index == 0
