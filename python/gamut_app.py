@@ -6830,23 +6830,16 @@ def _profile_label(path: Path) -> str:
     the one distinction this whole window exists to draw. Saying "(profile)"
     keeps described and measured apart on every line that mentions them.
     """
-    suffix = path.suffix.lower()
-    if suffix == ".gam":
-        kind = "gamut file"
-    elif suffix in (".icc", ".icm"):
-        kind = "profile"
-    elif suffix in IMAGE_EXTENSIONS:
-        # ⚠ AND A PHOTOGRAPH IS NEITHER. Everything that was not a profile
-        # was called "measured", so a picture held as the comparison read
-        # "from-above (measured)" in every line about it — the exact
-        # confusion this function exists to prevent, one branch further on.
-        # A picture holds colours; nobody measured a paper to make it.
-        kind = "picture"
-    else:
-        # A measurement may be the comparison too, and calling it a profile
-        # would be exactly the confusion this function exists to prevent.
-        kind = "measured"
-    return f"{path.stem} ({kind})"
+    # ⚠ THE FIFTH COPY OF ONE RULE, AND THE LAST. This decided the kind from
+    # the suffix — the same reasoning that once called a photograph
+    # "from-above (measured)" in every line about it, which is the exact
+    # confusion this function exists to prevent. `shapes.KINDS` is what the
+    # BUILDER reads; the words a reader sees are chosen from that, so a
+    # label cannot disagree with the shape it names.
+    WORDS = {"gamutfile": "gamut file", "profile": "profile",
+             "picture": "picture", "measurement": "measured"}
+    kind = shapes.thing_for(path, IMAGE_EXTENSIONS).kind
+    return f"{path.stem} ({WORDS[kind]})"
 
 
 def _wrapped(label: QLabel, width: int = 0) -> QLabel:
@@ -12798,6 +12791,23 @@ class GamutApp(QMainWindow):
         claims a comparison that is not there.
         """
         choice = self._compare.currentData()
+        # ⚠ WHAT WAS LOADED, KEPT, IN CASE THE CHOOSER IS CANCELLED. This
+        # method clears the comparison before it knows whether a new one is
+        # coming, and the cancel arm returned early — so pressing Cancel
+        # silently threw away the comparison already on screen AND skipped
+        # the refresh, leaving its numbers behind it. Driven:
+        #
+        #     before   box "sRGB",     76.0% ... also fits inside sRGB
+        #     cancel   box "Nothing",  76.0% ... also fits inside sRGB
+        #
+        # Cancel means "never mind", so it puts back what was there.
+        # ⚠ THE LAST INDEX THAT WORKED, NOT THE CURRENT ONE. This handler
+        # runs AFTER the box has already moved to what was just picked, so
+        # `currentIndex()` here is the file item the reader is choosing —
+        # restoring that on cancel left the box reading "A profile, paper or
+        # picture…" over a comparison that was still sRGB.
+        was = (getattr(self, "_compare_settled", 0), self._reference,
+               self._reference_m, getattr(self, "_reference_path", None))
         self._reference = None
         self._reference_m = None
         if not (choice and choice[0] == "icc"):
@@ -12830,7 +12840,16 @@ class GamutApp(QMainWindow):
                     f"Pictures ({pictures});;"
                     "ArgyllCMS gamut files (*.gam);;All files (*)")
                 if not dlg.exec():
-                    self._compare.setCurrentIndex(0)
+                    # PUT BACK WHAT WAS THERE, and let the refresh below run
+                    # so nothing on screen is left describing it either way.
+                    index, ref, ref_m, ref_path = was
+                    self._reference, self._reference_m = ref, ref_m
+                    self._reference_path = ref_path
+                    self._compare.setCurrentIndex(
+                        index if ref is not None else 0)
+                    self._chart_profile_offer()
+                    self._forget_unused_facts()
+                    self._redraw()
                     return
                 path = dlg.selectedFiles()[0]
                 self._last_folder = str(Path(path).parent)
@@ -12866,6 +12885,8 @@ class GamutApp(QMainWindow):
             self._reference_m = None
             self._compare.setCurrentIndex(0)
             return
+        # WHAT THE BOX SHOULD GO BACK TO if the next chooser is cancelled.
+        self._compare_settled = self._compare.currentIndex()
         self._chart_profile_offer()
         # ⚠ AND HERE TOO, NOT ONLY IN `_load`. The first version of the bound
         # freed a photograph's colours when a FILE was opened and when
@@ -14041,6 +14062,12 @@ class GamutApp(QMainWindow):
         """
         if 0 <= which < len(self._slots):
             del self._slots[which]
+            # ⚠ AND THE PICTURE'S COLOURS GO WITH IT. The × was the one route
+            # that never gave them back — about 9.6 MB a photograph, held for
+            # the life of the window. `_load` frees them, "Close them all"
+            # frees them, changing the comparison frees them, and closing one
+            # file did not: the third half-covered version of this same fix.
+            self._forget_unused_facts()
         self._refresh_slot_labels()
         self._fill_chart_profiles()
         if (self._slots or self._reference is not None

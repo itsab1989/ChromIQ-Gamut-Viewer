@@ -72,7 +72,18 @@ def closing_window(*, chart, placed, reference=None, slots=None,
         _fill_chart_profiles=Recorder(),
         _redraw=Recorder(),
         _on_clear=Recorder(),
+        _image_facts={},
+        _reference_path=None,
     )
+    # ⚠ THE REAL HELPERS, BOUND — not stubs that shrug. Closing one file with
+    # its × now also gives that photograph's colours back (about 9.6 MB), and
+    # a stand-in that answered for that method would let the freeing quietly
+    # stop happening while this file went on passing. Fourth time today a
+    # hand-built stand-in has gone stale as the window grew a helper.
+    import gamut_app as _app
+    for helper in ("_facts_key", "_forget_unused_facts", "_lays_down_ink"):
+        setattr(w, helper, getattr(_app.GamutApp, helper).__get__(w,
+                                                                 _app.GamutApp))
     return w
 
 

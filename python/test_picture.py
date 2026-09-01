@@ -753,3 +753,39 @@ def test_the_hidden_end_note_does_not_call_a_photograph_a_paper():
                 assert "colours comes" not in reads, reads
                 assert "have paper white that" not in reads, reads
                 assert "levels of the page behind" in reads
+
+
+def test_every_route_that_removes_a_shape_gives_its_colours_back(tmp_path):
+    """⚠ THE × WAS THE ONE ROUTE THAT NEVER DID, and it is the third time
+    this same fix has gone in half-covered.
+
+    Opening a file frees them. "Close them all" frees them. Changing the
+    comparison frees them. Closing ONE file with its × did not — about
+    9.6 MB a photograph, kept for the life of the window. Driven before
+    fixing: 1 entry / 0.131 MB with the picture open, and 1 entry / 0.131 MB
+    after pressing its ×; now 0 / 0.000.
+
+    This checks the rule rather than one route: whatever is on screen keeps
+    its colours, and whatever is not, does not.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    shown = _a_picture(tmp_path / "kept", lambda x, y: (x, y, 60))
+    closed = _a_picture(tmp_path / "gone", lambda x, y: (y, x, 20))
+    hall = a_window(_slots=[], _reference_path=None, _image_facts={})
+    for one in (shown, closed):
+        hall._image_facts[hall._facts_key(one)] = {"colours": 1}
+
+    # Both on screen: both kept.
+    hall._slots = [(shown, None, None), (closed, None, None)]
+    hall._forget_unused_facts()
+    assert len(hall._image_facts) == 2
+
+    # One closed by any route at all: its colours go, the other's stay.
+    hall._slots = [(shown, None, None)]
+    hall._forget_unused_facts()
+    assert hall._facts_key(shown) in hall._image_facts
+    assert hall._facts_key(closed) not in hall._image_facts, (
+        "a photograph that is no longer on screen kept its colours — about "
+        "9.6 MB of them, for the life of the window")

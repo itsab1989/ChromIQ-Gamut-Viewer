@@ -43,17 +43,40 @@ class Label:
         return True
 
 
+class _Text:
+    """Anything with setText that a handler may touch on the way past."""
+
+    def __init__(self):
+        self.value = ""
+
+    def setText(self, t):           # noqa: N802  (Qt's name)
+        self.value = t
+
+    def text(self):
+        return self.value
+
+
 class Combo:
     """A stand-in for Compare with, remembering what it was set to."""
 
-    def __init__(self, index=2):
+    def __init__(self, index=2, data=None):
         self.index = index
         self.handled = 0
+        #: What `currentData()` answers, when a test needs a kind of
+        #: comparison other than the colour space this stand-in defaults to.
+        #: Without it a test asking for the file chooser silently got a
+        #: colour space instead and exercised nothing it meant to.
+        self.data = data
 
     def setCurrentIndex(self, i):   # noqa: N802  (Qt's name)
         self.index = i
 
+    def currentIndex(self):         # noqa: N802  (Qt's name)
+        return self.index
+
     def currentData(self):          # noqa: N802  (Qt's name)
+        if self.data is not None:
+            return self.data
         return None if self.index == 0 else ("space", "Adobe RGB (1998)")
 
 
@@ -224,3 +247,49 @@ def test_every_name_in_the_readout_list_is_a_readout_that_exists():
         assert name in gamut_app.GamutApp.READOUTS, (
             f"{name} is a readout and is not in the list, so it is neither "
             f"cleared with the files nor carried into a saved page")
+
+
+def test_cancelling_the_chooser_puts_back_what_was_there(window):
+    """⚠ CANCEL THREW THE COMPARISON AWAY AND LEFT ITS NUMBERS ON SCREEN.
+
+    `_on_compare_changed` clears the comparison before it knows whether a new
+    one is coming. The cancel arm then returned early — past the refresh — so
+    pressing Cancel discarded the comparison already loaded AND left the
+    sentences describing it behind. Driven:
+
+        before   box "sRGB",     76.0% ... also fits inside sRGB
+        cancel   box "Nothing",  76.0% ... also fits inside sRGB
+
+    ⚠ AND THE FIRST REPAIR TRADED ONE DISAGREEMENT FOR ANOTHER. It restored
+    the comparison from `currentIndex()` — but this handler runs AFTER the
+    box has moved to what was just picked, so the box read "A profile, paper
+    or picture…" over a comparison that was still sRGB. The index that is put
+    back is the last one that SETTLED.
+    """
+    import gamut_app
+
+    class Cancelled:
+        def exec(self):
+            return 0
+
+        def selectedFiles(self):
+            return []
+
+    window._file_dialog = lambda *a, **k: Cancelled()
+    window._compare_settled = 3
+    window._reference = ("sRGB", object())
+    window._reference_m = None
+    window._reference_path = None
+    window._compare.data = ("icc", None)     # "open a file…" was chosen
+    window._compare.index = 7                # and the box has already moved
+    window._compare_note = _Text()
+    window._last_folder = ""
+    window._chart_profile_offer = lambda: None
+    window._redraw = lambda: None
+    gamut_app.GamutApp._on_compare_changed(window)
+
+    assert window._reference is not None, (
+        "Cancel threw away the comparison that was already loaded")
+    assert window._compare.index == 3, (
+        f"the box was left showing something other than the comparison that "
+        f"is actually loaded: index {window._compare.index}")
