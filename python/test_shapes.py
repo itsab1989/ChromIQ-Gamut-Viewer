@@ -235,3 +235,43 @@ def test_a_kind_that_needs_a_file_refuses_to_exist_without_one():
         shapes.Thing("space", DEMO / "Glossy-paper.ti3")
     with pytest.raises(ValueError):
         shapes.Thing("nonsense", None)
+
+
+def test_a_kind_with_no_builder_refuses_instead_of_reading_it_as_paper(
+        tmp_path):
+    """⚠ THE FALL-THROUGH RETURNED A PLAUSIBLE ANSWER, NOT AN ERROR.
+
+    `shape_for` ended with the measurement build rather than a branch, so a
+    kind nobody had written a builder for would have been read as a measured
+    paper — and `read_measurement` SUCCEEDS on an ArgyllCMS ICC profile,
+    because the CTI3 target is embedded in it as text.
+    `demo/Glossy-paper.icc` gives 1168 patches and a paper white of L* 93.8
+    that way. A wrong shape that looks entirely reasonable is worse than a
+    crash, and the docstring claimed a `KeyError` that no line could raise.
+
+    This proves the refusal by ADDING a kind to the table, which is exactly
+    how the hole would be opened for real: the next kind someone adds.
+    """
+    import pytest
+    import shapes
+
+    added = dict(file=True, depends=("white", "space"))
+    shapes.KINDS["spectral"] = added          # a kind with no builder
+    try:
+        paper = tmp_path / "looks-like-anything.icc"
+        paper.write_bytes((HERE / "demo/Glossy-paper.icc").read_bytes())
+        thing = shapes.Thing("spectral", paper)
+        with pytest.raises(shapes.CannotBuild) as refused:
+            shapes.shape_for(thing, shapes.Settings())
+        assert "spectral" in str(refused.value)
+    finally:
+        del shapes.KINDS["spectral"]
+
+    # AND THE FILE IT WAS HANDED REALLY WOULD HAVE READ AS A PAPER, so the
+    # test above is not refusing something that would have failed anyway.
+    from ti3gamut import read_measurement
+    read_as_paper = read_measurement(HERE / "demo/Glossy-paper.icc", "D50",
+                                     False)
+    assert len(read_as_paper.lab) > 1000, (
+        "the ICC no longer reads as a measurement, so this test is now "
+        "proving less than it says it does")

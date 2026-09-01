@@ -175,11 +175,21 @@ def shape_for(thing: Thing, settings: Settings, *, stop=None):
     Returns `(gamut, measurement)` — the measurement is None for everything
     that is not a measurement, which is what every caller already expects.
 
-    ⚠ THERE IS NO BRANCH FOR A KIND TO BE MISSING FROM. `_in_lab` knew about
+    ⚠ EVERY KIND IS NAMED, AND AN UNNAMED ONE RAISES. `_in_lab` knew about
     profiles and gamut files and fell through to "read it as an ICC" for
     everything else, so a photograph raised and the DRAWN shape came back.
-    Every kind in KINDS is built here, and a kind that is not is a KeyError
-    at once rather than a wrong number later.
+
+    This method had the same shape of hole until 1 September, and the
+    docstring here claimed the opposite — that a kind with no branch was "a
+    KeyError at once". It was not: `measurement` was the fall-through, so a
+    kind nobody had written a branch for would have been READ AS A MEASURED
+    PAPER. That is not a crash but a plausible wrong answer, because
+    `read_measurement` SUCCEEDS on an ArgyllCMS ICC profile — the CTI3 target
+    is embedded in it as text, and `demo/Glossy-paper.icc` yields 1168
+    patches and a paper white of L* 93.8.
+
+    So `measurement` is a branch like the others now, and the end of the
+    method raises `CannotBuild`, which was defined here and never raised.
     """
     from gamutview import build_gamut, xyz_to_lab
     from references import gam_gamut, icc_gamut, reference_gamut
@@ -212,7 +222,12 @@ def shape_for(thing: Thing, settings: Settings, *, stop=None):
             "D50" if white == "D50" else "D65", max(24, settings.detail * 3))
         return build_gamut(xyz_to_lab(verts, white), input_space="lab",
                            space=space, white_point=white), None
-    m = read_measurement(thing.path, white, settings.tick)
-    drive = None if settings.mode == "hull" else m.device
-    return build_gamut(m.lab, drive, input_space="lab", space=space,
-                       white_point=white), m
+    if thing.kind == "measurement":
+        m = read_measurement(thing.path, white, settings.tick)
+        drive = None if settings.mode == "hull" else m.device
+        return build_gamut(m.lab, drive, input_space="lab", space=space,
+                           white_point=white), m
+    raise CannotBuild(
+        f"there is no builder for a {thing.kind!r}, so this shape cannot be "
+        f"made — which is said here rather than guessed at, because the "
+        f"fall-through this replaces would have read it as a measured paper")
