@@ -275,3 +275,46 @@ def test_a_kind_with_no_builder_refuses_instead_of_reading_it_as_paper(
     assert len(read_as_paper.lab) > 1000, (
         "the ICC no longer reads as a measurement, so this test is now "
         "proving less than it says it does")
+
+
+@pytest.mark.slow
+def test_the_one_door_agrees_with_the_builders_it_replaced(tmp_path):
+    """⚠ `shape_for` HAD NO TEST AT ALL. It could be made to `raise` on every
+    call and this whole file still passed, because every test here went
+    through `build()` above — a hand-written twin of the same six branches.
+
+    Deleting that twin and pointing the tests at `shape_for`, which is the
+    obvious repair, would be the wrong one: the twin is the INDEPENDENT
+    ORACLE. The dependency table is proved by building against the real
+    builders, and if the table were proved against `shape_for` instead, a
+    door with a bug in it would simply agree with itself.
+
+    So the twin stays and the door answers to it. Every kind, in two spaces
+    and under both ticks: the same vertices, or this fails. Drift between
+    them — the thing that made the twin a liability — now cannot be silent
+    in either direction.
+    """
+    seen = set()
+    for thing, said in things(tmp_path):
+        for space in ("lab", "luv"):
+            for tick in (False, True):
+                settings = shapes.Settings(space=space, tick=tick, detail=9)
+                theirs = build(thing, settings)
+                mine, measurement = shapes.shape_for(thing, settings)
+                seen.add(thing.kind)
+                a = np.asarray(theirs.vertices, float)
+                b = np.asarray(mine.vertices, float)
+                assert a.shape == b.shape, (
+                    f"the door and the builders disagree in SIZE for "
+                    f"{said} in {space}, tick={tick}: {a.shape} vs {b.shape}")
+                assert np.allclose(a, b, atol=1e-9), (
+                    f"the door and the builders disagree for {said} in "
+                    f"{space}, tick={tick}")
+                assert mine.space == space, (
+                    f"{said} came back in {mine.space!r}, not {space!r}")
+                # The second value means "the measurement" and nothing else.
+                assert (measurement is not None) == (thing.kind ==
+                                                     "measurement")
+    assert seen == set(shapes.KINDS), (
+        f"kinds never put through the door: {set(shapes.KINDS) - seen} — a "
+        f"branch nothing builds is a branch nothing checks")
