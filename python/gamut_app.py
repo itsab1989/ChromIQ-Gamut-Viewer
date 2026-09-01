@@ -13370,6 +13370,25 @@ class GamutApp(QMainWindow):
                 return gamut
             built, _m = shapes.shape_for(thing,
                                          self._settings().drawn_in("lab"))
+        # ⚠ A REFUSAL IS NOT A READ ERROR, AND MUST NOT COME BACK AS THE
+        # DRAWN SHAPE. `shape_for` raises CannotBuild when a kind has no
+        # builder — added so such a kind is refused rather than read as a
+        # measured paper. Caught by the broad handler below, that refusal
+        # turned straight back into `gamut`, which is the shape ON SCREEN in
+        # whatever space it happens to be drawn in: verbatim the fault
+        # shapes.py's own header describes, a chart counted against a gamut
+        # in the wrong space — "0 inside, 0 on the edge, 480 outside, worst
+        # 99.0 ΔE" against a truth of 390. One wrong shape traded for another.
+        #
+        # No shape, then. Every caller handles that already: both list
+        # consumers judge inside a try, `_chart_marked_against` returns the
+        # chart unmarked, and `_update_coverage` falls back to the drawn pair.
+        #
+        # ORDER, NOT TYPE-DISCRIMINATION. Everything that must still return
+        # the drawn shape — an unreadable ICC, a picture that will not open,
+        # a Stopped build, Qhull giving up — is untouched below.
+        except shapes.CannotBuild:
+            return None
         except Exception:          # noqa: BLE001 — a readout never crashes
             return gamut
         self._lab_gamuts[key] = built
@@ -13584,6 +13603,25 @@ class GamutApp(QMainWindow):
                     self._settings().drawn_in("lab"))
             else:
                 return gamut
+        # ⚠ A REFUSAL IS NOT A READ ERROR, AND MUST NOT COME BACK AS THE
+        # DRAWN SHAPE. `shape_for` raises CannotBuild when a kind has no
+        # builder — added so such a kind is refused rather than read as a
+        # measured paper. Caught by the broad handler below, that refusal
+        # turned straight back into `gamut`, which is the shape ON SCREEN in
+        # whatever space it happens to be drawn in: verbatim the fault
+        # shapes.py's own header describes, a chart counted against a gamut
+        # in the wrong space — "0 inside, 0 on the edge, 480 outside, worst
+        # 99.0 ΔE" against a truth of 390. One wrong shape traded for another.
+        #
+        # No shape, then. Every caller handles that already: both list
+        # consumers judge inside a try, `_chart_marked_against` returns the
+        # chart unmarked, and `_update_coverage` falls back to the drawn pair.
+        #
+        # ORDER, NOT TYPE-DISCRIMINATION. Everything that must still return
+        # the drawn shape — an unreadable ICC, a picture that will not open,
+        # a Stopped build, Qhull giving up — is untouched below.
+        except shapes.CannotBuild:
+            return None
         except Exception:          # noqa: BLE001 — never take the view down
             return gamut
         if key is not None:

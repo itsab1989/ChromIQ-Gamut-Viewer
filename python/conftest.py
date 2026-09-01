@@ -31,3 +31,23 @@ os.environ.setdefault("GAMUTVIEW_SCRATCH_SETTINGS", "1")
 # QT_QPA_PLATFORM= (empty) in the environment still wins, for anybody who
 # wants to watch a test run.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+def pytest_configure(config):
+    """Name the marks this suite uses, so pytest stops calling them typos.
+
+    ⚠ AND SO THAT SKIPPING THEM IS A DECISION SOMEBODY MAKES. `slow` was
+    never registered, which meant two things at once: every run printed
+    `PytestUnknownMarkWarning: Unknown pytest.mark.slow - is this a typo?`,
+    and `-m "not slow"` was a filter nobody had thought about. It is
+    registered here and the tests wearing it are the ones that BUILD real
+    shapes off ArgyllCMS — the dependency table proved by building, which is
+    minutes rather than seconds.
+
+    The test of the one door is deliberately NOT among them. It is the only
+    test `shape_for` has, and a marker that can hide the only test of a
+    thing is a marker that will eventually hide it.
+    """
+    config.addinivalue_line(
+        "markers",
+        "slow: builds real gamuts through ArgyllCMS; minutes, not seconds")

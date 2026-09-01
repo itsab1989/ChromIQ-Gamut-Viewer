@@ -277,7 +277,10 @@ def test_a_kind_with_no_builder_refuses_instead_of_reading_it_as_paper(
         "proving less than it says it does")
 
 
-@pytest.mark.slow
+# ⚠ NOT MARKED `slow`, ON PURPOSE. This is the ONLY test `shape_for` has —
+# the file's other tests all go through the hand-written twin — so a marker
+# that lets it be filtered out is a marker that will one day filter out the
+# only thing watching the door. It costs about ten seconds.
 def test_the_one_door_agrees_with_the_builders_it_replaced(tmp_path):
     """⚠ `shape_for` HAD NO TEST AT ALL. It could be made to `raise` on every
     call and this whole file still passed, because every test here went
@@ -318,3 +321,61 @@ def test_the_one_door_agrees_with_the_builders_it_replaced(tmp_path):
     assert seen == set(shapes.KINDS), (
         f"kinds never put through the door: {set(shapes.KINDS) - seen} — a "
         f"branch nothing builds is a branch nothing checks")
+
+
+def test_a_refusal_does_not_come_back_as_the_shape_on_screen(tmp_path):
+    """⚠ THE REFUSAL WAS ONE `except` SHORT OF BEING A REFUSAL.
+
+    `shape_for` raises `CannotBuild` for a kind with no builder, so it is
+    refused rather than read as a measured paper. But `_in_lab` and
+    `_reference_in_lab` both end in
+
+        except Exception:      # never take the view down
+            return gamut
+
+    and `gamut` there is THE SHAPE AS DRAWN — in whatever space the window
+    happens to be showing. So the refusal was caught and converted into
+    exactly the fault shapes.py's own header describes: a chart counted
+    against a gamut in the wrong space, "0 inside, 0 on the edge, 480
+    outside, worst 99.0 ΔE" against a truth of 390. One wrong shape traded
+    for another, quietly.
+
+    The narrow clause comes first now. This test proves the ORDER, which is
+    the whole of the fix: a `CannotBuild` must reach `None`, and everything
+    else must still hand back the drawn shape so the view survives.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    drawn = NS(space="luv", vertices=[[0.0, 0.0, 0.0]])
+
+    def hall(raising):
+        return NS(_white=NS(currentData=lambda: "D50"),
+                  _mode=NS(currentData=lambda: "device"),
+                  _relative=NS(isChecked=lambda: False),
+                  _detail=NS(value=lambda: 9),
+                  _space=NS(currentData=lambda: "luv"),
+                  _build_space=lambda: "luv",
+                  _settings=gamut_app.GamutApp._settings.__get__(
+                      raising, gamut_app.GamutApp),
+                  _lab_gamuts={},
+                  _shape_key=lambda path, space, **kw: (str(path), space))
+
+    for raised, expected, why in (
+            (shapes.CannotBuild("no builder"), None,
+             "a refusal came back as the shape on screen"),
+            (ValueError("this file is not readable"), drawn,
+             "an ordinary read error took the view down")):
+        me = hall(None)
+        me._settings = lambda: shapes.Settings(space="luv")
+
+        def refuse(*a, **k):
+            raise raised
+        old = shapes.shape_for
+        shapes.shape_for = refuse
+        try:
+            got = gamut_app.GamutApp._in_lab(
+                me, drawn, tmp_path / "anything.icc", None)
+        finally:
+            shapes.shape_for = old
+        assert got is expected, why
