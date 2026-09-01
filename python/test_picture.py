@@ -789,3 +789,47 @@ def test_every_route_that_removes_a_shape_gives_its_colours_back(tmp_path):
     assert hall._facts_key(closed) not in hall._image_facts, (
         "a photograph that is no longer on screen kept its colours — about "
         "9.6 MB of them, for the life of the window")
+
+
+def test_a_gesture_about_one_file_forgets_only_that_file(tmp_path):
+    """⚠ TOO LITTLE AND TOO MUCH, IN ONE LINE.
+
+    Choosing a comparison cleared `_reference_cache` and `_lab_gamuts` —
+
+    * TOO LITTLE: not `_other_whites`, which feeds the both-ways sentence.
+      One paragraph then read "255 outside" in its headline and "151 outside
+      as your instrument measured the paper, and 0 once the paper is judged
+      against its own white" three lines below: the new file above, the old
+      file underneath, and a nonsense zero.
+    * TOO MUCH: `_lab_gamuts.clear()` threw away an unrelated paper's CIELAB
+      shape as well, so picking a comparison rewrote another file's verdict.
+
+    A gesture about one file owns that file's entries and no others.
+    """
+    import gamut_app
+
+    mine = tmp_path / "mine.ti3"
+    mine.write_text("x")
+    other = tmp_path / "other.ti3"
+    other.write_text("y")
+    hall = a_window(_lab_gamuts={}, _other_whites={}, _image_facts={})
+    hall._forget_shapes_of = gamut_app.GamutApp._forget_shapes_of.__get__(
+        hall, gamut_app.GamutApp)
+
+    for who in (mine, other):
+        hall._lab_gamuts[("measurement", str(who), "D50", "lab")] = "shape"
+        hall._other_whites[("measurement", str(who), "D50", "lab")] = "pair"
+        hall._image_facts[hall._facts_key(who)] = {"colours": 1}
+
+    hall._forget_shapes_of(mine)
+
+    for cache, what in ((hall._lab_gamuts, "the CIELAB shape"),
+                        (hall._other_whites, "the both-ways readings")):
+        assert not [k for k in cache if k[1] == str(mine)], (
+            f"{what} of the file the gesture was about survived, so the "
+            f"sentence beside it still describes the file as it used to be")
+        assert [k for k in cache if k[1] == str(other)], (
+            f"{what} of an UNRELATED file was thrown away, so a gesture "
+            f"about one file rewrote another file's numbers")
+    assert hall._facts_key(mine) not in hall._image_facts
+    assert hall._facts_key(other) in hall._image_facts

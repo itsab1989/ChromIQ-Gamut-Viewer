@@ -10358,6 +10358,32 @@ class GamutApp(QMainWindow):
         """
         return (str(path),)
 
+    def _forget_shapes_of(self, path) -> None:
+        """Drop every cached shape derived from ONE file.
+
+        ⚠ ONE FILE, NOT EVERY FILE. Choosing a comparison used to
+        `self._lab_gamuts.clear()`, which threw away the CIELAB shape of an
+        unrelated paper in a slot as well — and rebuilt it from whatever was
+        on disk, so picking a comparison rewrote another file's verdict.
+        A gesture about one file owns that file's entries and no others.
+
+        ⚠ AND ALL THREE CACHES, NOT TWO. `_other_whites` was left out when
+        the timestamp came out of the key, and it is what feeds the
+        both-ways sentence: one paragraph then read "255 outside" in its
+        headline and "151 outside as your instrument measured the paper, and
+        0 once the paper is judged against its own white" three lines below —
+        the new file above, the old file underneath, and a nonsense zero.
+
+        Every key here begins (kind, str(path), …) or is (str(path),), which
+        is what makes one file's entries findable at all.
+        """
+        name = str(path)
+        for cache in (self._lab_gamuts, self._other_whites):
+            for key in [k for k in cache
+                        if isinstance(k, tuple) and len(k) > 1 and k[1] == name]:
+                del cache[key]
+        self._image_facts.pop(self._facts_key(path), None)
+
     def _forget_unused_facts(self) -> None:
         """Drop the facts of pictures nothing on screen is showing.
 
@@ -12858,11 +12884,11 @@ class GamutApp(QMainWindow):
                 # key no longer carries the file's timestamp — that made the
                 # numbers describe a file the window was not drawing — so
                 # the rebuild belongs on the gesture instead, exactly as
-                # `_load` already empties three caches when a file is opened.
+                # `_load` already empties caches when a file is opened.
                 # Choosing a file that has been edited since must not hand
                 # back the shape it used to have.
                 self._reference_cache.clear()
-                self._lab_gamuts.clear()
+                self._forget_shapes_of(self._reference_path)
                 chosen = Path(path)
                 built, _m = self._build_one(chosen)
                 self._reference_m = _m
@@ -15172,9 +15198,27 @@ class GamutApp(QMainWindow):
             self._redraw()
 
     def _rebuild(self) -> None:
-        """A setting that changes the shape — rebuild every loaded measurement."""
+        """A setting that changes the shape — rebuild every loaded measurement.
+
+        ⚠ THIS RE-READS EVERY SLOT FROM DISK, so it is a "the file is being
+        read again" gesture exactly as `_load` is, and it must forget what
+        was derived from the old read. It did not, and four ordinary
+        controls reach it — Draw it in, the white point, How the shape is
+        worked out, and the paper-white tick. One nudge of any of them, on a
+        file that had been edited in place, put both files in one frame:
+
+            How much colour it holds   749,436          <- the new bytes
+            paper: … paper white L* 92                  <- the new bytes
+            paper: 315 inside, 14 on the edge, 151 outside   <- the OLD file
+            … your instrument measured this one at L* 93.8   <- the OLD file
+
+        with the truth for the file being drawn being 255 outside at L* 92.1.
+        Two paper whites for one paper, four lines apart.
+        """
         if not self._slots:
             return
+        for path, _g, _m in self._slots:
+            self._forget_shapes_of(path)
         rebuilt = []
         for path, _g, _m in self._slots:
             try:
