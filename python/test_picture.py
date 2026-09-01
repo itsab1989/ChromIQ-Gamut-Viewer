@@ -833,3 +833,63 @@ def test_a_gesture_about_one_file_forgets_only_that_file(tmp_path):
             f"about one file rewrote another file's numbers")
     assert hall._facts_key(mine) not in hall._image_facts
     assert hall._facts_key(other) in hall._image_facts
+
+
+def test_a_papers_white_does_not_depend_on_the_space_it_is_drawn_in():
+    """⚠ "a\\*" AND "b\\*" WERE PRINTED FOR NUMBERS THAT WERE u\\* AND v\\*.
+
+    `_update_range` worked the paper white out on the DRAWN shape and then
+    labelled its two components a* and b*. In CIELUV they are u* and v*.
+    L* is shared by the two spaces, so only the bracketed pair moved, and
+    one paper read
+
+        CIELAB   paper white L* 94 and cool (a* -0.4, b* -3.3)
+        CIELUV   paper white L* 94 and cool (a* -2.4, b* -4.2)
+
+    — which reads as two measurements disagreeing rather than as two names
+    for one colour. The comment above that line already said the WHITE does
+    not depend on the space being drawn, and stopped one step short of the
+    numbers describing it.
+
+    (Only CIELAB and CIELUV reach this panel: `AXES[...]["cylindrical"]` is
+    False for CIE XYZ, so the readout is hidden there.)
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from gamutview import build_gamut
+    from ti3gamut import read_measurement
+
+    m = read_measurement(HERE / "demo" / "Glossy-paper.ti3", "D50", False)
+    said = {}
+    for space in ("lab", "luv"):
+        shape = build_gamut(m.lab, m.device, input_space="lab", space=space,
+                            white_point="D50")
+        hall = NS(_slots=[(HERE / "demo" / "Glossy-paper.ti3", shape, m)],
+                  _space=NS(currentData=lambda s=space: s),
+                  _paint="by-lightness",       # skips the hidden-end note
+                  _range=NS(setText=lambda t: said.__setitem__(space, t)),
+                  _page_colour=lambda: "#1b1b1b",
+                  # ⚠ NOT `lambda w: w`. The real one carries the white
+                  # INTO the drawn space, which is the whole mechanism this
+                  # test is about — an identity stub made the fault
+                  # impossible and the control passed with it re-injected.
+                  _white=NS(currentData=lambda: "D50"),
+                  _in_lab=lambda g, p=None, mm=None: build_gamut(
+                      m.lab, m.device, input_space="lab", space="lab",
+                      white_point="D50"),
+                  _lays_down_ink=lambda p: True)
+        # The real note-maker, bound — a stub would answer for the very
+        # sentence this test is about.
+        hall._hidden_end_note = gamut_app.GamutApp._hidden_end_note
+        hall._white_in_this_space = (
+            gamut_app.GamutApp._white_in_this_space.__get__(
+                hall, gamut_app.GamutApp))
+        gamut_app.GamutApp._update_range(hall)
+
+    assert said.get("lab") and said.get("luv"), said
+    assert said["lab"] == said["luv"], (
+        f"the same paper is described differently depending on the space "
+        f"being drawn:\n  CIELAB {said['lab']}\n  CIELUV {said['luv']}")
+    # AND IT IS THE MEASURED WHITE, not whatever the drawn hull's top vertex
+    # happens to be.
+    assert f"{m.white_lab[1]:+.1f}" in said["lab"], said["lab"]

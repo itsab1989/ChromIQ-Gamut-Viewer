@@ -18532,7 +18532,26 @@ class GamutApp(QMainWindow):
                 # a measurement and a readout must not depend on which.
                 known = self._white_in_this_space(
                     getattr(measurement, "white_lab", None))
-                lab = paper_white(g, known)
+                # ⚠ AND THE WHITE ITSELF IS WORKED OUT IN CIELAB, WHATEVER
+                # IS BEING DRAWN. `paper_white` was handed the DRAWN shape,
+                # and the two numbers beside it were then printed as
+                # "(a* …, b* …)" — which in CIELUV they are not: they are
+                # u* and v*. L* is shared by the two spaces, so only the
+                # bracketed pair moved, and one paper read
+                #
+                #     CIELAB   paper white L* 94 and cool (a* -0.4, b* -3.3)
+                #     CIELUV   paper white L* 94 and cool (a* -2.4, b* -4.2)
+                #
+                # which reads as two measurements disagreeing rather than as
+                # two names for one colour. A paper's white is a fact about
+                # the paper; it does not depend on which space the picture
+                # happens to be drawn in — the comment above already says
+                # exactly that about WHICH patch is the white, and stopped
+                # one step short of the numbers describing it.
+                judged = self._in_lab(g, path, measurement)
+                lab = (paper_white(judged,
+                                   getattr(measurement, "white_lab", None))
+                       if judged is not None else paper_white(g, known))
                 how = describe_white(lab)
                 # The colour itself, and the same words with the joining
                 # "and" in front — two sentences want it, punctuated
