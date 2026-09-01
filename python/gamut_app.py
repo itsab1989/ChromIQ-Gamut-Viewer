@@ -18065,7 +18065,28 @@ class GamutApp(QMainWindow):
             f"{b_name}.{loss}\n"
             f"{100 * ba:.1f}% of {b_name} fits inside {a_name}.\n"
             "The two numbers differ because fitting inside is not the same "
-            "question in both directions.")
+            "question in both directions. "
+            # ⚠ AND WHICH RULER MEASURED THEM. Both are shares of VOLUME, and
+            # a volume ratio is defined in every space and comes out
+            # differently in each: one pair of papers reads 77.4% in CIELAB,
+            # 80.5% in CIELUV and 77.9% in CIE XYZ, and a paper against sRGB
+            # reads 76.0 / 82.8 / 88.9 — thirteen points on a number somebody
+            # chooses a paper by, with nothing moving but Draw it in.
+            #
+            # ⚠ AND "VOLUME", SAID OUT LOUD. This method's own docstring
+            # records that the commonest misreading is "77.4% of my
+            # photograph will print", which is wrong by a factor of five in
+            # the comforting direction. The word is the correction.
+            #
+            # Not forced into CIELAB: `coverage()` is also computed for the
+            # exported table from the drawn shapes, `shared_volume` two lines
+            # below is the same kind of quantity, and the saved page names
+            # the space in its units line. Answering one of those four in
+            # CIELAB and the rest in the drawn space would put the
+            # disagreement inside the panel instead of between visits to it.
+            f"Both are shares of volume measured in "
+            f"{self._measured_in()}; drawn in another space they come out "
+            f"differently.")
         # In CIELAB, always: a picture's facts are CIELAB and nothing else.
         a_lab, b_lab = (lab_pair if lab_pair else (a, b))
         self._update_picture_loss(a_name, a_lab if a_lab is not None else a,
@@ -18449,6 +18470,22 @@ class GamutApp(QMainWindow):
         if value >= 1:
             return f"{value:,.2f}"
         return f"{value:.4f}"
+
+    #: What each space is called in the sentence that names it. The combo
+    #: says "CIELAB — for print"; a readout wants the name alone.
+    SPACE_NAMES = {"lab": "CIELAB", "luv": "CIELUV", "xyz": "CIE XYZ",
+                   "rgb": "ink amounts"}
+
+    def _measured_in(self) -> str:
+        """The space these shares of volume were actually measured in.
+
+        THE SPACE IT WAS BUILT IN, not the one on the axes — the same rule
+        `_volume_units` follows, and for the same reason: in ink amounts the
+        shapes are still measured in CIELAB, they are simply not drawn, and
+        putting an ink label on a colour measurement would be a lie about
+        which question was answered.
+        """
+        return self.SPACE_NAMES.get(self._build_space(), "CIELAB")
 
     def _volume_units(self) -> str:
         """What the volume figure is counted in, for the space now chosen.

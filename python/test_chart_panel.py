@@ -1049,10 +1049,17 @@ def test_one_verdict_serves_both_boxes(app):
 # --------------------------------------------------------------------------
 
 
-def coverage_text(ab, ba, kind, a_name="knut", b_name="sRGB", picture=False):
+def coverage_text(ab, ba, kind, a_name="knut", b_name="sRGB", picture=False,
+                  space="lab"):
     import gamut_app
     said = {}
     stub = SimpleNamespace(
+        # ⚠ THE REAL `_build_space`, through a real-looking control. A stub
+        # `lambda: space` returned "rgb" for ink amounts, where the real rule
+        # maps anything outside SPACES to "lab" — so the stub disagreed with
+        # the window and the test failed on the app being right.
+        _space=SimpleNamespace(currentData=lambda: space),
+        SPACE_NAMES=gamut_app.GamutApp.SPACE_NAMES,
         _reference=(b_name, object()),
         _slots=[(SimpleNamespace(stem=a_name), object(), None)],
         _shared_lbl=SimpleNamespace(setText=lambda t: None),
@@ -1065,6 +1072,11 @@ def coverage_text(ab, ba, kind, a_name="knut", b_name="sRGB", picture=False):
         _is_picture=lambda name: picture,
         _update_picture_loss=lambda *a: None,
         _update_pair=lambda *a: None)
+    # The real one, bound: it is what decides the space the sentence names,
+    # and a stub would answer for the thing under test.
+    for real in ("_build_space", "_measured_in"):
+        setattr(stub, real, getattr(gamut_app.GamutApp, real).__get__(
+            stub, gamut_app.GamutApp))
     gamut_app.GamutApp._update_coverage(stub)
     return said.get("t", "")
 
@@ -1781,7 +1793,12 @@ def test_two_papers_with_no_comparison_get_cielab_twins_too(app):
         _is_picture=lambda name: name == "holiday",
         _in_lab=lambda g, p=None, m=None: lab,
         _update_pair=lambda *a: None,
-        _update_picture_loss=lambda *a: got.setdefault("args", a))
+        _update_picture_loss=lambda *a: got.setdefault("args", a),
+        _space=NS(currentData=lambda: "luv"),
+        SPACE_NAMES=gamut_app.GamutApp.SPACE_NAMES)
+    for real in ("_build_space", "_measured_in"):
+        setattr(stub, real, getattr(gamut_app.GamutApp, real).__get__(
+            stub, gamut_app.GamutApp))
     gamut_app.GamutApp._update_coverage(stub)
     args = got.get("args")
     assert args is not None, "the picture loss was never asked for"
@@ -1813,7 +1830,12 @@ def test_the_coverage_readout_hands_the_picture_loss_a_cielab_shape(app):
         _in_lab=lambda g, p=None, m=None: lab,
         _reference_in_lab=lambda: lab,
         _update_pair=lambda *a: None,
-        _update_picture_loss=lambda *a: got.setdefault("args", a))
+        _update_picture_loss=lambda *a: got.setdefault("args", a),
+        _space=NS(currentData=lambda: "luv"),
+        SPACE_NAMES=gamut_app.GamutApp.SPACE_NAMES)
+    for real in ("_build_space", "_measured_in"):
+        setattr(stub, real, getattr(gamut_app.GamutApp, real).__get__(
+            stub, gamut_app.GamutApp))
     gamut_app.GamutApp._update_coverage(stub)
     args = got.get("args")
     assert args is not None, "the picture loss was never asked for"
@@ -2019,3 +2041,37 @@ def test_only_a_measured_paper_is_offered_two_readings(app):
         assert asked(DEMO / not_a_paper) is None, (
             f"{not_a_paper} was offered two readings of a white it has not "
             f"got")
+
+
+def test_the_coverage_share_names_the_ruler_that_measured_it(app):
+    """⚠ ONE PAIR OF PAPERS, THREE ANSWERS, AND NOTHING SAYING WHICH.
+
+    Coverage is a share of VOLUME, and a volume ratio is defined in every
+    space and comes out differently in each. Driven on the demo files with
+    nothing moving but "Draw it in":
+
+        Glossy vs Matte   77.4%  CIELAB   80.5%  CIELUV   77.9%  CIE XYZ
+        Glossy vs sRGB    76.0%  CIELAB   82.8%  CIELUV   88.9%  CIE XYZ
+
+    Thirteen points on a number somebody chooses a paper by. Forcing it into
+    CIELAB was tried and rejected: `coverage()` is also computed for the
+    exported table from the drawn shapes, `shared_volume` two lines below is
+    the same kind of quantity, and the saved page names the space in its
+    units line — so one of the four would answer in CIELAB and three in the
+    drawn space, which moves the disagreement inside the panel.
+
+    ⚠ AND IT NAMES THE SPACE THE SHAPES WERE BUILT IN, not the one on the
+    axes. In ink amounts they are still measured in CIELAB and simply not
+    drawn; an ink label on a colour measurement would name the wrong
+    question. `_volume_units` already follows that rule for the same reason.
+    """
+    for space, name in (("lab", "CIELAB"), ("luv", "CIELUV"),
+                        ("xyz", "CIE XYZ"), ("rgb", "CIELAB")):
+        said = coverage_text(0.774, 1.0, None, space=space)
+        assert f"shares of volume measured in {name}" in said, (
+            f"drawn in {space!r}, the sentence does not say the shares were "
+            f"measured in {name}: {said!r}")
+    # AND THE WORD "VOLUME" IS THERE, because this panel's own docstring
+    # records that the commonest misreading is "77.4% of my photograph will
+    # print" — wrong by a factor of five, in the comforting direction.
+    assert "shares of volume" in coverage_text(0.774, 1.0, None)
