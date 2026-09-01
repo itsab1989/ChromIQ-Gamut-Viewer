@@ -712,18 +712,44 @@ def test_what_a_file_IS_never_depends_on_a_cache(tmp_path):
 def test_the_hidden_end_note_does_not_call_a_photograph_a_paper():
     """A fifth readout, two lines under the one fixed for exactly this.
 
-    `_hidden_end_note` hard-coded "either paper reaches" and "have paper
-    whites that come within…", and its input list was built outside the kind
-    test, so a photograph went in unconditionally.
+    ⚠ AND THE FIRST VERSION OF THIS TEST USED A FIXTURE THE PRODUCER CANNOT
+    PRODUCE. It passed `"whites"` as the end-name. `gamutview.hidden_end`
+    returns `"blacks"` or `"paper white"` — never `"whites"` — so the one
+    shape where that word is interpolated VERBATIM into the sentence was
+    never exercised, and a single photograph on the light appearance was
+    still told "paleshot's PAPER WHITE comes within 1 levels…". Three of the
+    four shapes were fixed and the test checked those three.
+
+    That is the same family as the misspelled `weights` key on 30 August: a
+    test whose input the real code can never hand it is not a test of the
+    real code. So this one sweeps ALL FOUR SHAPES with the two values
+    `hidden_end` really returns.
     """
     import gamut_app
+    import gamutview
+    import inspect
+
+    # The producer's own vocabulary, read from it rather than assumed.
+    ends = [w for w in ("blacks", "paper white")
+            if f'"{w}"' in inspect.getsource(gamutview.hidden_end)]
+    assert set(ends) == {"blacks", "paper white"}, (
+        f"hidden_end's end-names changed: {ends} — this test's fixtures are "
+        f"now describing something it cannot return")
+
     note = gamut_app.GamutApp._hidden_end_note
-    both = [("holiday", "whites", 42.0, 4.0), ("three", "whites", 30.0, 3.0)]
-    said = note(both, False)
-    assert "paper" not in said, said
-    assert "lightest colours" in said and "either one reaches" in said
-    # AND PAPERS STILL READ AS PAPERS.
-    papers = note(both, True)
-    assert "paper whites" in papers and "either paper reaches" in papers
-    one = note([("holiday", "blacks", 42.0, 4.0)], False)
-    assert "the paper reaches" not in one and "it reaches" in one
+    for which in ends:
+        one = [("holiday", which, 42.0, 4.0)]
+        two = one + [("three", which, 30.0, 3.0)]
+        for lost in (one, two):
+            said = note(lost, False)          # not papers
+            assert "paper" not in said, (
+                f"a photograph was given a paper ({which}, "
+                f"{len(lost)} shape/s): {said}")
+            papers = note(lost, True)
+            if which == "paper white":
+                assert "paper" in papers, papers
+            # AND IT MUST STILL READ AS ENGLISH IN EVERY ONE OF THE EIGHT.
+            for reads in (said, papers):
+                assert "colours comes" not in reads, reads
+                assert "have paper white that" not in reads, reads
+                assert "levels of the page behind" in reads

@@ -133,12 +133,22 @@ def test_it_goes_through_the_combo_box_rather_than_behind_it(window):
 
 
 def test_the_figures_go_with_the_files_they_described(window):
+    """⚠ FROM THE WINDOW'S OWN LIST, NOT A COPY OF IT.
+
+    This test held a fourth hand-written copy of the readout names — the
+    exact fault `READOUTS` exists to prevent, and its comment describes:
+    "a list that must be kept in step by hand will not be". The copy still
+    named `_pair`, which is not a widget on the window at all and never was,
+    and it was missing `_range` and `_shared_lbl`, which are.
+
+    A list that omits a readout cannot notice that readout going stale.
+    """
+    import gamut_app
     close_them_all(window)
     left = {name: getattr(window, name).text()
-            for name in ("_coverage", "_picture_loss", "_pair", "_drift",
-                         "_drift_worst", "_chart_headline", "_chart_rows",
-                         "_chart_spread")
-            if getattr(window, name).text()}
+            for name in gamut_app.GamutApp.READOUTS
+            if getattr(window, name, None) is not None
+            and getattr(window, name).text()}
     assert not left, (
         f"these still describe files that were just closed: {sorted(left)}")
 
@@ -185,3 +195,32 @@ def test_the_pictures_colours_are_handed_back_too(window):
     assert window._image_facts == {}, (
         "the photographs' colours survived Close them all — about 9.6 MB "
         "each, for the life of the window")
+
+
+def test_every_name_in_the_readout_list_is_a_readout_that_exists():
+    """⚠ `_pair` SAT IN THAT LIST AND WAS NOT A WIDGET AT ALL.
+
+    Both consumers skip a missing name with `getattr(..., None)`, so it did
+    nothing, quietly, for as long as it was there: not cleared, not copied
+    into a saved page, not noticed. A list whose entries are silently
+    optional is a list that cannot be wrong out loud.
+
+    The other half of the same fault: `_range` and `_shared_lbl` ARE
+    readouts and were missing from it, so every saved page went out without
+    the range panel and without "Both can print …% of everything either one
+    can". Driven before fixing, both absent from `_readout_text()`.
+    """
+    import inspect
+    import gamut_app
+
+    src = inspect.getsource(gamut_app.GamutApp)
+    for name in gamut_app.GamutApp.READOUTS:
+        assert f"self.{name} = " in src, (
+            f"{name} is in READOUTS and is never assigned on the window — "
+            f"both consumers skip it in silence, so it does nothing at all")
+    # AND THE READOUTS THAT EXIST ARE IN IT. These four are the sentences a
+    # saved page carries; leaving one out loses it from every export.
+    for name in ("_coverage", "_picture_loss", "_range", "_shared_lbl"):
+        assert name in gamut_app.GamutApp.READOUTS, (
+            f"{name} is a readout and is not in the list, so it is neither "
+            f"cleared with the files nor carried into a saved page")

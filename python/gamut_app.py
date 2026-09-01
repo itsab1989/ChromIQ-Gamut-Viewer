@@ -10431,7 +10431,19 @@ class GamutApp(QMainWindow):
     #: lines meant updating three, and two of them were found only afterwards:
     #: the report survived "Close them all", and it was missing from every
     #: saved page. A list that must be kept in step by hand will not be.
-    READOUTS = ("_coverage", "_picture_loss", "_pair", "_drift",
+    #: ⚠ AND IT HAD BOTH FAULTS IT WAS WRITTEN TO PREVENT. `_pair` is not a
+    #: widget on this window — nothing is ever assigned to it — and both
+    #: consumers skip a missing name with `getattr(..., None)`, so it did
+    #: nothing, quietly. Meanwhile `_range` and `_shared_lbl` ARE readouts
+    #: and were not in the list, so every saved page went out without the
+    #: range panel ("blacks reach L* 4, paper white L* 94 and cool") and
+    #: without "Both can print 77% of everything either one can" — checked
+    #: by driving, not by reading.
+    #:
+    #: The test that watches this builds its stand-ins FROM this tuple, so it
+    #: could not see either fault: an instrument that shares the list cannot
+    #: check the list.
+    READOUTS = ("_coverage", "_picture_loss", "_range", "_shared_lbl", "_drift",
                 "_drift_worst", "_drift_families", "_drift_families_note",
                 "_chart_headline", "_chart_rows", "_chart_spread")
 
@@ -18525,14 +18537,33 @@ class GamutApp(QMainWindow):
         end = "deepest black" if blacks else "brightest white"
         near = min(g for _n, _w, _s, g in lost)
         share = max(s for _n, _w, s, _g in lost)
+        # ⚠ AND THE END'S OWN NAME, WHICH THE FIRST FIX MISSED. `papers`
+        # rewrote `reach` and the two-shape `plural` and left `which`, which
+        # goes verbatim into the one-shape sentence — and `hidden_end`
+        # returns literally "paper white". So a single photograph on the
+        # light appearance was still told "paleshot's PAPER WHITE comes
+        # within 1 levels…", one line under the sentence rewritten so a
+        # photograph is not given a paper white.
+        #
+        # Three shapes of four were fixed, and the test checked the three
+        # that were fixed — its fixture said "whites", which `hidden_end`
+        # cannot return.
+        # ONE OF THEM AND SEVERAL OF THEM ARE DIFFERENT WORDS, and taking
+        # the plural from the singular gave "lightest colours comes" and
+        # "have paper white that come".
+        if blacks:
+            one_of, many_of = "blacks", "blacks"
+        elif papers:
+            one_of, many_of = which, "paper whites"      # "paper white"
+        else:
+            one_of, many_of = "lightest colour", "lightest colours"
         if len(lost) == 1:
-            who = f"{lost[0][0]}'s {which} {'come' if blacks else 'comes'}"
+            who = f"{lost[0][0]}'s {one_of} {'come' if blacks else 'comes'}"
             reach = "the paper reaches" if papers else "it reaches"
             it = "them" if blacks else "it"
         else:
             names = " and ".join(n for n, *_ in lost)
-            plural = ("blacks" if blacks else
-                      "paper whites" if papers else "lightest colours")
+            plural = many_of
             who = f"{names} have {plural} that come"
             reach = "either paper reaches" if papers else "either one reaches"
             it = "them"
