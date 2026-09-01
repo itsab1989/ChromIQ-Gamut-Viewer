@@ -1675,13 +1675,18 @@ def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
     # halves of this test pass no matter what the code does. Third instrument
     # of mine to lie today, all in the same way: it could not see the thing
     # it was watching.
+    # ⚠ AND THE PATHS ARE PASSED, because the figure is found by path now
+    # and not by matching the label's stem. A name is a stem and two folders
+    # can hold one; the stem match measured one photograph against another
+    # photograph's shape and called it "every colour fits".
     stub = NS(_picture_loss=NS(setText=lambda t: said.__setitem__("t", t)),
               _is_picture=lambda name: name == "holiday",
               _image_facts={"/tmp/holiday.png": facts})
     said = {}
     wrong = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
     gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,
-                                            "a-profile", wrong)
+                                            "a-profile", wrong,
+                                            ("/tmp/holiday.png", None))
     assert said.get("t", "") == "", (
         "a figure was printed for a photograph measured against a CIELUV "
         f"shape: {said.get('t', '')!r}")
@@ -1689,7 +1694,8 @@ def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
     said.clear()
     right = reference_gamut("sRGB", white_point="D50", steps=9, space="lab")
     gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,
-                                            "a-profile", right)
+                                            "a-profile", right,
+                                            ("/tmp/holiday.png", None))
     assert said.get("t", ""), (
         "it must still answer when the shape IS in CIELAB")
 

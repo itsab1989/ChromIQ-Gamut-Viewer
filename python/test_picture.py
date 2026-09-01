@@ -271,3 +271,106 @@ def test_where_the_shape_is_solid_nothing_is_taken_away():
     got = picture.alpha_from_two_grounds(same, same)
     assert (got[..., 3] == 255).all()
     assert (got[..., 0] == 40).all()
+
+
+def _a_picture(folder, maker):
+    """A small picture whose colours are decided by *maker*."""
+    import numpy as np
+    from PIL import Image
+    folder.mkdir(parents=True, exist_ok=True)
+    a = np.zeros((48, 48, 3), np.uint8)
+    for y in range(48):
+        for x in range(48):
+            a[y, x] = maker(x, y)
+    out = folder / "holiday.png"          # THE SAME STEM, on purpose
+    Image.fromarray(a).save(out)
+    return out
+
+
+def test_a_pictures_figure_comes_from_that_picture_and_not_its_namesake(
+        tmp_path):
+    """⚠ ONE PHOTOGRAPH MEASURED AGAINST ANOTHER PHOTOGRAPH'S SHAPE.
+
+    The figure looked its facts up by matching the STEM of the label against
+    a dict of paths that was never emptied, taking the first entry that hit.
+    Two folders holding a `holiday.png` are enough: with `wide/holiday.png`
+    on screen and `narrow/holiday.png` opened earlier, the panel measured one
+    picture's pixels against the other's shape and said
+
+        "Every colour in holiday is one holiday (picture) can print."
+
+    when the truth was 100% out of reach, worst 37.3 ΔE. A name is a stem and
+    two folders can share one; a path is the identity a name stands in for.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from imagegamut import image_gamut
+
+    wide = _a_picture(tmp_path / "wide",
+                      lambda x, y: (x * 5 % 256, y * 5 % 256, (x + y) % 256))
+    narrow = _a_picture(tmp_path / "narrow",
+                        lambda x, y: (110 + x // 5, 110 + y // 5, 110))
+    facts = {}
+    shapes_by_path = {}
+    for p in (narrow, wide):              # narrow FIRST, so a stem match hits it
+        built, kept = image_gamut(p, white_point="D50", space="lab")
+        facts[str(p)] = kept
+        shapes_by_path[p] = built
+
+    said = []
+    hall = NS(_image_facts=facts,
+              _picture_loss=NS(setText=said.append),
+              _is_picture=lambda name: True)
+    gamut_app.GamutApp._update_picture_loss(
+        hall, "holiday", shapes_by_path[wide],
+        "holiday", shapes_by_path[narrow], (wide, narrow))
+    text = [t for t in said if t]
+    assert text, "no figure at all"
+    line = text[0]
+
+    # The truth, computed here from the file that is actually on screen.
+    from imagegamut import out_of_reach
+    truth = out_of_reach(facts[str(wide)], shapes_by_path[narrow])
+    assert truth["of_the_picture"], (
+        "these two pictures no longer differ, so this test proves nothing")
+    assert f"{100 * truth['of_the_picture']:.0f}%" in line, (
+        f"the figure does not match the picture on screen: {line!r}")
+    assert "Every colour in holiday" not in line
+
+
+def test_a_pictures_facts_do_not_outlive_the_file_they_describe(tmp_path):
+    """`_image_facts` was keyed by path like three sibling caches and left
+    out of every clear, so a photograph edited and reopened under the same
+    name kept the pixels it used to have.
+
+    ONE ENTRY, not the whole dict, and BEFORE the build. Emptying all of
+    it broke the feature outright — opening a paper after a photograph threw
+    the photograph's facts away and the figure vanished from a window still
+    showing the picture. And the build is what writes those facts, so a
+    clear placed with the sibling caches further down would discard the
+    facts of the picture being opened.
+    """
+    import ast
+    import inspect
+    import gamut_app
+
+    src = inspect.getsource(gamut_app.GamutApp._load)
+    tree = ast.parse(src.strip())
+    cleared = built = None
+    for i, node in enumerate(ast.walk(tree)):
+        pass
+    lines = src.splitlines()
+    for i, line in enumerate(lines):
+        if "_image_facts.pop(str(path), None)" in line:
+            cleared = i
+        if "_build_patiently(" in line and built is None:
+            built = i
+    assert cleared is not None, (
+        "the file being opened keeps whatever facts it had last time")
+    assert "_image_facts.clear()" not in src, (
+        "emptying the whole dict discards the facts of pictures that are "
+        "still on screen, and the figure disappears for them")
+    assert built is not None
+    assert cleared < built, (
+        "the facts are emptied AFTER the build that writes them, which "
+        "throws away the facts of the picture being opened")

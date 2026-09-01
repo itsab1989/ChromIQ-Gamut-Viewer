@@ -14216,6 +14216,25 @@ class GamutApp(QMainWindow):
         # A message that says nothing worked, over a window that has quietly
         # closed something, is the worst pair of facts to hand somebody: the
         # one thing they are sure of is that they did not ask for that.
+        # ⚠ THE PICTURE'S FACTS FOR THIS FILE, dropped before it is read
+        # again. Keyed by path exactly like the three caches below and left
+        # out of every clear since the day it was written, so a photograph
+        # edited and reopened under the same name kept the pixels it used to
+        # have, and the figure beneath it — how much of this picture will not
+        # print — described the old file.
+        #
+        # ⚠ ONE ENTRY, NOT THE WHOLE DICT, AND THIS WAS MEASURED RATHER THAN
+        # REASONED ABOUT. Emptying all of it here looked obviously right and
+        # broke the feature: opening a paper AFTER a photograph threw the
+        # photograph's facts away, and the figure vanished from a window that
+        # was still showing the picture. The staleness being fixed belongs to
+        # the file being opened, so that is the entry that goes.
+        #
+        # ⚠ AND BEFORE THE BUILD, not beside the three below.
+        # `_build_patiently` is what WRITES a picture's facts; a clear placed
+        # with its siblings further down would discard the facts of the very
+        # picture being opened.
+        self._image_facts.pop(str(path), None)
         try:
             g, m = self._build_patiently(path)
         except Stopped:
@@ -17720,6 +17739,12 @@ class GamutApp(QMainWindow):
         the swap, so both are shown and each is named.
         """
         pair = None
+        # ⚠ THE FILE EACH SIDE CAME FROM, CARRIED BESIDE ITS NAME. A name
+        # here is a STEM, and two folders can hold one; the picture figure
+        # below used to find its facts by matching that stem and measured
+        # one photograph against another's shape. A path is the identity a
+        # name only stands in for.
+        paths = (None, None)
         # ⚠ AND EACH SIDE IN CIELAB TOO. `_update_picture_loss` measures a
         # photograph's own colours, which are always CIELAB, against the
         # other shape — and it was handed the DRAWN shape. Only Draw it in
@@ -17739,6 +17764,7 @@ class GamutApp(QMainWindow):
         reference_in_lab = getattr(self, "_reference_in_lab", None)
         if self._reference is not None and self._slots:
             pair = ((self._slots[0][0].stem, self._slots[0][1]), self._reference)
+            paths = (self._slots[0][0], getattr(self, "_reference_path", None))
             if in_lab is not None and reference_in_lab is not None:
                 lab_pair = (in_lab(self._slots[0][1], self._slots[0][0],
                                    self._slots[0][2]),
@@ -17746,6 +17772,7 @@ class GamutApp(QMainWindow):
         elif len(self._slots) == 2:
             pair = ((self._slots[0][0].stem, self._slots[0][1]),
                     (self._slots[1][0].stem, self._slots[1][1]))
+            paths = (self._slots[0][0], self._slots[1][0])
             if in_lab is not None:
                 lab_pair = tuple(in_lab(slot[1], slot[0], slot[2])
                                  for slot in self._slots[:2])
@@ -17797,10 +17824,11 @@ class GamutApp(QMainWindow):
         # In CIELAB, always: a picture's facts are CIELAB and nothing else.
         a_lab, b_lab = (lab_pair if lab_pair else (a, b))
         self._update_picture_loss(a_name, a_lab if a_lab is not None else a,
-                                  b_name, b_lab if b_lab is not None else b)
+                                  b_name, b_lab if b_lab is not None else b,
+                                  paths)
         self._update_pair(a_name, a, b_name, b)
 
-    def _update_picture_loss(self, a_name, a, b_name, b) -> None:
+    def _update_picture_loss(self, a_name, a, b_name, b, paths) -> None:
         """For a picture, how much of the PICTURE a shape cannot print.
 
         WHY THIS IS A SEPARATE NUMBER, and why the coverage figure above is not
@@ -17821,16 +17849,28 @@ class GamutApp(QMainWindow):
         """
         from imagegamut import out_of_reach
 
+        # ⚠ `paths` HAS NO DEFAULT, DELIBERATELY. It was written with one,
+        # `(None, None)`, and a caller that forgot it lost the figure in
+        # silence — the same shape as the guard that returned None for every
+        # file on 1 September while 1195 tests stayed green. A caller that
+        # does not know which files these are is a TypeError here, at once.
         self._picture_loss.setText("")
-        for name, shape, against, against_name in ((a_name, a, b, b_name),
-                                                   (b_name, b, a, a_name)):
-            if not self._is_picture(name):
-                continue
-            facts = None
-            for path, kept in self._image_facts.items():
-                if Path(path).stem == name:
-                    facts = kept
-                    break
+        for name, shape, against, against_name, path in (
+                (a_name, a, b, b_name, paths[0]),
+                (b_name, b, a, a_name, paths[1])):
+            # ⚠ BY PATH, BECAUSE A NAME IS A STEM AND TWO FOLDERS SHARE ONE.
+            # This walked `_image_facts` for the first entry whose stem
+            # matched the label, over a dict that is never emptied, so
+            # ~/wide/holiday.png was measured against the shape of
+            # ~/narrow/holiday.png opened earlier: the truth was 100% out of
+            # reach, worst 37.3 ΔE, and the panel said "Every colour in
+            # holiday is one holiday (picture) can print."
+            #
+            # A missing path means no figure rather than a guessed one. The
+            # figure is an extra, and a wrong extra is worse than none: it
+            # is read as reassurance about whether a photograph will print.
+            facts = (self._image_facts.get(str(path))
+                     if path is not None else None)
             if facts is None:
                 continue
             # ⚠ NO CIELAB SHAPE, NO FIGURE. `out_of_reach` goes through
