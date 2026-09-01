@@ -1716,7 +1716,7 @@ def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
                   NS(), gamut_app.GamutApp),
               _facts_key=gamut_app.GamutApp._facts_key.__get__(
                   NS(), gamut_app.GamutApp),
-              _image_facts={("/tmp/holiday.png", 0): facts})
+              _image_facts={("/tmp/holiday.png",): facts})
     said = {}
     wrong = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
     gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,

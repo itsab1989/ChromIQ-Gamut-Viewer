@@ -509,30 +509,221 @@ def test_the_pictures_colours_are_given_back_when_nothing_shows_them(tmp_path):
     assert hall._image_facts == {}, "Close them all gave nothing back"
 
 
-def test_a_pictures_facts_are_keyed_by_the_file_and_its_timestamp(tmp_path):
-    """The path alone answers for the picture a file USED to be.
+def test_a_pictures_facts_survive_the_file_being_touched(tmp_path):
+    """⚠ THIS TEST ASSERTED THE OPPOSITE YESTERDAY, AND THAT WAS A BUG.
 
-    ⚠ THIS CHANGES NOTHING OBSERVABLE TODAY AND IS STILL WORTH HAVING, which
-    is the honest way to put it. 5ecf5a3 claimed to fix an observed
-    staleness by popping the entry in `_load`; a driver run four ways over
-    eight states proved that pop earned nothing, because `_build_one`
-    overwrites unconditionally and nothing caches in front of it. That claim
-    was false and is corrected in the source.
+    The key carried `st_mtime_ns` as insurance against a future cache in
+    front of `_build_one` — against staleness a driver had already MEASURED
+    as unreachable, because that builder overwrites unconditionally.
 
-    The guarantee belongs in the key, where it holds for the comparison
-    route as well — which never passes through `_load` — and where no future
-    cache in front of the builder can quietly undo it.
+    The insurance caused a live fault. The reader makes its key from the file
+    on disk NOW; the writer made its key when the picture was built. Move the
+    timestamp while the picture is still on screen — an edit saved in place,
+    a re-download, a restore from backup, a sync — and every lookup misses
+    while the shape being shown is still exactly right. Driven, with the
+    pixels deliberately unchanged:
+
+        before   66.2% of the colour holiday HOLDS also fits inside …
+                 46% of holiday itself is out of reach of Matte-paper …
+        after    66.2% of the colour holiday CAN PRINT also fits inside …
+                 (the figure gone)  and the slot label calling a .png
+                 "a gamut file — the surface it holds"
+
+    A photograph "can print" is the fault class this release is named for.
+    So the key is the path, and freshness comes from where it always came
+    from.
     """
     import gamut_app
-    from types import SimpleNamespace as NS
     import time
 
     shot = _a_picture(tmp_path / "t", lambda x, y: (x, y, 10))
     key = a_window()._facts_key
     before = key(shot)
     time.sleep(0.01)
-    _a_picture(tmp_path / "t", lambda x, y: (y, x, 200))    # same path, edited
-    assert key(shot) != before, (
-        "an edited picture keeps the key of the one it replaced")
-    # A file that is gone rebuilds rather than answering from the past.
-    assert key(tmp_path / "never-existed.png")[1] == 0
+    import os
+    os.utime(shot, None)                      # a save that changed nothing
+    assert key(shot) == before, (
+        "the key moved when the file's timestamp did, so a picture still on "
+        "screen loses its facts and three readouts describe it wrongly")
+
+
+def test_a_photograph_is_never_given_a_paper_white_or_blacks(tmp_path):
+    """⚠ THE FIFTH SIBLING OF THE FAULT THIS RELEASE IS NAMED FOR.
+
+    `_update_range` walked the slots with no test of kind at all, so a
+    photograph in a slot was described as
+
+        "holiday: blacks reach L* 0, paper white L* 98 and very warm"
+
+    about a file that was never printed on anything and has no paper. The
+    coverage line an inch above it had already been fixed for exactly this —
+    its comment says getting it backwards "is the sort of sentence that makes
+    somebody distrust the number beside it" — and the fix was never carried
+    to the three readouts beside it.
+
+    ⚠ AND IT SURVIVED A WEEK OF BEING PHOTOGRAPHED. It is in a screenshot
+    taken while proving a different fix, two lines under the sentence being
+    checked, read past every time. That is why this is a test and not a
+    careful habit.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    hall = a_window()
+    picture = _a_picture(tmp_path / "shot",
+                         lambda x, y: (x * 5 % 256, y * 5 % 256, 90))
+    paper = HERE / "demo" / "Matte-paper.ti3"
+    assert not gamut_app.GamutApp._lays_down_ink(hall, picture), (
+        "a photograph was taken for something that lays down ink")
+    assert gamut_app.GamutApp._lays_down_ink(hall, paper), (
+        "a measured paper stopped counting as something that prints")
+    assert gamut_app.GamutApp._lays_down_ink(hall, HERE / "demo" /
+                                             "Glossy-paper.icc"), (
+        "a printer profile stopped counting as something that prints")
+    # A comparison with no file — a colour space, the visible solid — prints
+    # nothing either, and must not raise on the way to saying so.
+    assert not gamut_app.GamutApp._lays_down_ink(hall, None)
+
+
+def test_the_verb_follows_the_other_sides_kind(tmp_path):
+    """"can print" was hard-coded in both picture-loss sentences, so with two
+    photographs open the panel said "Every colour in narrowshot is one
+    wideshot (picture) can print". A photograph prints nothing."""
+    import gamut_app
+    from types import SimpleNamespace as NS
+    from imagegamut import image_gamut
+
+    wide = _a_picture(tmp_path / "w",
+                      lambda x, y: (x * 5 % 256, y * 5 % 256, (x + y) % 256))
+    narrow = _a_picture(tmp_path / "n",
+                        lambda x, y: (110 + x // 5, 110 + y // 5, 110))
+    facts, shapes_by = {}, {}
+    key = a_window()._facts_key
+    for one in (wide, narrow):
+        built, kept = image_gamut(one, white_point="D50", space="lab")
+        facts[key(one)] = kept
+        shapes_by[one] = built
+
+    said = []
+    hall = a_window(_image_facts=facts,
+                    _picture_loss=NS(setText=said.append))
+    gamut_app.GamutApp._update_picture_loss(
+        hall, "w-shot", shapes_by[wide], "n-shot", shapes_by[narrow],
+        (wide, narrow))
+    line = [t for t in said if t]
+    assert line, "no figure at all"
+    assert "can print" not in line[0], (
+        f"a photograph was said to print something: {line[0]!r}")
+    assert "holds" in line[0], line[0]
+
+    # AND THE POSITIVE HALF: against a real paper it must still say "print".
+    said.clear()
+    from ti3gamut import read_measurement
+    from gamutview import build_gamut
+    m = read_measurement(HERE / "demo" / "Matte-paper.ti3", "D50", False)
+    paper_shape = build_gamut(m.lab, m.device, input_space="lab",
+                              space="lab", white_point="D50")
+    gamut_app.GamutApp._update_picture_loss(
+        hall, "w-shot", shapes_by[wide], "Matte-paper", paper_shape,
+        (wide, HERE / "demo" / "Matte-paper.ti3"))
+    line = [t for t in said if t]
+    assert line and "can print" in line[0], (
+        f"a measured paper stopped printing: {line!r}")
+
+
+def test_the_pictures_colours_are_given_back_when_nothing_shows_them(tmp_path):
+    """⚠ A PHOTOGRAPH'S COLOURS WERE KEPT FOR THE LIFE OF THE WINDOW.
+
+    Each entry holds the picture's own colours — up to 300,000 of them in two
+    float64 arrays, about 9.6 MB a photograph. Nothing ever shrank the dict:
+    not closing one file, and not "Close them all", which empties the slots,
+    the chart, the comparison and every readout and touched none of it.
+    Twenty photographs in a sitting is ~190 MB that could never come back.
+
+    ⚠ AND IT KEEPS WHAT IS ON SCREEN. Emptying more than this is not a
+    stricter version of the same fix — it is a different bug. Clearing the
+    whole dict once threw away the facts of a picture still being shown, and
+    the figure vanished from the window.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    on_screen = _a_picture(tmp_path / "shown", lambda x, y: (x, y, 90))
+    gone = _a_picture(tmp_path / "closed", lambda x, y: (y, x, 30))
+    hall = a_window(_slots=[], _reference_path=None, _image_facts={})
+
+    hall._image_facts[hall._facts_key(on_screen)] = {"colours": 1}
+    hall._image_facts[hall._facts_key(gone)] = {"colours": 2}
+    hall._slots = [(on_screen, None, None)]
+
+    hall._forget_unused_facts()
+    assert hall._facts_key(on_screen) in hall._image_facts, (
+        "the facts of a picture still on screen were thrown away — the "
+        "figure disappears from a window that is showing the picture")
+    assert hall._facts_key(gone) not in hall._image_facts, (
+        "a closed picture's colours are still held")
+
+    # A picture held as the COMPARISON is on screen too.
+    hall._image_facts[hall._facts_key(gone)] = {"colours": 2}
+    hall._reference_path = gone
+    hall._forget_unused_facts()
+    assert hall._facts_key(gone) in hall._image_facts, (
+        "the comparison's own picture was forgotten")
+
+    # And with nothing open at all, nothing is held.
+    hall._slots, hall._reference_path = [], None
+    hall._forget_unused_facts()
+    assert hall._image_facts == {}, "Close them all gave nothing back"
+
+
+
+
+def test_what_a_file_IS_never_depends_on_a_cache(tmp_path):
+    """⚠ ONE QUESTION, ONE ANSWER, AND FOUR READOUTS ASKED IT THREE WAYS.
+
+    `_is_picture` answered "is this a photograph?" by looking the picture's
+    FACTS up in a cache — which answers "do I have its numbers", a different
+    question. While the two agreed nobody noticed. The moment a key could
+    miss, `_update_coverage` said a photograph "can print" in the same
+    instant `_lays_down_ink` was answering correctly two readouts away.
+
+    So this asks both, about the same file, with the cache EMPTY — the state
+    where an answer that consults the cache must be wrong.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    shot = _a_picture(tmp_path / "s", lambda x, y: (x, y, 40))
+    paper = HERE / "demo" / "Matte-paper.ti3"
+    hall = a_window(_image_facts={},                 # nothing cached at all
+                    _slots=[(shot, None, None), (paper, None, None)])
+    hall._is_picture = gamut_app.GamutApp._is_picture.__get__(
+        hall, gamut_app.GamutApp)
+
+    assert hall._is_picture(shot.stem) is True, (
+        "with no facts cached, a photograph stopped being a photograph — "
+        "which is how the coverage line came to say it can print")
+    assert hall._is_picture(paper.stem) is False
+    # AND THE TWO ANSWERS AGREE, which is the whole point of the fix.
+    assert hall._is_picture(shot.stem) == (not hall._lays_down_ink(shot))
+    assert hall._is_picture(paper.stem) == (not hall._lays_down_ink(paper))
+
+
+def test_the_hidden_end_note_does_not_call_a_photograph_a_paper():
+    """A fifth readout, two lines under the one fixed for exactly this.
+
+    `_hidden_end_note` hard-coded "either paper reaches" and "have paper
+    whites that come within…", and its input list was built outside the kind
+    test, so a photograph went in unconditionally.
+    """
+    import gamut_app
+    note = gamut_app.GamutApp._hidden_end_note
+    both = [("holiday", "whites", 42.0, 4.0), ("three", "whites", 30.0, 3.0)]
+    said = note(both, False)
+    assert "paper" not in said, said
+    assert "lightest colours" in said and "either one reaches" in said
+    # AND PAPERS STILL READ AS PAPERS.
+    papers = note(both, True)
+    assert "paper whites" in papers and "either paper reaches" in papers
+    one = note([("holiday", "blacks", 42.0, 4.0)], False)
+    assert "the paper reaches" not in one and "it reaches" in one

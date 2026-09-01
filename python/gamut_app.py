@@ -10337,23 +10337,33 @@ class GamutApp(QMainWindow):
     def _facts_key(self, path):
         """What identifies a picture's facts: the file AND its timestamp.
 
-        ⚠ THE PATH ALONE ANSWERS FOR THE PICTURE A FILE USED TO BE. That is
-        the rule `shapes.key_for` writes down and every cache in this
-        window now reads, and it is the guarantee 5ecf5a3 CLAIMED to make and did
-        not: that commit popped the entry in `_load`, which a driver later
-        proved earns nothing, because `_build_one` overwrites the entry
-        unconditionally anyway. The claim was false and the line was
-        half-insurance — it covered the slot route and not the comparison
-        route, which never passes through `_load` at all.
+        ⚠ THE PATH, AND NOT THE TIMESTAMP, AND THIS WAS TRIED THE OTHER WAY
+        ROUND. 171b187 put `st_mtime_ns` in this key as insurance against a
+        future cache in front of `_build_one` — against staleness that a
+        driver had already MEASURED AS UNREACHABLE, since that builder
+        overwrites unconditionally.
 
-        A timestamp in the key covers both routes and cannot be forgotten.
-        An unreadable file gets 0, so it rebuilds rather than answering from
-        whatever was there before.
+        The insurance created a live fault. A reader's key is made from the
+        file on disk NOW; the writer's was made when the picture was built.
+        Move the file's timestamp while the picture is still on screen — an
+        edit saved in place, a re-download, a restore from backup, a sync,
+        `touch` — and every lookup misses, while the shape being shown is
+        still perfectly correct. Driven, with the pixels deliberately
+        unchanged so the drawn shape provably still matched:
+
+            before   66.2% of the colour holiday HOLDS also fits inside …
+                     46% of holiday itself is out of reach of Matte-paper …
+            after    66.2% of the colour holiday CAN PRINT also fits inside …
+                     (the out-of-reach figure gone)
+
+        A photograph "can print" is the fault class this release is named
+        for, re-opened through a cache key. Insurance against something that
+        cannot happen, which causes something that can, is not insurance.
+
+        Freshness comes from `_build_one`'s unconditional write, which is
+        where it always came from.
         """
-        try:
-            return (str(path), Path(path).stat().st_mtime_ns)
-        except OSError:
-            return (str(path), 0)
+        return (str(path),)
 
     def _forget_unused_facts(self) -> None:
         """Drop the facts of pictures nothing on screen is showing.
@@ -10399,10 +10409,18 @@ class GamutApp(QMainWindow):
             return True
 
     def _is_picture(self, name: str) -> bool:
-        """Whether a shape on screen came from a picture rather than a printer."""
+        """Whether a shape on screen came from a picture rather than a printer.
+
+        ⚠ IT ASKS THE KIND. It used to ask whether the picture's FACTS were
+        in the cache — which answers "do I have its numbers", a different
+        question. While the two agreed nobody noticed; the moment a cache
+        key could miss, `_update_coverage` called a photograph something that
+        can print, in the same instant `_lays_down_ink` was answering
+        correctly two readouts away.
+        """
         for path, _g, _m in self._slots:
             if path.stem == name:
-                return self._facts_key(path) in self._image_facts
+                return not self._lays_down_ink(path)
         return False
 
     #: EVERY READOUT, IN READING ORDER, NAMED ONCE.
@@ -12837,6 +12855,14 @@ class GamutApp(QMainWindow):
             self._compare.setCurrentIndex(0)
             return
         self._chart_profile_offer()
+        # ⚠ AND HERE TOO, NOT ONLY IN `_load`. The first version of the bound
+        # freed a photograph's colours when a FILE was opened and when
+        # everything was closed — and the comparison chooser opens
+        # photographs by a route that passes through neither. Twenty
+        # photographs looked at as the comparison held twenty entries, about
+        # 9.6 MB each. The same asymmetry the pop it replaced had: half the
+        # routes covered, which reads as fixed.
+        self._forget_unused_facts()
         self._redraw()
 
     def _file_dialog(self, title: str, mode, name_filter: str,
@@ -15850,10 +15876,18 @@ class GamutApp(QMainWindow):
                     # under the name says which one you are looking at.
                     suffix = path.suffix.lower()
                     facts = self._image_facts.get(self._facts_key(path))
-                    if facts is not None:
-                        patches = (f"a picture — {facts['colours']:,} colours "
+                    # ⚠ THE KIND DECIDES WHAT IT IS; THE FACTS ONLY FILL IN
+                    # THE NUMBERS. This branch was reached only when the
+                    # facts were in hand, so a lookup that missed described a
+                    # .png as "a gamut file — the surface it holds". What a
+                    # file IS cannot depend on whether a cache happens to
+                    # hold its colours.
+                    if not self._lays_down_ink(path):
+                        patches = ("a picture" if facts is None else
+                                   f"a picture — {facts['colours']:,} colours "
                                    f"in {facts['pixels']:,} pixels")
-                        measured = (", read with its own profile"
+                        measured = ("" if facts is None else
+                                    ", read with its own profile"
                                     if facts["profile"] else ", read as sRGB")
                     elif suffix in (".icc", ".icm"):
                         patches = "an ICC profile — what it describes"
@@ -18348,6 +18382,7 @@ class GamutApp(QMainWindow):
         try:
             lines = []
             lost = []
+            papers = []
             for path, g, measurement in self._slots:
                 dark, light = lightness_range(g)
                 # AND WHAT COLOUR THAT WHITE IS. Every other number in this
@@ -18428,11 +18463,19 @@ class GamutApp(QMainWindow):
                 if getattr(self, "_paint", "true") == "true":
                     end = hidden_end(g, self._page_colour())
                     if end is not None:
+                        # AND WHETHER THIS ONE IS A PAPER AT ALL. The note
+                        # below said "either PAPER reaches" and "have PAPER
+                        # WHITES that come within…" about whatever was in
+                        # this list, and a photograph went into it
+                        # unconditionally — a fifth readout calling a
+                        # photograph a sheet of paper, two lines under the
+                        # one that had just been fixed for exactly that.
                         lost.append((path.stem, *end))
+                        papers.append(self._lays_down_ink(path))
             # INSIDE THE GUARD, not after it. The promise on this method is
             # that a readout never takes the view down with it, and a note
             # built outside the try would be the one line here that could.
-            note = self._hidden_end_note(lost)
+            note = self._hidden_end_note(lost, all(papers) if papers else True)
             if note:
                 lines.append(note)
         except Exception:      # noqa: BLE001 — a readout must never crash a view
@@ -18459,7 +18502,7 @@ class GamutApp(QMainWindow):
         return SCENE_COLOURS[which]["page"]
 
     @staticmethod
-    def _hidden_end_note(lost) -> str:
+    def _hidden_end_note(lost, papers: bool = True) -> str:
         """One plain sentence about an end of the shape that cannot be seen.
 
         Written out in full for one shape and for two rather than with an
@@ -18478,13 +18521,14 @@ class GamutApp(QMainWindow):
         share = max(s for _n, _w, s, _g in lost)
         if len(lost) == 1:
             who = f"{lost[0][0]}'s {which} {'come' if blacks else 'comes'}"
-            reach = "the paper reaches"
+            reach = "the paper reaches" if papers else "it reaches"
             it = "them" if blacks else "it"
         else:
             names = " and ".join(n for n, *_ in lost)
-            plural = "blacks" if blacks else "paper whites"
+            plural = ("blacks" if blacks else
+                      "paper whites" if papers else "lightest colours")
             who = f"{names} have {plural} that come"
-            reach = "either paper reaches"
+            reach = "either paper reaches" if papers else "either one reaches"
             it = "them"
         return (f"{who} within {near:.0f} levels of the page behind {it}, so "
                 f"{share:.0f}% of that end is drawn but cannot be seen — and "

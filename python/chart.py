@@ -602,6 +602,22 @@ def outside_report(lab, gamut, *, against: str = "",
     # ⚠ THE ONE PRECONDITION THIS ARITHMETIC CANNOT CHECK FOR ITSELF.
     # See NotInCIELAB. Callers that may legitimately be handed another space
     # catch this and say so; nobody gets a number for it.
+    # ⚠ NO SHAPE AT ALL IS NOT CIELAB EITHER, AND THE FALLBACK SAID IT WAS.
+    # `getattr(None, "space", "lab")` is "lab", so a caller handing over
+    # NOTHING sailed past this refusal and died in `np.asarray` — and the
+    # window printed the wreckage verbatim, "could not be counted (len() of
+    # unsized object)", in place of the sentence written right here to
+    # explain exactly that situation.
+    #
+    # ⚠ AND ONLY `None`. The first repair refused anything without a `space`
+    # attribute, which broke seventeen tests at once: a shape is duck-typed
+    # all over this suite, and "has no `space` attribute" means "a stand-in
+    # nobody gave one to", not "not CIELAB". The fault was the missing
+    # SHAPE, so that is what is refused.
+    if gamut is None:
+        raise NotInCIELAB(
+            f"{against or 'that shape'} could not be rebuilt in CIELAB at "
+            f"all, and ΔE2000 is defined on CIELAB and on nothing else")
     if getattr(gamut, "space", "lab") != "lab":
         raise NotInCIELAB(
             f"{against or 'that shape'} was built in "
