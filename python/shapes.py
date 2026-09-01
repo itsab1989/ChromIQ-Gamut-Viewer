@@ -47,6 +47,20 @@ class Thing:
         if not wants_file and self.path is not None:
             raise ValueError(f"a {self.kind} has no file")
 
+    @property
+    def measured(self) -> bool:
+        """Was this PRINTED AND READ BY AN INSTRUMENT.
+
+        A picture is a file and is NOT measured. Deciding that from the
+        suffix instead — "not a profile, so it must be measured" — is what
+        labelled every photograph "(measured)" and fired the paper-white
+        caution about a photograph that has no paper.
+
+        `_both_whites` asks this before offering two readings of one white,
+        because a paper's own white is a thing only a measurement has.
+        """
+        return self.kind == "measurement"
+
 
 #: ⚠ WHAT EACH KIND ACTUALLY DEPENDS ON. Not "everything that could matter" —
 #: that guess is what put Detail into three cache keys and made every nudge of

@@ -13552,8 +13552,8 @@ class GamutApp(QMainWindow):
         So nothing here depends on the tick, on which shape was drawn, or on
         how that shape was built. Both readings come from the file.
 
-        Returns None -- never raises -- when the file cannot be read both
-        ways. A Lab-only .ti3 is exactly that case: `read_ti3` refuses
+        Returns None -- never raises -- for anything that is not a
+        MEASUREMENT, and when the file cannot be read both ways. A Lab-only .ti3 is exactly that case: `read_ti3` refuses
         `relative=True` on one by design, since Lab is already referenced to
         a white point.
         """
@@ -13574,6 +13574,16 @@ class GamutApp(QMainWindow):
             # apart in some other setting without anything noticing.
             settings = self._settings().drawn_in("lab")
             thing = shapes.thing_for(path, IMAGE_EXTENSIONS)
+            # ⚠ AND THE KIND DECIDES, NOT THE CALLER'S FLAG. A paper's own
+            # white is a thing only a MEASUREMENT has. Ask a profile, a .gam
+            # or a photograph for two readings and both halves come back the
+            # same, because nothing in either build depends on the tick --
+            # whereupon `_counted_both_ways` announces "it is the same
+            # answer", which is the exact sentence this feature exists to
+            # stop the window saying. The `measured` argument above is one
+            # caller's opinion; this is the file's own kind.
+            if not thing.measured:
+                return None
             for tick in (False, True):
                 built, m = shapes.shape_for(thing, settings.with_tick(tick))
                 made.append((built, m))

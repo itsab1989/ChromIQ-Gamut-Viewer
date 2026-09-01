@@ -17,6 +17,7 @@ because a profile and its measurement share a stem, and a warning without
 which 624 patches were reported outside a paper that reaches every one of them.
 """
 import os
+import pathlib
 import re
 from types import SimpleNamespace
 
@@ -1877,3 +1878,81 @@ def test_build_one_honours_the_space_it_is_asked_for(app):
     got, _m = gamut_app.GamutApp._build_one(stub, root / "demo" /
                                             "Glossy-paper.ti3")
     assert got.space == "luv", "it stopped following Draw it in"
+
+
+DEMO = pathlib.Path(__file__).resolve().parent.parent / "demo"
+
+
+def test_both_readings_are_actually_supplied_for_a_measurement(app):
+    """⚠ THE WHOLE SUITE PASSED WITH THIS FEATURE DEAD.
+
+    On 1 September a one-line guard in `_both_whites` asked a `Thing` for a
+    property it did not have. `AttributeError` is an `Exception`, the
+    `except Exception: return None` beside it swallowed it, and the method
+    returned None for EVERY file. The both-ways sentence — the answer to the
+    white-point artefact this release is named for — vanished from the
+    window, and `pytest -q` reported **1195 passed**.
+
+    Nothing was watching the supply. The test above this one hands
+    `_counted_both_ways` two numbers by hand and checks the wording, which
+    stays green while the numbers never arrive.
+
+    So this one BUILDS. It asks for the two readings of a real measured
+    paper and insists on getting two, that they differ, and that the
+    absolute half carries the white the sentence quotes.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+    import shapes
+
+    hall = NS(_other_whites={},
+              _settings=lambda: shapes.Settings(white="D50", space="lab",
+                                                mode="device", tick=False),
+              _shape_key=lambda path, space, **kw: (str(path), space))
+    pair = gamut_app.GamutApp._both_whites(hall, DEMO / "Matte-paper.ti3",
+                                           True)
+    assert pair is not None, (
+        "no readings at all — the both-ways sentence has nothing to print, "
+        "which is how it silently left the window with every test green")
+    (g_abs, m_abs), (g_rel, m_rel) = pair
+    assert m_abs is not None and m_rel is not None
+    assert g_abs is not None and g_rel is not None
+    # THE TWO MUST DIFFER, or "counted both ways" is a sentence about one
+    # reading printed twice — the exact falsehood of 30 August.
+    assert m_abs.white_lab != m_rel.white_lab, (
+        "both halves came back with the same paper white")
+    assert abs(m_abs.white_lab[0] - 100.0) > 0.05, (
+        "the absolute half puts the paper at L* 100, so the gap the "
+        "sentence quotes would be nothing")
+
+
+def test_only_a_measured_paper_is_offered_two_readings(app):
+    """A profile, a gamut file and a photograph have no paper white.
+
+    Ask one for two readings and both halves come back identical, because
+    nothing in either build depends on the tick — whereupon the panel says
+    "Counted both ways it is the same answer", which is precisely the
+    sentence this feature exists to stop the window saying. It said it about
+    a photograph: "the same answer: 390 outside".
+
+    The kind decides, not the caller's `measured` flag, which is one
+    caller's opinion about a suffix.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+    import shapes
+
+    def asked(path):
+        hall = NS(_other_whites={},
+                  _settings=lambda: shapes.Settings(white="D50", space="lab",
+                                                    mode="device",
+                                                    tick=False),
+                  _shape_key=lambda p, space, **kw: (str(p), space))
+        # `measured=True` on purpose: the flag is the guard being replaced.
+        return gamut_app.GamutApp._both_whites(hall, path, True)
+
+    assert asked(DEMO / "Matte-paper.ti3") is not None
+    for not_a_paper in ("Glossy-paper.icc",):
+        assert asked(DEMO / not_a_paper) is None, (
+            f"{not_a_paper} was offered two readings of a white it has not "
+            f"got")
