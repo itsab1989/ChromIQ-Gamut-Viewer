@@ -13444,10 +13444,16 @@ class GamutApp(QMainWindow):
             # paper against its own white" about a photograph that has no
             # paper and no white. A cause that is not the cause is worse than
             # no explanation.
-            suffix = (self._reference_path.suffix.lower()
-                      if self._reference_path is not None else "")
-            measured = (suffix != "" and suffix not in (".icc", ".icm", ".gam")
-                        and suffix not in IMAGE_EXTENSIONS)
+            # ⚠ FROM THE TABLE, NOT FROM THE SUFFIX AGAIN. This wrote the
+            # rule out a fourth time — "not a profile, not a .gam, not an
+            # image, so measured" — which is the same reasoning that once
+            # labelled every photograph "(measured)" and fired the
+            # paper-white caution about a file that has no paper. It agreed
+            # with `Thing.measured` today; agreeing today is what a fourth
+            # copy always does.
+            measured = (self._reference_path is not None
+                        and shapes.thing_for(self._reference_path,
+                                             IMAGE_EXTENSIONS).measured)
             out.append((self._reference[0],
                         # ⚠ THROUGH `_reference_in_lab`, WHICH ANSWERS FOR
                         # EVERY KIND OF COMPARISON. Carrying the measurement

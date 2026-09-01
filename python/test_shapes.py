@@ -379,3 +379,44 @@ def test_a_refusal_does_not_come_back_as_the_shape_on_screen(tmp_path):
         finally:
             shapes.shape_for = old
         assert got is expected, why
+
+
+def test_the_rule_is_never_written_out_a_second_time(tmp_path):
+    """⚠ FOUR COPIES OF "IS THIS A MEASUREMENT?" AND THEY DID DISAGREE.
+
+    `_judging_shapes` decided it from the suffix — "not a profile, not a
+    .gam, not an image, so measured" — which is the same reasoning that once
+    labelled every photograph "(measured)" and fired the paper-white caution
+    about a file that has no paper.
+
+    It agreed with `Thing.measured` on every suffix the chooser offers, and
+    disagreed on one case that reaches the application: a file with NO
+    extension. `thing_for` calls it a measurement, which is what `_build_one`
+    then reads it as — so a no-extension .ti3 that opened perfectly well was
+    marked "not measured", and the caution that belongs to a measured paper
+    was withheld from it.
+
+    This is the test for the rule itself, so the two answers cannot drift
+    apart again in silence.
+    """
+    import pathlib
+    import gamut_app
+
+    def by_suffix(p):
+        """The rule as `_judging_shapes` used to write it."""
+        s = pathlib.Path(p).suffix.lower()
+        return (s != "" and s not in (".icc", ".icm", ".gam")
+                and s not in gamut_app.IMAGE_EXTENSIONS)
+
+    disagreed = []
+    for name in ("a.ti3", "a.icc", "a.icm", "a.gam", "a.png", "a.jpg",
+                 "a.tif", "a.cxf", "a.txt", "no-extension-at-all"):
+        thing = shapes.thing_for(pathlib.Path(name), gamut_app.IMAGE_EXTENSIONS)
+        if thing.measured != by_suffix(name):
+            disagreed.append((name, thing.measured, by_suffix(name)))
+    assert disagreed == [("no-extension-at-all", True, False)], (
+        f"the two rules now differ somewhere new: {disagreed}")
+    # AND THE TABLE IS THE ONE THAT IS RIGHT THERE: an extensionless file is
+    # built by `read_measurement`, so if it opened at all it IS a measurement.
+    assert shapes.thing_for(pathlib.Path("no-extension-at-all"),
+                            gamut_app.IMAGE_EXTENSIONS).kind == "measurement"
