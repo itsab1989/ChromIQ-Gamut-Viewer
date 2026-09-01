@@ -7157,6 +7157,10 @@ class GamutApp(QMainWindow):
         #: A photograph costs 3 seconds to turn into a gamut; a reader who
         #: nudges a setting and nudges it back should pay that once.
         self._reference_cache: dict = {}
+        #: The index "Draw it in" was last left on by a change that WORKED.
+        #: A refusal puts the control back to it; without that the combo
+        #: named a space the shapes were never built in.
+        self._space_settled: int = 0
         #: The same papers read against the other white, for the two-sided
         #: count. See _both_whites.
         self._other_whites: dict = {}
@@ -14953,7 +14957,26 @@ class GamutApp(QMainWindow):
         # XYZ — the fault this window was already carrying before any of
         # tonight's work, found by a review of the claim that it was closed.
         self._rebuild_reference()
-        self._rebuild()
+        if not self._rebuild():
+            # ⚠ THE CONTROL GOES BACK, because the shapes did not move. The
+            # refusal already says "That setting cannot be used here"; what
+            # it did NOT do was undo the setting, so the combo read the new
+            # space over shapes still built in the old one and the redraw
+            # below raised out of a Qt slot:
+            #
+            #   ValueError: asked to label the axes 'luv' while the shapes
+            #               were built in 'lab'
+            #
+            # Blocked, so putting it back does not run this handler again.
+            was = self._space_settled
+            self._space.blockSignals(True)
+            self._space.setCurrentIndex(was)
+            self._space.blockSignals(False)
+            self._apply_space_availability()
+            self._rebuild_reference()
+            self._redraw()
+            return
+        self._space_settled = self._space.currentIndex()
         self._redraw()
 
     def _space_dependent_controls(self) -> list:
@@ -15283,8 +15306,12 @@ class GamutApp(QMainWindow):
         else:
             self._redraw()
 
-    def _rebuild(self) -> None:
+    def _rebuild(self) -> bool:
         """A setting that changes the shape — rebuild every loaded measurement.
+
+        Returns False when a slot could not be rebuilt, so the control that
+        asked for it can be put back rather than left describing shapes that
+        were never made.
 
         ⚠ THIS RE-READS EVERY SLOT FROM DISK, so it is a "the file is being
         read again" gesture exactly as `_load` is, and it must forget what
@@ -15302,7 +15329,7 @@ class GamutApp(QMainWindow):
         Two paper whites for one paper, four lines apart.
         """
         if not self._slots:
-            return
+            return True
         for path, _g, _m in self._slots:
             self._forget_shapes_of(path)
         rebuilt = []
@@ -15311,12 +15338,25 @@ class GamutApp(QMainWindow):
                 g, m = self._build_patiently(path)
                 rebuilt.append((path, g, m))
             except Exception as exc:            # noqa: BLE001
+                # ⚠ AND THE SLOTS ARE LEFT AS THEY WERE, WHICH USED TO CRASH
+                # THE WINDOW. Returning here without assigning `rebuilt`
+                # leaves shapes built in the OLD space while the control now
+                # reads the new one, and the `_redraw()` that follows in
+                # `_on_space_changed` raises out of a Qt slot:
+                #
+                #   ValueError: asked to label the axes 'luv' while the
+                #               shapes were built in 'lab'
+                #
+                # Two ways in, both driven: a slot's file going away, and a
+                # Lab-only .ti3 with the paper-white tick on when Draw it in
+                # changes. The caller is told, and puts its control back.
                 Notice.warn(self, "That setting cannot be used here",
                                     f"{path.name}\n\n{exc}")
-                return
+                return False
         self._slots = rebuilt
         self._refresh_slot_labels()
         self._redraw()
+        return True
 
     def _refresh_argyll(self) -> None:
         """Say where things stand, without making it sound like a problem."""

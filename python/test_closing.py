@@ -375,3 +375,68 @@ def test_a_comparison_that_cannot_be_used_leaves_nothing_describing_it(window):
     assert window._compare_note.text() == "", (
         "a sentence about a comparison that is not loaded")
     assert window._compare.index == 0
+
+
+def test_a_setting_that_cannot_be_used_is_put_back():
+    """⚠ THE WINDOW DIED, and not even with a traceback.
+
+    `_rebuild` warned "That setting cannot be used here" and returned without
+    assigning the rebuilt slots — so the shapes stayed in the OLD space while
+    the control now read the new one, and the `_redraw()` that follows raised
+
+        ValueError: asked to label the axes 'luv' while the shapes were
+                    built in 'lab'
+
+    out of a Qt slot. PyQt terminates the process for that: driven, the app
+    exited 1 with an empty stdout and no Python traceback at all, which is
+    why an excepthook never saw it. Two ways in, both driven: a slot's file
+    going away, and a Lab-only .ti3 with the paper-white tick on.
+
+    Refusing a setting has to UNDO it. The refusal message already existed;
+    what was missing was putting the control back.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    class Combo:
+        def __init__(self):
+            self.index = 2
+            self.blocked = False
+
+        def currentIndex(self):     # noqa: N802  (Qt's name)
+            return self.index
+
+        def setCurrentIndex(self, i):   # noqa: N802
+            assert self.blocked, (
+                "the control was put back without blocking signals, so the "
+                "handler runs again on its own correction")
+            self.index = i
+
+        def blockSignals(self, on):     # noqa: N802
+            self.blocked = on
+
+        def currentData(self):      # noqa: N802
+            return "luv"
+
+    redrawn = []
+    w = NS(_space=Combo(), _space_settled=0,
+           _apply_space_availability=lambda: None,
+           _rebuild_reference=lambda: None,
+           _rebuild=lambda: False,          # the rebuild refuses
+           _redraw=lambda: redrawn.append(1))
+    gamut_app.GamutApp._on_space_changed(w)
+    assert w._space.index == 0, (
+        "the refused setting was left on the control, so the axes name a "
+        "space the shapes were never built in — and the redraw kills the app")
+    assert redrawn, "the window was left un-redrawn after the refusal"
+
+    # AND A SETTING THAT WORKS IS REMEMBERED, so the next refusal has
+    # somewhere to go back to.
+    w2 = NS(_space=Combo(), _space_settled=0,
+            _apply_space_availability=lambda: None,
+            _rebuild_reference=lambda: None,
+            _rebuild=lambda: True,
+            _redraw=lambda: None)
+    w2._space.index = 5
+    gamut_app.GamutApp._on_space_changed(w2)
+    assert w2._space_settled == 5
