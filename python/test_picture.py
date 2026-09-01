@@ -9,6 +9,27 @@ import picture
 HERE = pathlib.Path(__file__).resolve().parent.parent
 
 
+def a_window(**extra):
+    """A stand-in for the window carrying the REAL helpers a readout uses.
+
+    ⚠ WRITTEN AFTER THE THIRD TIME IN ONE DAY that a stand-in went stale.
+    Each new helper on `GamutApp` — `_lays_down_ink`, then `_facts_key` —
+    broke every hand-built `SimpleNamespace` in the suite, and the tempting
+    repair each time is a lambda that answers True. That is exactly the
+    blind stand-in this suite already has three of: it stops testing the
+    window and starts testing itself. Binding the real methods means a
+    stand-in cannot quietly disagree with the class it stands in for.
+    """
+    from types import SimpleNamespace as NS
+    import gamut_app
+    hall = NS(**extra)
+    for name in ("_facts_key", "_forget_unused_facts", "_lays_down_ink"):
+        setattr(hall, name,
+                getattr(gamut_app.GamutApp, name).__get__(hall,
+                                                          gamut_app.GamutApp))
+    return hall
+
+
 # --- what a format can and cannot do ----------------------------------------
 
 def test_a_format_that_cannot_be_see_through_says_so_rather_than_lying():
@@ -315,19 +336,18 @@ def test_a_pictures_figure_comes_from_that_picture_and_not_its_namesake(
                         lambda x, y: (110 + x // 5, 110 + y // 5, 110))
     facts = {}
     shapes_by_path = {}
+    key = a_window()._facts_key
     for p in (narrow, wide):              # narrow FIRST, so a stem match hits it
         built, kept = image_gamut(p, white_point="D50", space="lab")
-        facts[str(p)] = kept
+        facts[key(p)] = kept
         shapes_by_path[p] = built
 
     said = []
     # ⚠ THE REAL METHOD, not a stub that answers True. A stand-in that
     # invents its own answer stops testing the window and starts testing
     # itself — which is how three stand-ins in this suite came to be blind.
-    hall = NS(_image_facts=facts,
-              _picture_loss=NS(setText=said.append),
-              _lays_down_ink=gamut_app.GamutApp._lays_down_ink.__get__(
-                  NS(), gamut_app.GamutApp))
+    hall = a_window(_image_facts=facts,
+                    _picture_loss=NS(setText=said.append))
     gamut_app.GamutApp._update_picture_loss(
         hall, "holiday", shapes_by_path[wide],
         "holiday", shapes_by_path[narrow], (wide, narrow))
@@ -337,7 +357,7 @@ def test_a_pictures_figure_comes_from_that_picture_and_not_its_namesake(
 
     # The truth, computed here from the file that is actually on screen.
     from imagegamut import out_of_reach
-    truth = out_of_reach(facts[str(wide)], shapes_by_path[narrow])
+    truth = out_of_reach(facts[key(wide)], shapes_by_path[narrow])
     assert truth["of_the_picture"], (
         "these two pictures no longer differ, so this test proves nothing")
     assert f"{100 * truth['of_the_picture']:.0f}%" in line, (
@@ -345,42 +365,19 @@ def test_a_pictures_figure_comes_from_that_picture_and_not_its_namesake(
     assert "Every colour in holiday" not in line
 
 
-def test_a_pictures_facts_do_not_outlive_the_file_they_describe(tmp_path):
-    """`_image_facts` was keyed by path like three sibling caches and left
-    out of every clear, so a photograph edited and reopened under the same
-    name kept the pixels it used to have.
-
-    ONE ENTRY, not the whole dict, and BEFORE the build. Emptying all of
-    it broke the feature outright — opening a paper after a photograph threw
-    the photograph's facts away and the figure vanished from a window still
-    showing the picture. And the build is what writes those facts, so a
-    clear placed with the sibling caches further down would discard the
-    facts of the picture being opened.
-    """
-    import ast
-    import inspect
-    import gamut_app
-
-    src = inspect.getsource(gamut_app.GamutApp._load)
-    tree = ast.parse(src.strip())
-    cleared = built = None
-    for i, node in enumerate(ast.walk(tree)):
-        pass
-    lines = src.splitlines()
-    for i, line in enumerate(lines):
-        if "_image_facts.pop(str(path), None)" in line:
-            cleared = i
-        if "_build_patiently(" in line and built is None:
-            built = i
-    assert cleared is not None, (
-        "the file being opened keeps whatever facts it had last time")
-    assert "_image_facts.clear()" not in src, (
-        "emptying the whole dict discards the facts of pictures that are "
-        "still on screen, and the figure disappears for them")
-    assert built is not None
-    assert cleared < built, (
-        "the facts are emptied AFTER the build that writes them, which "
-        "throws away the facts of the picture being opened")
+# ⚠ A SOURCE-TEXT TEST STOOD HERE AND IT WAS WORSE THAN NOTHING.
+# `test_a_pictures_facts_do_not_outlive_the_file_they_describe` parsed
+# `_load` and asserted that a `pop` line was present and sat before the
+# build. It passed. The line it insisted on was then PROVEN to earn nothing —
+# `_build_one` overwrites unconditionally and nothing caches in front of it —
+# so the test was pinning a no-op in place and would have argued against
+# removing it. It also carried a dead `ast.parse` whose result was never read.
+#
+# What replaced it: `test_a_pictures_facts_are_keyed_by_the_file_and_its_
+# timestamp`, which edits a real file and checks the key MOVES, and
+# `test_the_pictures_colours_are_given_back_when_nothing_shows_them`, which
+# builds the dict and checks what survives. Both fail when the thing they
+# describe is broken; the one they replaced could not.
 
 
 def test_a_photograph_is_never_given_a_paper_white_or_blacks(tmp_path):
@@ -405,8 +402,7 @@ def test_a_photograph_is_never_given_a_paper_white_or_blacks(tmp_path):
     import gamut_app
     from types import SimpleNamespace as NS
 
-    hall = NS(_lays_down_ink=gamut_app.GamutApp._lays_down_ink.__get__(
-        NS(), gamut_app.GamutApp))
+    hall = a_window()
     picture = _a_picture(tmp_path / "shot",
                          lambda x, y: (x * 5 % 256, y * 5 % 256, 90))
     paper = HERE / "demo" / "Matte-paper.ti3"
@@ -435,16 +431,15 @@ def test_the_verb_follows_the_other_sides_kind(tmp_path):
     narrow = _a_picture(tmp_path / "n",
                         lambda x, y: (110 + x // 5, 110 + y // 5, 110))
     facts, shapes_by = {}, {}
+    key = a_window()._facts_key
     for one in (wide, narrow):
         built, kept = image_gamut(one, white_point="D50", space="lab")
-        facts[str(one)] = kept
+        facts[key(one)] = kept
         shapes_by[one] = built
 
     said = []
-    hall = NS(_image_facts=facts,
-              _picture_loss=NS(setText=said.append),
-              _lays_down_ink=gamut_app.GamutApp._lays_down_ink.__get__(
-                  NS(), gamut_app.GamutApp))
+    hall = a_window(_image_facts=facts,
+                    _picture_loss=NS(setText=said.append))
     gamut_app.GamutApp._update_picture_loss(
         hall, "w-shot", shapes_by[wide], "n-shot", shapes_by[narrow],
         (wide, narrow))
@@ -467,3 +462,77 @@ def test_the_verb_follows_the_other_sides_kind(tmp_path):
     line = [t for t in said if t]
     assert line and "can print" in line[0], (
         f"a measured paper stopped printing: {line!r}")
+
+
+def test_the_pictures_colours_are_given_back_when_nothing_shows_them(tmp_path):
+    """⚠ A PHOTOGRAPH'S COLOURS WERE KEPT FOR THE LIFE OF THE WINDOW.
+
+    Each entry holds the picture's own colours — up to 300,000 of them in two
+    float64 arrays, about 9.6 MB a photograph. Nothing ever shrank the dict:
+    not closing one file, and not "Close them all", which empties the slots,
+    the chart, the comparison and every readout and touched none of it.
+    Twenty photographs in a sitting is ~190 MB that could never come back.
+
+    ⚠ AND IT KEEPS WHAT IS ON SCREEN. Emptying more than this is not a
+    stricter version of the same fix — it is a different bug. Clearing the
+    whole dict once threw away the facts of a picture still being shown, and
+    the figure vanished from the window.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    on_screen = _a_picture(tmp_path / "shown", lambda x, y: (x, y, 90))
+    gone = _a_picture(tmp_path / "closed", lambda x, y: (y, x, 30))
+    hall = a_window(_slots=[], _reference_path=None, _image_facts={})
+
+    hall._image_facts[hall._facts_key(on_screen)] = {"colours": 1}
+    hall._image_facts[hall._facts_key(gone)] = {"colours": 2}
+    hall._slots = [(on_screen, None, None)]
+
+    hall._forget_unused_facts()
+    assert hall._facts_key(on_screen) in hall._image_facts, (
+        "the facts of a picture still on screen were thrown away — the "
+        "figure disappears from a window that is showing the picture")
+    assert hall._facts_key(gone) not in hall._image_facts, (
+        "a closed picture's colours are still held")
+
+    # A picture held as the COMPARISON is on screen too.
+    hall._image_facts[hall._facts_key(gone)] = {"colours": 2}
+    hall._reference_path = gone
+    hall._forget_unused_facts()
+    assert hall._facts_key(gone) in hall._image_facts, (
+        "the comparison's own picture was forgotten")
+
+    # And with nothing open at all, nothing is held.
+    hall._slots, hall._reference_path = [], None
+    hall._forget_unused_facts()
+    assert hall._image_facts == {}, "Close them all gave nothing back"
+
+
+def test_a_pictures_facts_are_keyed_by_the_file_and_its_timestamp(tmp_path):
+    """The path alone answers for the picture a file USED to be.
+
+    ⚠ THIS CHANGES NOTHING OBSERVABLE TODAY AND IS STILL WORTH HAVING, which
+    is the honest way to put it. 5ecf5a3 claimed to fix an observed
+    staleness by popping the entry in `_load`; a driver run four ways over
+    eight states proved that pop earned nothing, because `_build_one`
+    overwrites unconditionally and nothing caches in front of it. That claim
+    was false and is corrected in the source.
+
+    The guarantee belongs in the key, where it holds for the comparison
+    route as well — which never passes through `_load` — and where no future
+    cache in front of the builder can quietly undo it.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+    import time
+
+    shot = _a_picture(tmp_path / "t", lambda x, y: (x, y, 10))
+    key = a_window()._facts_key
+    before = key(shot)
+    time.sleep(0.01)
+    _a_picture(tmp_path / "t", lambda x, y: (y, x, 200))    # same path, edited
+    assert key(shot) != before, (
+        "an edited picture keeps the key of the one it replaced")
+    # A file that is gone rebuilds rather than answering from the past.
+    assert key(tmp_path / "never-existed.png")[1] == 0

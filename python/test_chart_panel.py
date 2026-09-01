@@ -1683,7 +1683,9 @@ def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
               _is_picture=lambda name: name == "holiday",
               _lays_down_ink=gamut_app.GamutApp._lays_down_ink.__get__(
                   NS(), gamut_app.GamutApp),
-              _image_facts={"/tmp/holiday.png": facts})
+              _facts_key=gamut_app.GamutApp._facts_key.__get__(
+                  NS(), gamut_app.GamutApp),
+              _image_facts={("/tmp/holiday.png", 0): facts})
     said = {}
     wrong = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
     gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,
@@ -1871,7 +1873,11 @@ def test_build_one_honours_the_space_it_is_asked_for(app):
               _mode=NS(currentData=lambda: "device"),
               _relative=NS(isChecked=lambda: False),
               _build_space=lambda: "luv",          # the window is drawing LUV
-              _image_facts={})
+              _image_facts={},
+              # The real key-maker: a stand-in that invents its own would
+              # stop testing the window and start testing itself.
+              _facts_key=gamut_app.GamutApp._facts_key.__get__(
+                  NS(), gamut_app.GamutApp))
     asked = [(root / "demo" / "Glossy-paper.icc", "a profile"),
              (root / "demo" / "Glossy-paper.ti3", "a measurement")]
     if picture is not None:

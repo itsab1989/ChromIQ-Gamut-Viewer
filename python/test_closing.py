@@ -88,7 +88,15 @@ def window():
         _fill_chart_profiles=lambda: None,
         _show_placeholder=lambda: None,
         _volume_units=lambda: "cubic Lab units",
+        _image_facts={},
         **figures)
+    # ⚠ THE REAL HELPERS, BOUND. "Close them all" now also gives back the
+    # colours of every photograph it closes — about 9.6 MB each — and this
+    # fixture is what proves the gesture still does everything else. A stub
+    # that shrugged would let the freeing quietly stop happening.
+    for helper in ("_facts_key", "_forget_unused_facts"):
+        setattr(w, helper,
+                getattr(_app.GamutApp, helper).__get__(w, _app.GamutApp))
 
     def compare_changed():
         # The real handler, reduced to the one thing this test is about.
@@ -154,3 +162,26 @@ def test_the_files_and_the_chart_still_go(window):
     assert window._chart is None
     assert window._chart_placed is None
     assert window._volume.text() == "—"
+
+
+def test_the_pictures_colours_are_handed_back_too(window):
+    """⚠ "CLOSE THEM ALL" GAVE BACK EVERYTHING BUT THE MEMORY.
+
+    It emptied the slots, the chart, the comparison and every readout in the
+    window's own list — and left each photograph's colours behind. An entry
+    is the picture's colours themselves, up to 300,000 of them in two float64
+    arrays: about 9.6 MB a photograph, held for the life of the window.
+    Twenty photographs in a sitting is roughly 190 MB that the start-again
+    gesture could never give back.
+
+    This belongs beside the other four things the gesture closes, and in the
+    same fixture, because the fault was that a list of things to release had
+    to be kept in step by hand — which is how the colour-family lines came to
+    survive it once already.
+    """
+    window._image_facts = {("/a/holiday.png", 111): {"colours": 9},
+                           ("/b/sunset.png", 222): {"colours": 9}}
+    close_them_all(window)
+    assert window._image_facts == {}, (
+        "the photographs' colours survived Close them all — about 9.6 MB "
+        "each, for the life of the window")

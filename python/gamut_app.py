@@ -10334,6 +10334,49 @@ class GamutApp(QMainWindow):
 
 
     # ------------------------------------------------------------- pictures
+    def _facts_key(self, path):
+        """What identifies a picture's facts: the file AND its timestamp.
+
+        ⚠ THE PATH ALONE ANSWERS FOR THE PICTURE A FILE USED TO BE. That is
+        the rule `_shape_key` already follows and `shapes.key_for` already
+        writes down, and it is the guarantee 5ecf5a3 CLAIMED to make and did
+        not: that commit popped the entry in `_load`, which a driver later
+        proved earns nothing, because `_build_one` overwrites the entry
+        unconditionally anyway. The claim was false and the line was
+        half-insurance — it covered the slot route and not the comparison
+        route, which never passes through `_load` at all.
+
+        A timestamp in the key covers both routes and cannot be forgotten.
+        An unreadable file gets 0, so it rebuilds rather than answering from
+        whatever was there before.
+        """
+        try:
+            return (str(path), Path(path).stat().st_mtime_ns)
+        except OSError:
+            return (str(path), 0)
+
+    def _forget_unused_facts(self) -> None:
+        """Drop the facts of pictures nothing on screen is showing.
+
+        ⚠ EACH ENTRY IS THE PICTURE'S COLOURS THEMSELVES — up to 300,000 of
+        them in two float64 arrays, about 9.6 MB a photograph, and they were
+        kept for the life of the window. Nothing shrank the dict: not closing
+        a file, and not "Close them all", which empties the slots, the chart,
+        the comparison and every readout and touched none of the caches.
+        Twenty photographs in a sitting is ~190 MB that could never be given
+        back.
+
+        Called wherever what is on screen changes, and it keeps everything
+        on screen: emptying more than that is what made the figure vanish
+        from a window that was still showing the picture.
+        """
+        alive = {self._facts_key(path) for path, _g, _m in self._slots}
+        held = getattr(self, "_reference_path", None)
+        if held is not None:
+            alive.add(self._facts_key(held))
+        for key in [k for k in self._image_facts if k not in alive]:
+            del self._image_facts[key]
+
     def _lays_down_ink(self, path) -> bool:
         """Whether this thing PRINTS — a paper or a profile, not a picture.
 
@@ -10359,7 +10402,7 @@ class GamutApp(QMainWindow):
         """Whether a shape on screen came from a picture rather than a printer."""
         for path, _g, _m in self._slots:
             if path.stem == name:
-                return str(path) in self._image_facts
+                return self._facts_key(path) in self._image_facts
         return False
 
     #: EVERY READOUT, IN READING ORDER, NAMED ONCE.
@@ -13987,6 +14030,12 @@ class GamutApp(QMainWindow):
         # which opens no dialog.
         self._compare.setCurrentIndex(0)
         self._on_compare_changed()
+        # ⚠ AND THE PICTURES' COLOURS, WHICH THIS GESTURE NEVER GAVE BACK.
+        # "Close them all" emptied the slots, the chart, the comparison and
+        # every readout, and left every photograph's colours in memory —
+        # about 9.6 MB each, for the life of the window. With the slots and
+        # the comparison now empty this frees all of them.
+        self._forget_unused_facts()
         self._refresh_slot_labels()
         self._refresh_chart_panel()
         self._fill_chart_profiles()
@@ -14244,18 +14293,17 @@ class GamutApp(QMainWindow):
         # have, and the figure beneath it — how much of this picture will not
         # print — described the old file.
         #
-        # ⚠ ONE ENTRY, NOT THE WHOLE DICT, AND THIS WAS MEASURED RATHER THAN
-        # REASONED ABOUT. Emptying all of it here looked obviously right and
-        # broke the feature: opening a paper AFTER a photograph threw the
-        # photograph's facts away, and the figure vanished from a window that
-        # was still showing the picture. The staleness being fixed belongs to
-        # the file being opened, so that is the entry that goes.
+        # ⚠ THE PICTURE'S FACTS ARE NOT TOUCHED HERE, AND THE COMMIT THAT
+        # SAID THEY WERE WAS WRONG. 5ecf5a3 popped this file's entry before
+        # the build and claimed it fixed a photograph reopened after an edit
+        # showing the old pixels. Driven four ways, eight states each, that
+        # pop changed nothing: `_build_one` overwrites the entry
+        # unconditionally and nothing caches in front of it. It was also only
+        # half a guard, covering the slot route and not the comparison route,
+        # which never comes through here at all.
         #
-        # ⚠ AND BEFORE THE BUILD, not beside the three below.
-        # `_build_patiently` is what WRITES a picture's facts; a clear placed
-        # with its siblings further down would discard the facts of the very
-        # picture being opened.
-        self._image_facts.pop(str(path), None)
+        # The freshness guarantee lives in the KEY now — see `_facts_key` —
+        # where it covers both routes and cannot be forgotten.
         try:
             g, m = self._build_patiently(path)
         except Stopped:
@@ -14281,6 +14329,10 @@ class GamutApp(QMainWindow):
         if len(self._slots) >= 2:
             self._slots.pop(0)                 # newest two win
         self._slots.append((path, g, m))
+        # AND FORGET THE PICTURES NOBODY IS LOOKING AT ANY MORE. After the
+        # slots are settled, never before: the picture just opened must
+        # survive this.
+        self._forget_unused_facts()
         # A FILE MAY HAVE CHANGED ON DISK since it was last judged against.
         # The cache is keyed by path, so an edited measurement reopened under
         # the same name would be judged against the shape it used to have.
@@ -14455,7 +14507,7 @@ class GamutApp(QMainWindow):
         if thing.kind == "picture":
             from imagegamut import image_gamut
             built, facts = image_gamut(path, white_point=white, space=wanted)
-            self._image_facts[str(path)] = facts
+            self._image_facts[self._facts_key(path)] = facts
             return built, None
         m = read_measurement(path, white, self._relative.isChecked())
         drive = None if self._mode.currentData() == "hull" else m.device
@@ -15782,7 +15834,7 @@ class GamutApp(QMainWindow):
                     # them apart is what this application is for, so the line
                     # under the name says which one you are looking at.
                     suffix = path.suffix.lower()
-                    facts = self._image_facts.get(str(path))
+                    facts = self._image_facts.get(self._facts_key(path))
                     if facts is not None:
                         patches = (f"a picture — {facts['colours']:,} colours "
                                    f"in {facts['pixels']:,} pixels")
@@ -17890,7 +17942,7 @@ class GamutApp(QMainWindow):
             # A missing path means no figure rather than a guessed one. The
             # figure is an extra, and a wrong extra is worse than none: it
             # is read as reassurance about whether a photograph will print.
-            facts = (self._image_facts.get(str(path))
+            facts = (self._image_facts.get(self._facts_key(path))
                      if path is not None else None)
             if facts is None:
                 continue
