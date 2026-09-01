@@ -12854,6 +12854,15 @@ class GamutApp(QMainWindow):
                 path = dlg.selectedFiles()[0]
                 self._last_folder = str(Path(path).parent)
                 self._reference_path = Path(path)
+                # ⚠ ASKING FOR A FILE AGAIN IS WHAT REBUILDS IT. The cache
+                # key no longer carries the file's timestamp — that made the
+                # numbers describe a file the window was not drawing — so
+                # the rebuild belongs on the gesture instead, exactly as
+                # `_load` already empties three caches when a file is opened.
+                # Choosing a file that has been edited since must not hand
+                # back the shape it used to have.
+                self._reference_cache.clear()
+                self._lab_gamuts.clear()
                 chosen = Path(path)
                 built, _m = self._build_one(chosen)
                 self._reference_m = _m

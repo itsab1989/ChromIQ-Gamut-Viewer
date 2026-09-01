@@ -210,11 +210,17 @@ def test_a_file_is_classified_in_one_place_and_a_picture_is_not_a_profile():
     assert shapes.thing_for("paper.cxf", images).kind == "measurement"
 
 
-def test_the_key_carries_the_file_s_timestamp_and_only_what_matters():
+def test_the_key_carries_only_what_matters():
+    """⚠ AND NOT THE FILE'S TIMESTAMP, WHICH IT USED TO DEMAND. A key made
+    from disk NOW, for a shape built when the file was OPENED, meant the
+    numbers could describe content the window was not drawing — driven, a
+    photograph re-saved in place: drawn volume 212,188, judged volume 0.
+    The rebuild lives on the gesture that asks for the file again.
+    """
     s = shapes.Settings()
     paper = shapes.Thing("measurement", DEMO / "Glossy-paper.ti3")
     stamp = (DEMO / "Glossy-paper.ti3").stat().st_mtime_ns
-    assert stamp in shapes.key_for(paper, s)
+    assert stamp not in shapes.key_for(paper, s)
     # Detail reaches the synthetic kinds and nothing else.
     assert shapes.key_for(paper, s) == shapes.key_for(paper,
                                                       s.drawn_in("lab"))

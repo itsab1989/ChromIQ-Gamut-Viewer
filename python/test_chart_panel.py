@@ -1305,15 +1305,33 @@ def test_detail_is_not_in_the_key_of_any_file_built_shape(app):
         "two things that were never different")
 
 
-def test_the_key_carries_the_file_s_own_timestamp(app):
-    """A cache keyed by path alone answers for the shape a file USED to have.
-    The guard against that was "remember to clear all three caches", which had
-    already been half-forgotten once; a timestamp cannot be forgotten."""
-    key = shape_key("demo/Glossy-paper.ti3")
+def test_the_key_answers_for_the_file_that_was_opened(app):
+    """⚠ THIS TEST DEMANDED THE OPPOSITE, AND THE OPPOSITE WAS WORSE.
+
+    It asserted the file's `st_mtime_ns` was in the key, on the reasoning
+    that "a cache keyed by path alone answers for the shape a file USED to
+    have". True, and it made the window contradict itself: a reader's key is
+    made from disk NOW, while the shape being DRAWN was built when the file
+    was opened. Edit a file in place while it is open and the numbers are
+    recomputed from the new content beside a picture of the old one —
+    driven, a photograph re-saved smaller: drawn volume 212,188, judged
+    volume 0, with nothing on screen saying which the percentages describe.
+
+    The rebuild belongs on the GESTURE that asks for the file again, which
+    is where `_load` already empties three caches and where the comparison
+    chooser now empties its own. A timestamp cannot tell "this file changed"
+    from "you asked for it again", and only the second should move what is
+    on screen.
+    """
     import pathlib
     root = pathlib.Path(__file__).resolve().parent.parent
+    key = shape_key("demo/Glossy-paper.ti3")
     stamp = (root / "demo/Glossy-paper.ti3").stat().st_mtime_ns
-    assert stamp in key, f"no timestamp in {key}"
+    assert stamp not in key, (
+        f"the timestamp is back in the key, so a file edited underneath an "
+        f"open window changes the numbers without changing the picture: {key}")
+    # AND IT IS STILL THE FILE'S OWN KEY: two different files never share one.
+    assert key != shape_key("demo/Matte-paper.ti3")
 
 
 def test_the_tick_and_the_mode_reach_a_measurement_and_not_a_profile(app):

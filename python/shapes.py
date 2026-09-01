@@ -133,27 +133,32 @@ def depends_on(thing: Thing) -> tuple:
 def key_for(thing: Thing, settings: Settings) -> tuple:
     """What decides this shape, and nothing else — the one cache key.
 
-    ⚠ THE FILE'S OWN TIMESTAMP IS IN IT. A cache keyed by path alone answers
-    for the shape a file USED to have, and the guard against that was
-    "remember to clear the caches when a file is opened" — a rule already
-    half-forgotten once, across four caches with four different key rules.
+    ⚠ THE FILE'S TIMESTAMP IS NOT IN IT, AND IT WAS. That looked obviously
+    right — a cache keyed by path alone answers for the shape a file USED to
+    have — and it made the window contradict itself instead.
 
-    ⚠ AND A FILE THAT CANNOT BE STATTED GETS A STABLE KEY, not an unrepeatable
-    one. An earlier version of this comment claimed the opposite — "never
-    answer from cache" — which was simply false, and a review showed it in one
-    line. What is TRUE is narrower and worth stating exactly: the key of a
-    missing file differs from the key that file had while it existed, so no
-    cache can hand back its old shape; but two lookups of the SAME missing
-    file agree, so if anything ever cached a result under it, that result
-    would be returned. Nothing does today, because a build of a missing file
-    raises before it can be stored.
+    A reader's key is built from the file on disk NOW. The shape being DRAWN
+    was built when the file was opened. Edit the file in place while it is
+    open — a save from an editor, a sync, a restore from backup — and the key
+    moves, so every number is recomputed from the new content while the
+    picture on screen is still the old one. Driven, a photograph re-saved
+    with far smaller colours, nothing reopened:
+
+        the shape being drawn      volume 212,188
+        the shape being judged     volume 0
+
+    Nothing tells the reader which of those the percentages describe. The
+    same mismatch, in the picture-facts cache, turned "holds" into "can
+    print" about a photograph earlier the same day.
+
+    So the window answers for the file you OPENED, and the rebuild happens on
+    the gesture that asks for the file again — which is where `_load` already
+    empties three caches, and where `_on_compare_changed` now empties the
+    comparison's. A timestamp cannot be forgotten, but it also cannot be
+    told the difference between "this file changed" and "you asked for it
+    again", and only the second should move what is on screen.
     """
     parts: list = [thing.kind, str(thing.path) if thing.path else thing.name]
-    if thing.path is not None:
-        try:
-            parts.append(thing.path.stat().st_mtime_ns)
-        except OSError:          # gone, or unreadable — see the note above
-            parts.append(None)
     for setting in depends_on(thing):
         parts.append(getattr(settings, setting))
     return tuple(parts)
