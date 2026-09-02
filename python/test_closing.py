@@ -651,6 +651,8 @@ def test_every_route_that_rebuilds_obeys_the_refusal_rule():
                    _sync_slider_labels=lambda: None,
                    _on_manual_light=lambda: None,
                    _apply_mode=lambda: None,
+                   _update_spin_labels=lambda: None,
+                   _apply_spin_availability=lambda: None,
                    _apply_space_availability=lambda: None,
                    _chart_drawable=lambda: False,
                    _rebuild_reference=lambda: None,
@@ -800,6 +802,8 @@ def test_starting_again_rebuilds_the_shapes_it_resets():
            _sync_slider_labels=lambda: None,
            _on_manual_light=lambda: None,
            _apply_mode=lambda: None,
+           _update_spin_labels=lambda: None,
+           _apply_spin_availability=lambda: None,
            _apply_space_availability=lambda: None,
            _chart_drawable=lambda: False,
            _rebuild_reference=lambda: None,
@@ -939,3 +943,68 @@ def test_the_route_finder_cannot_be_walked_past():
     assert not _mentions_rebuild(_not_a_route_at_all), (
         "the finder now calls everything a route, so it proves nothing about "
         "any of them")
+
+
+def test_starting_again_refreshes_the_movement_block_too():
+    """⚠ THE RESET LEFT FOUR LABELS DESCRIBING THE SETTINGS IT THREW AWAY.
+
+    Seven persisted controls belong to the movement pair — spin_on,
+    turn_mode, turn_speed, turn_sweep, tilt_mode, tilt_speed, tilt_sweep.
+    `_reset_defaults` writes all of them with signals BLOCKED, so
+    `_on_spin_changed` — the only thing that refreshes their labels and hides
+    their rows — never runs, and `_redraw()` does not call it either.
+
+    Driven before the fix: movement on, turn "all the way round" at 30/120,
+    tilt "back and forth" at 24/90, then the button.
+
+        axis0 speed slider          8          <- the reset landed
+        axis0 SPEED LABEL   "12 s a turn"      honest: "24 s a swing"
+        axis0 SWEEP LABEL   "120° wide"        honest: "60° wide"
+        axis1 SPEED LABEL   "12 s a swing"     honest: "21 s a swing"
+        axis1 SWEEP LABEL   "90° wide"         honest: "40° wide"
+        both holders visible: True             should be: False
+
+    A reader saw "Turn it by itself" unticked and, underneath it, the speed
+    and width of the mode that had just been reset away.
+
+    ⚠ BOTH BRANCHES. The refusal path cannot show the fault today, because
+    it restores the same values the reset had just written — but a refresher
+    that is correct only by coincidence stops being correct without anybody
+    touching it, so the rule is asserted on both.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    for rebuild_says in (True, False):
+        did = []
+        w = NS(_slots=[("a-paper", object(), None)],
+               _reference=None,
+               _persisted=lambda: [],
+               _appearance="dark", _scheme="Magenta", _paint="true",
+               _per_shape={}, _shared={},
+               _target=NS(blockSignals=lambda v: None,
+                          setCurrentIndex=lambda i: None,
+                          currentIndex=lambda: 0),
+               _remember_everything=lambda: None,
+               _sync_slider_labels=lambda: did.append("sliders"),
+               _on_manual_light=lambda: None,
+               _apply_mode=lambda: None,
+               _update_spin_labels=lambda: did.append("spin labels"),
+               _apply_spin_availability=lambda: did.append("spin rows"),
+               _apply_space_availability=lambda: None,
+               _chart_drawable=lambda: False,
+               _rebuild_reference=lambda: None,
+               _rebuild=lambda redraw=True: rebuild_says,
+               _put_settings_back=lambda: None,
+               _remember_settled=lambda: None,
+               _redraw=lambda: None)
+        gamut_app.Notice.ask = staticmethod(lambda *a, **k: True)
+        gamut_app.GamutApp._reset_defaults(w)
+
+        branch = "the rebuild succeeded" if rebuild_says else "it refused"
+        assert "spin labels" in did, (
+            f"{branch}: the movement labels were never refreshed, so they "
+            f"still describe the settings the reset threw away (did={did})")
+        assert "spin rows" in did, (
+            f"{branch}: the movement rows were never re-hidden, so the whole "
+            f"block stays on screen under an unticked switch (did={did})")

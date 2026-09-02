@@ -12282,6 +12282,24 @@ class GamutApp(QMainWindow):
         self._sync_slider_labels()
         self._on_manual_light()
         self._apply_mode()
+        # ⚠ AND THE MOVEMENT PAIR, WHICH NOTHING ELSE REPAIRS. Seven of
+        # the persisted controls belong to it — spin_on, turn_mode,
+        # turn_speed, turn_sweep, tilt_mode, tilt_speed, tilt_sweep —
+        # and they are written above with signals blocked, so
+        # `_on_spin_changed`, the only thing that refreshes their labels
+        # and hides their rows, never runs. `_redraw()` does not call it
+        # either, so nothing downstream put it right.
+        #
+        # Driven: movement on, turn 'all the way round' at 30/120, tilt
+        # 'back and forth' at 24/90, then the reset. The sliders and the
+        # tick landed on their defaults and all FOUR labels kept the old
+        # numbers — "12 s a turn" over a slider reading 8, "120° wide"
+        # over a slider reading 60 — while both movement blocks stayed
+        # on screen under an unticked "Turn it by itself". A reader saw
+        # the switch off and the settings for the mode just reset away
+        # still listed beneath it.
+        self._update_spin_labels()
+        self._apply_spin_availability()
         # ⚠ AND THE SHAPES HAVE TO FOLLOW THE SETTINGS. This wrote every
         # control — including "Draw it in" — with signals blocked, so no
         # handler ran, nothing was rebuilt, and the `_redraw()` below drew
@@ -12324,6 +12342,15 @@ class GamutApp(QMainWindow):
             self._sync_slider_labels()
             self._on_manual_light()
             self._apply_mode()
+            # AND THE MOVEMENT PAIR HERE TOO. The forward branch above says
+            # why. It is not reachable today — the refusal restores the same
+            # values the reset had just written, so the labels happen to
+            # agree — but the two branches restore different things the
+            # moment either one changes, and a refresher that is only
+            # correct by coincidence is the kind that stops being correct
+            # without anybody touching it.
+            self._update_spin_labels()
+            self._apply_spin_availability()
             # AND THE FOUR THE SHARED RULE OWNS, through the shared method:
             # every route that can refuse puts those back the same way, and
             # a route that restores them privately drops out of the rule the
@@ -15108,7 +15135,22 @@ class GamutApp(QMainWindow):
         # one, and the coverage line then compared two shapes measured
         # against different whites — a wrong number, printed confidently,
         # from the fault class this release is named after.
-        if not self._rebuild():
+        # ⚠ AND THIS ROUTE DRAWS FOR ITSELF, on both of its own exits, so
+        # `_rebuild` must not draw as well. It did: one nudge of the white
+        # point built and wrote TWO whole pages, the second replacing the
+        # first in the view. Counted with `build_figure` wrapped, one gesture
+        # at a time, one paper open:
+        #
+        #   Draw it in   CIELAB -> CIELUV            build_figure=1
+        #   White point  D50 -> D65                  build_figure=2
+        #   own-white tick                           build_figure=1
+        #
+        # A scene is about 6 MB and `_redraw` writes a new file each time, so
+        # that is a second multi-megabyte page written and loaded for no
+        # change at all. The space route was given `redraw=False` and this one
+        # was not — the same fix, applied at one of the two places it was
+        # needed, which is the shape of nearly every fault in this file.
+        if not self._rebuild(redraw=False):
             self._put_settings_back()
             self._rebuild_reference()
             self._redraw()

@@ -166,7 +166,24 @@ def convert_to_ti3(path: Path) -> Path:
                               capture_output=True, text=True, timeout=180)
     except subprocess.TimeoutExpired as exc:
         raise ValueError(f"{path.name} took too long to convert") from exc
-    produced = stem.with_suffix(".ti3")
+    # ⚠ APPENDED, NOT `with_suffix`. The tools are told a BASENAME and write
+    # `<basename>.ti3`; `Path.with_suffix` REPLACES whatever follows the last
+    # dot in the name it is given rather than adding to it. For a stem with a
+    # dot in it the two disagree, and the code then went looking for a file
+    # nobody had written:
+    #
+    #     Glossy-paper.v2         tool wrote Glossy-paper.v2.ti3
+    #                             this looked for Glossy-paper.ti3
+    #     chart 2026-08-29.10.30  tool wrote chart 2026-08-29.10.30.ti3
+    #                             this looked for chart 2026-08-29.10.ti3
+    #
+    # The conversion had SUCCEEDED and the finished file was sitting in the
+    # folder; `produced.is_file()` was False, so the reader was told the file
+    # "could not be converted" and given as the reason whichever line the tool
+    # last printed -- on a clean run, its progress chatter, or "exit code 0".
+    # Version suffixes and dated exports are ordinary names for a measurement,
+    # so every one of them was refused.
+    produced = Path(f"{stem}.ti3")
     if not produced.is_file():
         detail = (done.stderr or done.stdout or "").strip().splitlines()
         why = detail[-1] if detail else f"exit code {done.returncode}"
@@ -231,10 +248,26 @@ def which_patch_is_the_paper(device, xyz, device_class: str = ""):
 def read_measurement(path, white_point: str = "D50",
                      relative: bool = False) -> "Measurement":
     """Read any measurement file this understands, converting when it must."""
+    import shutil
+
     path = Path(path)
     if path.suffix.lower() in CONVERTERS:
         converted = convert_to_ti3(path)
-        measured = read_ti3(converted, white_point, relative)
+        # ⚠ AND THE TEMPORARY FOLDER GOES WITH IT. `convert_to_ti3` makes a
+        # `mkdtemp` per conversion and nothing removed it, so every .cxf,
+        # .mxf and .txt ever opened left a folder holding a megabyte-odd .ti3
+        # behind for good. That is the SECOND unmanaged temporary folder in
+        # this application; the first was the scenes, found as 644 folders
+        # holding 27 GB after two days -- see test_temp_files.py. Those are
+        # swept by `_sweep_up_after_runs_that_never_finished`, which only
+        # knows about `gamutview-*`, so these were never in reach of it.
+        #
+        # Nothing needs the converted copy after this line: it is read here
+        # and the name the reader knows is put back below.
+        try:
+            measured = read_ti3(converted, white_point, relative)
+        finally:
+            shutil.rmtree(converted.parent, ignore_errors=True)
         # Keep the name the user knows it by, not the temporary copy's.
         # ⚠ EVERY FIELD, NOT MOST OF THEM. This dropped `white_from` the
         # day it was added, so every .cxf, .txt and .mxf reported that no

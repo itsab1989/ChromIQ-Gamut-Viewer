@@ -1550,42 +1550,70 @@ def test_the_comparison_is_rebuilt_before_the_papers(app):
     slot aborted, and the comparison was never rebuilt at all — CIELAB left
     on screen under a control reading CIE XYZ.
 
-    ⚠ TWO FAULTS IN THE FINDER, BOTH FOUND BY A GATE THIS TEST PASSED FOR
-    MONTHS. It compared `ast.unparse(node)` against the literal string
-    `"self._rebuild()"`, so the day `_on_space_changed` began asking
-    `self._rebuild(redraw=False)` the call stopped being seen — and the
-    assertion did not report the rule broken, it raised ValueError from
-    `list.index`. A finder that cannot find its subject must SAY so; this
-    one crashed instead.
+    ⚠ THIS RULE CANNOT BE SETTLED BY READING THE SOURCE, WHICH TOOK THREE
+    GOES TO LEARN. It has been written three ways:
 
-    And the order it checked was `ast.walk` order, which is BREADTH-FIRST,
-    not source order. Two calls at the same depth came out in the order the
-    walk happened to reach them. The rule is about which runs FIRST, so the
-    calls are now sorted by where they are written.
+      1. `ast.unparse(node) == "self._rebuild()"`. Stopped seeing the call
+         the day one route began asking `self._rebuild(redraw=False)` — and
+         did not report the rule broken, it raised ValueError from
+         `list.index`. A finder that cannot find its subject must SAY so.
+      2. by `ast.walk` order, which is BREADTH-FIRST and not source order.
+      3. by source POSITION, sorted on `(lineno, col_offset)`. A hunt walked
+         past that one too:
 
-    The rule itself is unchanged, and holds whether or not the caller takes
-    the redraw for itself: the comparison is converted before the papers.
+             self._rebuild_reference() if self._rebuild(redraw=False) else None
+
+         In `A if C else B` the `A` is written to the LEFT of `C` and runs
+         AFTER it. Sorted by position the reference comes first, the
+         assertion is satisfied, and at run time the papers are rebuilt
+         first — the exact fault the assertion's own message describes. The
+         whole gate stayed green. The same blindness covers `A and B`,
+         `A or B`, and a reference call sitting inside an `if` that does not
+         always run.
+
+    So it is DRIVEN now. `_rebuild` and `_rebuild_reference` write their own
+    names into a list, each route is called, and the assertion is about the
+    ORDER OF THE LIST — which is the order they actually ran, whatever shape
+    the expression was written in.
     """
-    import ast
-    import inspect
     import gamut_app
+    from types import SimpleNamespace as NS
+
     for name in ("_on_space_changed", "_on_white_changed", "_on_shape_setting"):
-        src = inspect.getsource(getattr(gamut_app.GamutApp, name))
-        found = [(node.lineno, node.col_offset, node.func.attr)
-                 for node in ast.walk(ast.parse(src.strip()))
-                 if isinstance(node, ast.Call)
-                 and isinstance(node.func, ast.Attribute)
-                 and isinstance(node.func.value, ast.Name)
-                 and node.func.value.id == "self"
-                 and node.func.attr in ("_rebuild", "_rebuild_reference")]
-        calls = [attr for _line, _col, attr in sorted(found)]
-        assert "_rebuild_reference" in calls, f"{name} forgets it"
-        assert "_rebuild" in calls, (
-            f"{name} no longer rebuilds the papers at all — either the route "
-            "moved or this test has stopped watching it")
-        assert calls.index("_rebuild_reference") < calls.index("_rebuild"), (
-            f"{name} rebuilds the papers before the comparison, so a redraw "
-            "meets a half-converted scene")
+        for rebuild_says in (True, False):
+            ran = []
+            w = NS(_slots=[("a-paper", object(), None)],
+                   _reference=None,
+                   _persisted=lambda: [],
+                   _appearance="dark", _scheme="Magenta", _paint="true",
+                   _per_shape={}, _shared={},
+                   _target=NS(blockSignals=lambda v: None,
+                              setCurrentIndex=lambda i: None,
+                              currentIndex=lambda: 0),
+                   _remember_everything=lambda: None,
+                   _sync_slider_labels=lambda: None,
+                   _on_manual_light=lambda: None,
+                   _apply_mode=lambda: None,
+                   _update_spin_labels=lambda: None,
+                   _apply_spin_availability=lambda: None,
+                   _apply_space_availability=lambda: None,
+                   _chart_drawable=lambda: False,
+                   _put_settings_back=lambda: None,
+                   _remember_settled=lambda: None,
+                   _redraw=lambda: None)
+            w._rebuild_reference = lambda: ran.append("comparison")
+            w._rebuild = lambda redraw=True: (ran.append("papers")
+                                              or rebuild_says)
+            getattr(gamut_app.GamutApp, name)(w)
+
+            assert "comparison" in ran, (
+                f"{name} never rebuilt the comparison (ran={ran})")
+            assert "papers" in ran, (
+                f"{name} never rebuilt the papers, so this test is watching "
+                f"nothing on that route (ran={ran})")
+            assert ran.index("comparison") < ran.index("papers"), (
+                f"{name} rebuilt the papers before the comparison "
+                f"(ran={ran}), so a redraw meets a half-converted scene")
 
 
 # --------------------------------------------------------------------------
