@@ -804,14 +804,65 @@ def test_the_cielab_shapes_cache_cannot_grow_without_end():
     # OLDEST OUT, NOT ALL OUT: the newest is still there to be found.
     assert ("space", ("space", "sRGB"),
             gamut_app.LAB_GAMUTS_KEPT * 3 - 1) in cache
-    # AND IT IS WIRED IN WHERE THE CACHE GROWS, not only where it is pruned.
-    import inspect
-    for method in (gamut_app.GamutApp._in_lab,
-                   gamut_app.GamutApp._reference_in_lab):
-        src = inspect.getsource(method)
-        if "_lab_gamuts[key] = built" in src:
-            assert "keep_newest(self._lab_gamuts)" in src, (
-                f"{method.__name__} writes to the cache and never bounds it")
+    # ⚠ AND WIRED IN WHERE THE CACHE GROWS — DRIVEN, NOT GREPPED.
+    #
+    # What stood here was an assert INSIDE an `if`:
+    #
+    #     src = inspect.getsource(method)
+    #     if "_lab_gamuts[key] = built" in src:
+    #         assert "keep_newest(self._lab_gamuts)" in src
+    #
+    # which is a guard that switches itself off. Driven by a hunt: rewrite
+    # both writes as `self._lab_gamuts.update({key: built})` and delete both
+    # caps, and the `if` stops matching, the assert never runs, `_lab_gamuts`
+    # is unbounded again — the exact fault this test is named for — and 389
+    # targeted tests pass. A test that reads source is asserting that a
+    # sentence appears in a file; this asks the method what it does.
+    from types import SimpleNamespace as NS2
+    import shapes
+
+    win = NS2(_lab_gamuts={},
+              _reference=("sRGB", NS2(space="luv")),
+              _reference_path=None,
+              _compare=NS2(currentData=lambda: ("space", "sRGB")),
+              _white=NS2(currentData=lambda: "D50"),
+              _mode=NS2(currentData=lambda: "device"),
+              _relative=NS2(isChecked=lambda: False),
+              _space=NS2(currentData=lambda: "lab"),
+              _build_space=lambda: "lab")
+    win._settings = gamut_app.GamutApp._settings.__get__(
+        win, gamut_app.GamutApp)
+    win._reference_in_lab = gamut_app.GamutApp._reference_in_lab.__get__(
+        win, gamut_app.GamutApp)
+
+    # ⚠ ONLY THE BUILD IS FAKED — it is the slow part and not what is under
+    # test. `key_for`, `recall`, the cap and the write are all the real ones,
+    # and a space's key carries `detail`, so each step is a genuine miss.
+    detail = [1]
+    win._detail = NS2(value=lambda: detail[0])
+    built_count = [0]
+    real_shape_for = shapes.shape_for
+
+    def cheap(thing, settled, **kw):
+        built_count[0] += 1
+        return shapes.Built(gamut=NS2(space="lab"), thing=thing,
+                            settings=settled)
+
+    shapes.shape_for = cheap
+    try:
+        for step in range(gamut_app.LAB_GAMUTS_KEPT * 3):
+            detail[0] = step + 1
+            win._reference_in_lab()
+            assert len(win._lab_gamuts) <= gamut_app.LAB_GAMUTS_KEPT, (
+                f"`_reference_in_lab` has grown the CIELAB shape cache to "
+                f"{len(win._lab_gamuts)} at step {step}; it writes to the "
+                "cache and never bounds it")
+    finally:
+        shapes.shape_for = real_shape_for
+
+    assert built_count[0] == gamut_app.LAB_GAMUTS_KEPT * 3, (
+        f"only {built_count[0]} shapes were built — the run never missed the "
+        "cache, so nothing was ever written and this proves nothing")
 
 
 def test_the_white_that_reaches_out_of_reach_is_the_other_sides():
@@ -885,7 +936,25 @@ def test_the_white_that_reaches_out_of_reach_is_the_other_sides():
                      "a picture's CIELAB is D50 too — `colours_to_lab` "
                      "answers under D50 and `build_gamut` takes Lab as "
                      "given, so it is bit-identical under both whites, "
-                     "measured")):
+                     "measured"),
+                    # ⚠ AND THE TWO KINDS THIS GUARD NEVER OPENED. It drove
+                    # .icc, .ti3 and .png — three of the five things a
+                    # photograph can be held against — and a hunt dropped
+                    # the rule for `.gam` alone at the caller: the function's
+                    # own unit test binds `_white_a_shape_stands_in` directly
+                    # and cannot see a narrowing one line later, so that
+                    # test, this guard and both gates all stayed green while
+                    # a real photograph against a real `iccgamut` surface
+                    # read 5% out of reach at D50, 92% at D65 and 5% again
+                    # on the way back. A .gam is a first-class opener in
+                    # BOTH slots (the file dialogs offer "*.gam"), so this
+                    # was a route a reader can take today.
+                    ("/tmp/paper.gam", "D50",
+                     "a .gam holds the profile's own D50 surface, as the "
+                     "profile it was written from does"),
+                    (None, "D65",
+                     "a colour space has no file and no white of its own, "
+                     "so it stands in whichever the reader chose")):
                 if slot == 0:
                     named = ("holiday", corners, "other", corners)
                     paths = ("/tmp/holiday.png", other)

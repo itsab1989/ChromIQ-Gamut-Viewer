@@ -22,6 +22,7 @@ disagree with what the builder actually used.
 """
 import pathlib
 import sys
+import weakref as _weakref
 from types import SimpleNamespace as NS
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -217,13 +218,15 @@ def test_the_key_a_caller_actually_uses_carries_the_white():
         f"the shells were not rebuilt under the new white: {made}")
 
 
-def _run(built):
+def _run(built, made=None):
     """A TimelineDialog stand-in that builds through the REAL `_shells_for`.
 
-    ⚠ NOTHING HERE ANSWERS ON ITS OWN AUTHORITY. `_settings` is the window's
-    own method bound to the stand-in, and the only thing faked is the
-    ArgyllCMS build itself — which is what a test cannot run and the only
-    thing this pair of guards does not measure.
+    ⚠ THE ONLY THING FAKED IS THE ARGYLLCMS BUILD, and the docstring that
+    used to stand here said so while faking `_name_in_run` as well — a real
+    method that did not need faking, since bound to a stand-in with no `_run`
+    it returns `path.stem`, exactly what the lambda returned. It bought
+    nothing and cost the claim its truth. `_trouble` is a Qt label and is
+    fair. Every source comment is a claim; this one is now the one it says.
     """
     import gamut_app
 
@@ -235,64 +238,112 @@ def _run(built):
               _build_space=lambda: "lab")
     host._settings = gamut_app.GamutApp._settings.__get__(
         host, gamut_app.GamutApp)
-    host._build_one = lambda p, space="lab", **k: (
-        built.append(pathlib.Path(p).stem)
-        or (NS(space=space, vertices=[[0.0, 0, 0]]), None))
 
-    dialog = NS(_shell_cache={}, _host=host, _trouble=lambda *_a: None,
-                _name_in_run=lambda p: pathlib.Path(p).stem)
+    def build(path, space="lab", **_kw):
+        stem = pathlib.Path(path).stem
+        built.append(stem)
+        shell = _Shell(stem, space)          # a real object, weighable
+        if made is not None:
+            made.append(_weakref.ref(shell))
+        return shell, None
+
+    host._build_one = build
+    dialog = NS(_shell_cache={}, _host=host, _trouble=lambda *_a: None)
+    dialog._name_in_run = gamut_app.TimelineDialog._name_in_run.__get__(
+        dialog, gamut_app.TimelineDialog)
     return dialog
 
 
+class _Shell:
+    """Stands where a gamut stands: an object, so it can be weighed."""
+
+    def __init__(self, name, space):
+        self.name, self.space = name, space
+        self.vertices = [[0.0, 0.0, 0.0]]
+
+
 def _pair(n):
-    return (pathlib.Path(f"/x/step-{n}a.icc"), pathlib.Path(f"/x/step-{n}b.icc"))
+    return (pathlib.Path(f"/x/step-{n}a.icc"),
+            pathlib.Path(f"/x/step-{n}b.icc"))
 
 
 def test_a_long_run_does_not_hold_every_shell_it_ever_built():
-    """⚠ THE CAP ITSELF WAS UNGUARDED, and a hunt deleted the line outright
-    with both gates green while a twelve-step run held 24 gamuts.
+    """⚠ THE CAP ITSELF WAS UNGUARDED — and then guarded by a number that
+    three separate one-line changes moved out from under.
 
-    Every test beside it watched the KEY — whether the right things go into
-    it, whether a caller doctors it — and not one watched whether anything
-    ever comes out. A gamut is a few megabytes of triangles; the sibling
-    guard for `_lab_gamuts` greps the source for its wiring, which is a
-    different claim from the cache staying bounded.
+    The first version of this counted `len(_shell_cache)` once, at the end of
+    an even number of inserts. A hunt walked past it three ways, each with
+    both gates green at the baseline count:
 
-    So this one drives twelve pairs and counts what is left.
+      * a SECOND STORE beside the cache — 400 gamuts held after a 200-step
+        run while the watched length read 8;
+      * `if len(...) > 9: keep_newest(..., 8)`, so the cache alternates
+        9, 8, 9, 8 and every even sample lands on 8;
+      * and the LRU switched off once the cache is full (see the guard below).
+
+    A dict's length is a PROXY. What the cap exists for is memory — this
+    method's own words, "a cache that grows with the run would hold a
+    printer's whole history" — so this weighs what is still reachable, which
+    no second store and no sampling luck can hide, and it looks after EVERY
+    call rather than at the end.
     """
+    import gc
     import gamut_app
 
-    built = []
-    dialog = _run(built)
+    built, shells = [], []
+    dialog = _run(built, shells)
+
+    # ⚠ AFTER EVERY CALL, AND WITH AN ODD NUMBER OF INSERTS TOO. Consecutive
+    # pairs share a file — which is what walking a run actually does — so
+    # these calls insert ONE shell, not two, and the cache passes through the
+    # odd sizes the "> 9" walk-past hid in.
+    for n in range(14):
+        gamut_app.TimelineDialog._shells_for(
+            dialog, pathlib.Path(f"/x/walk-{n}.icc"),
+            pathlib.Path(f"/x/walk-{n + 1}.icc"))
+        assert len(dialog._shell_cache) <= 8, (
+            f"after the step to walk-{n + 1} the run holds "
+            f"{len(dialog._shell_cache)} shells, over a bound that says 8")
+
     for n in range(12):
         gamut_app.TimelineDialog._shells_for(dialog, *_pair(n))
+        assert len(dialog._shell_cache) <= 8, (
+            f"after pair {n} the run holds {len(dialog._shell_cache)} shells")
 
-    assert len(built) == 24, built           # twelve pairs really were built
-    assert len(dialog._shell_cache) <= 8, (
-        f"a twelve-step run is holding {len(dialog._shell_cache)} shells; "
-        "the cache has no bound and a gamut is megabytes of triangles")
-
-    # ⚠ AND EIGHT, NOT NINE. The cap ran BEFORE the insert here and after it
-    # at both `_lab_gamuts` sites, so it trimmed to eight and then added a
-    # ninth — a bound that says eight resting at nine, for no gain: with the
-    # oldest going, the shell just built was never the entry at risk.
-    assert len(dialog._shell_cache) == 8, (
-        f"the cap says eight and the cache rests at "
-        f"{len(dialog._shell_cache)}")
+    # ⚠ AND WEIGHED, NOT COUNTED. Every shell this run ever built was handed
+    # out as a real object and is held here only weakly, so what survives a
+    # collection is what the application is really keeping alive — wherever
+    # it is keeping it.
+    gc.collect()
+    alive = sum(1 for ref in shells if ref() is not None)
+    assert len(shells) >= 26, len(shells)          # the run really did build
+    assert alive <= 8, (
+        f"{alive} of the {len(shells)} gamuts this run built are still in "
+        "memory; the cap is bounding a dict while something else holds the "
+        "shapes")
 
 
 def test_the_pair_a_reader_keeps_coming_back_to_is_not_the_first_thrown_away():
     """⚠ `keep_newest` WAS ADOPTED HERE WITHOUT `recall`, WHICH MAKES IT FIFO.
 
     A plain dict keeps INSERTION order, and the pair a reader keeps returning
-    to is the one they opened FIRST — so it was permanently the oldest and
-    went first, while pairs glanced at once survived for being newest.
-    Exactly backwards, and exactly what `recall` exists to prevent: its own
-    docstring makes this argument for `_lab_gamuts`, and this caller simply
-    never called it.
+    to is the one opened FIRST — so it was permanently the oldest and went
+    first, while pairs glanced at once survived for being newest. Exactly
+    backwards, and exactly what `recall` exists to prevent.
 
-    Driven rather than read: the home pair is looked at again between other
-    pairs, and the question is whether it has to be rebuilt afterwards.
+    ⚠ AND THE FIRST VERSION OF THIS GUARD STOPPED ONE PAIR SHORT. It drove
+    four pairs against a cache of eight, so the cache only filled on the
+    second-to-last step and the single degraded read found its answer by luck
+    of ordering. A hunt turned the LRU off once the cache is full —
+    `recall(...) if len(cache) < 8 else cache.get(key)`, which reads as an
+    optimisation — and this guard, both gates and a 389-test probe all passed
+    while the build counts went bit-for-bit back to the pre-fix numbers.
+    Measured on the gesture below: the home pair rebuilt 1 time here, 3 times
+    under that change.
+
+    So it runs well past the point where the cache stays full, and asserts
+    the thing a reader would notice: NOTHING is built twice while it is being
+    looked at.
     """
     import gamut_app
 
@@ -301,21 +352,26 @@ def test_the_pair_a_reader_keeps_coming_back_to_is_not_the_first_thrown_away():
     home = _pair(0)
 
     gamut_app.TimelineDialog._shells_for(dialog, *home)
-    for n in (1, 2, 3):
+    for n in range(1, 13):
         gamut_app.TimelineDialog._shells_for(dialog, *_pair(n))
         gamut_app.TimelineDialog._shells_for(dialog, *home)   # kept in view
 
     assert built.count("step-0a") == 1, (
-        f"the home pair was rebuilt while the reader was looking at it: "
-        f"{built}")
+        "the pair the reader kept coming back to was rebuilt "
+        f"{built.count('step-0a')} times; the cache is evicting what is on "
+        "screen and keeping what was glanced at once")
+    assert len(built) == len(set(built)) == 26, (
+        f"{len(built)} builds for {len(set(built))} distinct files — "
+        "something was built twice while the reader was looking at it")
 
-    # one more pair arrives and the cap must fire on something
-    gamut_app.TimelineDialog._shells_for(dialog, *_pair(4))
-    assert len(dialog._shell_cache) == 8
-
-    gamut_app.TimelineDialog._shells_for(dialog, *home)
-    assert built.count("step-0a") == 1, (
-        "the pair the reader has been coming back to was the FIRST one "
-        f"evicted, and had to be rebuilt: {built}")
-    assert built.count("step-1a") == 1, (
-        "a pair seen once should be the one to go, not the one on screen")
+    # ⚠ AND SOMETHING REALLY WAS EVICTED. The assertion that used to close
+    # this test read `built.count("step-1a") == 1` and CANNOT FAIL: pair 1 is
+    # asked for exactly once, so it counts 1 under every policy — under FIFO,
+    # under no cap at all, and under no cache at all. It reported the
+    # positive half of the LRU claim while observing no eviction whatever.
+    # Asking for pair 1 again is what tells "the cache kept the right thing"
+    # apart from "the cache kept everything".
+    gamut_app.TimelineDialog._shells_for(dialog, *_pair(1))
+    assert built.count("step-1a") == 2, (
+        "pair 1 was still cached after twelve later pairs — nothing is being "
+        "evicted at all, so keeping the home pair proves nothing")
