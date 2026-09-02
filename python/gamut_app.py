@@ -14979,24 +14979,35 @@ class GamutApp(QMainWindow):
         # closed because nothing reaches it, which is the guard style this
         # work exists to replace.
         wanted = space or self._build_space()
-        white = self._white.currentData()
         # ⚠ AND WHAT A FILE IS IS DECIDED IN ONE PLACE. `_in_lab` had its own
         # answer to the same question and disagreed about a photograph.
         thing = shapes.thing_for(path, IMAGE_EXTENSIONS)
-        if thing.kind in ("profile", "gamutfile"):
-            reader = gam_gamut if thing.kind == "gamutfile" else icc_gamut
-            return reader(path, white_point=white, space=wanted,
-                          stop=stop), None
-        if thing.kind == "picture":
-            from imagegamut import image_gamut
-            built, facts = image_gamut(path, white_point=white, space=wanted)
-            self._image_facts[self._facts_key(path)] = facts
-            return built, None
-        m = read_measurement(path, white, self._relative.isChecked())
-        drive = None if self._mode.currentData() == "hull" else m.device
-        g = build_gamut(m.lab, drive, input_space="lab", space=wanted,
-                        white_point=white)
-        return g, m
+        # ⚠ AND THE BUILDING ITSELF GOES THROUGH THE ONE DOOR. These were
+        # three branches that each reached for the controls they happened to
+        # remember: the profile branch read white and space, the picture
+        # branch read white and space, and only the measurement branch read
+        # the tick and the mode. `shapes.KINDS` says which settings each kind
+        # actually depends on, and `shape_for` is the only thing that reads
+        # it — so a setting added to that table reaches every kind at once,
+        # instead of reaching whichever branches somebody remembered.
+        #
+        # This is the hub: six routes arrive here (`_load`, `_rebuild`,
+        # `_build_patiently`, `_on_compare_changed`'s file branch,
+        # `_rebuild_reference`'s file branch and `TimelineDialog._shells_for`),
+        # and none of them has to know how a shape is made any more.
+        #
+        # ⚠ `stop` SURVIVES, which was the worry worth checking. It is passed
+        # straight through and only ArgyllCMS can honour it; the rest is
+        # arithmetic that runs to completion either way, exactly as before.
+        made = shapes.shape_for(
+            thing, self._settings().drawn_in(wanted), stop=stop)
+        # ⚠ AND THE PICTURE'S FACTS ARE STILL WRITTEN. This is the only
+        # writer of `_image_facts`, and until the door carried a `facts`
+        # field, routing this branch would have deleted the slot label's
+        # colour count and the picture-loss figure without failing a test.
+        if made.facts is not None:
+            self._image_facts[self._facts_key(path)] = made.facts
+        return made.gamut, made.measurement
 
     #: Below this many patches a measured chart cannot describe the edge of a
     #: printer in any useful way: the shape collapses towards a flat sliver and

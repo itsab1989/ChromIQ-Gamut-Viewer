@@ -1994,12 +1994,20 @@ def test_build_one_honours_the_space_it_is_asked_for(app):
     stub = NS(_white=NS(currentData=lambda: "D50"),
               _mode=NS(currentData=lambda: "device"),
               _relative=NS(isChecked=lambda: False),
+              _detail=NS(value=lambda: 20),
               _build_space=lambda: "luv",          # the window is drawing LUV
               _image_facts={},
               # The real key-maker: a stand-in that invents its own would
               # stop testing the window and start testing itself.
               _facts_key=gamut_app.GamutApp._facts_key.__get__(
                   NS(), gamut_app.GamutApp))
+    # ⚠ AND THE REAL `_settings`, for the same reason. `_build_one` asks for
+    # the five controls as one frozen snapshot now instead of reaching for
+    # three of them by hand; a stand-in that invented its own Settings would
+    # let this pass over a `_settings()` that had stopped reading one of
+    # them, which is the fault the snapshot exists to prevent.
+    stub._settings = gamut_app.GamutApp._settings.__get__(
+        stub, gamut_app.GamutApp)
     asked = [(root / "demo" / "Glossy-paper.icc", "a profile"),
              (root / "demo" / "Glossy-paper.ti3", "a measurement")]
     if picture is not None:
@@ -2014,6 +2022,83 @@ def test_build_one_honours_the_space_it_is_asked_for(app):
     got, _m = gamut_app.GamutApp._build_one(stub, root / "demo" /
                                             "Glossy-paper.ti3")
     assert got.space == "luv", "it stopped following Draw it in"
+
+
+def test_building_a_picture_writes_its_facts(app):
+    """⚠ NOTHING WATCHED THE ONLY WRITER OF `_image_facts`.
+
+    `_build_one`'s picture branch is the one place that fills it, and the
+    slot label and the picture-loss figure are the two readouts that live
+    off it. Tests existed that READ a pre-filled `_image_facts` — that is
+    `test_chart_panel.py`'s facts-key test — but none that checked anything
+    ever PUT something in it.
+
+    That mattered the moment the picture branch was routed through
+    `shapes.shape_for`: the door used to discard `image_gamut`'s second
+    return deliberately, so routing the branch while the facts had nowhere
+    to go would have emptied this dict. Driven, with the write removed, the
+    slot label degrades in silence:
+
+        '● from-above--1-as-it-ships\n   a picture — 68,337 colours in
+         657,696 pixels, read as sRGB'
+        '● from-above--1-as-it-ships\n   a picture'
+
+    and the whole suite stayed green. This is the test that stops that.
+    """
+    import pathlib
+    import gamut_app
+    from types import SimpleNamespace as NS
+    root = pathlib.Path(__file__).resolve().parent.parent
+    picture = next(iter(sorted((root / "docs").rglob("*.png"))), None)
+    assert picture is not None, "no picture to build — this test is watching nothing"
+
+    stub = NS(_white=NS(currentData=lambda: "D50"),
+              _mode=NS(currentData=lambda: "device"),
+              _relative=NS(isChecked=lambda: False),
+              _detail=NS(value=lambda: 20),
+              _build_space=lambda: "lab",
+              _image_facts={},
+              _facts_key=gamut_app.GamutApp._facts_key.__get__(
+                  NS(), gamut_app.GamutApp))
+    stub._settings = gamut_app.GamutApp._settings.__get__(
+        stub, gamut_app.GamutApp)
+
+    got, measurement = gamut_app.GamutApp._build_one(stub, picture)
+    assert got is not None
+    assert measurement is None, "a photograph is not a measured chart"
+    assert stub._image_facts, (
+        "building a picture wrote no facts, so the slot label loses its "
+        "colour count and the picture-loss figure disappears — silently")
+    (facts,) = stub._image_facts.values()
+    assert facts.get("colours", 0) > 0, f"no colour count in {facts}"
+    assert facts.get("pixels", 0) > 0, f"no pixel count in {facts}"
+
+    # AND UNDER THE KEY THE READERS LOOK UNDER, not merely somewhere.
+    assert gamut_app.GamutApp._facts_key(stub, picture) in stub._image_facts, (
+        "the facts were written under a key nothing reads")
+
+
+def test_building_a_measurement_writes_no_picture_facts(app):
+    """The control for the above: only a picture has facts."""
+    import pathlib
+    import gamut_app
+    from types import SimpleNamespace as NS
+    root = pathlib.Path(__file__).resolve().parent.parent
+    stub = NS(_white=NS(currentData=lambda: "D50"),
+              _mode=NS(currentData=lambda: "device"),
+              _relative=NS(isChecked=lambda: False),
+              _detail=NS(value=lambda: 20),
+              _build_space=lambda: "lab",
+              _image_facts={},
+              _facts_key=gamut_app.GamutApp._facts_key.__get__(
+                  NS(), gamut_app.GamutApp))
+    stub._settings = gamut_app.GamutApp._settings.__get__(
+        stub, gamut_app.GamutApp)
+    _got, m = gamut_app.GamutApp._build_one(
+        stub, root / "demo" / "Glossy-paper.ti3")
+    assert m is not None, "a measured chart came back with no measurement"
+    assert stub._image_facts == {}, (
+        f"a measurement wrote picture facts: {stub._image_facts}")
 
 
 DEMO = pathlib.Path(__file__).resolve().parent.parent / "demo"
