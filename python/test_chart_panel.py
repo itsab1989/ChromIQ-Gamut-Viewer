@@ -1793,6 +1793,12 @@ def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
     # photograph's shape and called it "every colour fits".
     stub = NS(_picture_loss=NS(setText=lambda t: said.__setitem__("t", t)),
               _is_picture=lambda name: name == "holiday",
+              # The picture's colours are read against the white the shape
+              # was built under; without this the readout's own
+              # `except Exception: return` swallows the AttributeError and
+              # the POSITIVE half below reports "no figure" — an absence
+              # that looks exactly like the refusal it is testing for.
+              _white=NS(currentData=lambda: "D50"),
               _lays_down_ink=gamut_app.GamutApp._lays_down_ink.__get__(
                   NS(), gamut_app.GamutApp),
               _facts_key=gamut_app.GamutApp._facts_key.__get__(

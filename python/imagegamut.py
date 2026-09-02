@@ -256,7 +256,7 @@ def image_gamut(path, *, white_point: str = "D50", space: str = "lab",
     which are simply absent. Claiming a dent that was never measured would be
     inventing detail.
     """
-    from gamutview import build_gamut
+    from gamutview import build_gamut, lab_to_xyz
 
     values, profile, looked_at, kind, weights = read_colours(path, most)
     lab = colours_to_lab(values, profile, kind)
@@ -280,11 +280,32 @@ def image_gamut(path, *, white_point: str = "D50", space: str = "lab",
              # against one real paper: 7.3% of the space it occupies is out of
              # reach, and 39.8% of the actual picture is. Reporting only the
              # first is comforting and wrong.
-             "lab": lab[good], "weights": weights[good]}
+             "lab": lab[good], "weights": weights[good],
+             # ⚠ AND THE SAME COLOURS AS XYZ, so they can be read against the
+             # white the reader has chosen. Lab is XYZ read against a white;
+             # `colours_to_lab` answers under D50 and has no parameter to be
+             # given another, while the SHAPE two lines above is built under
+             # `white_point`. One function, disagreeing with itself.
+             #
+             # What that cost a reader: with one paper and one photograph
+             # open and nothing touched but White point —
+             #
+             #   D50   "82% of holiday itself is out of reach of paper …
+             #          The worst is 6.8 ΔE beyond what paper can print."
+             #   D65   "3% …  The worst is 9.2 ΔE …"
+             #
+             # The picture's colours were byte-identical in both; only the
+             # paper moved. The two halves of one sentence went opposite
+             # ways. `chart.Placement.under` already solves this for the
+             # window's OTHER cloud of fixed Lab colours, and says why: a
+             # chart left behind in D50 is wrong "by a few ΔE, which is the
+             # worst size of wrong for something being counted in ΔE".
+             "xyz": lab_to_xyz(lab[good], "D50")}
     return gamut, facts
 
 
-def out_of_reach(facts: dict, gamut, *, tolerance: float = 1.0) -> "dict | None":
+def out_of_reach(facts: dict, gamut, *, white_point: str = "D50",
+                 tolerance: float = 1.0) -> "dict | None":
     """How much of a picture a shape cannot print — by pixel, not by volume.
 
     ⚠ RAISES `chart.NotInCIELAB` when *gamut* was not built in CIELAB. This
@@ -306,7 +327,18 @@ def out_of_reach(facts: dict, gamut, *, tolerance: float = 1.0) -> "dict | None"
     """
     import chart
 
+    # ⚠ READ AGAINST THE WHITE THE SHAPE WAS BUILT UNDER, not against the
+    # D50 the colours were first written in. Both sides of this comparison
+    # have to stand in one place or the answer is a number about nothing:
+    # the picture's cloud is fixed, the paper moves with the control, and
+    # comparing them across two whites is what turned 82% into 3% while the
+    # worst distance grew. Older facts carry no `xyz`; they keep the old
+    # behaviour rather than being refused.
     lab = facts.get("lab")
+    xyz = facts.get("xyz")
+    if xyz is not None:
+        from gamutview import xyz_to_lab
+        lab = xyz_to_lab(np.asarray(xyz, float), white_point)
     weights = facts.get("weights")
     if lab is None or weights is None or not len(lab):
         return None

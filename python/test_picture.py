@@ -23,6 +23,16 @@ def a_window(**extra):
     from types import SimpleNamespace as NS
     import gamut_app
     hall = NS(**extra)
+    # ⚠ AND THE CONTROLS A READOUT READS, unless the case supplies its own.
+    # `_update_picture_loss` now asks `self._white` — a picture's colours are
+    # read against the white the shape was built under, or the two stand in
+    # different places and the figure swings 82% to 3% on a nudge. Without
+    # this the AttributeError is swallowed by the readout's own
+    # `except Exception: return` and three tests reported "no figure at all"
+    # rather than saying what was missing, which is the fourth time a stale
+    # stand-in has presented as an absence rather than an error.
+    if not hasattr(hall, "_white"):
+        hall._white = NS(currentData=lambda: "D50")
     for name in ("_facts_key", "_forget_unused_facts", "_lays_down_ink"):
         setattr(hall, name,
                 getattr(gamut_app.GamutApp, name).__get__(hall,

@@ -18743,8 +18743,23 @@ class GamutApp(QMainWindow):
                 continue
             # ⚠ NO CIELAB SHAPE, NO FIGURE. `out_of_reach` goes through
             # `chart.outside_report`, so the refusal reaches here too.
+            #
+            # ⚠ AND BOTH SIDES STAND UNDER ONE WHITE. The picture's colours
+            # were written under D50 and never moved; the paper is built
+            # under whatever White point says. Held against each other across
+            # two whites, this sentence read "82% of holiday itself is out of
+            # reach of paper … worst 6.8 ΔE" under D50 and "3% … worst 9.2
+            # ΔE" under D65 — the share collapsing while the distance grew,
+            # on a control that says nothing about photographs, with the
+            # picture's 68,337 colours byte-identical in both.
+            #
+            # The window already does this for its other cloud of fixed Lab
+            # colours: `_chart_lab` asks `_chart_placed.under(...)`, because
+            # a chart left in D50 is out "by a few ΔE, which is the worst
+            # size of wrong for something being counted in ΔE".
             try:
-                lost = out_of_reach(facts, against)
+                lost = out_of_reach(
+                    facts, against, white_point=self._white.currentData())
             except Exception:      # noqa: BLE001 — a readout must never crash
                 return
             if lost is None:

@@ -185,3 +185,90 @@ def test_the_counts_add_up_to_every_pixel_that_was_looked_at(tmp_path):
     _values, _profile, looked_at, _space, weights = read_colours(where)
     assert looked_at == 60 * 80
     assert weights.sum() == looked_at
+
+
+def test_a_picture_is_read_against_the_white_the_shape_was_built_under():
+    """⚠ "82% OF YOUR PHOTOGRAPH CANNOT BE PRINTED" BECAME "3%" ON ONE NUDGE
+    OF THE WHITE POINT, AND THE WORST DISTANCE WENT UP WHILE IT COLLAPSED.
+
+    `colours_to_lab` says it in its own first line — "Turn a picture's colours
+    into Lab **under D50**" — and it has no white-point parameter to be given
+    another. The paper it is held against IS built under the chosen white. So
+    a fixed D50 cloud was measured against a moving surface. Driven, one paper
+    and one photograph open, nothing touched but White point:
+
+        D50   82% out of reach, worst 6.8 ΔE   paper volume 702,327.4
+        D65    3% out of reach, worst 9.2 ΔE   paper volume 643,384.8
+
+    while the picture's 68,337 colours were byte-identical in both readings
+    (L* mean 50.0335, a* 7.2314, b* 20.2943). A SMALLER paper covering far
+    more of a fixed cloud is the signature of the two sides standing in
+    different places.
+
+    ⚠ THE WINDOW ALREADY HAD THE RULE, on its other cloud of fixed Lab
+    colours. `_chart_lab` returns `self._chart_placed.under(...)` and says
+    why: "Everything else in the window moves when the white point changes,
+    and a chart left in the profile's own D50 would be drawn a few ΔE away
+    from where the shapes around it moved to — the exact size of error that
+    looks like a result." The picture's cloud was the one thing not moving.
+
+    After: 82% under D50, D65 and back to D50, with the paper's volume moving
+    702,327.4 -> 643,384.8 -> 702,327.4 beneath it. The worst distance still
+    shifts a little (6.8 -> 5.8) — that is the rule working, not a leftover:
+    ΔE is measured in whatever reference white the reader chose, and now both
+    sides are in it.
+    """
+    import numpy as np
+
+    from gamutview import lab_to_xyz
+    from imagegamut import out_of_reach
+
+    corners = np.array([[0.0, 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100]])
+    inside = np.column_stack([np.linspace(5, 20, 99),
+                              np.full(99, 3.0), np.full(99, 3.0)])
+    outside = np.array([[50.0, 90.0, 90.0]])
+    lab = np.vstack([inside, outside])
+    weights = np.concatenate([np.ones(99), [900.0]])
+
+    # Facts as they are written now: the same colours, kept as XYZ so they
+    # can be read against any white.
+    facts = {"lab": lab, "xyz": lab_to_xyz(lab, "D50"), "weights": weights}
+
+    d50 = out_of_reach(facts, corners, white_point="D50")
+    d65 = out_of_reach(facts, corners, white_point="D65")
+    assert d50 is not None and d65 is not None
+
+    # ⚠ THE COLOURS MOVE. If they did not, this test would pass over a
+    # `white_point` argument that is accepted and ignored — which is the
+    # shape of half the blind instruments in this project.
+    assert d50["worst"] != d65["worst"], (
+        "the white point reached nothing: `out_of_reach` is taking the "
+        "argument and reading the D50 colours anyway")
+
+    # AND OLDER FACTS, WITH NO XYZ, KEEP THE BEHAVIOUR THEY HAD rather than
+    # being refused — the cache can hold a dict written before this.
+    old = {"lab": lab, "weights": weights}
+    assert out_of_reach(old, corners, white_point="D65")["worst"] == \
+        out_of_reach(old, corners, white_point="D50")["worst"], (
+        "facts with no XYZ started answering differently, so a cache entry "
+        "from before this change now reads as a different picture")
+
+
+def test_the_facts_keep_the_colours_as_xyz():
+    """The half of the fix that lives in `image_gamut`: without this the
+    re-reading above has nothing to re-read."""
+    import pathlib
+    import numpy as np
+
+    from imagegamut import image_gamut
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    picture = next(iter(sorted((root / "docs").rglob("*.png"))), None)
+    assert picture is not None, "no picture — this test is watching nothing"
+
+    _gamut, facts = image_gamut(picture)
+    assert "xyz" in facts, (
+        "the picture's colours are kept only as Lab under D50, so they "
+        "cannot be read against the white the reader chose")
+    assert np.asarray(facts["xyz"]).shape == np.asarray(facts["lab"]).shape
+    assert np.isfinite(np.asarray(facts["xyz"])).all()
