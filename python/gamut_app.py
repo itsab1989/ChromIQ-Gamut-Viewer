@@ -18799,12 +18799,29 @@ class GamutApp(QMainWindow):
 
             measurement   `read_ti3` converts its XYZ to Lab under the
                           chosen white                            -> moves
-            picture       `image_gamut` builds under the chosen white -> moves
             space         `reference_gamut` Bradford-adapts the primaries
                           from the space's own white to this one  -> moves
             visible       `shape_for` does `xyz_to_lab(verts, white)` -> moves
             profile/.gam  `icc_gamut`/`gam_gamut` return the file's own Lab
                           UNTOUCHED when the space is CIELAB      -> fixed D50
+            picture       `colours_to_lab` answers under D50 and `build_gamut`
+                          takes Lab as given                      -> fixed D50
+
+        ⚠ THE `picture` ROW SAID "moves" AND WAS MEASURED WRONG. `image_gamut`
+        is HANDED `white_point`, which is what made it look as though it
+        moved — but it passes Lab in, and `build_gamut(input_space="lab")`
+        takes those numbers as they are. Built under D50 and D65 and compared:
+
+            measurement   worst 17.046 ΔE, 675 of 675 vertices moved
+            picture       BIT-IDENTICAL, 0 of 406 vertices moved
+            profile       BIT-IDENTICAL
+
+        A picture belongs with the profile. With it in the wrong row, two
+        photographs held against each other read "Every colour in A is one B
+        holds" at D50 and "1% of A itself is out of reach … worst 2.7 ΔE" at
+        D65, while the coverage line an inch above did not move at all — the
+        same two-sentences-an-inch-apart fault this helper was written to fix,
+        one pairing to the left.
 
         ⚠ AN EARLIER VERSION OF THIS SAID "three kinds" AND TABULATED THREE.
         A space and the visible solid have no file, so they arrive with
@@ -18854,7 +18871,7 @@ class GamutApp(QMainWindow):
         if path is None or getattr(shape, "space", None) != "lab":
             return chosen
         kind = shapes.thing_for(Path(path), IMAGE_EXTENSIONS).kind
-        return "D50" if kind in ("profile", "gamutfile") else chosen
+        return "D50" if kind in ("profile", "gamutfile", "picture") else chosen
 
     def _update_picture_loss(self, a_name, a, b_name, b, paths) -> None:
         """For a picture, how much of the PICTURE a shape cannot print.

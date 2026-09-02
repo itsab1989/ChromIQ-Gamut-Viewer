@@ -996,7 +996,10 @@ def test_the_white_that_reaches_out_of_reach_is_the_other_sides():
         for other, expected, why in (
                 ("/tmp/paper.icc", "D50", "a profile's CIELAB is its own D50"),
                 ("/tmp/paper.ti3", "D65", "a measurement is re-referenced"),
-                ("/tmp/other.png", "D65", "a picture is built under it")):
+                ("/tmp/other.png", "D50",
+                 "a picture's CIELAB is D50 too — `colours_to_lab` answers "
+                 "under D50 and `build_gamut` takes Lab as given, so it is "
+                 "bit-identical under both whites, measured")):
             seen.clear()
             gamut_app.GamutApp._update_picture_loss(
                 win, "holiday", corners, "other", corners,

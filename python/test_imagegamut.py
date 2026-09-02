@@ -323,7 +323,17 @@ def test_a_picture_is_read_against_the_white_the_other_side_stands_in():
     assert ask(in_lab, pathlib.Path("/x/p.ti3")) == "D65", (
         "a measurement IS re-referenced by `read_ti3`, so the picture must "
         "follow the control to stand beside it")
-    assert ask(in_lab, pathlib.Path("/x/p.png")) == "D65"
+    # ⚠ A PICTURE IS D50 TOO, AND THIS LINE SAID D65 WITH NO REASON BESIDE
+    # IT — the one assertion in the list that was never justified, and the one
+    # that was wrong. `image_gamut` is handed `white_point`, which makes it
+    # LOOK as though the shape follows the control; it passes Lab in, and
+    # `build_gamut(input_space="lab")` takes those numbers as given. Built
+    # under both whites: bit-identical, 0 of 406 vertices moved, against a
+    # measurement's 675 of 675 at up to 17.046 ΔE.
+    assert ask(in_lab, pathlib.Path("/x/p.png")) == "D50", (
+        "a picture is read against the control's white while its own shape "
+        "is fixed at D50 — two photographs then disagree about whether every "
+        "colour fits, on a nudge of a control that says nothing about them")
 
     # A shape with no file — a colour space, the visible solid — and a shape
     # built in another space both follow the control.
@@ -331,3 +341,73 @@ def test_a_picture_is_read_against_the_white_the_other_side_stands_in():
     assert ask(NS(space="luv"), pathlib.Path("/x/p.icc")) == "D65", (
         "outside CIELAB a profile IS converted under the chosen white, so "
         "pinning D50 there would reintroduce the mismatch the other way")
+
+
+@pytest.mark.slow
+def test_which_kinds_really_move_with_the_white_point(tmp_path):
+    """⚠ THE TABLE IN `_white_a_shape_stands_in` IS A CLAIM ABOUT FIVE
+    BUILDERS, AND ONE ROW OF IT WAS WRONG.
+
+    It said a picture "moves" with the white point, because `image_gamut` is
+    HANDED `white_point` — which makes it look as though it follows the
+    control. It passes Lab in, and `build_gamut(input_space="lab")` takes
+    those numbers as given, so the shape is the same under any white.
+
+    With the row wrong, two photographs held against each other read
+
+        D50   'Every colour in A is one B holds.'
+        D65   '1% of A itself is out of reach of B … worst 2.7 ΔE'
+
+    while the coverage line an inch above did not move — the same
+    two-sentences-an-inch-apart fault the helper exists to prevent.
+
+    So the table is measured here rather than believed. Built under D50 and
+    D65 and compared vertex by vertex:
+
+        measurement  worst 17.046 ΔE, 675 of 675 moved
+        picture      BIT-IDENTICAL, 0 of 406 moved
+        profile      BIT-IDENTICAL
+    """
+    import pathlib
+    import numpy as np
+    from imagegamut import image_gamut
+    from references import icc_gamut
+    from ti3gamut import read_measurement
+    from gamutview import build_gamut
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    def verts(g):
+        return np.asarray(g.vertices, float)
+
+    def same(a, b):
+        return verts(a).shape == verts(b).shape and np.array_equal(verts(a),
+                                                                   verts(b))
+
+    picture = next(iter(sorted((root / "docs").rglob("*.png"))), None)
+    assert picture is not None
+    a, _f = image_gamut(picture, white_point="D50", space="lab")
+    b, _f = image_gamut(picture, white_point="D65", space="lab")
+    assert same(a, b), (
+        "a picture's CIELAB now moves with the white point — if that is "
+        "deliberate, its row in `_white_a_shape_stands_in` must move to the "
+        "`-> moves` group with it, or the picture-loss sentence will swing "
+        "on a nudge of a control that says nothing about photographs")
+
+    prof = root / "demo" / "Glossy-paper.icc"
+    assert same(icc_gamut(prof, white_point="D50", space="lab"),
+                icc_gamut(prof, white_point="D65", space="lab")), (
+        "a profile's CIELAB now moves — its row must move too")
+
+    # AND THE CONTROL: one kind really does move, or this test would pass on
+    # a build_gamut that had stopped honouring the white point at all.
+    chart = root / "demo" / "Glossy-paper.ti3"
+    ma = read_measurement(chart, "D50", False)
+    mb = read_measurement(chart, "D65", False)
+    ga = build_gamut(ma.lab, ma.device, input_space="lab", space="lab",
+                     white_point="D50")
+    gb = build_gamut(mb.lab, mb.device, input_space="lab", space="lab",
+                     white_point="D65")
+    assert not same(ga, gb), (
+        "a measurement's CIELAB no longer moves with the white point either, "
+        "so this test is comparing a builder that ignores its argument")
