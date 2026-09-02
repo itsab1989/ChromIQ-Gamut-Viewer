@@ -5850,8 +5850,32 @@ class TimelineDialog(QDialog):
                 # ONE PAIR AT A TIME IS ALL THAT IS EVER WANTED, and a gamut
                 # is a few megabytes of triangles; a cache that grows with the
                 # run would hold a printer's whole history in memory.
-                if len(self._shell_cache) > 4:
-                    self._shell_cache.clear()
+                # ⚠ EIGHT, NOT FOUR. The cap was written when a profile's
+                # key carried no white; putting `white` back means ONE pair
+                # seen under two whites already fills four entries, so the
+                # next pair emptied the whole cache and a shell built 0.8 s
+                # earlier in the same gesture was thrown away and rebuilt on
+                # the next redraw. Measured:
+                #
+                #   pair(2019,2021) @D50  builds=2 1.57s  cache=2
+                #   pair(2019,2021) @D65  builds=2 1.57s  cache=4
+                #   pair(2023,2024) @D65  builds=2 1.52s  cache=1  <- cap fired
+                #   pair(2023,2024) again builds=1 0.78s          <- rebuilt
+                #
+                # Two pairs across two whites is eight, which is what a
+                # reader comparing two steps of a run actually holds. A gamut
+                # is a few megabytes of triangles, so the bound stays small
+                # and stays a bound.
+                #
+                # ⚠ AND OLDEST OUT, NOT ALL OUT — the raised cap alone only
+                # makes the fault rarer. A whole-cache `clear()` fired
+                # BETWEEN the two inserts of one call and threw away the
+                # shell built 0.78 s earlier in that same gesture. Raising
+                # the number does not remove that; evicting the oldest does,
+                # because the shell just built is the newest. `keep_newest`
+                # already exists for this and its own docstring makes the
+                # argument: "Oldest out, rather than all out."
+                keep_newest(self._shell_cache, 8)
                 self._shell_cache[key] = gamut
             made.append((self._name_in_run(path), self._shell_cache[key]))
         return made
@@ -18770,14 +18794,24 @@ class GamutApp(QMainWindow):
         """Which white the CIELAB of *shape* is actually referenced to.
 
         ⚠ NOT ALWAYS THE ONE THE CONTROL SAYS, and that is the whole of this.
-        Three kinds can be the thing a picture is judged against, and they do
-        not agree:
+        FIVE kinds can be the thing a picture is judged against — `shapes.KINDS`
+        has five — and they do not agree:
 
             measurement   `read_ti3` converts its XYZ to Lab under the
-                          chosen white                          -> moves
+                          chosen white                            -> moves
             picture       `image_gamut` builds under the chosen white -> moves
+            space         `reference_gamut` Bradford-adapts the primaries
+                          from the space's own white to this one  -> moves
+            visible       `shape_for` does `xyz_to_lab(verts, white)` -> moves
             profile/.gam  `icc_gamut`/`gam_gamut` return the file's own Lab
-                          UNTOUCHED when the space is CIELAB     -> fixed D50
+                          UNTOUCHED when the space is CIELAB      -> fixed D50
+
+        ⚠ AN EARLIER VERSION OF THIS SAID "three kinds" AND TABULATED THREE.
+        A space and the visible solid have no file, so they arrive with
+        `path is None` and are answered by the guard clause rather than by
+        the list — correctly, both move with the control, checked by building
+        rather than assumed. But a list that says it is complete and is not
+        is how the profile case came to be missed in the first place.
 
         A picture's colours were once fixed at D50, so they agreed with a
         profile and disagreed with a measurement: "82% of holiday is out of

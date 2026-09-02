@@ -943,3 +943,76 @@ def test_the_cielab_shapes_cache_cannot_grow_without_end():
         if "_lab_gamuts[key] = built" in src:
             assert "keep_newest(self._lab_gamuts)" in src, (
                 f"{method.__name__} writes to the cache and never bounds it")
+
+
+def test_the_white_that_reaches_out_of_reach_is_the_other_sides():
+    """⚠ THE RULE HAD A UNIT TEST AND NOTHING CALLED IT.
+
+    `_white_a_shape_stands_in` was tested by binding it to a stand-in and
+    checking its answers. No test asked whether `_update_picture_loss` USES
+    it. Putting the pre-fix line back —
+
+        lost = out_of_reach(facts, against,
+                            white_point=self._white.currentData())
+
+    — reopens the 68% -> 94% swing to the digit, and BOTH GATES STAY GREEN.
+    The injected window then prints two sentences an inch apart: the coverage
+    line says 98.4% at every white, and the picture-loss line says the white
+    point changes the answer.
+
+    This is the same hole as the cache key's, on the other side of the panel:
+    a guard on the FUNCTION is not a guard on the BEHAVIOUR, and the caller
+    is where it comes back. So this watches the value that actually arrives.
+    """
+    import pathlib
+    from types import SimpleNamespace as NS
+    import numpy as np
+    import gamut_app
+    import imagegamut
+
+    seen = []
+    real = imagegamut.out_of_reach
+
+    def spy(facts, gamut, *, white_point="D50", **kw):
+        seen.append(white_point)
+        return real(facts, gamut, white_point=white_point, **kw)
+
+    lab = np.array([[50.0, 0.0, 0.0], [70.0, 20.0, -30.0]])
+    facts = {"xyz": _lab_to_xyz(lab), "weights": np.array([1.0, 1.0])}
+    corners = NS(space="lab",
+                 vertices=np.array([[0.0, 0, 0], [100, 0, 0],
+                                    [0, 100, 0], [0, 0, 100]]))
+
+    said = {}
+    win = a_window(_picture_loss=NS(setText=lambda t: said.__setitem__("t", t)),
+                   _is_picture=lambda name: name == "holiday",
+                   _white=NS(currentData=lambda: "D65"),
+                   _image_facts={("/tmp/holiday.png",): facts})
+
+    old = imagegamut.out_of_reach
+    gamut_app.out_of_reach = spy      # the name `_update_picture_loss` imports
+    imagegamut.out_of_reach = spy
+    try:
+        for other, expected, why in (
+                ("/tmp/paper.icc", "D50", "a profile's CIELAB is its own D50"),
+                ("/tmp/paper.ti3", "D65", "a measurement is re-referenced"),
+                ("/tmp/other.png", "D65", "a picture is built under it")):
+            seen.clear()
+            gamut_app.GamutApp._update_picture_loss(
+                win, "holiday", corners, "other", corners,
+                ("/tmp/holiday.png", other))
+            assert seen, (
+                f"no figure was computed at all for {other} — the readout "
+                "swallowed something, and an absence looks like a refusal")
+            assert seen[0] == expected, (
+                f"{why}: `out_of_reach` was handed {seen[0]!r}, not "
+                f"{expected!r} — the caller is not asking "
+                "`_white_a_shape_stands_in`")
+    finally:
+        imagegamut.out_of_reach = old
+        gamut_app.out_of_reach = old
+
+
+def _lab_to_xyz(lab):
+    from gamutview import lab_to_xyz
+    return lab_to_xyz(lab, "D50")
