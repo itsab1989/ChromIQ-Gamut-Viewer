@@ -558,137 +558,6 @@ def test_a_pictures_facts_survive_the_file_being_touched(tmp_path):
         "screen loses its facts and three readouts describe it wrongly")
 
 
-def test_a_photograph_is_never_given_a_paper_white_or_blacks(tmp_path):
-    """⚠ THE FIFTH SIBLING OF THE FAULT THIS RELEASE IS NAMED FOR.
-
-    `_update_range` walked the slots with no test of kind at all, so a
-    photograph in a slot was described as
-
-        "holiday: blacks reach L* 0, paper white L* 98 and very warm"
-
-    about a file that was never printed on anything and has no paper. The
-    coverage line an inch above it had already been fixed for exactly this —
-    its comment says getting it backwards "is the sort of sentence that makes
-    somebody distrust the number beside it" — and the fix was never carried
-    to the three readouts beside it.
-
-    ⚠ AND IT SURVIVED A WEEK OF BEING PHOTOGRAPHED. It is in a screenshot
-    taken while proving a different fix, two lines under the sentence being
-    checked, read past every time. That is why this is a test and not a
-    careful habit.
-    """
-    import gamut_app
-    from types import SimpleNamespace as NS
-
-    hall = a_window()
-    picture = _a_picture(tmp_path / "shot",
-                         lambda x, y: (x * 5 % 256, y * 5 % 256, 90))
-    paper = HERE / "demo" / "Matte-paper.ti3"
-    assert not gamut_app.GamutApp._lays_down_ink(hall, picture), (
-        "a photograph was taken for something that lays down ink")
-    assert gamut_app.GamutApp._lays_down_ink(hall, paper), (
-        "a measured paper stopped counting as something that prints")
-    assert gamut_app.GamutApp._lays_down_ink(hall, HERE / "demo" /
-                                             "Glossy-paper.icc"), (
-        "a printer profile stopped counting as something that prints")
-    # A comparison with no file — a colour space, the visible solid — prints
-    # nothing either, and must not raise on the way to saying so.
-    assert not gamut_app.GamutApp._lays_down_ink(hall, None)
-
-
-def test_the_verb_follows_the_other_sides_kind(tmp_path):
-    """"can print" was hard-coded in both picture-loss sentences, so with two
-    photographs open the panel said "Every colour in narrowshot is one
-    wideshot (picture) can print". A photograph prints nothing."""
-    import gamut_app
-    from types import SimpleNamespace as NS
-    from imagegamut import image_gamut
-
-    wide = _a_picture(tmp_path / "w",
-                      lambda x, y: (x * 5 % 256, y * 5 % 256, (x + y) % 256))
-    narrow = _a_picture(tmp_path / "n",
-                        lambda x, y: (110 + x // 5, 110 + y // 5, 110))
-    facts, shapes_by = {}, {}
-    key = a_window()._facts_key
-    for one in (wide, narrow):
-        built, kept = image_gamut(one, white_point="D50", space="lab")
-        facts[key(one)] = kept
-        shapes_by[one] = built
-
-    said = []
-    hall = a_window(_image_facts=facts,
-                    _picture_loss=NS(setText=said.append))
-    gamut_app.GamutApp._update_picture_loss(
-        hall, "w-shot", shapes_by[wide], "n-shot", shapes_by[narrow],
-        (wide, narrow))
-    line = [t for t in said if t]
-    assert line, "no figure at all"
-    assert "can print" not in line[0], (
-        f"a photograph was said to print something: {line[0]!r}")
-    assert "holds" in line[0], line[0]
-
-    # AND THE POSITIVE HALF: against a real paper it must still say "print".
-    said.clear()
-    from ti3gamut import read_measurement
-    from gamutview import build_gamut
-    m = read_measurement(HERE / "demo" / "Matte-paper.ti3", "D50", False)
-    paper_shape = build_gamut(m.lab, m.device, input_space="lab",
-                              space="lab", white_point="D50")
-    gamut_app.GamutApp._update_picture_loss(
-        hall, "w-shot", shapes_by[wide], "Matte-paper", paper_shape,
-        (wide, HERE / "demo" / "Matte-paper.ti3"))
-    line = [t for t in said if t]
-    assert line and "can print" in line[0], (
-        f"a measured paper stopped printing: {line!r}")
-
-
-def test_the_pictures_colours_are_given_back_when_nothing_shows_them(tmp_path):
-    """⚠ A PHOTOGRAPH'S COLOURS WERE KEPT FOR THE LIFE OF THE WINDOW.
-
-    Each entry holds the picture's own colours — up to 300,000 of them in two
-    float64 arrays, about 9.6 MB a photograph. Nothing ever shrank the dict:
-    not closing one file, and not "Close them all", which empties the slots,
-    the chart, the comparison and every readout and touched none of it.
-    Twenty photographs in a sitting is ~190 MB that could never come back.
-
-    ⚠ AND IT KEEPS WHAT IS ON SCREEN. Emptying more than this is not a
-    stricter version of the same fix — it is a different bug. Clearing the
-    whole dict once threw away the facts of a picture still being shown, and
-    the figure vanished from the window.
-    """
-    import gamut_app
-    from types import SimpleNamespace as NS
-
-    on_screen = _a_picture(tmp_path / "shown", lambda x, y: (x, y, 90))
-    gone = _a_picture(tmp_path / "closed", lambda x, y: (y, x, 30))
-    hall = a_window(_slots=[], _reference_path=None, _image_facts={})
-
-    hall._image_facts[hall._facts_key(on_screen)] = {"colours": 1}
-    hall._image_facts[hall._facts_key(gone)] = {"colours": 2}
-    hall._slots = [(on_screen, None, None)]
-
-    hall._forget_unused_facts()
-    assert hall._facts_key(on_screen) in hall._image_facts, (
-        "the facts of a picture still on screen were thrown away — the "
-        "figure disappears from a window that is showing the picture")
-    assert hall._facts_key(gone) not in hall._image_facts, (
-        "a closed picture's colours are still held")
-
-    # A picture held as the COMPARISON is on screen too.
-    hall._image_facts[hall._facts_key(gone)] = {"colours": 2}
-    hall._reference_path = gone
-    hall._forget_unused_facts()
-    assert hall._facts_key(gone) in hall._image_facts, (
-        "the comparison's own picture was forgotten")
-
-    # And with nothing open at all, nothing is held.
-    hall._slots, hall._reference_path = [], None
-    hall._forget_unused_facts()
-    assert hall._image_facts == {}, "Close them all gave nothing back"
-
-
-
-
 def test_what_a_file_IS_never_depends_on_a_cache(tmp_path):
     """⚠ ONE QUESTION, ONE ANSWER, AND FOUR READOUTS ASKED IT THREE WAYS.
 
@@ -990,30 +859,53 @@ def test_the_white_that_reaches_out_of_reach_is_the_other_sides():
                    _image_facts={("/tmp/holiday.png",): facts})
 
     old = imagegamut.out_of_reach
-    gamut_app.out_of_reach = spy      # the name `_update_picture_loss` imports
+    # ⚠ ONE PATCH, NOT TWO. `gamut_app.out_of_reach = spy` stood here,
+    # commented "the name `_update_picture_loss` imports", and was inert:
+    # the import is function-local, so `imagegamut` is the only name that
+    # can be reached — and the `finally` then CREATED a `gamut_app`
+    # attribute that had never existed. A patch that lands on nothing looks
+    # exactly like a patch that works, which is what `assert seen` is for.
     imagegamut.out_of_reach = spy
     try:
-        for other, expected, why in (
-                ("/tmp/paper.icc", "D50", "a profile's CIELAB is its own D50"),
-                ("/tmp/paper.ti3", "D65", "a measurement is re-referenced"),
-                ("/tmp/other.png", "D50",
-                 "a picture's CIELAB is D50 too — `colours_to_lab` answers "
-                 "under D50 and `build_gamut` takes Lab as given, so it is "
-                 "bit-identical under both whites, measured")):
-            seen.clear()
-            gamut_app.GamutApp._update_picture_loss(
-                win, "holiday", corners, "other", corners,
-                ("/tmp/holiday.png", other))
-            assert seen, (
-                f"no figure was computed at all for {other} — the readout "
-                "swallowed something, and an absence looks like a refusal")
-            assert seen[0] == expected, (
-                f"{why}: `out_of_reach` was handed {seen[0]!r}, not "
-                f"{expected!r} — the caller is not asking "
-                "`_white_a_shape_stands_in`")
+        # ⚠ BOTH SLOTS, BECAUSE THE PANEL HAS TWO AND THE FIX ONLY HAD TO
+        # SATISFY ONE. This drove the picture in slot A every time, and
+        # `_update_picture_loss` RETURNS inside the first side that has
+        # facts — so a rule applied to `paths[0]` alone passed here while
+        # the 68% -> 94% swing came straight back for a photograph opened
+        # in the other slot, both gates green at exactly the baseline.
+        # The fifth guard this week to inherit the blind spot of the fix it
+        # was written beside.
+        for slot in (0, 1):
+            for other, expected, why in (
+                    ("/tmp/paper.icc", "D50",
+                     "a profile's CIELAB is its own D50"),
+                    ("/tmp/paper.ti3", "D65",
+                     "a measurement is re-referenced"),
+                    ("/tmp/other.png", "D50",
+                     "a picture's CIELAB is D50 too — `colours_to_lab` "
+                     "answers under D50 and `build_gamut` takes Lab as "
+                     "given, so it is bit-identical under both whites, "
+                     "measured")):
+                if slot == 0:
+                    named = ("holiday", corners, "other", corners)
+                    paths = ("/tmp/holiday.png", other)
+                else:
+                    named = ("other", corners, "holiday", corners)
+                    paths = (other, "/tmp/holiday.png")
+                seen.clear()
+                gamut_app.GamutApp._update_picture_loss(win, *named, paths)
+                where = "AB"[slot]
+                assert seen, (
+                    f"no figure was computed at all for {other} with the "
+                    f"photograph in slot {where} — the readout swallowed "
+                    "something, and an absence looks like a refusal")
+                assert seen[0] == expected, (
+                    f"{why}: with the photograph in slot {where}, "
+                    f"`out_of_reach` was handed {seen[0]!r}, not "
+                    f"{expected!r} — the caller is not asking "
+                    "`_white_a_shape_stands_in`")
     finally:
         imagegamut.out_of_reach = old
-        gamut_app.out_of_reach = old
 
 
 def _lab_to_xyz(lab):

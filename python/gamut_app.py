@@ -5820,7 +5820,9 @@ class TimelineDialog(QDialog):
             # this cannot disagree with what the builder actually used.
             thing = shapes.thing_for(path, IMAGE_EXTENSIONS)
             key = shapes.key_for(thing, host._settings().drawn_in("lab"))
-            if key not in self._shell_cache:
+            # THE READ GOES THROUGH `recall`, NOT `in` — see below.
+            shell = recall(self._shell_cache, key)
+            if shell is None:
                 try:
                     # ALWAYS IN LAB, WHATEVER THE WINDOW IS DRAWING IN. The
                     # run's picture is a cloud of ΔE2000 differences, which is
@@ -5871,13 +5873,28 @@ class TimelineDialog(QDialog):
                 # makes the fault rarer. A whole-cache `clear()` fired
                 # BETWEEN the two inserts of one call and threw away the
                 # shell built 0.78 s earlier in that same gesture. Raising
-                # the number does not remove that; evicting the oldest does,
-                # because the shell just built is the newest. `keep_newest`
-                # already exists for this and its own docstring makes the
-                # argument: "Oldest out, rather than all out."
+                # the number does not remove that; evicting the oldest does.
+                #
+                # ⚠ AND OLDEST MEANS LEAST RECENTLY READ, WHICH IS WHY THE
+                # READ ABOVE GOES THROUGH `recall`. Written with a plain
+                # `key not in cache` this cache was FIFO, and the pair a
+                # reader keeps coming back to is the one inserted FIRST — so
+                # it was permanently the oldest and went first, while pairs
+                # glanced at once survived for being newest. Exactly
+                # backwards, and exactly the fault `recall` was written for
+                # on `_lab_gamuts`; it simply was never called here.
+                #
+                # ⚠ AND THE CAP RUNS AFTER THE INSERT, as it does at both
+                # `_lab_gamuts` sites. Capping first trims to eight and then
+                # adds a ninth, so the cache rested at NINE under a bound
+                # that says eight — and capping first bought nothing anyway,
+                # because with the oldest going the shell just built was
+                # never the entry at risk. The comment that used to stand
+                # here reasoned from that as if it were a reason.
+                shell = gamut
+                self._shell_cache[key] = shell
                 keep_newest(self._shell_cache, 8)
-                self._shell_cache[key] = gamut
-            made.append((self._name_in_run(path), self._shell_cache[key]))
+            made.append((self._name_in_run(path), shell))
         return made
 
     def _cloud_figure(self, split_for_fading: bool = False):
