@@ -4,6 +4,7 @@ Every profile here is written by hand, so a machine with a full colour
 toolchain and a bare build runner give identical answers and nothing needs
 installing.
 """
+import pathlib
 import struct
 
 import pytest
@@ -515,14 +516,45 @@ def test_the_window_follows_the_light_and_dark_setting(app, five_years):
     dialog.close()
 
 
-def test_only_profiles_are_accepted_when_files_are_dropped(app):
+def test_only_profiles_are_accepted_when_files_are_dropped(app, tmp_path):
     """A .ti3 dropped here is a measurement, which this window cannot follow
-    over time — taking it would put a row in the list that can never work."""
-    import inspect
+    over time — taking it would put a row in the list that can never work.
 
+    ⚠ THIS ASKED THE SOURCE FOR A SPELLING, and that is why it is written
+    out. It read
+
+        assert '".icc", ".icm"' in inspect.getsource(TimelineDialog.dropEvent)
+
+    so it failed the day those two literals became `shapes.PROFILE_SUFFIXES`
+    — the ONE list, which is the same tuple — while the behaviour it names
+    had not changed at all. A test that asks how a rule is spelled fails on
+    a rename and passes on a rewrite. This one drops the files instead.
+    """
     import gamut_app
-    source = inspect.getsource(gamut_app.TimelineDialog.dropEvent)
-    assert '".icc", ".icm"' in source
+    from PyQt6.QtCore import QMimeData, QUrl
+    from PyQt6.QtGui import QDropEvent
+    from PyQt6.QtCore import QPointF, Qt
+
+    made = []
+    for name in ("a.icc", "b.icm", "c.ti3", "d.png", "e.gam"):
+        f = tmp_path / name
+        f.write_bytes(b"not really one, but the drop only reads the name")
+        made.append(f)
+
+    dialog = gamut_app.TimelineDialog(None, preview=False)
+    taken = []
+    dialog.add = lambda paths: taken.extend(paths)
+
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(f)) for f in made])
+    event = QDropEvent(QPointF(1, 1), Qt.DropAction.CopyAction, mime,
+                       Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    dialog.dropEvent(event)
+
+    got = sorted(pathlib.Path(p).name for p in taken)
+    assert got == ["a.icc", "b.icm"], (
+        f"the drop accepted {got} — a measurement, a picture or a gamut file "
+        "dropped here becomes a row that can never work")
 
 
 def test_the_saved_page_leaves_room_for_the_words(app, five_years):

@@ -694,7 +694,7 @@ def _holds_profiles(folder: Path) -> bool:
     """Whether it is worth offering: does anything of the right kind live here?"""
     try:
         for entry in folder.iterdir():
-            if entry.suffix.lower() in (".icc", ".icm"):
+            if entry.suffix.lower() in shapes.PROFILE_SUFFIXES:
                 return True
     except OSError:
         return False
@@ -4930,7 +4930,7 @@ class TimelineDialog(QDialog):
         dropped = [u.toLocalFile() for u in event.mimeData().urls()
                    if u.isLocalFile()]
         wanted = [p for p in dropped
-                  if Path(p).suffix.lower() in (".icc", ".icm")]
+                  if Path(p).suffix.lower() in shapes.PROFILE_SUFFIXES]
         if wanted:
             self.add(wanted)
             event.acceptProposedAction()
@@ -6960,6 +6960,33 @@ def _profile_label(path: Path) -> str:
              "picture": "picture", "measurement": "measured"}
     kind = shapes.thing_for(path, IMAGE_EXTENSIONS).kind
     return f"{path.stem} ({WORDS[kind]})"
+
+
+#: What a comparison IS, one sentence, chosen by KIND and never by suffix.
+#:
+#: ⚠ THE FIFTH AND SIXTH COPIES OF "WHAT IS THIS FILE" LIVED HERE. One was a
+#: three-way suffix test inside `_on_compare_changed` picking this sentence;
+#: the other was `_load_profile_as_comparison` choosing its BUILDER the same
+#: way. `shapes.thing_for` is the one place that answers the question — see
+#: its docstring, "the suffix test lives here and nowhere else" — and
+#: `_profile_label` beside this already takes the same route for the words
+#: it puts on a shape.
+COMPARISON_NOTES = {
+    "profile": "The gamut this profile describes, asked of the profile "
+               "itself.",
+    "gamutfile": "The gamut this profile describes, asked of the profile "
+                 "itself.",
+    "picture": "The colours actually in this picture — not the space it was "
+               "saved in.",
+    "measurement": "The gamut this measurement reached — every corner of it "
+                   "a patch that was printed and read.",
+}
+
+
+def _comparison_note(path: Path) -> str:
+    """The sentence under the comparison box, for whatever kind this is."""
+    kind = shapes.thing_for(path, IMAGE_EXTENSIONS).kind
+    return COMPARISON_NOTES.get(kind, COMPARISON_NOTES["measurement"])
 
 
 def _wrapped(label: QLabel, width: int = 0) -> QLabel:
@@ -13104,7 +13131,8 @@ class GamutApp(QMainWindow):
         if panel is None:
             return
         already = [p for p, _g, m in self._slots
-                   if m is None and p.suffix.lower() in (".icc", ".icm")]
+                   if m is None
+                   and p.suffix.lower() in shapes.PROFILE_SUFFIXES]
         if already:
             panel.add(already)
         box = panel.parent()
@@ -13217,14 +13245,7 @@ class GamutApp(QMainWindow):
                 built, _m = self._build_one(chosen)
                 self._reference_m = _m
                 self._reference = (_profile_label(chosen), built)
-                self._compare_note.setText(
-                    "The gamut this profile describes, asked of the profile "
-                    "itself." if chosen.suffix.lower() in (".icc", ".icm", ".gam")
-                    else "The colours actually in this picture — not the space "
-                         "it was saved in."
-                    if chosen.suffix.lower() in IMAGE_EXTENSIONS
-                    else "The gamut this measurement reached — every corner of "
-                         "it a patch that was printed and read.")
+                self._compare_note.setText(_comparison_note(chosen))
             elif choice[0] == "visible":
                 v, _f = optimal_colour_solid(
                     "D50" if self._white.currentData() == "D50" else "D65",
@@ -13417,11 +13438,13 @@ class GamutApp(QMainWindow):
         """
         seen, out = set(), []
         for path, _g, _m in self._slots:
-            if path.suffix.lower() in (".icc", ".icm") and path not in seen:
+            if (path.suffix.lower() in shapes.PROFILE_SUFFIXES
+                    and path not in seen):
                 seen.add(path)
                 out.append(path)
         ref = self._reference_path
-        if (ref is not None and ref.suffix.lower() in (".icc", ".icm")
+        if (ref is not None
+                and ref.suffix.lower() in shapes.PROFILE_SUFFIXES
                 and ref not in seen):
             out.append(ref)
         return out
@@ -14843,30 +14866,49 @@ class GamutApp(QMainWindow):
         self._redraw()
 
     def _load_profile_as_comparison(self, path: Path) -> None:
-        """Show an ICC profile as the thing to compare against."""
+        """Show a profile, measurement or picture as the thing to compare
+        against.
+
+        ⚠ THIS RAN ITS OWN SUFFIX TEST AND REFUSED TWO OF THE THREE KINDS ITS
+        OWN CHOOSER ACCEPTS. It read
+
+            reader = gam_gamut if path.suffix.lower() == ".gam" else icc_gamut
+
+        so anything that was not a `.gam` was handed to `icc_gamut` — which
+        is the exact fault `_rebuild_reference` was repaired for and this one
+        never was. Driven with a control: through here, `paper.ti3` and
+        `holiday.png` both came back refused with "ICC profile has bad magic
+        number", blaming the file; through `_build_one` the same two give
+        'paper (measured)' with its measurement kept, and 'holiday (picture)'.
+
+        ⚠ AND IT LOOKED DEAD, WHICH IS WHY IT WAS NEVER REPAIRED. Its own
+        comment said "No caller today", and that is true of `python/` — the
+        only mention there is this `def`. It is false of the drivers:
+        `scripts/audit_bad_files.py` calls it twice and
+        `scripts/audit_run_beside_the_rest.py` once. So two of this project's
+        own audits exercised a build route no reader has, which is the
+        blind-instrument pattern in the one place nobody looks.
+        """
         try:
-            reader = (gam_gamut if path.suffix.lower() == ".gam"
-                      else icc_gamut)
-            g = reader(path, white_point=self._white.currentData(),
-                       space=self._build_space())
+            g, measured = self._build_one(path)
         except Exception as exc:      # noqa: BLE001 — always explain
             Notice.warn(
-                self, "This profile could not be used",
+                self, "This file could not be used",
                 f"{path.name}\n\n{exc}")
             return
-        # Its measurement too, or judging falls back to reading a .ti3 as an
-        # ICC profile. No caller today; wired up, it would have carried a
-        # stale one from a previous comparison.
-        self._reference_m = None
+        # ⚠ AND ITS MEASUREMENT IS KEPT. Dropping it made judging fall back
+        # to reading a .ti3 as an ICC profile — which is what the branch
+        # above already learned. `_build_one` hands it over for a measured
+        # chart and None for everything else, so this cannot carry a stale
+        # one from a previous comparison either.
+        self._reference_m = measured
         self._reference = (_profile_label(path), g)
         self._reference_path = path
         self._compare.blockSignals(True)
         self._compare.setCurrentIndex(
             self._compare.findData(("icc", None)))
         self._compare.blockSignals(False)
-        self._compare_note.setText(
-            f"Comparing against {path.stem} — the colours this profile says "
-            "are available.")
+        self._compare_note.setText(_comparison_note(path))
         self._redraw()
 
     #: How long a file may take before the window says anything about it.
@@ -18742,7 +18784,10 @@ class GamutApp(QMainWindow):
 
     #: Files this window will compare colour by colour rather than patch by
     #: patch. Kept beside the check that uses it so the two cannot drift apart.
-    PROFILE_SUFFIXES = (".icc", ".icm")
+    #: ⚠ NOT A SECOND LIST. `shapes.PROFILE_SUFFIXES` is the one place that
+    #: says what an ICC profile is named like; this is the same tuple under
+    #: the name this class already used, so the two cannot drift apart.
+    PROFILE_SUFFIXES = shapes.PROFILE_SUFFIXES
 
     def _profile_pair(self):
         """The two open files as profiles, or None if that is not what they are.
