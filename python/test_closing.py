@@ -528,10 +528,20 @@ def test_a_refusal_puts_back_every_control_it_refused():
            _white=Combo(["D50", "D65"]),
            _mode=Combo(["device", "hull"]),
            _relative=Tick(),
-           _apply_space_availability=lambda: None,
-           _settled=shapes.Settings(white="D65", space="xyz", mode="hull",
-                                    tick=True))
-    # the reader has just moved all four away from what the shapes hold
+           _apply_space_availability=lambda: None)
+    # ⚠ THE SNAPSHOT IS MADE BY THE CODE, from controls in a known state.
+    # An earlier version hand-built `shapes.Settings(space="xyz")` — and so
+    # could not see that the real maker derives `space` from
+    # `_build_space()`, which cannot represent Ink amounts. It fabricated
+    # the value whose construction was the defect, and shipped green.
+    w._space.index, w._white.index, w._mode.index = 2, 1, 1
+    w._relative.on = True
+    for combo in (w._space, w._white, w._mode):
+        combo.currentData = (
+            lambda c=combo: c._data[c.index])   # what a real combo answers
+    gamut_app.GamutApp._remember_settled(w)
+
+    # the reader now moves all four away from what the shapes hold
     w._space.index, w._white.index, w._mode.index = 0, 0, 0
     w._relative.on = False
 
@@ -612,3 +622,95 @@ def test_a_setting_that_works_is_written_down_on_every_route():
             f"{handler.__name__} did not write down a setting that worked, "
             f"so the next refusal has nothing correct to go back to")
         assert seen["put_back"] == 0
+
+
+def test_the_snapshot_holds_what_the_controls_hold():
+    """⚠ AND IT IS MADE BY THE CODE, NOT FABRICATED BY THE TEST.
+
+    The previous version of this file hand-built
+    `shapes.Settings(space="xyz")` and never called the thing that makes the
+    snapshot — so it could not see that `_settings()` derives `space` from
+    `_build_space()`, which maps Ink amounts to "lab" ON PURPOSE (a shape is
+    still measured in CIELAB there, it is simply not drawn). The snapshot
+    could not represent Ink amounts at all, and a refusal sent the reader to
+    CIELAB: the chart gone, the panel asking them to find an ICC profile, on
+    a route that never touched the space. The test fabricated the value
+    whose CONSTRUCTION was the defect, which is why it shipped green.
+
+    So this calls `_remember_settled` on controls that say "rgb".
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    w = NS(_space=NS(currentData=lambda: "rgb"),
+           _white=NS(currentData=lambda: "D50"),
+           _mode=NS(currentData=lambda: "device"),
+           _relative=NS(isChecked=lambda: False),
+           _detail=NS(value=lambda: 20))
+    gamut_app.GamutApp._remember_settled(w)
+
+    assert w._settled[0] == "rgb", (
+        f"the snapshot recorded {w._settled[0]!r} while the control said "
+        f"'rgb' — restoring from it moves the reader out of Ink amounts")
+    # AND IT IS NOT A `shapes.Settings`, whose `space` cannot hold this.
+    w._build_space = gamut_app.GamutApp._build_space.__get__(
+        w, gamut_app.GamutApp)
+    w._settings = gamut_app.GamutApp._settings.__get__(w, gamut_app.GamutApp)
+    assert w._settings().space == "lab", (
+        "`_build_space` stopped collapsing Ink amounts, so this test is "
+        "describing a hole that no longer exists")
+
+
+def test_starting_again_rebuilds_the_shapes_it_resets():
+    """⚠ PRESSING "START AGAIN WITH THE STANDARD SETTINGS" KILLED THE APP.
+
+    It wrote every control — including "Draw it in" — with signals blocked,
+    so no handler ran and nothing was rebuilt; the redraw then drew shapes
+    built in one space under axes named for another, and the ValueError went
+    out of a Qt slot, where PyQt ends the process. Driven in CIE XYZ: exit 1,
+    nothing printed after the gesture.
+
+    It also left the window able to hold two shapes in DIFFERENT spaces, and
+    the next file opened made the panel say "Both can print 0% of everything
+    either one can" where the truth was 77%.
+
+    Reachable since the button was added. Nothing had ever pressed it in a
+    driver — which is where the risk in this window now lives.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    did = {"rebuilt": 0, "remembered": 0, "put_back": 0, "redrawn": 0}
+    w = NS(_slots=[("a-paper", object(), None)],
+           _reference=None,
+           _persisted=lambda: [],
+           _appearance="dark", _scheme="Magenta", _paint="true",
+           _per_shape={}, _shared={},
+           _target=NS(blockSignals=lambda v: None,
+                      setCurrentIndex=lambda i: None),
+           _remember_everything=lambda: None,
+           _sync_slider_labels=lambda: None,
+           _on_manual_light=lambda: None,
+           _apply_mode=lambda: None,
+           _apply_space_availability=lambda: None,
+           _chart_drawable=lambda: False,
+           _rebuild_reference=lambda: None,
+           _rebuild=lambda: did.__setitem__("rebuilt", did["rebuilt"] + 1)
+           or True,
+           _remember_settled=lambda: did.__setitem__(
+               "remembered", did["remembered"] + 1),
+           _put_settings_back=lambda: did.__setitem__(
+               "put_back", did["put_back"] + 1),
+           _redraw=lambda: did.__setitem__("redrawn", did["redrawn"] + 1))
+    gamut_app.Notice.ask = staticmethod(lambda *a, **k: True)
+    gamut_app.GamutApp._reset_defaults(w)
+
+    assert did["rebuilt"] == 1, (
+        "Reset wrote a new space onto the controls and never rebuilt the "
+        "shapes, so the redraw draws them under axes that do not match — "
+        "and that ValueError ends the process")
+    assert did["remembered"] == 1, (
+        "the settings a reset lands on were never written down, so the next "
+        "refusal restores something the shapes were not built under")
+    assert did["put_back"] == 0
+    assert did["redrawn"] == 1

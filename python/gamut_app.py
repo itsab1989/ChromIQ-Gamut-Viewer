@@ -12233,6 +12233,31 @@ class GamutApp(QMainWindow):
         self._sync_slider_labels()
         self._on_manual_light()
         self._apply_mode()
+        # ⚠ AND THE SHAPES HAVE TO FOLLOW THE SETTINGS. This wrote every
+        # control — including "Draw it in" — with signals blocked, so no
+        # handler ran, nothing was rebuilt, and the `_redraw()` below drew
+        # shapes built in one space under axes named for another:
+        #
+        #   ValueError: asked to label the axes 'lab' while the shapes were
+        #               built in 'xyz'
+        #
+        # raised out of a Qt slot, where PyQt kills the process. Pressing
+        # "Start again with the standard settings" while in CIE XYZ ENDED
+        # THE APPLICATION. Driven: exit 1, nothing printed after the gesture.
+        #
+        # It was reachable from the day the button was added, and nothing had
+        # ever pressed it in a driver — which is where the risk in this
+        # window now lives, not in the routes that get looked at.
+        #
+        # A reset is a settings change like any other, so it obeys the same
+        # rule: rebuild, put everything back if the shapes refuse, and write
+        # down what settled.
+        self._rebuild_reference()
+        if self._slots and not self._rebuild():
+            self._put_settings_back()
+            self._rebuild_reference()
+        else:
+            self._remember_settled()
         if (self._slots or self._reference is not None
                 or self._chart_drawable()):
             self._redraw()
@@ -15377,8 +15402,21 @@ class GamutApp(QMainWindow):
             self._redraw()
 
     def _remember_settled(self) -> None:
-        """The controls and the shapes agree right now: write that down."""
-        self._settled = self._settings()
+        """The controls and the shapes agree right now: write that down.
+
+        ⚠ THE CONTROLS' OWN VALUES, NOT A `shapes.Settings`. The first
+        version snapshotted `self._settings()`, whose `space` comes from
+        `_build_space()` — and that maps Ink amounts to "lab" ON PURPOSE,
+        because a shape is still measured in CIELAB there and simply not
+        drawn. So the snapshot could not represent Ink amounts at all, and a
+        refusal sent the reader to CIELAB: chart gone, panel asking them to
+        find an ICC profile, on a route that had not touched the space.
+        `shapes.Settings` answers "how is a shape built"; restoring controls
+        is a different question, and borrowing the answer to one for the
+        other is what made a snapshot that could not hold the truth.
+        """
+        self._settled = (self._space.currentData(), self._white.currentData(),
+                         self._mode.currentData(), self._relative.isChecked())
 
     def _put_settings_back(self) -> None:
         """Undo a setting the shapes refused — ALL of it, not the one control.
@@ -15393,21 +15431,21 @@ class GamutApp(QMainWindow):
         Signals are blocked throughout: a control correcting itself must not
         run the handler that is doing the correcting.
         """
-        was = self._settled
-        if was is None:
+        if self._settled is None:
             return
+        space, white, mode, tick = self._settled
         for widget, value, find in (
-                (self._space, was.space, self._space.findData),
-                (self._white, was.white, self._white.findData),
-                (self._mode, was.mode, self._mode.findData)):
+                (self._space, space, self._space.findData),
+                (self._white, white, self._white.findData),
+                (self._mode, mode, self._mode.findData)):
             index = find(value)
             if index >= 0 and widget.currentIndex() != index:
                 widget.blockSignals(True)
                 widget.setCurrentIndex(index)
                 widget.blockSignals(False)
-        if self._relative.isChecked() != was.tick:
+        if self._relative.isChecked() != tick:
             self._relative.blockSignals(True)
-            self._relative.setChecked(was.tick)
+            self._relative.setChecked(tick)
             self._relative.blockSignals(False)
         self._apply_space_availability()
 
