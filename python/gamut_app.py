@@ -5780,8 +5780,30 @@ class TimelineDialog(QDialog):
             # It also returned [] for a file that could not be statted,
             # which threw away the OTHER profile's shell as well: two
             # profiles are compared here and one unreadable path took both.
-            key = (str(path), host._white.currentData(), "lab",
-                   host._mode.currentData())
+            # ⚠ THE KEY IS ASKED FOR, NOT BUILT HERE. This was the last
+            # hand-written cache key in the window, and it was wrong in BOTH
+            # directions against `shapes.KINDS` — the table that says what
+            # each kind of shape actually depends on:
+            #
+            #   it INCLUDED `mode`, and a profile does not depend on it
+            #     (KINDS["profile"] is ("white", "space")). Every nudge of
+            #     "How the shape is worked out" was a guaranteed miss that
+            #     rebuilt an ArgyllCMS shell to get a bit-identical answer,
+            #     and this method's own docstring says building one is the
+            #     slowest thing this application does.
+            #
+            #   it OMITTED `tick`, and a measurement DOES depend on it
+            #     (KINDS["measurement"]). Two readings of one paper would
+            #     have shared a key. The only thing keeping a .ti3 out of
+            #     here is a pair of file filters in a DIFFERENT class —
+            #     "closed because nothing reaches it, which is the guard
+            #     style this work exists to replace", as `_build_one` says
+            #     of its own version of the same bargain.
+            #
+            # `key_for` reads the kind's dependencies from that one table, so
+            # this cannot disagree with what the builder actually used.
+            thing = shapes.thing_for(path, IMAGE_EXTENSIONS)
+            key = shapes.key_for(thing, host._settings().drawn_in("lab"))
             if key not in self._shell_cache:
                 try:
                     # ALWAYS IN LAB, WHATEVER THE WINDOW IS DRAWING IN. The
