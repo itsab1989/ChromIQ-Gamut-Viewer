@@ -2075,3 +2075,68 @@ def test_the_coverage_share_names_the_ruler_that_measured_it(app):
     # records that the commonest misreading is "77.4% of my photograph will
     # print" — wrong by a factor of five, in the comforting direction.
     assert "shares of volume" in coverage_text(0.774, 1.0, None)
+
+
+def test_the_placed_through_box_asks_when_nothing_is_chosen(app):
+    """⚠ IT NAMED A PROFILE FOR A CHART PLACED THROUGH NOTHING.
+
+    `max(0, index)` landed on index 0 when nothing was wanted — and index 0
+    is the first profile on screen. So the box read "Glossy-paper — already
+    open" for a chart with no placing profile at all, which is the one thing
+    this box exists to say. Driven: `_chart_profile` None, one profile open,
+    and the box claimed it.
+
+    With nothing chosen the honest entry is the one that asks.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+    import pathlib
+
+    class Combo:
+        def __init__(self):
+            self.items = []
+            self.index = 0
+            self.blocked = False
+
+        def blockSignals(self, on):     # noqa: N802  (Qt's name)
+            self.blocked = on
+
+        def clear(self):
+            self.items = []
+
+        def addItem(self, text, data):  # noqa: N802
+            self.items.append((text, data))
+
+        def findData(self, data):       # noqa: N802
+            for i, (_t, d) in enumerate(self.items):
+                if d == data:
+                    return i
+            return -1
+
+        def count(self):
+            return len(self.items)
+
+        def setCurrentIndex(self, i):   # noqa: N802
+            assert self.blocked, "the box was refilled without blocking"
+            self.index = i
+
+        def currentText(self):          # noqa: N802
+            return self.items[self.index][0] if self.items else ""
+
+    here = pathlib.Path("/demo")
+    open_now = [here / "Glossy-paper.icc", here / "Second.icc"]
+
+    def box_for(want):
+        w = NS(_chart_profile=want, _chart_through=Combo(),
+               _profiles_on_screen=lambda: open_now)
+        gamut_app.GamutApp._fill_chart_profiles(w)
+        return w._chart_through
+
+    assert box_for(None).currentText() == "Choose an ICC profile…", (
+        "with no placing profile the box named one of the open files, so a "
+        "chart placed through nothing claims to be placed through something")
+    # AND THE OTHER DIRECTION: a chosen profile is still selected, whether it
+    # is open or not. Checking only the first half is how three fixes today
+    # looked right while being wrong.
+    assert box_for(open_now[1]).currentText() == "Second — already open"
+    assert box_for(here / "Elsewhere.icc").currentText() == "Elsewhere"

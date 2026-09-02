@@ -609,19 +609,81 @@ def test_the_shape_settings_refuse_like_the_space_does():
         "the panel was left matching neither the old state nor the new one")
 
 
-def test_a_setting_that_works_is_written_down_on_every_route():
-    """The snapshot a refusal restores from is only correct if EVERY route
-    that succeeds updates it. Two of the three used not to."""
+def test_every_route_that_rebuilds_obeys_the_refusal_rule():
+    """⚠ THE ROUTES ARE DISCOVERED, NOT LISTED.
+
+    The first version of this named two handlers by hand — which is how the
+    rule came to hold on the space route and not on the white or the shape
+    settings, and then not on Reset either. A test that lists the routes it
+    checks cannot notice a new one, and `_reset_defaults` was a route nobody
+    had ever looked at: pressing "Start again with the standard settings"
+    while in CIE XYZ ended the process.
+
+    So this asks the class which methods call `_rebuild()`, and holds every
+    one of them to the same rule:
+
+        refused   -> put every control back, do NOT write the snapshot
+        worked    -> write the snapshot, put nothing back
+
+    A new route that rebuilds and forgets either half fails here on the day
+    it is written.
+    """
+    import inspect
     import gamut_app
-    for handler in (gamut_app.GamutApp._on_white_changed,
-                    gamut_app.GamutApp._on_shape_setting):
-        w, seen = _refusing_window()
-        w._rebuild = lambda: True
-        handler(w)
-        assert seen["remembered"] == 1, (
-            f"{handler.__name__} did not write down a setting that worked, "
-            f"so the next refusal has nothing correct to go back to")
-        assert seen["put_back"] == 0
+    from types import SimpleNamespace as NS
+
+    routes = sorted(
+        name for name, fn in vars(gamut_app.GamutApp).items()
+        if callable(fn) and "self._rebuild()" in _source_of(fn))
+    assert routes, "no route calls _rebuild() — this test is watching nothing"
+
+    for name in routes:
+        for rebuild_says in (False, True):
+            did = {"put_back": 0, "remembered": 0}
+            w = NS(_slots=[("a-paper", object(), None)],
+                   _reference=None,
+                   _persisted=lambda: [],
+                   _appearance="dark", _scheme="Magenta", _paint="true",
+                   _per_shape={}, _shared={},
+                   _target=NS(blockSignals=lambda v: None,
+                              setCurrentIndex=lambda i: None),
+                   _remember_everything=lambda: None,
+                   _sync_slider_labels=lambda: None,
+                   _on_manual_light=lambda: None,
+                   _apply_mode=lambda: None,
+                   _apply_space_availability=lambda: None,
+                   _chart_drawable=lambda: False,
+                   _rebuild_reference=lambda: None,
+                   _rebuild=lambda: rebuild_says,
+                   _put_settings_back=lambda: did.__setitem__(
+                       "put_back", did["put_back"] + 1),
+                   _remember_settled=lambda: did.__setitem__(
+                       "remembered", did["remembered"] + 1),
+                   _redraw=lambda: None)
+            gamut_app.Notice.ask = staticmethod(lambda *a, **k: True)
+            getattr(gamut_app.GamutApp, name)(w)
+
+            if rebuild_says:
+                assert did["remembered"] == 1, (
+                    f"{name} rebuilt successfully and never wrote the "
+                    f"snapshot, so the next refusal restores settings the "
+                    f"shapes were not built under")
+                assert did["put_back"] == 0, f"{name} undid a change that worked"
+            else:
+                assert did["put_back"] == 1, (
+                    f"{name} was refused and left the control on the refused "
+                    f"value — the axes then name a space the shapes were "
+                    f"never built in, and the redraw ends the process")
+                assert did["remembered"] == 0, (
+                    f"{name} wrote a refused setting down as good")
+
+
+def _source_of(fn):
+    import inspect
+    try:
+        return inspect.getsource(fn)
+    except (OSError, TypeError):
+        return ""
 
 
 def test_the_snapshot_holds_what_the_controls_hold():

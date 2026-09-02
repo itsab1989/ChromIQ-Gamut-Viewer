@@ -13236,9 +13236,18 @@ class GamutApp(QMainWindow):
         if want is not None and self._chart_through.findData(str(want)) < 0:
             self._chart_through.addItem(want.stem, str(want))
         self._chart_through.addItem("Choose an ICC profile…", "")
+        # ⚠ `max(0, index)` LANDED ON THE FIRST PROFILE ON SCREEN when
+        # nothing was wanted, so the box read "Glossy-paper — already open"
+        # for a chart that is placed through NOTHING — the one thing this
+        # box exists to say. Driven: `_chart_profile` None, one profile
+        # open, and the box claimed it.
+        #
+        # With nothing chosen the honest entry is the one that asks:
+        # "Choose an ICC profile…", which is always the last.
         index = (self._chart_through.findData(str(want))
                  if want is not None else -1)
-        self._chart_through.setCurrentIndex(max(0, index))
+        self._chart_through.setCurrentIndex(
+            index if index >= 0 else self._chart_through.count() - 1)
         self._chart_through.blockSignals(False)
 
     def _on_chart_profile(self) -> None:
