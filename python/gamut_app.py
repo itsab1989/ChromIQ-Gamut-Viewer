@@ -1952,6 +1952,14 @@ class LookSection(QGroupBox):
             Qt.AlignmentFlag.AlignVCenter)
         outer.addLayout(live_row)
         self._refresh()
+        # ⚠ WHAT "HOW IT STARTED" MEANS, CAPTURED RATHER THAN TYPED OUT.
+        # Taken here, at the end of the constructor, before anything saved is
+        # put back — `_restore_look` runs later, from the window's own
+        # `__init__`. So a choice added to this section is covered by
+        # `to_defaults` the day it is added, instead of being forgotten in a
+        # second list the way eleven of them were forgotten by
+        # `_reset_defaults`.
+        self._as_it_started = self.snapshot()
 
     def _row(self, grid, line, label, control, hint):
         """The name ABOVE its control, not beside it.
@@ -2027,6 +2035,32 @@ class LookSection(QGroupBox):
         finally:
             self._settling = False
         self._refresh()
+
+    def snapshot(self) -> dict:
+        """Everything this section holds, in the shape `restore` reads.
+
+        ⚠ ASSEMBLED HERE, ONCE. The same four lines — `values()` plus look,
+        details and live — were written out in `_remember_look` as well, and
+        one list written twice is one list that will disagree with itself.
+        `restore` already consumed exactly this shape, so this is the other
+        half of a pair that was only ever half-named.
+        """
+        kept = dict(self.values())
+        kept["look"] = self.chosen_look()
+        kept["details"] = self.details_open()
+        kept["live"] = self.live()
+        return kept
+
+    def to_defaults(self) -> None:
+        """Back to how this section looked when the window was first built.
+
+        ⚠ NOT A LIST OF DEFAULTS TYPED OUT AGAIN. What "how it started" means
+        is captured from the section itself at the end of `__init__`, before
+        `_restore_look` has put anything saved back — so a choice added to
+        this section is covered the day it is added, and cannot be forgotten
+        here the way it was forgotten by `_reset_defaults` for eleven values.
+        """
+        self.restore(self._as_it_started)
 
     def chosen_look(self) -> str:
         return str(self._look.currentData() or "screen")
@@ -10902,11 +10936,8 @@ class GamutApp(QMainWindow):
         if getattr(self, "_store", None) is None:
             return
         try:
-            kept = dict(self._looks_panel.values())
-            kept["look"] = self._looks_panel.chosen_look()
-            kept["details"] = self._looks_panel.details_open()
-            kept["live"] = self._looks_panel.live()
-            self._store.setValue("picture_look", json.dumps(kept))
+            self._store.setValue(
+                "picture_look", json.dumps(self._looks_panel.snapshot()))
         except Exception as exc:                 # noqa: BLE001 — never fatal
             _log().debug("the look could not be remembered: %s", exc)
 
@@ -12258,6 +12289,26 @@ class GamutApp(QMainWindow):
         keep_look = (self._appearance, self._scheme, self._paint)
         keep_shapes = ({slot: dict(over) for slot, over in
                         self._per_shape.items()}, dict(self._shared))
+        # ⚠ AND THE STYLING SECTION, WHICH THE BUTTON PROMISES AND DID
+        # NOT DELIVER. "Every setting in this window goes back to how
+        # it started: the appearance, the accent colour, how the shapes
+        # are drawn and coloured, the lighting, and everything else."
+        # "Viewer and export styling" is a whole named section of this
+        # window, and eleven of its values survived the press untouched
+        # -- background, walls, lettering, grid lines and their four
+        # colours, the chosen look, whether the details are open, and
+        # "Show it in the window too" left UNTICKED. Driven: 2 of 14
+        # readouts moved (`_opacity` and its store key); the control,
+        # pressing nothing, moved 0 of 14.
+        #
+        # It fell out because it is remembered by a SECOND mechanism:
+        # `_remember_look` writes it under `picture_look`, so it is not
+        # in `_persisted()`, and `_reset_defaults` resets `_persisted()`
+        # and four things by hand. `_persisted()`'s own docstring warns
+        # that a control forgotten there "would silently stop being
+        # remembered" -- this one is remembered twice over, and that is
+        # what let it fall out of the reset instead.
+        keep_styling = self._looks_panel.snapshot()
         keep_target = self._target.currentIndex()
 
         for key, widget, kind, default in self._persisted():
@@ -12272,6 +12323,7 @@ class GamutApp(QMainWindow):
                     widget.setCurrentIndex(index)
             widget.blockSignals(False)
         self._appearance, self._scheme, self._paint = "dark", "Magenta", "true"
+        self._looks_panel.to_defaults()
         self._apply_space_availability()
         self._per_shape = {0: {}, 1: {}, 2: {}}    # every shape shares again
         self._shared = dict(opacity=1.0, depth=0.35, rings=0,
@@ -12320,7 +12372,18 @@ class GamutApp(QMainWindow):
         # rule: rebuild, put everything back if the shapes refuse, and write
         # down what settled.
         self._rebuild_reference()
-        if self._slots and not self._rebuild():
+        # ⚠ AND THIS ROUTE DRAWS FOR ITSELF at the end, so `_rebuild`
+        # must not draw as well. Counted: a successful reset built and
+        # wrote TWO pages of about 6 MB each, and did so again on a
+        # second press that changed nothing. The trailing `_redraw()`
+        # below is reached whenever `_slots` is non-empty, which is the
+        # only way this line is reached at all, so the picture is drawn
+        # exactly once either way.
+        #
+        # Fourth of the four call sites, and the last: two were already
+        # right, `_on_white_changed` was fixed an hour before this one,
+        # and this one was missed by the same fix.
+        if self._slots and not self._rebuild(redraw=False):
             # A refusal undoes the WHOLE reset, not the four controls a
             # handler moves — and writes nothing to the store.
             for (widget, kind, value) in keep_controls:
@@ -12335,6 +12398,7 @@ class GamutApp(QMainWindow):
                         widget.setCurrentIndex(index)
                 widget.blockSignals(False)
             self._appearance, self._scheme, self._paint = keep_look
+            self._looks_panel.restore(keep_styling)
             self._per_shape, self._shared = keep_shapes
             self._target.blockSignals(True)
             self._target.setCurrentIndex(keep_target)
@@ -12363,6 +12427,14 @@ class GamutApp(QMainWindow):
             # and before anything reads them back, which is what the store
             # was written early for in the first place.
             self._remember_everything()
+            # ⚠ AND THE STYLING, SEPARATELY, because `_remember_everything`
+            # does not write `picture_look` — it walks `_persisted()`, which
+            # this section is not in. Without this the window would show the
+            # defaults while the store still held the old styling, and the
+            # next start would put the old styling back: the same disagreement
+            # between the window and the disk that a refused reset used to
+            # commit.
+            self._remember_look()
             self._remember_settled()
         if (self._slots or self._reference is not None
                 or self._chart_drawable()):
