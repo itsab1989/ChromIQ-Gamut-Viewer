@@ -714,3 +714,53 @@ def test_starting_again_rebuilds_the_shapes_it_resets():
         "refusal restores something the shapes were not built under")
     assert did["put_back"] == 0
     assert did["redrawn"] == 1
+
+
+def test_nothing_is_cleared_until_the_shapes_agree_to_move():
+    """⚠ THE REFUSAL LEFT ELEVEN CONTROLS UNTICKED AND STILL LIVE.
+
+    `_apply_space_availability` is DESTRUCTIVE on the way in: the rings, the
+    grey axis, the slice, the ideal neutral, the measured points, what is out
+    of reach, agree/differ, the two-room view, the manual light and the
+    outline paint are all registered `untick=True`, and it clears them for
+    the space being entered. Called BEFORE the rebuild, a refusal then put
+    the space back and left the ticks gone — `_put_settings_back` restores
+    four controls and re-ENABLES the rest; nothing re-ticks.
+
+    Driven, rings and grey axis ticked in CIELAB with the slot's file
+    removed:
+
+        refused   ticked=False enabled=True    <- only the refusal does this
+        succeeded ticked=False enabled=False   <- correct in CIE XYZ
+
+    ⚠ AND THE POSITIVE HALF IS WHY THIS TEST HAS TWO PARTS. Moving that call
+    is easy to get wrong in the other direction: my first attempt landed it
+    in `_on_white_changed` — two handlers share identical text — and left
+    the space handler never clearing anything at all. Driving the REFUSAL
+    alone would have called that a success.
+    """
+    import gamut_app
+    from types import SimpleNamespace as NS
+
+    def window(rebuild_says):
+        done = []
+        return NS(_apply_space_availability=lambda: done.append("cleared"),
+                  _rebuild_reference=lambda: None,
+                  _rebuild=lambda: rebuild_says,
+                  _put_settings_back=lambda: done.append("put back"),
+                  _remember_settled=lambda: done.append("remembered"),
+                  _redraw=lambda: None), done
+
+    refused, done = window(False)
+    gamut_app.GamutApp._on_space_changed(refused)
+    assert "cleared" not in done, (
+        "the controls were cleared for a space the shapes refused to move "
+        "to, and nothing re-ticks them")
+    assert "put back" in done and "remembered" not in done
+
+    worked, done = window(True)
+    gamut_app.GamutApp._on_space_changed(worked)
+    assert "cleared" in done, (
+        "the space changed and the controls that cannot follow it were left "
+        "ticked and live")
+    assert "remembered" in done and "put back" not in done

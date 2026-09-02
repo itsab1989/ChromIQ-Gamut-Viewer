@@ -15037,7 +15037,22 @@ class GamutApp(QMainWindow):
         sitting in the space it was first built in and quietly compare two
         different geometries.
         """
-        self._apply_space_availability()
+        # ⚠ NOT `_apply_space_availability()` YET. It is DESTRUCTIVE on the
+        # way in: eleven controls are registered `untick=True` — the rings,
+        # the grey axis, the slice, the ideal neutral, the measured points,
+        # what is out of reach, agree/differ, the two-room view, the manual
+        # light, the outline paint — and it clears them for the space being
+        # entered. If the rebuild then REFUSES, the space goes back and the
+        # ticks do not: `_put_settings_back` restores four controls and
+        # re-ENABLES the rest, and nothing re-ticks.
+        #
+        # Driven: rings and grey axis ticked in CIELAB, the slot's file
+        # removed, one nudge to CIE XYZ — and afterwards both read
+        # ticked=False, enabled=True. Unticked while still live is a state
+        # ONLY the refusal produces; in XYZ they would be unticked AND
+        # disabled, which is correct.
+        #
+        # So nothing is cleared until the shapes have agreed to move.
         # ⚠ THE COMPARISON FIRST. `_rebuild()` redraws internally, so this
         # order redrew with the papers in the new space and the comparison
         # still in the old one; `build_figure` rightly refuses to label axes
@@ -15061,6 +15076,9 @@ class GamutApp(QMainWindow):
             self._rebuild_reference()
             self._redraw()
             return
+        # The shapes moved, so the controls that cannot follow are cleared
+        # NOW — after the answer, not before the question.
+        self._apply_space_availability()
         self._remember_settled()
         self._redraw()
 
