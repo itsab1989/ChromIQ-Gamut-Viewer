@@ -10579,14 +10579,21 @@ class GamutApp(QMainWindow):
         0 once the paper is judged against its own white" three lines below —
         the new file above, the old file underneath, and a nonsense zero.
 
-        ⚠ AND NOT EVERY KEY LOOKS LIKE THAT. An earlier version of this
-        said "every key here begins (kind, str(path), …)", which is false:
-        `_synthetic_key` puts a TUPLE at index 1 for a colour space or the
-        visible solid, because they have no file. Those entries are
-        unreachable to this method by design — a gesture about a file has
-        nothing to say about them — but nothing else evicted them either
-        once the whole-cache clear went, so they grew without bound. The cap
-        below is what holds them now.
+        ⚠ AND NOT EVERY KEY IS ABOUT A FILE. A colour space and the visible
+        solid have none, so `shapes.key_for` puts the thing's NAME at index 1
+        where a path would be — `("space", "sRGB", "D50", "lab", 20)`. The
+        match below is `k[1] == str(path)` and a path opened in this window
+        is absolute, so a name like "sRGB" cannot equal one: those entries
+        are unreachable to this method, which is right, because a gesture
+        about a file has nothing to say about them. Nothing else evicts them
+        either, so the cap below is what holds them.
+
+        ⚠ TWO EARLIER VERSIONS OF THIS PARAGRAPH WERE WRONG, in opposite
+        directions. The first said "every key here begins (kind, str(path),
+        …)", which was false while `_synthetic_key` existed. The second said
+        that key "puts a TUPLE at index 1", which stopped being true when
+        `_synthetic_key` was deleted and the one table began answering for
+        these too.
         """
         name = str(path)
         for cache in (self._lab_gamuts, self._other_whites):
@@ -13807,13 +13814,6 @@ class GamutApp(QMainWindow):
                 marked = None
         return (path.stem, lab, marked, device)
 
-    def _synthetic_key(self, choice):
-        """The key for a shape with no file: a colour space, or the visible
-        solid. It is the ONE kind Detail changes, because it is built with
-        `steps=` rather than read off disk."""
-        return ("synthetic", choice, self._white.currentData(), "lab",
-                self._detail.value())
-
     def _reference_in_lab(self):
         """The comparison, rebuilt in CIELAB so a chart can be judged by it.
 
@@ -13842,19 +13842,27 @@ class GamutApp(QMainWindow):
             return self._in_lab(gamut, self._reference_path,
                                 getattr(self, "_reference_m", None))
         choice = self._compare.currentData()
-        key = self._synthetic_key(choice)
+        # ⚠ THE THING FIRST, THEN ITS KEY — and the key from `shapes.key_for`,
+        # not written out here. `_synthetic_key` stood in this spot and was
+        # the LAST hand-written cache key in the window, a second copy of the
+        # dependency table reading two controls directly and writing into the
+        # same `_lab_gamuts` dict `key_for` writes into from `_in_lab` and
+        # `_both_whites`. It agreed with the table — but so did every other
+        # copy of it on the day it was written, and the commit that removed
+        # the shell key claimed this one did not exist.
+        if choice and choice[0] == "space":
+            thing = shapes.a_space(choice[1])
+        elif choice and choice[0] == "visible":
+            thing = shapes.the_visible_solid()
+        else:
+            return gamut
+        settled = self._settings().drawn_in("lab")
+        key = shapes.key_for(thing, settled)
         hit = recall(self._lab_gamuts, key)
         if hit is not None:
             return hit
         try:
-            if choice and choice[0] == "space":
-                thing = shapes.a_space(choice[1])
-            elif choice and choice[0] == "visible":
-                thing = shapes.the_visible_solid()
-            else:
-                return gamut
-            built = shapes.shape_for(
-                thing, self._settings().drawn_in("lab")).gamut
+            built = shapes.shape_for(thing, settled).gamut
         # ⚠ A REFUSAL IS NOT A READ ERROR, AND MUST NOT COME BACK AS THE
         # DRAWN SHAPE. `shape_for` raises CannotBuild when a kind has no
         # builder — added so such a kind is refused rather than read as a
@@ -14897,6 +14905,19 @@ class GamutApp(QMainWindow):
         own audits exercised a build route no reader has, which is the
         blind-instrument pattern in the one place nobody looks.
         """
+        # ⚠ AND ASKING FOR A FILE AGAIN IS WHAT REBUILDS IT. The sibling
+        # route through the chooser empties three things first, and says why:
+        # "The cache key no longer carries the file's timestamp — that made
+        # the numbers describe a file the window was not drawing — so the
+        # rebuild belongs on the gesture instead ... Choosing a file that has
+        # been edited since must not hand back the shape it used to have."
+        # This route was given the same BUILDER a commit later and not the
+        # same forgetting, so it would hand back the old shape for an edited
+        # file, and every photograph it opened stayed in `_image_facts` for
+        # the life of the window — about 9.6 MB each, by
+        # `_forget_unused_facts`'s own measurement.
+        self._reference_cache.clear()
+        self._forget_shapes_of(path)
         try:
             g, measured = self._build_one(path)
         except Exception as exc:      # noqa: BLE001 — always explain
@@ -14917,6 +14938,8 @@ class GamutApp(QMainWindow):
             self._compare.findData(("icc", None)))
         self._compare.blockSignals(False)
         self._compare_note.setText(_comparison_note(path))
+        # AND THE COLOURS OF ANY PICTURE NOTHING IS SHOWING ANY MORE.
+        self._forget_unused_facts()
         self._redraw()
 
     #: How long a file may take before the window says anything about it.
@@ -15048,10 +15071,22 @@ class GamutApp(QMainWindow):
         # it — so a setting added to that table reaches every kind at once,
         # instead of reaching whichever branches somebody remembered.
         #
-        # This is the hub: six routes arrive here (`_load`, `_rebuild`,
-        # `_build_patiently`, `_on_compare_changed`'s file branch,
-        # `_rebuild_reference`'s file branch and `TimelineDialog._shells_for`),
-        # and none of them has to know how a shape is made any more.
+        # This is the hub. Counted by walking the tree rather than by
+        # remembering, there are FIVE callers:
+        #
+        #     _on_compare_changed              the file branch
+        #     _load_profile_as_comparison      (routed one commit later)
+        #     _build_patiently                 the worker, which `_load` and
+        #                                      `_rebuild` both reach it by
+        #     _rebuild_reference               the file branch
+        #     TimelineDialog._shells_for       through a getattr
+        #
+        # ⚠ AN EARLIER VERSION OF THIS COMMENT SAID SIX and named `_load` and
+        # `_rebuild` beside `_build_patiently` — one route counted three
+        # times — while omitting `_load_profile_as_comparison` entirely. The
+        # census that number came from counted places to CHANGE, which is a
+        # different question from places that CALL, and quoting it here made
+        # it wrong. None of the five has to know how a shape is made.
         #
         # ⚠ `stop` SURVIVES, which was the worry worth checking. It is passed
         # straight through and only ArgyllCMS can honour it; the rest is

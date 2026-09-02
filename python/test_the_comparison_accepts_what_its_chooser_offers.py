@@ -47,6 +47,15 @@ def _window():
              _detail=NS(value=lambda: 20),
              _build_space=lambda: "lab",
              _image_facts={},
+             # ⚠ THE CACHES ARE REAL DICTS AND THE FORGETTING IS THE REAL
+             # METHOD. Choosing a file again is what rebuilds it — the shape
+             # caches must be emptied of that path before the build, or an
+             # edited file hands back the shape it used to have. A stand-in
+             # with a no-op `_forget_shapes_of` would let this test pass over
+             # a route that forgot nothing, which is exactly what it is here
+             # to catch.
+             _lab_gamuts={}, _other_whites={}, _reference_cache={},
+             _slots=[],
              _reference=None, _reference_m=None, _reference_path=None,
              _compare=NS(blockSignals=lambda v: None,
                          findData=lambda d: 0,
@@ -56,7 +65,8 @@ def _window():
     said = {}
     win._compare_note = NS(setText=lambda t: said.__setitem__("note", t),
                            text=lambda: said.get("note", ""))
-    for name in ("_build_one", "_settings", "_facts_key"):
+    for name in ("_build_one", "_settings", "_facts_key",
+                 "_forget_shapes_of", "_forget_unused_facts"):
         setattr(win, name,
                 getattr(gamut_app.GamutApp, name).__get__(
                     win, gamut_app.GamutApp))
@@ -241,3 +251,54 @@ def _a_label_that_decides_for_itself(self, path):
     assert caught, (
         "the finder sees the assignment but not the comparison that uses it, "
         "which is the half that decides what the file IS")
+
+
+def test_choosing_a_file_again_forgets_what_it_knew_about_it():
+    """⚠ THE ROUTE WAS GIVEN THE BUILDER AND NOT THE FORGETTING.
+
+    Its sibling — the reader's route through the chooser — empties three
+    things before it builds, and says why: "ASKING FOR A FILE AGAIN IS WHAT
+    REBUILDS IT. The cache key no longer carries the file's timestamp — that
+    made the numbers describe a file the window was not drawing — so the
+    rebuild belongs on the gesture instead ... Choosing a file that has been
+    edited since must not hand back the shape it used to have."
+
+    `_load_profile_as_comparison` was routed through `_build_one` one commit
+    later and did none of the three, so it would hand back the shape an
+    edited file used to have, and every photograph it opened stayed in
+    `_image_facts` for the life of the window — about 9.6 MB each, by
+    `_forget_unused_facts`'s own measurement. Driven before the fix:
+
+        after choosing holiday2.png through the chooser
+           _image_facts keys: ['holiday2.png']
+        after _load_profile_as_comparison(holiday3.png)
+           _image_facts keys: ['holiday2.png', 'holiday3.png']
+
+    with holiday2 in no slot and not the comparison.
+    """
+    import gamut_app
+    picture = next(iter(sorted((ROOT / "docs").rglob("*.png"))), None)
+    assert picture is not None
+
+    win = _window()
+    stale = pathlib.Path("/x/an-old-photograph.png")
+    # A shape and some facts the window is no longer showing, keyed the way
+    # the real caches key them.
+    win._lab_gamuts[("picture", str(picture), "D50", "lab")] = object()
+    win._image_facts[win._facts_key(stale)] = {"colours": 1, "pixels": 1}
+    win._reference_cache["anything"] = object()
+
+    gamut_app.GamutApp._load_profile_as_comparison(win, picture)
+
+    assert win._reference_cache == {}, (
+        "the comparison cache survived a file being chosen again, so the "
+        "numbers can describe a file the window is not drawing")
+    assert not [k for k in win._lab_gamuts if k[1] == str(picture)], (
+        "the shape of the file just chosen was kept, so an edited file hands "
+        "back the shape it used to have")
+    assert win._facts_key(stale) not in win._image_facts, (
+        "a photograph nothing is showing kept its colours — about 9.6 MB — "
+        "for the life of the window")
+    # AND THE FILE JUST CHOSEN KEEPS ITS OWN, because it is the comparison.
+    assert win._facts_key(picture) in win._image_facts, (
+        "the picture now being compared against lost its own colours")

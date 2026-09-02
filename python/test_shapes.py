@@ -644,3 +644,46 @@ def test_white_really_is_inert_for_a_profile_in_cielab(tmp_path):
     assert not np.array_equal(a, b), (
         f"{one.name}: the white point does not move it in CIELUV either, so "
         "`icc_gamut` is ignoring the argument and this test proves nothing")
+
+
+def test_the_door_says_what_it_actually_returns():
+    """⚠ A FALSE DOCSTRING HERE BLINDED AN INSTRUMENT, so this is not prose.
+
+    `shape_for` went on saying "Returns `(gamut, measurement)`" for a day
+    after it began returning a `Built`. The coherence driver this work leans
+    on was written against that sentence — it unwrapped the door with
+    `got[0] if isinstance(got, tuple) else got`, which tags the WRAPPER once
+    a dataclass comes back instead of a pair. Every shape then came back
+    untagged and the run reported `0 incoherences`: a green that meant
+    nothing had been checked.
+
+    So the door's own account of its return is checked against the return.
+    """
+    import inspect
+    said = inspect.getdoc(shapes.shape_for) or ""
+    first = said.split("\n\n")[0] + "\n\n" + (
+        said.split("\n\n")[1] if said.count("\n\n") else "")
+
+    assert "Built" in first, (
+        "the door does not say it returns a `Built` in the first thing a "
+        f"reader is told: {first[:120]!r}")
+    # ⚠ NOT "the string appears nowhere" — the paragraph above quotes the
+    # old sentence to say what went wrong with it, and a rule that forbids
+    # naming a retired promise forbids explaining it. What must not exist is
+    # a line that PROMISES the pair.
+    promised = [line.strip() for line in said.splitlines()
+                if line.strip().startswith("Returns")
+                and "(gamut, measurement)" in line]
+    assert not promised, (
+        f"the door still promises the pair it stopped returning: {promised}")
+
+    # AND THE PROMISE IS KEPT: what it says is what comes back.
+    import pathlib
+    thing = shapes.a_space("sRGB")
+    made = shapes.shape_for(thing, shapes.Settings(space="lab", detail=6))
+    assert isinstance(made, shapes.Built), type(made)
+    for field in ("gamut", "thing", "settings", "measurement", "facts"):
+        assert hasattr(made, field), f"a Built has no {field}"
+    assert not isinstance(made, tuple), (
+        "a Built that is also a tuple would let the old unwrapping keep "
+        "working, and the next instrument would inherit the same blindness")

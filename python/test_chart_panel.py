@@ -1468,14 +1468,35 @@ def test_no_comparison_at_all_is_not_an_error(app):
 def test_detail_belongs_in_the_key_of_a_shape_that_has_no_file(app):
     """The mirror of the file rule: `_detail` reaches `reference_gamut(steps=)`
     and `optimal_colour_solid()` and nothing else, so it belongs HERE and
-    nowhere else."""
-    import gamut_app
-    from types import SimpleNamespace as NS
-    stub = NS(_white=NS(currentData=lambda: "D50"), _detail=NS(value=lambda: 9))
-    nine = gamut_app.GamutApp._synthetic_key(stub, ("space", "sRGB"))
-    stub._detail = NS(value=lambda: 17)
-    seventeen = gamut_app.GamutApp._synthetic_key(stub, ("space", "sRGB"))
-    assert nine != seventeen, "Detail really does change a synthetic shape"
+    nowhere else.
+
+    ⚠ THIS ASKED `_synthetic_key`, WHICH IS GONE. That method was the last
+    hand-written cache key in the window — a second copy of the dependency
+    table, reading two controls directly and writing into the same
+    `_lab_gamuts` dict `shapes.key_for` writes into. It agreed with the
+    table, as every copy of it did on the day it was written. The rule it
+    stood for is unchanged and is now asked of the table itself, so this
+    test cannot drift away from what the builder actually uses.
+    """
+    import shapes
+
+    for thing, said in ((shapes.a_space("sRGB"), "a colour space"),
+                        (shapes.the_visible_solid(), "the visible solid")):
+        nine = shapes.key_for(thing, shapes.Settings(space="lab", detail=9))
+        seventeen = shapes.key_for(thing,
+                                   shapes.Settings(space="lab", detail=17))
+        assert nine != seventeen, (
+            f"Detail really does change {said} — it is built with `steps=` — "
+            "so two of them would share one cache entry")
+
+    # AND THE OTHER HALF OF THE MIRROR: a FILE is not built with `steps=`,
+    # so Detail must NOT be in its key, or every nudge of a slider that
+    # cannot reach the shape throws the cache away.
+    import pathlib
+    paper = shapes.thing_for(pathlib.Path("/x/p.ti3"), (".png",))
+    assert (shapes.key_for(paper, shapes.Settings(space="lab", detail=9))
+            == shapes.key_for(paper, shapes.Settings(space="lab", detail=17))), (
+        "Detail is in a measurement's key, and it cannot reach the shape")
 
 
 # --------------------------------------------------------------------------

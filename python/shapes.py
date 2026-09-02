@@ -254,8 +254,18 @@ class CannotBuild(ValueError):
 def shape_for(thing: Thing, settings: Settings, *, stop=None):
     """The shape of *thing* under *settings*. The only place that builds.
 
-    Returns `(gamut, measurement)` — the measurement is None for everything
-    that is not a measurement, which is what every caller already expects.
+    Returns a `Built`: the gamut, the thing it was made from, the settings it
+    was made under, and — for the kinds that have them — the measurement and
+    the picture's facts.
+
+    ⚠ THIS DOCSTRING SAID "Returns `(gamut, measurement)`" FOR A WHOLE DAY
+    AFTER IT STOPPED BEING TRUE, and that is not a cosmetic slip. The
+    coherence driver this work leans on was written against this sentence:
+    it unwrapped the door with `got[0] if isinstance(got, tuple) else got`,
+    which tags the WRAPPER once a `Built` comes back instead of a pair. Every
+    shape then came back untagged and the run reported `0 incoherences` — a
+    green that meant nothing had been checked. An instrument was written
+    against this line, and this line was wrong.
 
     ⚠ EVERY KIND IS NAMED, AND AN UNNAMED ONE RAISES. `_in_lab` knew about
     profiles and gamut files and fell through to "read it as an ICC" for
