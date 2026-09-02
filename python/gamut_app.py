@@ -15074,7 +15074,29 @@ class GamutApp(QMainWindow):
         # a different class kept measurements and pictures away from it:
         # closed because nothing reaches it, which is the guard style this
         # work exists to replace.
-        wanted = space or self._build_space()
+        # ⚠ THE SNAPSHOT'S OWN SPACE, NOT A FRESH READ OF THE CONTROL.
+        # This was `space or self._build_space()`, so a caller that handed
+        # over a `Settings` still had its space thrown away and replaced by
+        # whatever the combo held at that instant — and on the worker thread
+        # that instant is not the one the reader acted on. Driven, with the
+        # worker held 500 ms and the combo moved from a timer:
+        #
+        #   _build_space  0.710  MainThread       -> 'lab'
+        #   ENTER         0.710  Thread-1 (work)  settled.space='lab'
+        #   COMBO         1.123  MainThread       'Draw it in' lab -> luv
+        #   _build_space  1.220  Thread-1 (work)  -> 'luv'
+        #   the shape now in the slot: gamut.space = 'luv'
+        #
+        # The commit that took the snapshot is titled "the worker thread
+        # reads no controls" and this line was the one it still read. An
+        # explicit `space=` still wins, because `_shells_for` pins CIELAB on
+        # purpose; what may not win is a control read behind the caller's
+        # back.
+        if settings is not None:
+            settled = settings if space is None else settings.drawn_in(space)
+        else:
+            settled = self._settings().drawn_in(space or self._build_space())
+        wanted = settled.space
         # ⚠ AND WHAT A FILE IS IS DECIDED IN ONE PLACE. `_in_lab` had its own
         # answer to the same question and disagreed about a photograph.
         thing = shapes.thing_for(path, IMAGE_EXTENSIONS)
@@ -15137,9 +15159,7 @@ class GamutApp(QMainWindow):
         # It is also the only honest reading of "what was this built under":
         # a snapshot taken here is whatever the widgets held when the worker
         # got round to them, which is not the moment the reader pressed Open.
-        made = shapes.shape_for(
-            thing, (settings or self._settings()).drawn_in(wanted),
-            stop=stop)
+        made = shapes.shape_for(thing, settled, stop=stop)
         # ⚠ AND THE PICTURE'S FACTS ARE STILL WRITTEN. This is the only
         # writer of `_image_facts`, and until the door carried a `facts`
         # field, routing this branch would have deleted the slot label's
@@ -18747,6 +18767,62 @@ class GamutApp(QMainWindow):
                                   paths)
         self._update_pair(a_name, a, b_name, b, paths)
 
+    def _white_a_shape_stands_in(self, shape, path) -> str:
+        """Which white the CIELAB of *shape* is actually referenced to.
+
+        ⚠ NOT ALWAYS THE ONE THE CONTROL SAYS, and that is the whole of this.
+        Three kinds can be the thing a picture is judged against, and they do
+        not agree:
+
+            measurement   `read_ti3` converts its XYZ to Lab under the
+                          chosen white                          -> moves
+            picture       `image_gamut` builds under the chosen white -> moves
+            profile/.gam  `icc_gamut`/`gam_gamut` return the file's own Lab
+                          UNTOUCHED when the space is CIELAB     -> fixed D50
+
+        A picture's colours were once fixed at D50, so they agreed with a
+        profile and disagreed with a measurement: "82% of holiday is out of
+        reach" became "3%" on one nudge of the white point. Re-referencing
+        them to the chosen white fixed that and created the mirror image —
+        "68% … worst 3.4 ΔE" became "94% … worst 5.2 ΔE" against a profile,
+        steady before. Swept over 90 picture/profile pairs, the largest
+        movement introduced was 25.7 percentage points.
+
+        One of the two was always going to be wrong while the two sides are
+        referenced differently. So neither is chosen: the picture is read
+        against the white the OTHER SIDE actually stands in, which is a fact
+        that can be looked up rather than a preference. Both cases hold still.
+
+        ⚠ AND THIS DOES NOT MAKE EVERY PAIRING STILL. Measured on
+        `08-the-batch-where-something-happened.png`, D50 -> D65 -> D50:
+
+            against a profile      68% / 3.4 ΔE  ->  68%  (was 94% / 5.2)
+            against a measurement  69% / 4.4 ΔE  ->  53% / 4.3   <- still moves
+
+        The measurement half moved before this helper existed and moves by
+        the same amount after it — isolated by bypassing the helper and
+        re-driving, which reproduced 69 -> 53 exactly. So it is not something
+        this introduced or fixed. Both sides there really are referenced to
+        the chosen white, and chromatic adaptation is not a rigid motion: it
+        can move what is inside what. Whether that share SHOULD move when a
+        reader changes the white point is a question about the control, not a
+        defect in this line, and it is recorded rather than papered over.
+
+        ⚠ THE DEEPER QUESTION IS BASTI'S. The alternative is to make a
+        profile's CIELAB move with the white point too — `_chart_lab` says
+        "Everything else in the window moves when the white point changes",
+        and a chart's patches already do. That would make every kind agree,
+        and it would change what a profile's gamut IS under D65: its volume,
+        its coverage, every number derived from it. That is a decision about
+        what the White point control MEANS, not a repair, so it is written
+        down rather than taken.
+        """
+        chosen = self._white.currentData()
+        if path is None or getattr(shape, "space", None) != "lab":
+            return chosen
+        kind = shapes.thing_for(Path(path), IMAGE_EXTENSIONS).kind
+        return "D50" if kind in ("profile", "gamutfile") else chosen
+
     def _update_picture_loss(self, a_name, a, b_name, b, paths) -> None:
         """For a picture, how much of the PICTURE a shape cannot print.
 
@@ -18810,7 +18886,8 @@ class GamutApp(QMainWindow):
             # size of wrong for something being counted in ΔE".
             try:
                 lost = out_of_reach(
-                    facts, against, white_point=self._white.currentData())
+                    facts, against,
+                    white_point=self._white_a_shape_stands_in(against, other))
             except Exception:      # noqa: BLE001 — a readout must never crash
                 return
             if lost is None:

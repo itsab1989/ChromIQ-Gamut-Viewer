@@ -1825,6 +1825,12 @@ def test_a_picture_s_loss_is_not_measured_against_a_wrong_space_shape(app):
               _facts_key=gamut_app.GamutApp._facts_key.__get__(
                   NS(), gamut_app.GamutApp),
               _image_facts={("/tmp/holiday.png",): facts})
+    # The picture is read against the white the OTHER side stands in, so the
+    # readout asks this; a stand-in without it loses the figure in silence,
+    # because `_update_picture_loss` swallows the AttributeError.
+    stub._white_a_shape_stands_in = \
+        gamut_app.GamutApp._white_a_shape_stands_in.__get__(
+            stub, gamut_app.GamutApp)
     said = {}
     wrong = reference_gamut("sRGB", white_point="D50", steps=9, space="luv")
     gamut_app.GamutApp._update_picture_loss(stub, "holiday", None,

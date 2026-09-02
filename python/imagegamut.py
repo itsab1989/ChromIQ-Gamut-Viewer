@@ -280,7 +280,7 @@ def image_gamut(path, *, white_point: str = "D50", space: str = "lab",
              # against one real paper: 7.3% of the space it occupies is out of
              # reach, and 39.8% of the actual picture is. Reporting only the
              # first is comforting and wrong.
-             "lab": lab[good], "weights": weights[good],
+             "weights": weights[good],
              # ⚠ AND THE SAME COLOURS AS XYZ, so they can be read against the
              # white the reader has chosen. Lab is XYZ read against a white;
              # `colours_to_lab` answers under D50 and has no parameter to be
@@ -334,11 +334,22 @@ def out_of_reach(facts: dict, gamut, *, white_point: str = "D50",
     # comparing them across two whites is what turned 82% into 3% while the
     # worst distance grew. Older facts carry no `xyz`; they keep the old
     # behaviour rather than being refused.
-    lab = facts.get("lab")
+    # ⚠ ONE ARRAY, NOT TWO. `facts` carried both `lab` (under D50) and `xyz`,
+    # and `lab` was overwritten one line after it was read for every picture
+    # built since the colours became white-referenced — a third float64
+    # (N, 3) array per photograph that nothing ever looked at. Measured on
+    # the showcase pictures: four held at once went from 2.26 MB to 3.96 MB,
+    # +75%, for a copy with no reader.
+    #
+    # `lab` is still ACCEPTED, because tests and any facts made by hand pass
+    # it, and because a picture with nothing measurable in it must still come
+    # back None rather than raise.
     xyz = facts.get("xyz")
     if xyz is not None:
         from gamutview import xyz_to_lab
         lab = xyz_to_lab(np.asarray(xyz, float), white_point)
+    else:
+        lab = facts.get("lab")
     weights = facts.get("weights")
     if lab is None or weights is None or not len(lab):
         return None

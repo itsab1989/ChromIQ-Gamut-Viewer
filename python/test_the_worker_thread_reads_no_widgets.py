@@ -127,3 +127,76 @@ def test_build_one_accepts_a_snapshot_from_its_caller():
     assert params["settings"].default is None, (
         "the snapshot must be optional, or every main-thread caller has to "
         "make one it does not need")
+
+
+def test_a_build_given_a_snapshot_reads_no_control_at_all():
+    """⚠ THE GUARD ABOVE WALKS `work()` AND THE CALL WAS ONE FRAME DOWN.
+
+    `8d7f607` is titled "the worker thread reads no controls". It read one:
+    `_build_one` ended with
+
+        wanted = space or self._build_space()
+
+    so a caller that handed over a `Settings` still had its space thrown away
+    and replaced by whatever the combo held at that instant — and on the
+    worker thread that instant is not the one the reader acted on. The tests
+    above walk only the closure's syntax tree, so a call inside `_build_one`
+    was invisible to them and they stayed green:
+
+        _settings()    calls off the GUI thread:  0   <- the commit's claim
+        _build_space() calls off the GUI thread:  1   <- what it missed
+
+    Driven, with the worker held and the combo moved from a timer, the
+    snapshot said `lab` and the shape arrived in `luv`.
+
+    So this asks the QUESTION BEHAVIOURALLY instead of reading source: a
+    stand-in whose controls EXPLODE if touched. A walk can be one frame too
+    shallow; a control that raises cannot be.
+    """
+    import pathlib
+    from types import SimpleNamespace as NS
+    import gamut_app
+    import shapes
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    def explode(*_a, **_k):
+        raise AssertionError(
+            "a control was read while a snapshot was in hand — on the worker "
+            "thread that is a cross-thread widget access, and the value is "
+            "from the wrong moment besides")
+
+    win = NS(_white=NS(currentData=explode),
+             _mode=NS(currentData=explode),
+             _relative=NS(isChecked=explode),
+             _detail=NS(value=explode),
+             _space=NS(currentData=explode),
+             _build_space=explode,
+             _settings=explode,
+             _image_facts={},
+             _facts_key=gamut_app.GamutApp._facts_key.__get__(
+                 NS(), gamut_app.GamutApp))
+
+    snap = shapes.Settings(white="D50", space="lab", mode="device",
+                           tick=False, detail=20)
+    got, _m = gamut_app.GamutApp._build_one(
+        win, root / "demo" / "Glossy-paper.icc", settings=snap)
+    assert got.space == "lab"
+
+    # ⚠ AND THE SNAPSHOT'S SPACE IS THE ONE USED. `drawn_in(wanted)` was an
+    # unconditional overwrite, so this is the half that was actually wrong.
+    luv = shapes.Settings(white="D50", space="luv", mode="device",
+                          tick=False, detail=20)
+    got_luv, _m = gamut_app.GamutApp._build_one(
+        win, root / "demo" / "Glossy-paper.icc", settings=luv)
+    assert got_luv.space == "luv", (
+        f"the snapshot said luv and the shape came back {got_luv.space!r} — "
+        "the snapshot's space is being overwritten again")
+
+    # AND AN EXPLICIT `space=` STILL WINS, which `_shells_for` depends on:
+    # it pins CIELAB whatever the window is drawing in.
+    pinned, _m = gamut_app.GamutApp._build_one(
+        win, root / "demo" / "Glossy-paper.icc", settings=luv, space="lab")
+    assert pinned.space == "lab", (
+        "an explicit space no longer overrides the snapshot, so the run's "
+        "shells would follow Draw it in")

@@ -270,5 +270,64 @@ def test_the_facts_keep_the_colours_as_xyz():
     assert "xyz" in facts, (
         "the picture's colours are kept only as Lab under D50, so they "
         "cannot be read against the white the reader chose")
-    assert np.asarray(facts["xyz"]).shape == np.asarray(facts["lab"]).shape
-    assert np.isfinite(np.asarray(facts["xyz"])).all()
+    xyz = np.asarray(facts["xyz"])
+    assert xyz.ndim == 2 and xyz.shape[1] == 3, xyz.shape
+    assert xyz.shape[0] == np.asarray(facts["weights"]).shape[0], (
+        "one weight per colour, or the picture-loss share is weighted by "
+        "the wrong thing")
+    assert np.isfinite(xyz).all()
+
+    # ⚠ AND ONLY ONE COPY OF THE COLOURS IS KEPT. `facts` used to carry `lab`
+    # as well, under D50, and it was overwritten one line after it was read
+    # for every picture built — a third float64 (N, 3) array per photograph
+    # with no reader. Four showcase pictures held at once went from 2.26 MB
+    # to 3.96 MB, +75%, for nothing.
+    assert "lab" not in facts, (
+        "the picture's colours are kept twice again: `lab` is read and then "
+        "replaced by the re-referenced `xyz` before it is used")
+
+
+def test_a_picture_is_read_against_the_white_the_other_side_stands_in():
+    """⚠ TWO SIDES, TWO REFERENCES, AND ONLY ONE OF THEM MOVES.
+
+    Making the picture's colours follow the White point fixed the case where
+    the other side is a MEASUREMENT and broke the case where it is a PROFILE:
+    `icc_gamut`/`gam_gamut` return the file's own Lab untouched when the space
+    is CIELAB, so a profile is fixed at D50 whatever is asked for. Driven on
+    one picture against `Glossy-paper.icc`, D50 -> D65:
+
+        before   68% / 3.4 ΔE  ->  94% / 5.2 ΔE
+        after    68% / 3.4 ΔE  ->  68% / 3.4 ΔE
+
+    Swept over 90 picture/profile pairs the largest movement introduced was
+    25.7 percentage points, and not one pair moved before while standing
+    still after.
+
+    So the white handed to `out_of_reach` is the one the OTHER SIDE actually
+    stands in — a fact that can be looked up, rather than a preference
+    between two wrong answers.
+    """
+    import pathlib
+    from types import SimpleNamespace as NS
+    import gamut_app
+
+    win = NS(_white=NS(currentData=lambda: "D65"))
+    ask = gamut_app.GamutApp._white_a_shape_stands_in.__get__(
+        win, gamut_app.GamutApp)
+    in_lab = NS(space="lab")
+
+    assert ask(in_lab, pathlib.Path("/x/p.icc")) == "D50", (
+        "a profile's CIELAB is the file's own D50-referred Lab; reading the "
+        "picture against D65 compares two different references")
+    assert ask(in_lab, pathlib.Path("/x/p.gam")) == "D50"
+    assert ask(in_lab, pathlib.Path("/x/p.ti3")) == "D65", (
+        "a measurement IS re-referenced by `read_ti3`, so the picture must "
+        "follow the control to stand beside it")
+    assert ask(in_lab, pathlib.Path("/x/p.png")) == "D65"
+
+    # A shape with no file — a colour space, the visible solid — and a shape
+    # built in another space both follow the control.
+    assert ask(in_lab, None) == "D65"
+    assert ask(NS(space="luv"), pathlib.Path("/x/p.icc")) == "D65", (
+        "outside CIELAB a profile IS converted under the chosen white, so "
+        "pinning D50 there would reintroduce the mismatch the other way")

@@ -33,7 +33,8 @@ def a_window(**extra):
     # stand-in has presented as an absence rather than an error.
     if not hasattr(hall, "_white"):
         hall._white = NS(currentData=lambda: "D50")
-    for name in ("_facts_key", "_forget_unused_facts", "_lays_down_ink"):
+    for name in ("_facts_key", "_forget_unused_facts", "_lays_down_ink",
+                 "_white_a_shape_stands_in"):
         setattr(hall, name,
                 getattr(gamut_app.GamutApp, name).__get__(hall,
                                                           gamut_app.GamutApp))
