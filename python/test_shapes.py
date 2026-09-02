@@ -456,3 +456,85 @@ def test_the_rule_is_never_written_out_a_second_time(tmp_path):
     # built by `read_measurement`, so if it opened at all it IS a measurement.
     assert shapes.thing_for(pathlib.Path("no-extension-at-all"),
                             gamut_app.IMAGE_EXTENSIONS).kind == "measurement"
+
+
+BUILDERS = ("read_measurement", "icc_gamut", "gam_gamut", "image_gamut",
+            "reference_gamut", "optimal_colour_solid")
+
+
+def test_the_window_does_not_build_a_shape_behind_the_door():
+    """⚠ THE WHOLE POINT, STATED AS A RULE THAT CAN FAIL.
+
+    Twelve places in `gamut_app.py` turned a thing into a gamut, and each read
+    a different subset of the five settings that decide what a shape IS. Every
+    blocker of 30-31 August was two of those places disagreeing: the tick
+    honoured by one and not another, a measurement dropped on the way to a
+    third, a colour space having no file so a fourth crashed on `Path(None)`.
+
+    Not similar faults — the same fault, met twelve times. So the rule is not
+    "the builders are called correctly", it is that **the window does not call
+    them at all**: `shapes.shape_for` is the only caller, because it is the
+    only thing that reads `shapes.KINDS`.
+
+    ⚠ AND THE GREP THAT FINDS THEM MUST FOLLOW ALIASES. Two of the twelve
+    called their builder through a local variable —
+
+        reader = gam_gamut if thing.kind == "gamutfile" else icc_gamut
+
+    — so a search for `icc_gamut(` walked straight past both. This walks the
+    syntax tree for the NAME, however it is spelled, which catches the call,
+    the alias and the argument alike.
+
+    `_in_lab`'s measurement-in-hand branch is the one exception and it is
+    listed by name below: it must NOT re-read the file, because the
+    measurement it already holds embodies a paper-white tick that re-reading
+    would silently change. It wants a rebuild, not a build.
+    """
+    import ast
+    import pathlib
+
+    #: The one branch that is allowed to build for itself, and why.
+    ALLOWED = {"_in_lab"}
+
+    src = (pathlib.Path(__file__).resolve().parent / "gamut_app.py").read_text()
+    tree = ast.parse(src)
+
+    #: function name -> the builder names it mentions
+    guilty = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        used = set()
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Name) and inner.id in BUILDERS:
+                used.add(inner.id)
+            elif isinstance(inner, ast.Attribute) and inner.attr in BUILDERS:
+                used.add(inner.attr)
+        if used and node.name not in ALLOWED:
+            guilty[node.name] = sorted(used)
+
+    assert not guilty, (
+        "the window builds a shape without going through `shapes.shape_for`, "
+        "so a setting can reach one shape and miss another:\n  "
+        + "\n  ".join(f"{k}: {v}" for k, v in sorted(guilty.items())))
+
+
+def test_that_rule_can_actually_fail():
+    """The control for the rule above, on a function written here.
+
+    A rule that has never been seen to fail is a rule nobody has checked.
+    """
+    import ast
+
+    sneaky = '''
+def _a_route_that_builds_for_itself(self):
+    reader = gam_gamut if self.kind == "gamutfile" else icc_gamut
+    return reader(self.path)
+'''
+    tree = ast.parse(sneaky)
+    used = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in BUILDERS:
+            used.add(node.id)
+    assert used == {"gam_gamut", "icc_gamut"}, (
+        f"the finder misses a builder reached through an alias: {used}")

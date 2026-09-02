@@ -13195,10 +13195,15 @@ class GamutApp(QMainWindow):
                 pass
             elif choice[0] == "space":
                 name = choice[1]
-                self._reference = (name, reference_gamut(
-                    name, white_point=self._white.currentData(),
-                    steps=self._detail.value(),
-                    space=self._build_space()))
+                # ⚠ THROUGH THE DOOR, like every other kind. A colour space
+                # has no file, which is why it kept its own builder longest
+                # — and `shapes.a_space` exists precisely so a thing with no
+                # file is still a Thing. `KINDS["space"]` says it depends on
+                # white, space and detail; that is now read from the table
+                # rather than from whichever three controls this branch
+                # happened to name.
+                self._reference = (name, shapes.shape_for(
+                    shapes.a_space(name), self._settings()).gamut)
                 self._compare_note.setText(REFERENCE_SPACES[name]["note"])
             elif choice[0] == "icc":
                 # PICTURES BELONG HERE TOO. They were readable all along --
@@ -13247,14 +13252,9 @@ class GamutApp(QMainWindow):
                 self._reference = (_profile_label(chosen), built)
                 self._compare_note.setText(_comparison_note(chosen))
             elif choice[0] == "visible":
-                v, _f = optimal_colour_solid(
-                    "D50" if self._white.currentData() == "D50" else "D65",
-                    max(24, self._detail.value() * 3))
-                lab = xyz_to_lab(v, self._white.currentData())
-                self._reference = ("Every visible colour",
-                                   build_gamut(lab, input_space="lab",
-                                               space=self._build_space(),
-                                               white_point=self._white.currentData()))
+                everything = shapes.the_visible_solid()
+                self._reference = (everything.name, shapes.shape_for(
+                    everything, self._settings()).gamut)
                 self._compare_note.setText(
                     "Every colour a printed surface could possibly show under "
                     "this light. No printer comes close, and that is normal.")
@@ -15589,10 +15589,8 @@ class GamutApp(QMainWindow):
             return
         try:
             if choice[0] == "space":
-                self._reference = (choice[1], reference_gamut(
-                    choice[1], white_point=self._white.currentData(),
-                    steps=self._detail.value(),
-                    space=self._build_space()))
+                self._reference = (choice[1], shapes.shape_for(
+                    shapes.a_space(choice[1]), self._settings()).gamut)
             elif choice[0] == "icc" and self._reference_path is not None:
                 # ⚠ THROUGH `_build_one`, WHICH KNOWS WHAT THE FILE IS.
                 # This called `icc_gamut` on whatever was chosen, and the
@@ -15644,13 +15642,9 @@ class GamutApp(QMainWindow):
                 self._reference = (_profile_label(self._reference_path),
                                    built)
             elif choice[0] == "visible":
-                v, _f = optimal_colour_solid(
-                    "D50" if self._white.currentData() == "D50" else "D65",
-                    max(24, self._detail.value() * 3))
-                lab = xyz_to_lab(v, self._white.currentData())
-                self._reference = ("Every visible colour", build_gamut(
-                    lab, input_space="lab", space=self._build_space(),
-                    white_point=self._white.currentData()))
+                everything = shapes.the_visible_solid()
+                self._reference = (everything.name, shapes.shape_for(
+                    everything, self._settings()).gamut)
         except Exception as exc:      # noqa: BLE001 — always explain
             Notice.warn(self, "That comparison could not be rebuilt", str(exc))
             self._reference = None
