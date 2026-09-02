@@ -126,51 +126,44 @@ class Settings:
         return replace(self, tick=tick)
 
 
-#: Kinds whose builder produces a CIELAB shape from a D50-referred source,
-#: so the white point asked for cannot move it — but only while the shape is
-#: being BUILT in CIELAB.
-_PCS_IS_D50 = ("profile", "gamutfile")
+#: ⚠ A CONDITIONAL DEPENDENCY WAS TRIED HERE AND REVERTED. Do not put it
+#: back without reading this.
+#:
+#: `white` was dropped from the key for `profile`/`gamutfile` whenever
+#: `settings.space == "lab"`, because `_shells_for` pins CIELAB and a profile's
+#: Lab VERTICES really are white-independent — an ICC connection space is
+#: D50-referred. Measured across every profile here and a `.gam`: vertices
+#: bit-identical under D50 and D65. It saved about 1.5 s of ArgyllCMS per nudge
+#: of the white point with a run on screen.
+#:
+#: It was measuring the wrong quantity. A `Gamut` is not only vertices, and
+#: `icc_gamut`/`gam_gamut` also compute a per-vertex screen colour by going
+#: BACK OUT of Lab:
+#:
+#:     xyz    = lab_to_xyz(verts, white_point)     # verts fixed, xyz moves
+#:     colors = xyz_to_srgb(xyz, white_point)      # Bradford-adapts to D65
+#:
+#: Bradford adaptation is a diagonal scaling in LMS, not in XYZ, so that
+#: composition is not white-invariant. Field by field, D50 against D65:
+#:
+#:     vertices IDENTICAL   faces IDENTICAL   volume IDENTICAL
+#:     colors   DIFFERS     2233 of 2233 vertices, worst 70 of 255 in a channel
+#:
+#: With the key blind to white, a run on screen kept its shells painted in D50
+#: colours while the control read D65 — 1922 of 2233 painted vertices wrong,
+#: and the builder never ran. A control with the conditional disabled repainted
+#: them and the key regained its white.
+#:
+#: So `white` stays in the key for every kind that declares it. If this is
+#: ever worth revisiting, the honest route is the other one: make the claim
+#: TRUE by having the builders compute `colors` under a fixed white when the
+#: shape is built in CIELAB — not by narrowing the key around a measurement
+#: of the vertices alone.
 
 
-def depends_on(thing: Thing, settings: "Settings | None" = None) -> tuple:
-    """Which of the five settings decide this shape.
-
-    ⚠ ONE OF THEM IS CONDITIONAL, AND MEASURED. `KINDS["profile"]` declares
-    `("white", "space")` and is right to: a profile drawn in CIELUV or CIE
-    XYZ DOES move with the white point, and under-declaring is the dangerous
-    direction. But an ICC profile's connection space is D50-referred, so the
-    CIELAB shape it yields is the same whatever white is asked for — and the
-    conversion that makes white matter happens on the way OUT of Lab.
-
-    So when the space is pinned to `"lab"`, `white` cannot change the answer
-    for these kinds, and carrying it in the key is a guaranteed miss. With a
-    run on screen that cost about 1.5 s of blocked main thread per nudge of
-    the white point, rebuilding two ArgyllCMS shells to redraw a picture that
-    did not change by one vertex — and `_shells_for`'s own docstring says
-    building one is "the slowest thing this application does".
-
-    MEASURED, not reasoned: every profile in this repository (four distinct
-    shapes) and a `.gam` produced by ArgyllCMS's own `iccgamut`, under D50
-    and D65 —
-
-        lab   bit-identical vertices, all five files and the .gam
-        luv   differs on every one   (1,124,157 vs 1,277,757 for one)
-        xyz   differs on every one   (0.1263 vs 0.1643 for one)
-
-    `test_white_really_is_inert_for_a_profile_in_cielab` builds both whites
-    through the real builders and asserts that, so the day the assumption
-    stops holding the suite says so — rather than a cache quietly serving a
-    shape built under the wrong white, which is the direction that shows a
-    reader a wrong number instead of costing a second.
-
-    Called with no settings it answers the static declaration, which is what
-    an audit of the table wants.
-    """
-    declared = KINDS[thing.kind]["depends"]
-    if (settings is not None and thing.kind in _PCS_IS_D50
-            and settings.space == "lab"):
-        return tuple(name for name in declared if name != "white")
-    return declared
+def depends_on(thing: Thing) -> tuple:
+    """Which of the five settings decide this shape, from the one table."""
+    return KINDS[thing.kind]["depends"]
 
 
 def key_for(thing: Thing, settings: Settings) -> tuple:
@@ -202,7 +195,7 @@ def key_for(thing: Thing, settings: Settings) -> tuple:
     again", and only the second should move what is on screen.
     """
     parts: list = [thing.kind, str(thing.path) if thing.path else thing.name]
-    for setting in depends_on(thing, settings):
+    for setting in depends_on(thing):
         parts.append(getattr(settings, setting))
     return tuple(parts)
 

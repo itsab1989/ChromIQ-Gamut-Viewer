@@ -608,76 +608,70 @@ def test_that_rule_can_actually_fail():
 # The one conditional dependency, and the measurement it rests on
 # --------------------------------------------------------------------------
 
-def test_white_leaves_the_key_only_where_it_cannot_move_the_shape():
-    """⚠ A KEY THAT CARRIES A SETTING THE BUILD IGNORES IS A GUARANTEED MISS.
+def test_white_stays_in_the_key_for_every_kind_that_declares_it():
+    """⚠ IT WAS DROPPED FOR A PROFILE IN CIELAB, AND THAT PAINTED A RUN IN
+    THE WRONG COLOURS.
 
-    `_shells_for` pins `space="lab"` on purpose — "ALWAYS IN LAB, WHATEVER
-    THE WINDOW IS DRAWING IN" — and CIELAB is the one space where the white
-    point cannot reach a profile. So with a run on screen, one nudge of the
-    white point rebuilt BOTH ArgyllCMS shells, took about 1.5 s of blocked
-    main thread, and returned shapes identical to four decimal places:
+    The argument was good and the measurement was of the wrong quantity. A
+    profile's Lab VERTICES are white-independent — the connection space is
+    D50-referred — so `_shells_for`, which pins CIELAB, was rebuilding an
+    ArgyllCMS shell on every nudge of the white point to get identical
+    geometry. Dropping `white` from the key there saved about 1.5 s a nudge.
 
-        ('profile', '.../printer-2019.icc', 'D50', 'lab')
-        ('profile', '.../printer-2019.icc', 'D65', 'lab')   <- two keys,
-        ('profile', '.../printer-2021.icc', 'D50', 'lab')      one shape
-        ('profile', '.../printer-2021.icc', 'D65', 'lab')
+    But a `Gamut` is not only vertices. `icc_gamut` and `gam_gamut` also
+    compute a screen colour per vertex, and they do it by going back OUT of
+    Lab — `xyz_to_srgb(lab_to_xyz(verts, W), W)` — and Bradford adaptation is
+    a diagonal scaling in LMS, so that composition is not white-invariant:
 
-    This is the same fault the commit before it removed from this very key
-    one field along: `mode` was dropped because a profile does not depend on
-    it, and nobody noticed that pinning the space does the same to `white`.
+        vertices IDENTICAL   faces IDENTICAL   volume IDENTICAL
+        colors   DIFFERS     2233 of 2233, worst 70 of 255 in a channel
 
-    ⚠ THE DECLARATION STAYS AS IT IS. `KINDS["profile"]` keeps `white`,
-    because in CIELUV and CIE XYZ a profile really does move with it, and
-    under-declaring is the direction that shows somebody a wrong number.
-    Only the pinned-to-CIELAB case drops it.
+    Driven, with the key blind to white: a run on screen kept its two shells
+    painted in D50 colours while the control read D65, and the builder never
+    ran. 1922 of 2233 painted vertices were wrong.
     """
     import pathlib
     prof = shapes.thing_for(pathlib.Path("/x/p.icc"), (".png",))
     gam = shapes.thing_for(pathlib.Path("/x/p.gam"), (".png",))
     meas = shapes.thing_for(pathlib.Path("/x/p.ti3"), (".png",))
 
-    for thing, said in ((prof, "a profile"), (gam, "a gamut file")):
-        lab50 = shapes.key_for(thing, shapes.Settings(white="D50", space="lab"))
-        lab65 = shapes.key_for(thing, shapes.Settings(white="D65", space="lab"))
-        assert lab50 == lab65, (
-            f"{said} in CIELAB still keys on the white point, so every nudge "
-            "of it rebuilds an ArgyllCMS shell for an identical answer")
-
-        luv50 = shapes.key_for(thing, shapes.Settings(white="D50", space="luv"))
-        luv65 = shapes.key_for(thing, shapes.Settings(white="D65", space="luv"))
-        assert luv50 != luv65, (
-            f"{said} in CIELUV no longer keys on the white point — and there "
-            "it genuinely moves the shape, so two different shapes would "
-            "share one cache entry")
-        assert lab50 != luv50, f"{said}: two spaces share a key"
-
-    # A MEASUREMENT IS UNTOUCHED: its white is read from the file, not from
-    # a D50 connection space, and it moves the shape in every space.
-    m50 = shapes.key_for(meas, shapes.Settings(white="D50", space="lab"))
-    m65 = shapes.key_for(meas, shapes.Settings(white="D65", space="lab"))
-    assert m50 != m65, (
-        "two readings of one paper share a cache entry — that is the fault "
-        "that made coverage swing 66.9% to 82.9%")
+    for thing, said in ((prof, "a profile"), (gam, "a gamut file"),
+                        (meas, "a measurement")):
+        for space in ("lab", "luv", "xyz"):
+            a = shapes.key_for(thing, shapes.Settings(white="D50", space=space))
+            b = shapes.key_for(thing, shapes.Settings(white="D65", space=space))
+            assert a != b, (
+                f"{said} in {space} does not key on the white point — two "
+                "shapes that are painted differently would share one entry")
 
 
-def test_the_static_declaration_is_unchanged():
-    """Asked with no settings, the table answers what it always did."""
+def test_the_declaration_is_the_whole_answer():
+    """`depends_on` reads the table and nothing else — no conditions."""
+    import inspect
     import pathlib
     prof = shapes.thing_for(pathlib.Path("/x/p.icc"), (".png",))
-    assert shapes.depends_on(prof) == ("white", "space"), (
-        "the declaration itself changed — under-declaring is the dangerous "
-        "direction and this is what an audit of the table reads")
+    assert shapes.depends_on(prof) == ("white", "space")
+
+    # ⚠ AND IT TAKES NO SETTINGS. A signature that accepts them is a place to
+    # put a condition, and the last condition put there was measured on the
+    # wrong field and painted a run in the wrong colours.
+    params = inspect.signature(shapes.depends_on).parameters
+    assert list(params) == ["thing"], (
+        f"`depends_on` takes {list(params)} — anything beyond the thing is "
+        "somewhere for a conditional dependency to hide")
 
 
 @pytest.mark.slow
-def test_white_really_is_inert_for_a_profile_in_cielab(tmp_path):
-    """⚠ THE MEASUREMENT THE KEY RULE RESTS ON, taken against the real
-    builders rather than argued from the ICC specification.
+def test_a_profile_in_cielab_moves_with_the_white_point(tmp_path):
+    """⚠ THE MEASUREMENT THAT WAS TAKEN OF THE WRONG FIELD.
 
-    If this ever stops holding, the cache above starts serving a shape built
-    under the wrong white — a wrong number rather than a slow one, which is
-    the direction that matters. So it is checked by building, not by
-    reasoning about connection spaces.
+    Its predecessor built each profile under both whites and compared
+    `vertices`. They are identical, so it passed — and certified an
+    assumption it did not test, because `colors` differs on every vertex and
+    `colors` is what paints the shape.
+
+    Every field is compared here. The point is no longer "white is inert" —
+    it is that white REACHES a profile in CIELAB, so the key must carry it.
     """
     import pathlib
     import numpy as np
@@ -686,28 +680,30 @@ def test_white_really_is_inert_for_a_profile_in_cielab(tmp_path):
     here = pathlib.Path(__file__).resolve().parent.parent / "demo"
     profiles = sorted(here.rglob("*.icc"))
     assert len(profiles) >= 3, (
-        f"only {len(profiles)} profiles to check — this test is watching "
-        "almost nothing")
+        f"only {len(profiles)} profiles — this test is watching almost nothing")
 
+    moved = []
     for p in profiles:
-        d50 = np.asarray(icc_gamut(p, white_point="D50", space="lab").vertices,
-                         float)
-        d65 = np.asarray(icc_gamut(p, white_point="D65", space="lab").vertices,
-                         float)
-        assert d50.shape == d65.shape and np.array_equal(d50, d65), (
-            f"{p.name}: the white point MOVES this profile in CIELAB, so "
-            "dropping it from the cache key now serves the wrong shape")
+        a = icc_gamut(p, white_point="D50", space="lab")
+        b = icc_gamut(p, white_point="D65", space="lab")
+        same_verts = np.array_equal(np.asarray(a.vertices, float),
+                                    np.asarray(b.vertices, float))
+        ca, cb = getattr(a, "colors", None), getattr(b, "colors", None)
+        assert ca is not None and cb is not None, (
+            f"{p.name}: a Gamut no longer carries `colors`, so this test and "
+            "the key rule it supports are both about a field that is gone")
+        same_colors = np.array_equal(np.asarray(ca, float),
+                                     np.asarray(cb, float))
+        moved.append((p.name, same_verts, same_colors))
 
-    # AND THE CONTROL: white is not simply inert everywhere, or the rule
-    # above would be hiding a builder that ignores its argument.
-    one = profiles[0]
-    a = np.asarray(icc_gamut(one, white_point="D50", space="luv").vertices,
-                   float)
-    b = np.asarray(icc_gamut(one, white_point="D65", space="luv").vertices,
-                   float)
-    assert not np.array_equal(a, b), (
-        f"{one.name}: the white point does not move it in CIELUV either, so "
-        "`icc_gamut` is ignoring the argument and this test proves nothing")
+    # The geometry really is white-independent — that half of the old claim
+    # was true, and is why the mistake was tempting.
+    assert all(v for _n, v, _c in moved), (
+        f"a profile's CIELAB vertices moved with the white point: {moved}")
+    # And the painted colours really are not.
+    assert not any(c for _n, _v, c in moved), (
+        "a profile's colours no longer move with the white point — if that is "
+        f"deliberate, the key may drop `white` again: {moved}")
 
 
 def test_the_door_says_what_it_actually_returns():

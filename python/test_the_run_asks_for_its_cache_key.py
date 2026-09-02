@@ -66,43 +66,31 @@ def test_a_profile_is_not_rebuilt_when_the_mode_moves():
         "depend on moves")
 
 
-def test_a_profile_is_rebuilt_when_the_white_moves_where_it_can_move_it():
-    """...but only where the white point can actually reach it.
+def test_a_profile_is_rebuilt_when_the_white_moves():
+    """...and it does depend on the white point, in every space.
 
-    ⚠ THIS TEST ASSERTED THE OPPOSITE AND WAS RIGHT TO, UNTIL IT WAS
-    MEASURED. It was written as the control for the `mode` test above — "a
-    profile DOES depend on white, so the probe can move" — and `_key` pins
-    the space to CIELAB, which is the one space where that is false. Built
-    through the real `icc_gamut` under D50 and D65: every profile in this
-    repository and a `.gam` from ArgyllCMS's own `iccgamut` come back
-    BIT-IDENTICAL in CIELAB, and different in CIELUV and CIE XYZ. An ICC
-    profile's connection space is D50-referred; the conversion that lets
-    white matter happens on the way OUT of Lab.
+    ⚠ THIS TEST WAS REWRITTEN TWICE IN ONE DAY, THE FIRST TIME WRONGLY. It
+    was made to assert that a profile in CIELAB does NOT key on white,
+    because its Lab vertices are white-independent. They are — and the
+    per-vertex screen colours are not: `icc_gamut` computes them by going
+    back out of Lab through a Bradford adaptation, which is not
+    white-invariant. `colors` differed on 2233 of 2233 vertices while
+    `vertices` was bit-identical, and a run on screen kept its shells painted
+    in D50 while the control read D65.
 
-    So the control moves to where the effect is real. The CIELAB half is now
-    the other assertion — that the key does NOT carry a setting which cannot
-    change the answer, because carrying it rebuilt an ArgyllCMS shell on
-    every nudge of the white point for an identical picture.
-
-    `test_white_really_is_inert_for_a_profile_in_cielab` in `test_shapes.py`
-    is the measurement this rests on, taken against the builders themselves.
+    So the original claim was right and the clever narrowing was wrong. The
+    lesson is in the shape of the mistake: the measurement compared the field
+    that was easy to compare, and the shape has more than one field.
     """
     import shapes
     p = pathlib.Path("/x/Glossy-paper.icc")
     thing = shapes.thing_for(p, IMAGE)
-
-    def key(white, space):
-        return shapes.key_for(thing, shapes.Settings(white=white, space=space))
-
-    for space in ("luv", "xyz"):
-        assert key("D50", space) != key("D65", space), (
-            f"a profile in {space} no longer keys on the white point, and "
-            "there it genuinely moves the shape — two different shapes would "
-            "share one cache entry")
-
-    assert key("D50", "lab") == key("D65", "lab"), (
-        "a profile in CIELAB still keys on the white point, so the run "
-        "rebuilds a shell to get a bit-identical answer")
+    for space in ("lab", "luv", "xyz"):
+        a = shapes.key_for(thing, shapes.Settings(white="D50", space=space))
+        b = shapes.key_for(thing, shapes.Settings(white="D65", space=space))
+        assert a != b, (
+            f"a profile in {space} shares one cached shell across two white "
+            "points, and the shape it paints differs between them")
 
 
 def test_two_readings_of_one_paper_do_not_share_a_key():
