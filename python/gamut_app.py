@@ -81,15 +81,31 @@ from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QComboBox,
                              QWidget)
 
 from version import APP_NAME, UPSTREAM, __version__
+# ⚠ THE BUILDERS ARE NOT IMPORTED HERE, AND THAT IS THE GUARD.
+#
+# `read_measurement`, `icc_gamut`, `gam_gamut`, `reference_gamut`,
+# `optimal_colour_solid` and `xyz_to_lab` were imported into this module and,
+# once every site was routed through `shapes.shape_for`, used exactly ZERO
+# times — counted, not assumed. Their only remaining effect was to keep a
+# builder in scope for anybody who writes one line inside any method of this
+# file, which is how twelve sites came to exist in the first place.
+#
+# With them gone, such a line is a `NameError` at import: a guard that cannot
+# be walked past, rather than one AST walk in one test that can be. The test
+# stays as the backstop that names the offender; this is what makes the
+# offence hard to commit.
+#
+# `build_gamut` stays for one reason, `_in_lab`'s measurement-in-hand branch,
+# which must NOT re-read the file because the measurement it holds already
+# embodies a paper-white tick. It wants a rebuild, not a build. The end state
+# is a `rebuilt_in` on `shapes` so even that goes through the door.
+#
+# (`CONVERTERS` went with them: also imported, also used nowhere here.)
 from gamutview import SPACES, build_gamut, coverage, outside_of
-from gamutview import xyz_to_lab
-from references import (REFERENCE_SPACES, Stopped, gam_gamut,
-                        icc_gamut, reference_gamut)
-from spectral import optimal_colour_solid
+from references import REFERENCE_SPACES, Stopped
 from ti3gamut import _looks_dark as ti3gamut_looks_dark
-from ti3gamut import (CONVERTERS, DIRECTIONS, compare_measurements,
-                      neutral_axis, read_measurement, write_html,
-                      write_slice_html)
+from ti3gamut import (DIRECTIONS, compare_measurements,
+                      neutral_axis, write_html, write_slice_html)
 
 # Dark, close to ChromIQ's own, so the fit is judged on layout rather than on
 # a colour scheme that would never ship.

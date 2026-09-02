@@ -493,8 +493,15 @@ def test_the_window_does_not_build_a_shape_behind_the_door():
     import ast
     import pathlib
 
-    #: The one branch that is allowed to build for itself, and why.
-    ALLOWED = {"_in_lab"}
+    #: ⚠ (METHOD, BUILDER), NOT A METHOD. This was `ALLOWED = {"_in_lab"}`,
+    #: which exempted EVERY branch of that method for EVERY builder. A hunt
+    #: injected `icc_gamut(path, ...)` into `_in_lab`'s early-return branch —
+    #: nothing to do with a measurement in hand — and this rule stayed green.
+    #:
+    #: `_in_lab` may use `build_gamut` and nothing else, because the
+    #: measurement it holds already embodies a paper-white tick and re-reading
+    #: the file would silently change it. It wants a rebuild, not a build.
+    ALLOWED = {("_in_lab", "build_gamut")}
 
     src = (pathlib.Path(__file__).resolve().parent / "gamut_app.py").read_text()
     tree = ast.parse(src)
@@ -510,8 +517,9 @@ def test_the_window_does_not_build_a_shape_behind_the_door():
                 used.add(inner.id)
             elif isinstance(inner, ast.Attribute) and inner.attr in BUILDERS:
                 used.add(inner.attr)
-        if used and node.name not in ALLOWED:
-            guilty[node.name] = sorted(used)
+        stray = {b for b in used if (node.name, b) not in ALLOWED}
+        if stray:
+            guilty[node.name] = sorted(stray)
 
     assert not guilty, (
         "the window builds a shape without going through `shapes.shape_for`, "
@@ -520,24 +528,80 @@ def test_the_window_does_not_build_a_shape_behind_the_door():
 
 
 def test_that_rule_can_actually_fail():
-    """The control for the rule above, on a function written here.
+    """The control for the rule above — ON THE REAL FILE.
 
-    A rule that has never been seen to fail is a rule nobody has checked.
+    ⚠ THIS USED TO PARSE A NINE-LINE STRING WRITTEN INSIDE THE TEST, which
+    proves the FINDER works on a toy and says nothing about whether the RULE
+    guards `gamut_app.py`. That is the same shape as two other instruments
+    found blind today: it exercised its mechanism and not its subject.
+
+    So the injection goes into a copy of the real source, through the same
+    walk the rule uses, and BOTH halves are checked: a stray builder in an
+    ordinary method, reached through an alias; and a stray builder inside the
+    EXEMPT method — which is the half that was open, because the exemption
+    used to cover the whole of `_in_lab` rather than its one builder.
     """
     import ast
+    import pathlib
 
-    sneaky = '''
-def _a_route_that_builds_for_itself(self):
-    reader = gam_gamut if self.kind == "gamutfile" else icc_gamut
-    return reader(self.path)
-'''
-    tree = ast.parse(sneaky)
-    used = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and node.id in BUILDERS:
-            used.add(node.id)
-    assert used == {"gam_gamut", "icc_gamut"}, (
-        f"the finder misses a builder reached through an alias: {used}")
+    src = (pathlib.Path(__file__).resolve().parent / "gamut_app.py").read_text()
+
+    def offenders(text):
+        tree = ast.parse(text)
+        found = {}
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            used = set()
+            for inner in ast.walk(node):
+                if isinstance(inner, ast.Name) and inner.id in BUILDERS:
+                    used.add(inner.id)
+                elif isinstance(inner, ast.Attribute) and inner.attr in BUILDERS:
+                    used.add(inner.attr)
+            stray = {b for b in used
+                     if (node.name, b) not in {("_in_lab", "build_gamut")}}
+            if stray:
+                found[node.name] = sorted(stray)
+        return found
+
+    assert offenders(src) == {}, (
+        "the real file already breaks the rule: " + repr(offenders(src)))
+
+    # (1) an ordinary method that builds for itself, through an ALIAS — the
+    # form a name-based grep walks straight past, and how two of the twelve
+    # original sites hid.
+    anchor = "    def _refresh_slot_labels(self) -> None:"
+    assert src.count(anchor) == 1, (
+        "the anchor for injection (1) is gone; this control is testing "
+        "nothing")
+    aliased = src.replace(
+        anchor,
+        anchor + "\n        reader = gam_gamut if True else icc_gamut"
+                 "\n        reader(None)", 1)
+    assert offenders(aliased).get("_refresh_slot_labels") == [
+        "gam_gamut", "icc_gamut"], (
+        "a builder reached through an alias is not caught: "
+        + repr(offenders(aliased).get("_refresh_slot_labels")))
+
+    # (2) THE HALF THAT WAS OPEN: a builder that is NOT `build_gamut`, inside
+    # the one method the rule exempts.
+    where = "    def _in_lab(self"
+    assert src.count(where) == 1, (
+        "the anchor for injection (2) is gone; this control is testing "
+        "nothing")
+    at = src.index(where)
+    end = src.index("\n", at)
+    in_the_exempt_one = src[:end + 1] + "        icc_gamut(None)\n" + src[end + 1:]
+    assert offenders(in_the_exempt_one).get("_in_lab") == ["icc_gamut"], (
+        "the exemption still covers the whole method, so a builder with "
+        "nothing to do with a measurement in hand passes unnoticed: "
+        + repr(offenders(in_the_exempt_one).get("_in_lab")))
+
+    # (3) AND THE ONE THING THAT MUST STILL BE ALLOWED, or the rule has been
+    # tightened into a lie about why the exception exists.
+    assert offenders(src).get("_in_lab") is None, (
+        "`_in_lab` may use `build_gamut`: the measurement it holds already "
+        "embodies a tick, so it must rebuild rather than re-read")
 
 
 # --------------------------------------------------------------------------
