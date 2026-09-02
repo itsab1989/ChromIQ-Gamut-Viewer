@@ -14952,9 +14952,16 @@ class GamutApp(QMainWindow):
         outcome: dict = {}
         stop = threading.Event()
 
+        # ⚠ READ THE CONTROLS HERE, ON THE GUI THREAD, BEFORE THE THREAD
+        # STARTS. Everything inside `work()` runs on a worker thread while
+        # the main thread is pumping events, so a widget read in there is a
+        # widget read from the wrong thread AND at the wrong moment.
+        settled = self._settings()
+
         def work():
             try:
-                outcome["got"] = self._build_one(path, stop=stop)
+                outcome["got"] = self._build_one(path, stop=stop,
+                                                 settings=settled)
             except BaseException as exc:                  # noqa: BLE001
                 outcome["trouble"] = exc
 
@@ -14993,7 +15000,7 @@ class GamutApp(QMainWindow):
             raise outcome["trouble"]
         return outcome["got"]
 
-    def _build_one(self, path: Path, stop=None, space=None):
+    def _build_one(self, path: Path, stop=None, space=None, settings=None):
         """The gamut of one file, whichever kind it is.
 
         A profile has no patches, so there is no Measurement to return with
@@ -15041,8 +15048,39 @@ class GamutApp(QMainWindow):
         # ⚠ `stop` SURVIVES, which was the worry worth checking. It is passed
         # straight through and only ArgyllCMS can honour it; the rest is
         # arithmetic that runs to completion either way, exactly as before.
+        # ⚠ THE SNAPSHOT IS TAKEN ON THE GUI THREAD, NOT HERE, whenever the
+        # caller can take it — because this method runs on a WORKER THREAD
+        # for every file the reader opens, and `_settings()` reads five Qt
+        # widgets. Driven, with two ordinary gestures (drag Detail, then open
+        # a slow file):
+        #
+        #     _settings   8.320  Thread-2 (work)   detail: 24
+        #     ENTER       8.320  Thread-2 (work)   profile
+        #     _settings   8.724  MainThread        detail: 24
+        #     ENTER       8.724  MainThread        space   <- while the
+        #                                          worker was still inside
+        #     LEAVE      11.072  Thread-2 (work)   profile
+        #
+        # The Detail slider arms a single-shot QTimer, and a WindowModal
+        # progress dialog blocks INPUT but not the application's own timers —
+        # so the timer fires inside `_build_patiently`'s `processEvents()`
+        # wait loop and the main thread builds a second shape while the
+        # worker is inside its first. Control, same file, slider never
+        # touched: 0 such overlaps against 1 with it.
+        #
+        # ⚠ AND ROUTING THIS METHOD THROUGH THE DOOR WIDENED IT. Before that,
+        # a profile read TWO widgets here and a measurement four; `_settings`
+        # reads FIVE, including `_detail`, which no file kind depends on and
+        # which `shape_for` discards for every one of them. The one control
+        # this race is about was being read off the GUI thread on every open
+        # of every file, for nothing.
+        #
+        # It is also the only honest reading of "what was this built under":
+        # a snapshot taken here is whatever the widgets held when the worker
+        # got round to them, which is not the moment the reader pressed Open.
         made = shapes.shape_for(
-            thing, self._settings().drawn_in(wanted), stop=stop)
+            thing, (settings or self._settings()).drawn_in(wanted),
+            stop=stop)
         # ⚠ AND THE PICTURE'S FACTS ARE STILL WRITTEN. This is the only
         # writer of `_image_facts`, and until the door carried a `facts`
         # field, routing this branch would have deleted the slot label's

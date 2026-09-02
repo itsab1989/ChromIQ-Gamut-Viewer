@@ -141,3 +141,70 @@ def test_reading_one_leaves_no_folder_behind(a_tool_that_behaves_like_argyll,
     assert after == before, (
         f"reading one measurement left {len(after) - len(before)} temporary "
         f"folder(s) behind: {[n for n in after if n not in before]}")
+
+
+@pytest.fixture
+def a_tool_that_fails(tmp_path, monkeypatch):
+    """A stand-in that exits 1 and writes nothing, as a real tool does on a
+    file it cannot parse."""
+    import ti3gamut
+    fake = tmp_path / "cxf2ti3-broken"
+    fake.write_text("#!/usr/bin/env python3\n"
+                    "import sys\n"
+                    "sys.stderr.write('Error - could not read the file\\n')\n"
+                    "sys.exit(1)\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(ti3gamut, "_find_tool", lambda _name: str(fake))
+    return fake
+
+
+def test_a_conversion_that_fails_leaves_no_folder_behind(
+        a_tool_that_fails, tmp_path, monkeypatch):
+    """⚠ THE LEAK WAS CLOSED ON THE SUCCESS PATH ONLY.
+
+    The cleanup lives in `read_measurement` and wraps the READ, which is
+    reached only once `convert_to_ti3` has returned. Its own two `raise`
+    paths — the timeout, and "could not be converted" — walked out past the
+    folder they had just made. Driven through the window:
+
+        the tool exits 1, writes nothing    -> 1 folder leaked, per attempt
+        the .ti3 is written but unreadable  -> 0
+
+    Same gesture, same warning dialog, same file; the only difference is
+    which side of the `return` the failure fell on. And the message a reader
+    gets is one whose natural answer is to try again.
+    """
+    import tempfile
+    import ti3gamut
+
+    home = tmp_path / "tmp"
+    home.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(home))
+
+    src = tmp_path / "chart 2026-08-29.10.30.cxf"
+    src.write_text("<CxF/>\n")
+
+    before = sorted(p.name for p in home.glob("gamut-convert-*"))
+    with pytest.raises(ValueError) as caught:
+        ti3gamut.convert_to_ti3(src)
+    after = sorted(p.name for p in home.glob("gamut-convert-*"))
+
+    assert "could not be converted" in str(caught.value)
+    assert after == before, (
+        f"a failed conversion left {len(after) - len(before)} folder(s) "
+        f"behind: {[n for n in after if n not in before]} — and a reader who "
+        "retries makes one each time")
+
+
+def test_a_conversion_that_works_keeps_its_folder_until_it_is_read(
+        a_tool_that_behaves_like_argyll, tmp_path):
+    """The control for the above, and the thing that must NOT change: the
+    file has to survive long enough for the caller to read it."""
+    import ti3gamut
+    src = tmp_path / "Glossy-paper.v2.cxf"
+    src.write_text("<CxF/>\n")
+    produced = ti3gamut.convert_to_ti3(src)
+    assert produced.is_file(), (
+        "the folder was swept away with the converted file still in it")
+    assert produced.read_text().startswith("CGATS.17")
+    shutil.rmtree(produced.parent, ignore_errors=True)

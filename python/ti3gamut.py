@@ -159,13 +159,34 @@ def convert_to_ti3(path: Path) -> Path:
             f"application itself, at the foot of the left-hand column."
             f"\n\n.ti3 measurements, .gam files and ICC profiles "
             f"need none of this and open as they are.")
+    import shutil
+
+    # ⚠ THE FOLDER IS REMOVED BY WHOEVER MADE IT, ON EVERY WAY OUT. The
+    # cleanup added with the dotted-name fix lived in `read_measurement` and
+    # wrapped only the READ, which is reached only once this function has
+    # already returned — so a conversion that FAILED left its folder behind,
+    # one per attempt, and the message a reader gets ("could not be
+    # converted") is one whose natural answer is to try again.
+    #
+    # Driven through the window, opening `chart 2026-08-29.10.30.cxf`:
+    #
+    #   the tool exits 1, writes nothing   -> 1 folder leaked
+    #   the .ti3 is written but unreadable -> 0   (that failure is inside the
+    #                                              read's own try/finally)
+    #
+    # Same gesture, same warning, same file: only which side of this
+    # function's `return` the failure fell on. This is the second unmanaged
+    # temporary folder in this application and the first cost 27 GB, so it
+    # is closed here rather than one function away.
     out_dir = Path(tempfile.mkdtemp(prefix="gamut-convert-"))
     stem = out_dir / path.stem
     try:
-        done = subprocess.run([tool, str(path), str(stem)],
-                              capture_output=True, text=True, timeout=180)
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError(f"{path.name} took too long to convert") from exc
+        try:
+            done = subprocess.run([tool, str(path), str(stem)],
+                                  capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError(
+                f"{path.name} took too long to convert") from exc
     # ⚠ APPENDED, NOT `with_suffix`. The tools are told a BASENAME and write
     # `<basename>.ti3`; `Path.with_suffix` REPLACES whatever follows the last
     # dot in the name it is given rather than adding to it. For a stem with a
@@ -183,11 +204,16 @@ def convert_to_ti3(path: Path) -> Path:
     # last printed -- on a clean run, its progress chatter, or "exit code 0".
     # Version suffixes and dated exports are ordinary names for a measurement,
     # so every one of them was refused.
-    produced = Path(f"{stem}.ti3")
-    if not produced.is_file():
-        detail = (done.stderr or done.stdout or "").strip().splitlines()
-        why = detail[-1] if detail else f"exit code {done.returncode}"
-        raise ValueError(f"{path.name} could not be converted: {why}")
+        produced = Path(f"{stem}.ti3")
+        if not produced.is_file():
+            detail = (done.stderr or done.stdout or "").strip().splitlines()
+            why = detail[-1] if detail else f"exit code {done.returncode}"
+            raise ValueError(f"{path.name} could not be converted: {why}")
+    except BaseException:
+        # Only when something went wrong: on the way out with a file to hand,
+        # the folder must survive until the caller has read it.
+        shutil.rmtree(out_dir, ignore_errors=True)
+        raise
     return produced
 
 
