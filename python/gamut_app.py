@@ -15096,7 +15096,6 @@ class GamutApp(QMainWindow):
             settled = settings if space is None else settings.drawn_in(space)
         else:
             settled = self._settings().drawn_in(space or self._build_space())
-        wanted = settled.space
         # ⚠ AND WHAT A FILE IS IS DECIDED IN ONE PLACE. `_in_lab` had its own
         # answer to the same question and disagreed about a photograph.
         thing = shapes.thing_for(path, IMAGE_EXTENSIONS)
