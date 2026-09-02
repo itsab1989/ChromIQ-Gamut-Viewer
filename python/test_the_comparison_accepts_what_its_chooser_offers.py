@@ -118,6 +118,30 @@ def test_the_note_follows_the_kind_and_not_the_suffix():
     assert len(set(said.values())) == 3, (
         f"two kinds share one sentence: {said}")
 
+    # ⚠ AND THE FOURTH KIND, WHICH THIS TEST COULD NOT SEE. `_files()` offers
+    # a .icc, a .ti3 and a .png — there is no .gam in this repository — so
+    # the count above was "3 distinct for 3 kinds" while a fourth row sat in
+    # the table with the profile's words copied into it. Choosing a .gam gave
+    # a box reading "Glossy-paper (gamut file)" with "The gamut this profile
+    # describes, asked of the profile itself" printed underneath: the window
+    # contradicting itself, four lines apart, about the one distinction it
+    # exists to draw. `_profiles_on_screen` says why that matters — "a .gam
+    # file is a bare surface with no way in from device values at all" — and
+    # it is why a .gam may not place a chart.
+    #
+    # The table is checked directly, because a fixture this repository does
+    # not have cannot be relied on to check it.
+    every = gamut_app.COMPARISON_NOTES
+    assert len(set(every.values())) == len(every), (
+        "two kinds share one sentence in COMPARISON_NOTES, so the note "
+        f"under the box can contradict the label above it: {every}")
+    assert "profile" not in every["gamutfile"], (
+        "a gamut file is described as a profile: "
+        f"{every['gamutfile']!r} — the label beside it says 'gamut file'")
+    assert set(every) == {"profile", "gamutfile", "picture", "measurement"}, (
+        f"the table no longer covers the kinds a comparison can be: "
+        f"{sorted(every)}")
+
 
 def test_nothing_decides_a_kind_by_its_suffix_outside_the_one_place():
     """⚠ SIX COPIES OF "WHAT IS THIS FILE" HAVE BEEN FOUND IN THIS FILE.
@@ -132,13 +156,40 @@ def test_nothing_decides_a_kind_by_its_suffix_outside_the_one_place():
     import gamut_app
 
     tree = ast.parse(inspect.getsource(gamut_app))
+
+    # ⚠ FOLLOW THE VARIABLE. The first version of this rule read only the
+    # COMPARISON, so a survivor written
+    #
+    #     suffix = path.suffix.lower()
+    #     ...
+    #     elif suffix in (".icc", ".icm"):
+    #
+    # walked straight past it: the `.suffix.lower()` is one line up, in an
+    # assignment, and the comparison's text does not contain it. The rule was
+    # added in the same commit that claimed "the suffix test lives in one
+    # place at last", and there were EIGHT, not seven. Rewriting that same
+    # survivor in the direct form made the rule fail at once — so the fault
+    # was never the code being subtle, it was the finder reading one node.
+    #
+    # This is the second finder in this project to be widened for exactly
+    # this reason; `_mentions_rebuild` had to learn the same lesson about
+    # aliases. A finder that matches on how something is SPELLED will be
+    # walked past.
+    aliased = {t.id for node in ast.walk(tree)
+               if isinstance(node, ast.Assign)
+               and ".suffix.lower()" in ast.unparse(node.value)
+               for t in node.targets if isinstance(t, ast.Name)}
+
     guilty = []
     for node in ast.walk(tree):
-        # `.suffix.lower()` compared against a literal or a container
         if not isinstance(node, ast.Compare):
             continue
         text = ast.unparse(node)
-        if ".suffix.lower()" not in text:
+        asks_the_suffix = (
+            ".suffix.lower()" in text
+            or any(isinstance(node.left, ast.Name) and node.left.id == name
+                   for name in aliased))
+        if not asks_the_suffix:
             continue
         if "PROFILE_SUFFIXES" in text or "IMAGE_EXTENSIONS" in text:
             continue          # asking the one table is the point
@@ -146,3 +197,47 @@ def test_nothing_decides_a_kind_by_its_suffix_outside_the_one_place():
     assert not guilty, (
         "a suffix test outside `shapes.thing_for` decides what a file is:\n  "
         + "\n  ".join(guilty))
+
+
+def test_the_rule_sees_a_suffix_held_in_a_variable():
+    """⚠ THE CONTROL THE RULE DID NOT HAVE, and the reason it missed one.
+
+    The rule above walked past
+
+        suffix = path.suffix.lower()
+        ...
+        elif suffix in (".icc", ".icm"):
+
+    because it read the COMPARISON, whose text does not contain
+    `.suffix.lower()` — that is one line up, in an assignment. Eight copies
+    existed while the commit that added the rule claimed there was one.
+
+    This is the SECOND finder in this project to be walked past for exactly
+    this reason: `_mentions_rebuild` had to learn the same lesson about a
+    method reached through an alias. A finder that matches on how something
+    is spelled will be got round; the lesson was written down that morning
+    and not carried across to this rule the same afternoon.
+    """
+    import ast
+
+    hidden = '''
+def _a_label_that_decides_for_itself(self, path):
+    suffix = path.suffix.lower()
+    if suffix in (".icc", ".icm"):
+        return "an ICC profile"
+    return "a gamut file"
+'''
+    tree = ast.parse(hidden)
+    aliased = {t.id for node in ast.walk(tree)
+               if isinstance(node, ast.Assign)
+               and ".suffix.lower()" in ast.unparse(node.value)
+               for t in node.targets if isinstance(t, ast.Name)}
+    assert aliased == {"suffix"}, (
+        f"the finder cannot see a suffix put in a variable: {aliased}")
+
+    caught = [ast.unparse(n) for n in ast.walk(tree)
+              if isinstance(n, ast.Compare)
+              and isinstance(n.left, ast.Name) and n.left.id in aliased]
+    assert caught, (
+        "the finder sees the assignment but not the comparison that uses it, "
+        "which is the half that decides what the file IS")

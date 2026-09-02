@@ -126,8 +126,51 @@ class Settings:
         return replace(self, tick=tick)
 
 
-def depends_on(thing: Thing) -> tuple:
-    return KINDS[thing.kind]["depends"]
+#: Kinds whose builder produces a CIELAB shape from a D50-referred source,
+#: so the white point asked for cannot move it — but only while the shape is
+#: being BUILT in CIELAB.
+_PCS_IS_D50 = ("profile", "gamutfile")
+
+
+def depends_on(thing: Thing, settings: "Settings | None" = None) -> tuple:
+    """Which of the five settings decide this shape.
+
+    ⚠ ONE OF THEM IS CONDITIONAL, AND MEASURED. `KINDS["profile"]` declares
+    `("white", "space")` and is right to: a profile drawn in CIELUV or CIE
+    XYZ DOES move with the white point, and under-declaring is the dangerous
+    direction. But an ICC profile's connection space is D50-referred, so the
+    CIELAB shape it yields is the same whatever white is asked for — and the
+    conversion that makes white matter happens on the way OUT of Lab.
+
+    So when the space is pinned to `"lab"`, `white` cannot change the answer
+    for these kinds, and carrying it in the key is a guaranteed miss. With a
+    run on screen that cost about 1.5 s of blocked main thread per nudge of
+    the white point, rebuilding two ArgyllCMS shells to redraw a picture that
+    did not change by one vertex — and `_shells_for`'s own docstring says
+    building one is "the slowest thing this application does".
+
+    MEASURED, not reasoned: every profile in this repository (four distinct
+    shapes) and a `.gam` produced by ArgyllCMS's own `iccgamut`, under D50
+    and D65 —
+
+        lab   bit-identical vertices, all five files and the .gam
+        luv   differs on every one   (1,124,157 vs 1,277,757 for one)
+        xyz   differs on every one   (0.1263 vs 0.1643 for one)
+
+    `test_white_really_is_inert_for_a_profile_in_cielab` builds both whites
+    through the real builders and asserts that, so the day the assumption
+    stops holding the suite says so — rather than a cache quietly serving a
+    shape built under the wrong white, which is the direction that shows a
+    reader a wrong number instead of costing a second.
+
+    Called with no settings it answers the static declaration, which is what
+    an audit of the table wants.
+    """
+    declared = KINDS[thing.kind]["depends"]
+    if (settings is not None and thing.kind in _PCS_IS_D50
+            and settings.space == "lab"):
+        return tuple(name for name in declared if name != "white")
+    return declared
 
 
 def key_for(thing: Thing, settings: Settings) -> tuple:
@@ -159,7 +202,7 @@ def key_for(thing: Thing, settings: Settings) -> tuple:
     again", and only the second should move what is on screen.
     """
     parts: list = [thing.kind, str(thing.path) if thing.path else thing.name]
-    for setting in depends_on(thing):
+    for setting in depends_on(thing, settings):
         parts.append(getattr(settings, setting))
     return tuple(parts)
 

@@ -6974,8 +6974,16 @@ def _profile_label(path: Path) -> str:
 COMPARISON_NOTES = {
     "profile": "The gamut this profile describes, asked of the profile "
                "itself.",
-    "gamutfile": "The gamut this profile describes, asked of the profile "
-                 "itself.",
+    # ⚠ NOT THE PROFILE SENTENCE. A `.gam` was given the profile's words, so
+    # the box read "Glossy-paper (gamut file)" with "The gamut this profile
+    # describes" printed under it — the window contradicting itself about
+    # one file, four lines apart, about the ONE distinction it exists to
+    # draw. `_profiles_on_screen` says why it matters: "a .gam file is a
+    # bare surface with no way in from device values at all", which is why
+    # it may not place a chart. The slot label already says this properly:
+    # "a gamut file — the surface it holds, not a measurement".
+    "gamutfile": "The surface this gamut file holds — a shape on its own, "
+                 "with no way back to ink amounts.",
     "picture": "The colours actually in this picture — not the space it was "
                "saved in.",
     "measurement": "The gamut this measurement reached — every corner of it "
@@ -16585,7 +16593,13 @@ class GamutApp(QMainWindow):
                     # NEVER CALL A PROFILE OR A PICTURE A MEASUREMENT. Telling
                     # them apart is what this application is for, so the line
                     # under the name says which one you are looking at.
-                    suffix = path.suffix.lower()
+                    # ⚠ AND THE KIND IS ASKED FOR, NOT DERIVED HERE. The
+                    # note above says "THE KIND DECIDES WHAT IT IS" and the
+                    # line below it then decided by suffix — the EIGHTH copy
+                    # of that question, and the one the rule written to
+                    # forbid them walked straight past, because the suffix
+                    # was in a variable and the rule read the comparison.
+                    kind = shapes.thing_for(path, IMAGE_EXTENSIONS).kind
                     facts = self._image_facts.get(self._facts_key(path))
                     # ⚠ THE KIND DECIDES WHAT IT IS; THE FACTS ONLY FILL IN
                     # THE NUMBERS. This branch was reached only when the
@@ -16600,7 +16614,7 @@ class GamutApp(QMainWindow):
                         measured = ("" if facts is None else
                                     ", read with its own profile"
                                     if facts["profile"] else ", read as sRGB")
-                    elif suffix in (".icc", ".icm"):
+                    elif kind == "profile":
                         patches = "an ICC profile — what it describes"
                         measured = ", not a measurement"
                     else:
