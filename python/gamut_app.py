@@ -9272,6 +9272,23 @@ class GamutApp(QMainWindow):
         vv = QVBoxLayout(g_vol)
         self._volume = QLabel("—", g_vol); self._volume.setObjectName("volume")
         vv.addWidget(self._volume)
+        # ⚠ THE SENTENCE THAT GOES WITH THE NUMBER, ON SOMETHING THAT PAINTS
+        # IT. `_update_volume` wrote these five sentences to `_volume_hint` —
+        # the ⓘ beside the number, a QToolButton fixed at 22x22 and set to
+        # ToolButtonIconOnly, so its text is never drawn. Driven with two
+        # papers open: the button held "Glossy-paper holds 29.2% more colour
+        # than the other one", 56 characters, and its own grab() shows the
+        # glyph and nothing else. The words were not in its hover either
+        # (still "Open a chart to see how much colour it holds", beside two
+        # open charts) nor behind its click, so five computed sentences
+        # reached no reader by any route at all.
+        #
+        # It goes in READOUTS, which is what makes it a readout rather than
+        # another label: cleared when everything closes, and carried into a
+        # saved page's caption by `_readout_text`.
+        self._volume_note = WrappedLabel("", g_vol, hide_when_empty=True)
+        self._volume_note.setObjectName("hint"); _wrapped(self._volume_note)
+        vv.addWidget(self._volume_note)
         self._coverage = WrappedLabel("", g_vol, hide_when_empty=True)
         self._coverage.setObjectName("hint"); _wrapped(self._coverage)
         vv.addWidget(self._coverage)
@@ -9282,11 +9299,20 @@ class GamutApp(QMainWindow):
         self._range = WrappedLabel("", g_vol, hide_when_empty=True)
         self._range.setObjectName("hint")
         vv.addWidget(self._range)
+        # ⚠ THE FIRST SENTENCE IS THE HOVER, so it has to be true whatever is
+        # open. `Hint.in_a_sentence` hands the hover its opening sentence and
+        # nothing else, and this one opened "Open a chart to see how much
+        # colour it holds" — which was still the hover with two charts open
+        # and "702,327 · 543,689" printed directly beneath it. Photographed.
+        # It reads as an empty window to somebody who is looking straight at
+        # a full one. The instruction it gave has moved into the note below,
+        # which appears only while there is nothing to say.
         self._volume_hint = Hint(
-            "Open a chart to see how much colour it holds.\n\n"
-            "The figure is the volume the measured surface encloses, in the "
-            "units of whichever space is chosen under Draw it in — cubic Lab "
-            "units for CIELAB, which is the one to leave it on for print.\n\n"
+            "The size of a gamut: the volume its measured surface "
+            "encloses.\n\n"
+            "It is given in the units of whichever space is chosen under "
+            "Draw it in — cubic Lab units for CIELAB, which is the one to "
+            "leave it on for print.\n\n"
             "IT IS FOR COMPARING, not for reading on its own. There is no "
             "such thing as a good number here: a paper holding 700,000 cubic "
             "Lab units means nothing until you have a second paper measured "
@@ -10556,7 +10582,8 @@ class GamutApp(QMainWindow):
     #: The test that watches this builds its stand-ins FROM this tuple, so it
     #: could not see either fault: an instrument that shares the list cannot
     #: check the list.
-    READOUTS = ("_coverage", "_picture_loss", "_range", "_shared_lbl", "_drift",
+    READOUTS = ("_volume_note", "_coverage", "_picture_loss", "_range",
+                "_shared_lbl", "_drift",
                 "_drift_worst", "_drift_families", "_drift_families_note",
                 "_chart_headline", "_chart_rows", "_chart_spread")
 
@@ -14386,7 +14413,6 @@ class GamutApp(QMainWindow):
         else:
             self._show_placeholder()
         self._volume.setText("—")
-        self._volume_hint.setText(self._volume_units())
         # THE FIGURES GO WITH THE FILES THEY DESCRIBED. Every one of these is
         # a sentence about something now closed, and they are read straight
         # back out by _readout_text() into a saved picture's caption.
@@ -19082,21 +19108,24 @@ class GamutApp(QMainWindow):
             if self._reference is not None:
                 name, g = self._reference
                 self._volume.setText(self._fmt_volume(g.volume))
-                self._volume_hint.setText(
-                    f"{name}, measured in {self._volume_units()}. Open a chart "
-                    "or a profile as well and the two are compared.")
+                self._volume_note.setText(
+                    f"That is {name}, the comparison. Open a chart or a "
+                    "profile as well and the two are compared.")
             else:
                 self._volume.setText("—")
-                self._volume_hint.setText("")
+                self._volume_note.setText("")
             return
         if len(self._slots) == 1:
             g = self._slots[0][1]
             self._volume.setText(self._fmt_volume(g.volume))
-            self._volume_hint.setText(
-                f"Measured in {self._volume_units()}. It is useful for "
-                "comparing two papers measured the same way — on its own the "
-                "number does not mean much, and it cannot be compared with a "
-                "figure from another space.")
+            # THE UNITS ARE NOT REPEATED HERE. `_readout_text` already
+            # prints "Colour held: 702,327 cubic Lab units" above this line,
+            # and the ⓘ carries the long form. What the reader has no other
+            # way of learning is what to DO with a single figure.
+            self._volume_note.setText(
+                "On its own the figure means little — open a second paper "
+                "measured the same way and the two are compared. A figure "
+                "from another drawing space cannot be held against it.")
         else:
             (_, a, _), (_, b, _) = self._slots
             self._volume.setText(
@@ -19104,7 +19133,11 @@ class GamutApp(QMainWindow):
             big, small = max(a.volume, b.volume), min(a.volume, b.volume)
             which = (self._slots[0][0].stem if a.volume > b.volume
                      else self._slots[1][0].stem)
-            self._volume_hint.setText(
+            # ⚠ "THE OTHER ONE", NOT THE SECOND NAME. Two files sharing a
+            # stem is a fault this window still has — it already prints
+            # "96.7% of Glossy-paper fits inside Glossy-paper" — and naming
+            # only the larger one cannot collide with itself.
+            self._volume_note.setText(
                 f"{which} holds {100 * (big / small - 1):.1f}% more colour "
                 "than the other one.")
 
