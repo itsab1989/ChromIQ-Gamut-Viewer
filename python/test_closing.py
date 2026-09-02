@@ -446,7 +446,7 @@ def test_a_setting_that_cannot_be_used_is_put_back():
     w = NS(_space=Combo(),
            _apply_space_availability=lambda: None,
            _rebuild_reference=lambda: None,
-           _rebuild=lambda: False,          # the rebuild refuses
+           _rebuild=lambda redraw=True: False,          # the rebuild refuses
            _put_settings_back=lambda: put_back.append(1),
            _remember_settled=lambda: None,
            _redraw=lambda: redrawn.append(1))
@@ -462,7 +462,7 @@ def test_a_setting_that_cannot_be_used_is_put_back():
     w2 = NS(_space=Combo(),
             _apply_space_availability=lambda: None,
             _rebuild_reference=lambda: None,
-            _rebuild=lambda: True,
+            _rebuild=lambda redraw=True: True,
             _put_settings_back=lambda: None,
             _remember_settled=lambda: remembered.append(1),
             _redraw=lambda: None)
@@ -560,7 +560,7 @@ def _refusing_window():
     from types import SimpleNamespace as NS
     seen = {"put_back": 0, "remembered": 0, "redrawn": 0}
     w = NS(_slots=[("a-paper", object(), None)],
-           _rebuild=lambda: False,
+           _rebuild=lambda redraw=True: False,
            _rebuild_reference=lambda: None,
            _apply_space_availability=lambda: None,
            _put_settings_back=lambda: seen.__setitem__(
@@ -632,9 +632,8 @@ def test_every_route_that_rebuilds_obeys_the_refusal_rule():
     import gamut_app
     from types import SimpleNamespace as NS
 
-    routes = sorted(
-        name for name, fn in vars(gamut_app.GamutApp).items()
-        if callable(fn) and "self._rebuild()" in _source_of(fn))
+    routes = sorted(name for name, fn in vars(gamut_app.GamutApp).items()
+                    if callable(fn) and _mentions_rebuild(fn))
     assert routes, "no route calls _rebuild() — this test is watching nothing"
 
     for name in routes:
@@ -646,7 +645,8 @@ def test_every_route_that_rebuilds_obeys_the_refusal_rule():
                    _appearance="dark", _scheme="Magenta", _paint="true",
                    _per_shape={}, _shared={},
                    _target=NS(blockSignals=lambda v: None,
-                              setCurrentIndex=lambda i: None),
+                              setCurrentIndex=lambda i: None,
+                              currentIndex=lambda: 0),
                    _remember_everything=lambda: None,
                    _sync_slider_labels=lambda: None,
                    _on_manual_light=lambda: None,
@@ -654,7 +654,7 @@ def test_every_route_that_rebuilds_obeys_the_refusal_rule():
                    _apply_space_availability=lambda: None,
                    _chart_drawable=lambda: False,
                    _rebuild_reference=lambda: None,
-                   _rebuild=lambda: rebuild_says,
+                   _rebuild=lambda redraw=True: rebuild_says,
                    _put_settings_back=lambda: did.__setitem__(
                        "put_back", did["put_back"] + 1),
                    _remember_settled=lambda: did.__setitem__(
@@ -678,12 +678,33 @@ def test_every_route_that_rebuilds_obeys_the_refusal_rule():
                     f"{name} wrote a refused setting down as good")
 
 
-def _source_of(fn):
+def _mentions_rebuild(fn):
+    """Does this method reach `self._rebuild` at all?
+
+    ⚠ BY THE SYNTAX TREE, NOT BY A SUBSTRING. The first version asked
+    whether `"self._rebuild()"` appeared in the source, and a hunt walked
+    straight past it: a route written
+
+        remake = self._rebuild
+        remake()
+
+    rebuilds, forgets the rule, and the whole suite stays green. A test that
+    finds its own subjects is only as good as the finding, so the finding
+    gets a control of its own — and an attribute LOAD is what is looked for,
+    which catches the alias as well as the call.
+    """
+    import ast
     import inspect
     try:
-        return inspect.getsource(fn)
-    except (OSError, TypeError):
-        return ""
+        tree = ast.parse(inspect.getsource(fn).strip())
+    except (OSError, TypeError, SyntaxError, IndentationError):
+        return False
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Attribute) and node.attr == "_rebuild"
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "self"):
+            return True
+    return False
 
 
 def test_the_snapshot_holds_what_the_controls_hold():
@@ -749,7 +770,8 @@ def test_starting_again_rebuilds_the_shapes_it_resets():
            _appearance="dark", _scheme="Magenta", _paint="true",
            _per_shape={}, _shared={},
            _target=NS(blockSignals=lambda v: None,
-                      setCurrentIndex=lambda i: None),
+                      setCurrentIndex=lambda i: None,
+                      currentIndex=lambda: 0),
            _remember_everything=lambda: None,
            _sync_slider_labels=lambda: None,
            _on_manual_light=lambda: None,
@@ -757,7 +779,7 @@ def test_starting_again_rebuilds_the_shapes_it_resets():
            _apply_space_availability=lambda: None,
            _chart_drawable=lambda: False,
            _rebuild_reference=lambda: None,
-           _rebuild=lambda: did.__setitem__("rebuilt", did["rebuilt"] + 1)
+           _rebuild=lambda redraw=True: did.__setitem__("rebuilt", did["rebuilt"] + 1)
            or True,
            _remember_settled=lambda: did.__setitem__(
                "remembered", did["remembered"] + 1),
@@ -779,15 +801,23 @@ def test_starting_again_rebuilds_the_shapes_it_resets():
 
 
 def test_nothing_is_cleared_until_the_shapes_agree_to_move():
-    """⚠ THE REFUSAL LEFT ELEVEN CONTROLS UNTICKED AND STILL LIVE.
+    """⚠ THE REFUSAL LEFT EIGHT CONTROLS UNTICKED AND STILL LIVE.
 
     `_apply_space_availability` is DESTRUCTIVE on the way in: the rings, the
     grey axis, the slice, the ideal neutral, the measured points, what is out
-    of reach, agree/differ, the two-room view, the manual light and the
-    outline paint are all registered `untick=True`, and it clears them for
-    the space being entered. Called BEFORE the rebuild, a refusal then put
-    the space back and left the ticks gone — `_put_settings_back` restores
-    four controls and re-ENABLES the rest; nothing re-ticks.
+    of reach, the two-room view and the manual light are cleared for the
+    space being entered. Called BEFORE the rebuild, a refusal then put the
+    space back and left the ticks gone — `_put_settings_back` restores four
+    controls and re-ENABLES the rest; nothing re-ticks.
+
+    ⚠ EIGHT, NOT ELEVEN, WHICH THIS DOCSTRING SAID UNTIL IT WAS COUNTED.
+    Eleven rows carry `untick=True`, but the loop guards on
+    `hasattr(widget, "setChecked")` and three of them have no such method:
+    `_outline_paint` is a NoScrollComboBox, `_agree` and `_differ` are
+    NoScrollSliders. Driven against the live window, printing the type of
+    every `untick=True` row. Those three keep their values and are only
+    disabled, which is defensible — but the flag does nothing on those rows
+    and three separate pieces of prose claimed otherwise.
 
     Driven, rings and grey axis ticked in CIELAB with the slot's file
     removed:
@@ -808,7 +838,7 @@ def test_nothing_is_cleared_until_the_shapes_agree_to_move():
         done = []
         return NS(_apply_space_availability=lambda: done.append("cleared"),
                   _rebuild_reference=lambda: None,
-                  _rebuild=lambda: rebuild_says,
+                  _rebuild=lambda redraw=True: rebuild_says,
                   _put_settings_back=lambda: done.append("put back"),
                   _remember_settled=lambda: done.append("remembered"),
                   _redraw=lambda: None), done

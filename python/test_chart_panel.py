@@ -1544,23 +1544,46 @@ def test_nothing_is_marked_when_no_cielab_shape_can_be_had(app):
 
 
 def test_the_comparison_is_rebuilt_before_the_papers(app):
-    """⚠ `_rebuild()` REDRAWS INTERNALLY. Rebuilding the papers first meant a
-    redraw met the papers in the new space beside a comparison still in the
-    old one; `build_figure` refuses to label axes that do not match its
-    shapes, the slot aborted, and the comparison was never rebuilt at all —
-    CIELAB left on screen under a control reading CIE XYZ."""
+    """⚠ `_rebuild()` REDRAWS. Rebuilding the papers first meant a redraw met
+    the papers in the new space beside a comparison still in the old one;
+    `build_figure` refuses to label axes that do not match its shapes, the
+    slot aborted, and the comparison was never rebuilt at all — CIELAB left
+    on screen under a control reading CIE XYZ.
+
+    ⚠ TWO FAULTS IN THE FINDER, BOTH FOUND BY A GATE THIS TEST PASSED FOR
+    MONTHS. It compared `ast.unparse(node)` against the literal string
+    `"self._rebuild()"`, so the day `_on_space_changed` began asking
+    `self._rebuild(redraw=False)` the call stopped being seen — and the
+    assertion did not report the rule broken, it raised ValueError from
+    `list.index`. A finder that cannot find its subject must SAY so; this
+    one crashed instead.
+
+    And the order it checked was `ast.walk` order, which is BREADTH-FIRST,
+    not source order. Two calls at the same depth came out in the order the
+    walk happened to reach them. The rule is about which runs FIRST, so the
+    calls are now sorted by where they are written.
+
+    The rule itself is unchanged, and holds whether or not the caller takes
+    the redraw for itself: the comparison is converted before the papers.
+    """
     import ast
     import inspect
     import gamut_app
     for name in ("_on_space_changed", "_on_white_changed", "_on_shape_setting"):
         src = inspect.getsource(getattr(gamut_app.GamutApp, name))
-        calls = [n for n in
-                 (ast.unparse(x) for x in ast.walk(ast.parse(src.strip()))
-                  if isinstance(x, ast.Call))
-                 if n in ("self._rebuild()", "self._rebuild_reference()")]
-        assert "self._rebuild_reference()" in calls, f"{name} forgets it"
-        assert calls.index("self._rebuild_reference()") < \
-            calls.index("self._rebuild()"), (
+        found = [(node.lineno, node.col_offset, node.func.attr)
+                 for node in ast.walk(ast.parse(src.strip()))
+                 if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Attribute)
+                 and isinstance(node.func.value, ast.Name)
+                 and node.func.value.id == "self"
+                 and node.func.attr in ("_rebuild", "_rebuild_reference")]
+        calls = [attr for _line, _col, attr in sorted(found)]
+        assert "_rebuild_reference" in calls, f"{name} forgets it"
+        assert "_rebuild" in calls, (
+            f"{name} no longer rebuilds the papers at all — either the route "
+            "moved or this test has stopped watching it")
+        assert calls.index("_rebuild_reference") < calls.index("_rebuild"), (
             f"{name} rebuilds the papers before the comparison, so a redraw "
             "meets a half-converted scene")
 

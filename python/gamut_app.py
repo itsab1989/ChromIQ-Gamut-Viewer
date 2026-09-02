@@ -7178,8 +7178,8 @@ class GamutApp(QMainWindow):
         #: A photograph costs 3 seconds to turn into a gamut; a reader who
         #: nudges a setting and nudges it back should pay that once.
         self._reference_cache: dict = {}
-        #: The five settings the shapes ON SCREEN were built under, as a
-        #: `shapes.Settings`. A refusal puts every control back from this.
+        #: What the four controls a refusal can restore held when the shapes
+        #: on screen were last built: (space, white, mode, tick).
         #:
         #: ⚠ THIS REPLACES A REMEMBERED COMBO INDEX, WHICH WENT STALE THE
         #: MOMENT IT WAS WRITTEN. `_space_settled` was set in `__init__` to 0
@@ -7190,9 +7190,11 @@ class GamutApp(QMainWindow):
         #: shapes built in XYZ and raised the very ValueError the refusal was
         #: written to prevent.
         #:
-        #: It is set once the controls are restored, and again after every
-        #: rebuild that SUCCEEDS — the only two moments the shapes and the
-        #: controls are known to agree.
+        #: It is written once the controls are restored at startup, and
+        #: again by every route that rebuilds successfully — the moments the
+        #: shapes and the controls are known to agree. Five writers today;
+        #: `test_every_route_that_rebuilds_obeys_the_refusal_rule` finds
+        #: them rather than listing them.
         self._settled = None
         #: The same papers read against the other white, for the two-sided
         #: count. See _both_whites.
@@ -12207,6 +12209,30 @@ class GamutApp(QMainWindow):
                 "touched.",
                 ok="Reset the settings", cancel="Keep my settings"):
             return
+        # ⚠ EVERYTHING THIS IS ABOUT TO CHANGE, KEPT, BECAUSE A RESET CAN BE
+        # REFUSED. The shapes are rebuilt at the end, and if a slot's file has
+        # gone they refuse — at which point `_put_settings_back` restores the
+        # FOUR controls a refusal knows about, and this method moves fifty.
+        # Driven: the reader agreed to "every setting goes back to how it
+        # started", the rebuild refused, and 6 of 142 readouts moved —
+        # opacity, grid, spin, the appearance, the accent, every per-shape
+        # override — while the space, the white point and the shape mode
+        # stayed. The only message named a missing FILE and never mentioned
+        # the reset.
+        #
+        # Worse, `_remember_everything()` ran BEFORE the rebuild, so the
+        # refusal was undone on screen and COMMITTED TO DISK: the window
+        # showed xyz/D65 while the store held lab/D50, and reopening it came
+        # back reset. Nothing is written until the shapes have agreed.
+        keep_controls = [(w, k, w.value() if k == "slider"
+                          else w.isChecked() if k == "check"
+                          else w.currentData())
+                         for _key, w, k, _d in self._persisted()]
+        keep_look = (self._appearance, self._scheme, self._paint)
+        keep_shapes = ({slot: dict(over) for slot, over in
+                        self._per_shape.items()}, dict(self._shared))
+        keep_target = self._target.currentIndex()
+
         for key, widget, kind, default in self._persisted():
             widget.blockSignals(True)
             if kind == "slider":
@@ -12226,10 +12252,6 @@ class GamutApp(QMainWindow):
         self._target.blockSignals(True)
         self._target.setCurrentIndex(0)
         self._target.blockSignals(False)
-        # Write the fresh values out BEFORE anything reads them back. Restoring
-        # first re-read the store, which still held what was being reset, so
-        # the sliders quietly went back to where they had just been moved from.
-        self._remember_everything()
         self._sync_slider_labels()
         self._on_manual_light()
         self._apply_mode()
@@ -12254,9 +12276,39 @@ class GamutApp(QMainWindow):
         # down what settled.
         self._rebuild_reference()
         if self._slots and not self._rebuild():
+            # A refusal undoes the WHOLE reset, not the four controls a
+            # handler moves — and writes nothing to the store.
+            for (widget, kind, value) in keep_controls:
+                widget.blockSignals(True)
+                if kind == "slider":
+                    widget.setValue(int(value))
+                elif kind == "check":
+                    widget.setChecked(bool(value))
+                else:
+                    index = widget.findData(value)
+                    if index >= 0:
+                        widget.setCurrentIndex(index)
+                widget.blockSignals(False)
+            self._appearance, self._scheme, self._paint = keep_look
+            self._per_shape, self._shared = keep_shapes
+            self._target.blockSignals(True)
+            self._target.setCurrentIndex(keep_target)
+            self._target.blockSignals(False)
+            self._sync_slider_labels()
+            self._on_manual_light()
+            self._apply_mode()
+            # AND THE FOUR THE SHARED RULE OWNS, through the shared method:
+            # every route that can refuse puts those back the same way, and
+            # a route that restores them privately drops out of the rule the
+            # moment somebody changes what "back" means.
             self._put_settings_back()
+            self._apply_space_availability()
             self._rebuild_reference()
         else:
+            # Write the fresh values out only once the shapes have agreed —
+            # and before anything reads them back, which is what the store
+            # was written early for in the first place.
+            self._remember_everything()
             self._remember_settled()
         if (self._slots or self._reference is not None
                 or self._chart_drawable()):
@@ -15047,11 +15099,20 @@ class GamutApp(QMainWindow):
         different geometries.
         """
         # ⚠ NOT `_apply_space_availability()` YET. It is DESTRUCTIVE on the
-        # way in: eleven controls are registered `untick=True` — the rings,
-        # the grey axis, the slice, the ideal neutral, the measured points,
-        # what is out of reach, agree/differ, the two-room view, the manual
-        # light, the outline paint — and it clears them for the space being
-        # entered. If the rebuild then REFUSES, the space goes back and the
+        # way in: it clears controls registered `untick=True` for the space
+        # being entered — the rings, the grey axis, the slice, the ideal
+        # neutral, the measured points, what is out of reach, the two-room
+        # view, the manual light.
+        #
+        # ⚠ AND NOT ALL ELEVEN THAT CARRY THE FLAG, which an earlier version
+        # of this comment claimed and two commit messages repeated. The loop
+        # reads `if not ok and untick and hasattr(widget, "setChecked")`, and
+        # three of the eleven are not checkboxes: `_outline_paint` is a
+        # combo, `_agree` and `_differ` are sliders. They keep their values
+        # and are merely disabled — defensible, but the `untick` column is
+        # inert on those three rows and the prose said otherwise.
+        #
+        # If the rebuild then REFUSES, the space goes back and the
         # ticks do not: `_put_settings_back` restores four controls and
         # re-ENABLES the rest, and nothing re-ticks.
         #
@@ -15071,7 +15132,7 @@ class GamutApp(QMainWindow):
         # XYZ — the fault this window was already carrying before any of
         # tonight's work, found by a review of the claim that it was closed.
         self._rebuild_reference()
-        if not self._rebuild():
+        if not self._rebuild(redraw=False):
             # ⚠ EVERY CONTROL GOES BACK, because the shapes did not move.
             # The refusal already says "That setting cannot be used here";
             # what it did not do was UNDO the setting, so the combo read the
@@ -15476,7 +15537,7 @@ class GamutApp(QMainWindow):
             self._relative.blockSignals(False)
         self._apply_space_availability()
 
-    def _rebuild(self) -> bool:
+    def _rebuild(self, redraw: bool = True) -> bool:
         """A setting that changes the shape — rebuild every loaded measurement.
 
         Returns False when a slot could not be rebuilt, so the control that
@@ -15525,7 +15586,15 @@ class GamutApp(QMainWindow):
                 return False
         self._slots = rebuilt
         self._refresh_slot_labels()
-        self._redraw()
+        # ⚠ THE CALLER MAY WANT TO DRAW LATER. `_on_space_changed` clears the
+        # controls the new space cannot support AFTER this returns, so a
+        # redraw here builds the picture the new space cannot draw — an empty
+        # cross-section, axes labelled a* and b* over CIE XYZ numbers — and
+        # then builds it again, correctly, a moment later. The wasted page is
+        # certain; whether anyone SEES it depends on how fast a 5 MB page
+        # loads, so this is about not building it, not about a flash.
+        if redraw:
+            self._redraw()
         return True
 
     def _refresh_argyll(self) -> None:
