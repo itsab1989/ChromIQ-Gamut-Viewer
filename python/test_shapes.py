@@ -309,7 +309,8 @@ def test_the_one_door_agrees_with_the_builders_it_replaced(tmp_path):
             for tick in (False, True):
                 settings = shapes.Settings(space=space, tick=tick, detail=9)
                 theirs = build(thing, settings)
-                mine, measurement = shapes.shape_for(thing, settings)
+                made = shapes.shape_for(thing, settings)
+                mine = made.gamut
                 seen.add(thing.kind)
                 a = np.asarray(theirs.vertices, float)
                 b = np.asarray(mine.vertices, float)
@@ -321,9 +322,38 @@ def test_the_one_door_agrees_with_the_builders_it_replaced(tmp_path):
                     f"{space}, tick={tick}")
                 assert mine.space == space, (
                     f"{said} came back in {mine.space!r}, not {space!r}")
-                # The second value means "the measurement" and nothing else.
-                assert (measurement is not None) == (thing.kind ==
-                                                     "measurement")
+
+                # ⚠ AND WHAT IT WAS BUILT FROM AND UNDER, which is the whole
+                # reason `Built` replaced a pair. A test that only checked
+                # the vertices would pass a door that handed back the right
+                # shape labelled with the wrong settings — and a shape
+                # carrying the wrong settings is precisely what the
+                # coherence check reads to decide whether the window agrees
+                # with its own controls.
+                assert made.thing is thing, (
+                    f"{said}: the shape came back describing something else")
+                assert made.settings == settings, (
+                    f"{said}: built under {made.settings}, asked for "
+                    f"{settings}")
+
+                # A measurement, and ONLY a measurement, carries one.
+                assert (made.measurement is not None) == (
+                    thing.kind == "measurement"), (
+                    f"{said}: measurement={made.measurement is not None} for "
+                    f"a {thing.kind}")
+
+                # ⚠ AND A PICTURE, AND ONLY A PICTURE, CARRIES ITS FACTS.
+                # These used to be discarded by the door on purpose, because
+                # the pair's second slot already meant "the measurement" —
+                # and that discard is what blocked `_build_one`'s picture
+                # branch from being routed here at all. Routing it while the
+                # facts had nowhere to go would have silently dropped the
+                # colour count from the slot label and the picture-loss
+                # figure from the panel, with the whole suite green. This is
+                # the assertion that makes that impossible.
+                assert (made.facts is not None) == (thing.kind == "picture"), (
+                    f"{said}: facts={made.facts is not None} for a "
+                    f"{thing.kind}")
     assert seen == set(shapes.KINDS), (
         f"kinds never put through the door: {set(shapes.KINDS) - seen} — a "
         f"branch nothing builds is a branch nothing checks")

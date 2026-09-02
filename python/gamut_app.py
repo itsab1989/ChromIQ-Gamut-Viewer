@@ -13822,8 +13822,8 @@ class GamutApp(QMainWindow):
                 thing = shapes.the_visible_solid()
             else:
                 return gamut
-            built, _m = shapes.shape_for(thing,
-                                         self._settings().drawn_in("lab"))
+            built = shapes.shape_for(
+                thing, self._settings().drawn_in("lab")).gamut
         # ⚠ A REFUSAL IS NOT A READ ERROR, AND MUST NOT COME BACK AS THE
         # DRAWN SHAPE. `shape_for` raises CannotBuild when a kind has no
         # builder — added so such a kind is refused rather than read as a
@@ -14032,9 +14032,9 @@ class GamutApp(QMainWindow):
                 # shape came back, and a chart was counted against a gamut
                 # in the wrong space: "0 inside, 0 on the edge, 480 outside,
                 # worst 99.0 ΔE" against a truth of 390.
-                built, _m = shapes.shape_for(
+                built = shapes.shape_for(
                     shapes.thing_for(path, IMAGE_EXTENSIONS),
-                    self._settings().drawn_in("lab"))
+                    self._settings().drawn_in("lab")).gamut
             else:
                 return gamut
         # ⚠ A REFUSAL IS NOT A READ ERROR, AND MUST NOT COME BACK AS THE
@@ -14126,8 +14126,9 @@ class GamutApp(QMainWindow):
             if not thing.measured:
                 return None
             for tick in (False, True):
-                built, m = shapes.shape_for(thing, settings.with_tick(tick))
-                made.append((built, m))
+                made_here = shapes.shape_for(thing,
+                                             settings.with_tick(tick))
+                made.append((made_here.gamut, made_here.measurement))
         except Exception:          # noqa: BLE001 — a readout never crashes
             return None
         self._other_whites[key] = tuple(made)

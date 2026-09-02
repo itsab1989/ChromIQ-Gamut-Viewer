@@ -164,6 +164,40 @@ def key_for(thing: Thing, settings: Settings) -> tuple:
     return tuple(parts)
 
 
+@dataclass(frozen=True)
+class Built:
+    """One shape, and everything that was true when it was made.
+
+    ⚠ A PAIR COULD NOT SAY THIS. `shape_for` returned `(gamut, measurement)`,
+    and three of its five call sites threw the second value away on the spot
+    (`built, _m = ...`). A return whose second half is discarded at half its
+    call sites is not describing the thing it returns — and `test_shapes`
+    had to assert "the second value means 'the measurement' and nothing
+    else", a test that exists only because the pair is ambiguous.
+
+    ⚠ AND THE PICTURE'S FACTS HAD NOWHERE TO GO. `image_gamut` returns
+    `(gamut, facts)`; the door discarded the facts deliberately, saying so,
+    because the second slot already meant "the measurement". That deferral
+    became a blocker: routing `_build_one`'s picture branch through the door
+    while the facts had no home would have silently deleted the colour count
+    from the slot label and the picture-loss figure from the panel, with the
+    whole suite green. Named fields make that impossible to do by accident.
+
+    ⚠ AND `settings` IS THE POINT, not bookkeeping. A shape that carries what
+    it was built under can be checked against the controls that are live now
+    — which is the whole of the coherence property every one of this
+    release's thirteen faults violated. Without it that check has to be
+    bolted on from outside by wrapping every builder; with it, the window can
+    make the assertion about itself.
+    """
+
+    gamut: object
+    thing: Thing
+    settings: Settings
+    measurement: object = None
+    facts: object = None
+
+
 class CannotBuild(ValueError):
     """This thing cannot be turned into a shape, and the reason is in words.
 
@@ -202,36 +236,37 @@ def shape_for(thing: Thing, settings: Settings, *, stop=None):
 
     white, space = settings.white, settings.space
     if thing.kind == "profile":
-        return icc_gamut(thing.path, white_point=white, space=space,
-                         stop=stop), None
+        return Built(icc_gamut(thing.path, white_point=white, space=space,
+                              stop=stop), thing, settings)
     if thing.kind == "gamutfile":
-        return gam_gamut(thing.path, white_point=white, space=space,
-                         stop=stop), None
+        return Built(gam_gamut(thing.path, white_point=white, space=space,
+                              stop=stop), thing, settings)
     if thing.kind == "picture":
         from imagegamut import image_gamut
-        # ⚠ THE FACTS ARE NOT RETURNED HERE, and that is deliberate rather
-        # than an oversight. The second value means "the measurement", and
-        # making it mean "the measurement OR the picture's facts, depending
-        # on the kind" is the exact muddle this work exists to remove. The
-        # facts stay where they are until the step that gives every kind one
-        # return value with named parts.
-        built, _facts = image_gamut(thing.path, white_point=white,
-                                    space=space)
-        return built, None
+        # ⚠ THE FACTS COME BACK NOW, in a field of their own. They used to
+        # be dropped here because the second slot of the pair already meant
+        # "the measurement" — and that deferral was what blocked routing
+        # `_build_one`'s picture branch through this door at all.
+        built, facts = image_gamut(thing.path, white_point=white,
+                                   space=space)
+        return Built(built, thing, settings, facts=facts)
     if thing.kind == "space":
-        return reference_gamut(thing.name, white_point=white,
-                               steps=settings.detail, space=space), None
+        return Built(reference_gamut(thing.name, white_point=white,
+                                    steps=settings.detail, space=space),
+                     thing, settings)
     if thing.kind == "visible":
         from spectral import optimal_colour_solid
         verts, _faces = optimal_colour_solid(
             "D50" if white == "D50" else "D65", max(24, settings.detail * 3))
-        return build_gamut(xyz_to_lab(verts, white), input_space="lab",
-                           space=space, white_point=white), None
+        return Built(build_gamut(xyz_to_lab(verts, white),
+                                input_space="lab", space=space,
+                                white_point=white), thing, settings)
     if thing.kind == "measurement":
         m = read_measurement(thing.path, white, settings.tick)
         drive = None if settings.mode == "hull" else m.device
-        return build_gamut(m.lab, drive, input_space="lab", space=space,
-                           white_point=white), m
+        return Built(build_gamut(m.lab, drive, input_space="lab",
+                                space=space, white_point=white),
+                     thing, settings, measurement=m)
     raise CannotBuild(
         f"there is no builder for a {thing.kind!r}, so this shape cannot be "
         f"made — which is said here rather than guessed at, because the "
