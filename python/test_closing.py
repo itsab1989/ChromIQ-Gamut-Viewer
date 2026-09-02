@@ -689,9 +689,31 @@ def _mentions_rebuild(fn):
         remake()
 
     rebuilds, forgets the rule, and the whole suite stays green. A test that
-    finds its own subjects is only as good as the finding, so the finding
-    gets a control of its own — and an attribute LOAD is what is looked for,
-    which catches the alias as well as the call.
+    finds its own subjects is only as good as the finding, so an attribute
+    LOAD is what is looked for, which catches the alias as well as the call.
+
+    ⚠ AND BY THE NAME AS A STRING TOO, because the attribute rule was not
+    enough either. A hunt injected
+
+        getattr(self, "_rebuild")()
+
+    into a route, ran the whole gate, and got 1227 passed — the same count
+    as the untouched baseline, to the test. There is no `ast.Attribute` node
+    in that line at all: the method name is a string constant handed to
+    `getattr`, so an attribute walk cannot see it, and the route dropped
+    silently out of the rule.
+
+    That is the SECOND time this finder has been widened after a hunt walked
+    past it, which is the point worth keeping: each fix was right for the
+    evasion in front of it and blind to the next one. Both forms are checked
+    now — a load of the attribute, or the exact name appearing as a string
+    anywhere in the method, which also covers `name = "_rebuild"` followed
+    by `getattr(self, name)`.
+
+    Checked when this was written: NO method of GamutApp contains the exact
+    string "_rebuild" for any other reason, so the second rule costs nothing
+    in false positives today. If one ever does, this will name it by failing
+    rather than by going quiet, which is the right way round.
     """
     import ast
     import inspect
@@ -703,6 +725,8 @@ def _mentions_rebuild(fn):
         if (isinstance(node, ast.Attribute) and node.attr == "_rebuild"
                 and isinstance(node.value, ast.Name)
                 and node.value.id == "self"):
+            return True
+        if isinstance(node, ast.Constant) and node.value == "_rebuild":
             return True
     return False
 
@@ -856,3 +880,62 @@ def test_nothing_is_cleared_until_the_shapes_agree_to_move():
         "the space changed and the controls that cannot follow it were left "
         "ticked and live")
     assert "remembered" in done and "put back" not in done
+
+
+# --------------------------------------------------------------------------
+# The finder's own control
+#
+# ⚠ TWICE NOW A HUNT HAS WALKED PAST `_mentions_rebuild`, AND BOTH TIMES THE
+# WHOLE GATE STAYED GREEN. First a substring check missed
+# `remake = self._rebuild; remake()`; then the attribute walk that replaced
+# it missed `getattr(self, "_rebuild")()` — injected into a real route, the
+# gate reported 1227 passed, the same count as the untouched baseline.
+#
+# A finder with no control is not an instrument, it is a hope. These are the
+# evasions that have actually been tried, written as ordinary module-level
+# functions so `inspect.getsource` can read them exactly as it reads a
+# method. Anything new that gets past the finder belongs here the same day.
+# --------------------------------------------------------------------------
+
+def _evasion_direct(self):
+    self._rebuild()
+
+
+def _evasion_with_an_argument(self):
+    self._rebuild(redraw=False)
+
+
+def _evasion_aliased(self):
+    remake = self._rebuild
+    remake()
+
+
+def _evasion_by_getattr(self):
+    getattr(self, "_rebuild")()
+
+
+def _evasion_by_a_named_string(self):
+    which = "_rebuild"
+    getattr(self, which)()
+
+
+def _not_a_route_at_all(self):
+    self._redraw()
+
+
+def test_the_route_finder_cannot_be_walked_past():
+    """Every way anybody has actually reached `_rebuild` is still found."""
+    caught = {
+        "written out": _evasion_direct,
+        "with an argument": _evasion_with_an_argument,
+        "through an alias": _evasion_aliased,
+        "through getattr": _evasion_by_getattr,
+        "through a named string": _evasion_by_a_named_string,
+    }
+    missed = [how for how, fn in caught.items() if not _mentions_rebuild(fn)]
+    assert not missed, (
+        f"the finder walks past {missed} — a route written that way rebuilds, "
+        "forgets the refusal rule, and the whole suite stays green")
+    assert not _mentions_rebuild(_not_a_route_at_all), (
+        "the finder now calls everything a route, so it proves nothing about "
+        "any of them")
